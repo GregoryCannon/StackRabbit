@@ -5,6 +5,9 @@
         #score{
             display: inline-block;
         }
+        #credits {
+            font-family: monospace;
+        }
         div{
             font-size: 25px;
             font-weight: bold;
@@ -18,11 +21,12 @@
     </style>
 </head>
 <body>
-   <div>This Game Was Created By <a target="_blank" href="https://www.youtube.com/c/codeexplained">Code Explained</a></div><br>
     <canvas id="tetris" width="200" height="400"></canvas>
     <div>
         Score : <div id="score">0</div>
     </div>
     <script src="dist/main.js"></script>
+
+    <p id="credits">Developed by Gregory Cannon, based on the engine by <a target="_blank" href="https://www.youtube.com/c/codeexplained">Code Explained</a>. Source code available on <a href="https://github.com/GregoryCannon/TetrisTrainer">Github</a>.</p>
 </body>
 </html>
