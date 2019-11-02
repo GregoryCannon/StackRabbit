@@ -4,7 +4,7 @@
   "description": "tetris trainer",
   "main": "src/tetris.js",
   "scripts": {
-    "start": "prettier *.js --write && webpack --progress --mode=development",
+    "start": "prettier src/*.js --write && webpack --progress --mode=development",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",

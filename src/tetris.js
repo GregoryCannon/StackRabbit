@@ -1,4 +1,5 @@
 const scoreElement = document.getElementById("score");
+const headerText = document.getElementById("header-text");
 
 import { PIECES } from "./tetrominoes.js";
 import { Piece } from "./piece.js";
@@ -28,14 +29,42 @@ for (let r = 0; r < ROW; r++) {
 let m_canvas = new Canvas(m_board);
 m_canvas.drawBoard();
 
+const GameState = {
+  RUNNING: "running",
+  PAUSED: "paused",
+  GAME_OVER: "game over",
+  START_SCREEN: "start screen"
+};
+
 let m_level = 0;
-let m_gameOver = false;
+let m_gameState = GameState.RUNNING;
 let m_currentPiece = randomPiece();
 let m_score = 0;
 
+function refreshHeaderText() {
+  let newText = "";
+  switch (m_gameState) {
+    case GameState.START_SCREEN:
+      newText = "Welcome to Tetris Trainer!";
+      break;
+    case GameState.RUNNING:
+      newText = "-";
+      break;
+    case GameState.GAME_OVER:
+      newText = "Game over!";
+      break;
+    case GameState.PAUSED:
+      newText = "Pauseds";
+      break;
+  }
+  headerText.innerText = newText;
+}
+
+refreshHeaderText();
+
 function onGameOver(argument) {
-  m_gameOver = true;
-  alert("Game over!");
+  m_gameState = GameState.GAME_OVER;
+  refreshHeaderText();
 }
 
 function randomPiece() {
@@ -92,31 +121,32 @@ function moveCurrentPieceDown() {
 }
 
 // Control the piece
-document.addEventListener("keydown", keyDownListener);
-document.addEventListener("keyup", keyUpListener);
 function keyDownListener(event) {
-  if (event.keyCode == 37) {
-    m_currentPiece.moveLeft();
-  } else if (event.keyCode == 38) {
-    m_currentPiece.rotate();
-  } else if (event.keyCode == 39) {
-    m_currentPiece.moveRight();
-  } else if (event.keyCode == 40) {
-    moveCurrentPieceDown();
+  if (m_gameState == GameState.RUNNING) {
+    if (event.keyCode == 37) {
+      m_currentPiece.moveLeft();
+    } else if (event.keyCode == 38) {
+      m_currentPiece.rotate();
+    } else if (event.keyCode == 39) {
+      m_currentPiece.moveRight();
+    } else if (event.keyCode == 40) {
+      moveCurrentPieceDown();
+    }
   }
 }
-
 function keyUpListener(event) {}
+document.addEventListener("keydown", keyDownListener);
+document.addEventListener("keyup", keyUpListener);
 
 let framecount = 0;
 function gameLoop() {
-  framecount += 1;
-  if (framecount >= 10) {
-    moveCurrentPieceDown();
-    framecount = 0;
+  if (m_gameState == GameState.RUNNING) {
+    framecount += 1;
+    if (framecount >= 10) {
+      moveCurrentPieceDown();
+      framecount = 0;
+    }
   }
-  if (!m_gameOver) {
-    requestAnimationFrame(gameLoop);
-  }
+  requestAnimationFrame(gameLoop);
 }
 gameLoop();
