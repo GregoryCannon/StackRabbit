@@ -48,7 +48,7 @@ function refreshHeaderText() {
       newText = "Welcome to Tetris Trainer!";
       break;
     case GameState.RUNNING:
-      newText = "-";
+      newText = "    ";
       break;
     case GameState.GAME_OVER:
       newText = "Game over!";
@@ -70,10 +70,6 @@ function onGameOver(argument) {
 function randomPiece() {
   let r = Math.floor(Math.random() * PIECES.length); // 0 -> 6
   return new Piece(PIECES[r][0], PIECES[r][1], m_board, m_canvas, onGameOver);
-}
-
-function incrementScore(numRowsCleared) {
-  return rewards[numRowsCleared];
 }
 
 function removeFullRows() {
@@ -105,7 +101,7 @@ function removeFullRows() {
     m_canvas.drawBoard();
 
     // Update the score
-    incrementScore(numRowsCleared);
+    m_score += rewards[numRowsCleared];
     scoreElement.innerHTML = m_score;
   }
 }
