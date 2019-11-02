@@ -2,9 +2,9 @@
   "name": "tetrisjs",
   "version": "1.0.0",
   "description": "tetris trainer",
-  "main": "tetris.js",
+  "main": "src/tetris.js",
   "scripts": {
-    "start": "webpack --progress --mode=development",
+    "start": "prettier *.js --write && webpack --progress --mode=development",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",
