@@ -8,8 +8,7 @@
         #credits {
             font-family: monospace;
         }
-        div{
-            font-size: 25px;
+        h1, h2{
             font-weight: bold;
             font-family: monospace;
             text-align: center;
@@ -21,10 +20,12 @@
     </style>
 </head>
 <body>
+    <h1>Tetris Trainer</h1>
+    <h2>Game Over!</h2>
     <canvas id="tetris" width="200" height="400"></canvas>
-    <div>
-        Score : <div id="score">0</div>
-    </div>
+    <h2>
+        Score : <p id="score">0</p>
+    </h2>
     <script src="dist/main.js"></script>
 
     <p id="credits">Developed by Gregory Cannon, based on the engine by <a target="_blank" href="https://www.youtube.com/c/codeexplained">Code Explained</a>. Source code available on <a href="https://github.com/GregoryCannon/TetrisTrainer">Github</a>.</p>

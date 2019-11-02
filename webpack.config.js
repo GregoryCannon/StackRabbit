@@ -1,8 +1,8 @@
 module.exports = {
-  mode: 'development',
-  entry: './tetris.js',
+  mode: "development",
+  entry: "./tetris.js",
   output: {
-    filename: 'main.js',
-    publicPath: 'dist'
+    filename: "main.js",
+    publicPath: "dist"
   }
 };
