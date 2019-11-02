@@ -3,34 +3,36 @@ const ctx = cvs.getContext("2d");
 const scoreElement = document.getElementById("score");
 
 const ROW = 20;
-const COL = COLUMN = 10;
-const SQ = squareSize = 20;
+const COLUMN = 10;
+const SQ_SIZE = 20;
 const VACANT = "BLACK"; // color of an empty square
 
 const DROP_TIME_MS = 200;
 
+import { PIECES } from './tetrominoes.js';
+
 // draw a square
 function drawSquare(x,y,color){
     ctx.fillStyle = color;
-    ctx.fillRect(x*SQ,y*SQ,SQ,SQ);
+    ctx.fillRect(x*SQ_SIZE,y*SQ_SIZE,SQ_SIZE,SQ_SIZE);
 
     ctx.strokeStyle = "BLACK";
-    ctx.strokeRect(x*SQ,y*SQ,SQ,SQ);
+    ctx.strokeRect(x*SQ_SIZE,y*SQ_SIZE,SQ_SIZE,SQ_SIZE);
 }
 
 // create the board
 let board = [];
-for( r = 0; r <ROW; r++){
+for(let r = 0; r <ROW; r++){
     board[r] = [];
-    for(c = 0; c < COL; c++){
+    for(let c = 0; c < COLUMN; c++){
         board[r][c] = VACANT;
     }
 }
 
 // draw the board
 function drawBoard(){
-    for( r = 0; r <ROW; r++){
-        for(c = 0; c < COL; c++){
+    for(let r = 0; r <ROW; r++){
+        for(let c = 0; c < COLUMN; c++){
             drawSquare(c,r,board[r][c]);
         }
     }
@@ -40,22 +42,9 @@ let gameOver = false;
 
 drawBoard();
 
-// the pieces and their colors
-
-const PIECES = [
-    [Z,"red"],
-    [S,"blue"],
-    [T,"white"],
-    [O,"white"],
-    [L,"red"],
-    [I,"white"],
-    [J,"blue"]
-];
-
-// generate random pieces
-
+// Generate random pieces
 function randomPiece(){
-    let r = randomN = Math.floor(Math.random() * PIECES.length) // 0 -> 6
+    let r = Math.floor(Math.random() * PIECES.length) // 0 -> 6
     return new Piece( PIECES[r][0],PIECES[r][1]);
 }
 
@@ -77,8 +66,8 @@ function Piece(tetromino,color){
 
 // fill function
 Piece.prototype.fill = function(color){
-    for( r = 0; r < this.activeTetromino.length; r++){
-        for(c = 0; c < this.activeTetromino.length; c++){
+    for(let r = 0; r < this.activeTetromino.length; r++){
+        for(let c = 0; c < this.activeTetromino.length; c++){
             // we draw only occupied squares
             if( this.activeTetromino[r][c]){
                 drawSquare(this.x + c,this.y + r, color);
@@ -134,7 +123,7 @@ Piece.prototype.rotate = function(){
     let kick = 0;
     
     if(this.collision(0,0,nextPattern)){
-        if(this.x > COL/2){
+        if(this.x > COLUMN/2){
             // it's the right wall
             kick = -1; // we need to move the piece to the left
         }else{
@@ -155,8 +144,8 @@ Piece.prototype.rotate = function(){
 let score = 0;
 
 Piece.prototype.lock = function(){
-    for( r = 0; r < this.activeTetromino.length; r++){
-        for(c = 0; c < this.activeTetromino.length; c++){
+    for(let r = 0; r < this.activeTetromino.length; r++){
+        for(let c = 0; c < this.activeTetromino.length; c++){
             // we skip the vacant squares
             if( !this.activeTetromino[r][c]){
                 continue;
@@ -173,21 +162,21 @@ Piece.prototype.lock = function(){
         }
     }
     // remove full rows
-    for(r = 0; r < ROW; r++){
+    for(let r = 0; r < ROW; r++){
         let isRowFull = true;
-        for( c = 0; c < COL; c++){
+        for(let c = 0; c < COLUMN; c++){
             isRowFull = isRowFull && (board[r][c] != VACANT);
         }
         if(isRowFull){
             // if the row is full
             // we move down all the rows above it
-            for( y = r; y > 1; y--){
-                for( c = 0; c < COL; c++){
+            for(let y = r; y > 1; y--){
+                for(let c = 0; c < COLUMN; c++){
                     board[y][c] = board[y-1][c];
                 }
             }
             // the top row board[0][..] has no row above it
-            for( c = 0; c < COL; c++){
+            for(let c = 0; c < COLUMN; c++){
                 board[0][c] = VACANT;
             }
             // increment the score
@@ -204,8 +193,8 @@ Piece.prototype.lock = function(){
 // collision fucntion
 
 Piece.prototype.collision = function(x,y,piece){
-    for( r = 0; r < piece.length; r++){
-        for(c = 0; c < piece.length; c++){
+    for(let r = 0; r < piece.length; r++){
+        for(let c = 0; c < piece.length; c++){
             // if the square is empty, we skip it
             if(!piece[r][c]){
                 continue;
@@ -215,7 +204,7 @@ Piece.prototype.collision = function(x,y,piece){
             let newY = this.y + r + y;
             
             // conditions
-            if(newX < 0 || newX >= COL || newY >= ROW){
+            if(newX < 0 || newX >= COLUMN || newY >= ROW){
                 return true;
             }
             // skip newY < 0; board[-1] will crush our game

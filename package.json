@@ -1,0 +1,16 @@
+{
+  "name": "tetrisjs",
+  "version": "1.0.0",
+  "description": "tetris trainer",
+  "main": "tetris.js",
+  "scripts": {
+    "start": "webpack --progress --mode=development",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "webpack": "^4.41.2",
+    "webpack-cli": "^3.3.10"
+  }
+}
