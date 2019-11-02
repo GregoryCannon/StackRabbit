@@ -1,7 +1,7 @@
 const scoreElement = document.getElementById("score");
 const headerText = document.getElementById("header-text");
 
-import { PIECES } from "./tetrominoes.js";
+import { PIECE_LIST } from "./tetrominoes.js";
 import { Piece } from "./piece.js";
 import { Canvas } from "./canvas.js";
 
@@ -10,12 +10,35 @@ export const COLUMN = 10;
 export const SQUARE_SIZE = 20;
 export const VACANT = "BLACK"; // color of an empty square
 
-const DROP_TIME_MS = 200;
-const rewards = {
+// How many points for X lines at a time (before scaling by level)
+const REWARDS = {
   1: 40,
   2: 100,
   3: 300,
   4: 1200
+};
+// How many frames it takes to drop one square
+const GRAVITY = {
+  0: 48,
+  1: 43,
+  2: 38,
+  3: 33,
+  4: 28,
+  5: 23,
+  6: 18,
+  7: 13,
+  8: 8,
+  9: 6,
+  10: 5,
+  11: 5,
+  12: 5,
+  13: 4,
+  14: 4,
+  15: 4,
+  16: 3,
+  17: 3,
+  18: 3,
+  19: 2
 };
 
 let m_board = [];
@@ -68,8 +91,14 @@ function onGameOver(argument) {
 }
 
 function randomPiece() {
-  let r = Math.floor(Math.random() * PIECES.length); // 0 -> 6
-  return new Piece(PIECES[r][0], PIECES[r][1], m_board, m_canvas, onGameOver);
+  let r = Math.floor(Math.random() * PIECE_LIST.length); // 0 -> 6
+  return new Piece(
+    PIECE_LIST[r][0],
+    PIECE_LIST[r][1],
+    m_board,
+    m_canvas,
+    onGameOver
+  );
 }
 
 function removeFullRows() {
@@ -101,7 +130,7 @@ function removeFullRows() {
     m_canvas.drawBoard();
 
     // Update the score
-    m_score += rewards[numRowsCleared];
+    m_score += REWARDS[numRowsCleared];
     scoreElement.innerHTML = m_score;
   }
 }
@@ -138,7 +167,7 @@ let framecount = 0;
 function gameLoop() {
   if (m_gameState == GameState.RUNNING) {
     framecount += 1;
-    if (framecount >= 10) {
+    if (framecount >= GRAVITY[m_level]) {
       moveCurrentPieceDown();
       framecount = 0;
     }

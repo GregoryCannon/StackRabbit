@@ -43,7 +43,7 @@ const PIECE_Z = [
 ];
 
 // The piece list, with colors
-export const PIECES = [
+export const PIECE_LIST = [
   [PIECE_Z, "red"],
   [PIECE_S, "blue"],
   [PIECE_T, "white"],
