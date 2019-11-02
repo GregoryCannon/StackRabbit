@@ -5,7 +5,9 @@ const scoreElement = document.getElementById("score");
 const ROW = 20;
 const COL = COLUMN = 10;
 const SQ = squareSize = 20;
-const VACANT = "WHITE"; // color of an empty square
+const VACANT = "BLACK"; // color of an empty square
+
+const DROP_TIME_MS = 200;
 
 // draw a square
 function drawSquare(x,y,color){
@@ -17,7 +19,6 @@ function drawSquare(x,y,color){
 }
 
 // create the board
-
 let board = [];
 for( r = 0; r <ROW; r++){
     board[r] = [];
@@ -35,18 +36,20 @@ function drawBoard(){
     }
 }
 
+let gameOver = false;
+
 drawBoard();
 
 // the pieces and their colors
 
 const PIECES = [
     [Z,"red"],
-    [S,"green"],
-    [T,"yellow"],
-    [O,"blue"],
-    [L,"purple"],
-    [I,"cyan"],
-    [J,"orange"]
+    [S,"blue"],
+    [T,"white"],
+    [O,"white"],
+    [L,"red"],
+    [I,"white"],
+    [J,"blue"]
 ];
 
 // generate random pieces
@@ -73,7 +76,6 @@ function Piece(tetromino,color){
 }
 
 // fill function
-
 Piece.prototype.fill = function(color){
     for( r = 0; r < this.activeTetromino.length; r++){
         for(c = 0; c < this.activeTetromino.length; c++){
@@ -86,20 +88,16 @@ Piece.prototype.fill = function(color){
 }
 
 // draw a piece to the board
-
 Piece.prototype.draw = function(){
     this.fill(this.color);
 }
 
 // undraw a piece
-
-
 Piece.prototype.unDraw = function(){
     this.fill(VACANT);
 }
 
 // move Down the piece
-
 Piece.prototype.moveDown = function(){
     if(!this.collision(0,1,this.activeTetromino)){
         this.unDraw();
@@ -109,8 +107,7 @@ Piece.prototype.moveDown = function(){
         // we lock the piece and generate a new one
         this.lock();
         p = randomPiece();
-    }
-    
+    }   
 }
 
 // move Right the piece
@@ -236,9 +233,9 @@ Piece.prototype.collision = function(x,y,piece){
 
 // CONTROL the piece
 
-document.addEventListener("keydown",CONTROL);
-
-function CONTROL(event){
+document.addEventListener("keydown", keyDownListener);
+document.addEventListener("keyup", keyUpListener)
+function keyDownListener(event){
     if(event.keyCode == 37){
         p.moveLeft();
         dropStart = Date.now();
@@ -253,10 +250,13 @@ function CONTROL(event){
     }
 }
 
+function keyUpListener(event){
+
+}
+
 // drop the piece every 1sec
 
 let dropStart = Date.now();
-let gameOver = false;
 function drop(){
     let now = Date.now();
     let delta = now - dropStart;
@@ -264,12 +264,25 @@ function drop(){
         p.moveDown();
         dropStart = Date.now();
     }
-    if( !gameOver){
+    if(!gameOver){
         requestAnimationFrame(drop);
     }
 }
 
-drop();
+//drop();
+
+let framecount = 0;
+function gameLoop(){
+    framecount += 1;
+    if (framecount >= 10){
+        p.moveDown();
+        framecount = 0;
+    }
+    if(!gameOver){
+        requestAnimationFrame(gameLoop);
+    }
+}
+gameLoop();
 
 
 
