@@ -40,3 +40,13 @@ export const GameState = {
   GAME_OVER: "game over",
   START_SCREEN: "start screen"
 };
+
+export const Direction = {
+  LEFT: "left",
+  RIGHT: "right",
+  DOWN: "down",
+  NONE: "none"
+};
+export const DAS_TRIGGER = 16;
+export const DAS_CHARGED = 10;
+export const DAS_DOWN_CHARGED = 14;

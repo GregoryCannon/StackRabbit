@@ -1,26 +1,30 @@
 import { ROW, COLUMN, VACANT } from "./constants.js";
 
 // The Object Piece
-export function Piece(tetromino, color, board, canvas, onGameOver) {
+export function Piece(tetromino, color, id, board, canvas, onGameOver) {
   this.tetromino = tetromino;
   this.color = color;
   this.board = board;
   this.canvas = canvas;
   this.onGameOver = onGameOver;
+  this.id = id;
 
-  this.tetrominoN = 0; // we start from the first pattern
+  this.tetrominoN = 0; // Start from the first rotation
   this.activeTetromino = this.tetromino[this.tetrominoN];
 
-  // we need to control the pieces
   this.x = 3;
   this.y = -2;
 }
+
+Piece.prototype.equals = function(otherPiece) {
+  return this.id === otherPiece.id;
+};
 
 // fill function
 Piece.prototype.fill = function(color) {
   for (let r = 0; r < this.activeTetromino.length; r++) {
     for (let c = 0; c < this.activeTetromino.length; c++) {
-      // we draw only occupied squares
+      // Draw only occupied squares
       if (this.activeTetromino[r][c]) {
         this.canvas.drawSquare(this.x + c, this.y + r, color);
       }
@@ -96,6 +100,7 @@ Piece.prototype.rotate = function(directionInversed) {
   }
 };
 
+// Lock the piece in place
 Piece.prototype.lock = function() {
   for (let r = 0; r < this.activeTetromino.length; r++) {
     for (let c = 0; c < this.activeTetromino.length; c++) {

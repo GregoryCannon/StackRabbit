@@ -2,7 +2,7 @@
 <head>
     <title>Tetris Game JS</title>
     <style>
-        #score{
+        #score {
             display: inline-block;
         }
         #credits {
@@ -11,21 +11,22 @@
         #header-text {
             min-height: 24px
         }
+        #main-canvas {
+            display: block;
+            margin:0 auto;
+            padding-left: 200px
+        }
         h1, h2{
             font-weight: bold;
             font-family: monospace;
             text-align: center;
-        }
-        canvas{
-            display: block;
-            margin:0 auto;
         }
     </style>
 </head>
 <body>
     <h1>NES Tetris Trainer</h1>
     <h2 id="header-text"></h2>
-    <canvas id="tetris" width="200" height="400"></canvas>
+    <canvas id="main-canvas" width="400" height="400"></canvas>
     <h3>
         Score : <p id="score">0</p>
     </h3>

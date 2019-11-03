@@ -48,13 +48,13 @@ const PIECE_Z = [
   [[0, 0, 1], [0, 1, 1], [0, 1, 0]]
 ];
 
-// The piece list, with colors
+// The piece list, with colors and letter identifiers
 export const PIECE_LIST = [
-  [PIECE_Z, "red"],
-  [PIECE_S, "blue"],
-  [PIECE_T, "white"],
-  [PIECE_O, "white"],
-  [PIECE_L, "red"],
-  [PIECE_I, "white"],
-  [PIECE_J, "blue"]
+  [PIECE_Z, "red", "Z"],
+  [PIECE_S, "blue", "S"],
+  [PIECE_T, "white", "T"],
+  [PIECE_O, "white", "O"],
+  [PIECE_L, "red", "L"],
+  [PIECE_I, "white", "I"],
+  [PIECE_J, "blue", "J"]
 ];

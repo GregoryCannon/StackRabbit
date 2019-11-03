@@ -11,7 +11,11 @@ import {
   VACANT,
   GRAVITY,
   REWARDS,
-  GameState
+  GameState,
+  Direction,
+  DAS_TRIGGER,
+  DAS_CHARGED,
+  DAS_DOWN_CHARGED
 } from "./constants.js";
 
 // Initial empty board
@@ -23,12 +27,35 @@ for (let r = 0; r < ROW; r++) {
   }
 }
 
-let m_canvas = new Canvas(m_board);
-let m_level = 0;
-let m_gameState = GameState.RUNNING;
-let m_currentPiece = randomPiece();
-let m_score = 0;
-let m_framecount = 0;
+let m_canvas;
+let m_level;
+let m_gameState;
+let m_currentPiece;
+let m_score;
+let m_framecount;
+let m_nextPiece;
+
+// Controls
+let m_left_held;
+let m_right_held;
+let m_down_held;
+let m_DAS_count;
+
+// Default control setup
+let LEFT_KEYCODE = 37;
+let RIGHT_KEYCODE = 39;
+let ROTATE_LEFT_KEYCODE = 90;
+let ROTATE_RIGHT_KEYCODE = 88;
+let DOWN_KEYCODE = 40;
+
+// My personal control setup
+if (true) {
+  LEFT_KEYCODE = 90;
+  RIGHT_KEYCODE = 88;
+  ROTATE_LEFT_KEYCODE = 86;
+  ROTATE_RIGHT_KEYCODE = 66;
+  DOWN_KEYCODE = 18;
+}
 
 function refreshHeaderText() {
   let newText = "";
@@ -63,15 +90,55 @@ function onGameOver(argument) {
   refreshHeaderText();
 }
 
-function randomPiece() {
-  let r = Math.floor(Math.random() * PIECE_LIST.length); // 0 -> 6
+function randomPiece(previousPieceId) {
+  // Follows the original RNG of NES tetris, including the dummy value 7 on the first roll
+  let r = Math.floor(Math.random() * (PIECE_LIST.length + 1));
+  if (r == PIECE_LIST.length || previousPieceId === PIECE_LIST[r][2]) {
+    // Rerolls once to reduce repeated pieces
+    r = Math.floor(Math.random() * PIECE_LIST.length);
+  }
   return new Piece(
-    PIECE_LIST[r][0],
-    PIECE_LIST[r][1],
-    m_board,
-    m_canvas,
-    onGameOver
+    PIECE_LIST[r][0], // tetromino
+    PIECE_LIST[r][1], // color
+    PIECE_LIST[r][2], // string ID
+    m_board, // reference to the board
+    m_canvas, // reference to the canvas
+    onGameOver // callback function for game over
   );
+}
+
+function testRandomPieceGenerator() {
+  // prettier-ignore
+  let counts = {
+    "S": 0,
+    "Z": 0,
+    "L": 0,
+    "J": 0,
+    "O": 0,
+    "T": 0,
+    "I": 0,
+    "repeat": 0
+  };
+  console.log(counts);
+  let cur = randomPiece();
+  let next = randomPiece(cur.id);
+  for (let i = 0; i < 1000; i++) {
+    cur = next;
+    next = randomPiece(cur.id);
+    counts[next.id] += 1;
+    if (next.equals(cur)) {
+      counts["repeat"] += 1;
+    }
+  }
+  console.log("Test result: ", counts);
+}
+//testRandomPieceGenerator();
+
+// Gets a new random piece. Will soon allow for inputted piece sequences
+function getNewPiece() {
+  m_currentPiece = m_nextPiece;
+  m_nextPiece = randomPiece(m_currentPiece.id);
+  m_canvas.drawNextBox(m_nextPiece);
 }
 
 function removeFullRows() {
@@ -110,44 +177,15 @@ function removeFullRows() {
 
 function moveCurrentPieceDown() {
   if (m_currentPiece.shouldLock()) {
-    // Lock in piece and get another
+    // Lock in piece and get another piece
     m_currentPiece.lock();
     removeFullRows();
-    m_currentPiece = randomPiece();
-    m_down_held = false; // make the player press down again if held
+    getNewPiece();
+    m_down_held = false; // make the player press down again if currently holding down
   } else {
     // Move down as usual
     m_currentPiece.moveDown();
   }
-}
-
-let m_left_held = false;
-let m_right_held = false;
-let m_down_held = false;
-const Direction = {
-  LEFT: "left",
-  RIGHT: "right",
-  DOWN: "down",
-  NONE: "none"
-};
-const DAS_TRIGGER = 16;
-const DAS_CHARGED = 10;
-const DAS_DOWN_CHARGED = 14;
-let m_DAS_count = 0;
-
-let LEFT_KEYCODE = 37;
-let RIGHT_KEYCODE = 39;
-let ROTATE_LEFT_KEYCODE = 90;
-let ROTATE_RIGHT_KEYCODE = 88;
-let DOWN_KEYCODE = 40;
-
-// My personal control setup
-if (true) {
-  LEFT_KEYCODE = 90;
-  RIGHT_KEYCODE = 88;
-  ROTATE_LEFT_KEYCODE = 86;
-  ROTATE_RIGHT_KEYCODE = 66;
-  DOWN_KEYCODE = 18;
 }
 
 function resetDAS() {
@@ -226,7 +264,7 @@ function keyDownListener(event) {
 
   // Client controls
   if (event.keyCode == 80) {
-    // Letter 'P'
+    // Letter 'P' pauses and unpauses
     if (m_gameState == GameState.RUNNING) {
       m_gameState = GameState.PAUSED;
       refreshHeaderText();
@@ -236,6 +274,7 @@ function keyDownListener(event) {
     }
   }
 }
+
 function keyUpListener(event) {
   // Piece movement - on key up
   if (m_gameState == GameState.RUNNING) {
@@ -254,12 +293,24 @@ function keyUpListener(event) {
 document.addEventListener("keydown", keyDownListener);
 document.addEventListener("keyup", keyUpListener);
 
-function init() {
+function reset() {
+  m_canvas = new Canvas(m_board);
   m_canvas.drawBoard();
   refreshHeaderText();
-}
 
-init();
+  m_nextPiece = randomPiece(""); // Will become the first piece
+  getNewPiece();
+
+  m_score = 0;
+  m_framecount = 0;
+  m_level = 0;
+  m_gameState = GameState.RUNNING;
+
+  m_left_held = false;
+  m_right_held = false;
+  m_down_held = false;
+  m_DAS_count = 0;
+}
 
 // 60 FPS game loop
 function gameLoop() {
@@ -275,4 +326,6 @@ function gameLoop() {
   }
   requestAnimationFrame(gameLoop);
 }
+
+reset();
 gameLoop();
