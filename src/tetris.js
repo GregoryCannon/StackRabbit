@@ -14,6 +14,7 @@ import {
   GameState
 } from "./constants.js";
 
+// Initial empty board
 let m_board = [];
 for (let r = 0; r < ROW; r++) {
   m_board[r] = [];
@@ -23,8 +24,6 @@ for (let r = 0; r < ROW; r++) {
 }
 
 let m_canvas = new Canvas(m_board);
-m_canvas.drawBoard();
-
 let m_level = 0;
 let m_gameState = GameState.RUNNING;
 let m_currentPiece = randomPiece();
@@ -44,13 +43,11 @@ function refreshHeaderText() {
       newText = "Game over!";
       break;
     case GameState.PAUSED:
-      newText = "Pauseds";
+      newText = "Paused";
       break;
   }
   headerText.innerText = newText;
 }
-
-refreshHeaderText();
 
 function refreshDebugText() {
   let debugStr = "";
@@ -58,6 +55,7 @@ function refreshDebugText() {
   debugStr += "\nLeftKey: " + m_left_held;
   debugStr += "\nRightKey: " + m_right_held;
   debugStr += "\nDownKey: " + m_down_held;
+  debugText.innerText = debugStr;
 }
 
 function onGameOver(argument) {
@@ -149,7 +147,7 @@ if (true) {
   RIGHT_KEYCODE = 88;
   ROTATE_LEFT_KEYCODE = 86;
   ROTATE_RIGHT_KEYCODE = 66;
-  DOWN_KEYCODE = 91;
+  DOWN_KEYCODE = 18;
 }
 
 function resetDAS() {
@@ -231,8 +229,10 @@ function keyDownListener(event) {
     // Letter 'P'
     if (m_gameState == GameState.RUNNING) {
       m_gameState = GameState.PAUSED;
+      refreshHeaderText();
     } else if (m_gameState == GameState.PAUSED) {
       m_gameState = GameState.RUNNING;
+      refreshHeaderText();
     }
   }
 }
@@ -254,13 +254,20 @@ function keyUpListener(event) {
 document.addEventListener("keydown", keyDownListener);
 document.addEventListener("keyup", keyUpListener);
 
+function init() {
+  m_canvas.drawBoard();
+  refreshHeaderText();
+}
+
+init();
+
 // 60 FPS game loop
 function gameLoop() {
   updateDAS();
 
   if (m_gameState == GameState.RUNNING) {
     m_framecount += 1;
-    refreshDebugText;
+    refreshDebugText();
     if (m_framecount >= GRAVITY[m_level]) {
       moveCurrentPieceDown();
       m_framecount = 0;
