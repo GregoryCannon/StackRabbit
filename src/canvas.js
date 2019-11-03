@@ -19,23 +19,29 @@ Canvas.prototype.drawSquare = function(x, y, color) {
 // draw the next box
 Canvas.prototype.drawNextBox = function(nextPiece) {
   console.log("Drawing next piece for ", nextPiece);
-  const startX = (COLUMN + 1) * SQUARE_SIZE;
-  const startY = 2 * SQUARE_SIZE;
-  const width = 6 * SQUARE_SIZE;
-  const height = 6 * SQUARE_SIZE;
-  const pieceStartX = startX;
-  const pieceStartY = startY + SQUARE_SIZE;
+  // All in units of SQUARE_SIZE
+  const startX = COLUMN + 1;
+  const startY = 2;
+  const width = 5;
+  const height = 4.5;
+  const pieceStartX = startX + 0.5;
+  const pieceStartY = startY + 0.5;
 
   // background
   ctx.fillStyle = "BLACK";
-  ctx.fillRect(startX, startY, width, height);
+  ctx.fillRect(
+    startX * SQUARE_SIZE,
+    startY * SQUARE_SIZE,
+    width * SQUARE_SIZE,
+    height * SQUARE_SIZE
+  );
 
   // draw the piece
   for (let r = 0; r < nextPiece.activeTetromino.length; r++) {
     for (let c = 0; c < nextPiece.activeTetromino.length; c++) {
       // Draw only occupied squares
       if (nextPiece.activeTetromino[r][c]) {
-        this.drawSquare(pieceStartX, pieceStartY, nextPiece.color);
+        this.drawSquare(pieceStartX + c, pieceStartY + r, nextPiece.color);
       }
     }
   }

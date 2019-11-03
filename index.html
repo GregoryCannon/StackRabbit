@@ -3,6 +3,7 @@
     <title>Tetris Game JS</title>
     <style>
         #score {
+            font-size: 24px;
             display: inline-block;
         }
         #credits {
@@ -16,20 +17,21 @@
             margin:0 auto;
             padding-left: 200px
         }
-        h1, h2{
-            font-weight: bold;
+        .standard {
             font-family: monospace;
+            font-weight: bold;
             text-align: center;
         }
     </style>
 </head>
 <body>
-    <h1>NES Tetris Trainer</h1>
-    <h2 id="header-text"></h2>
+    <h1 class="standard">NES Tetris Trainer</h1>
+    <h2 class="standard" id="header-text"></h2>
     <canvas id="main-canvas" width="400" height="400"></canvas>
-    <h3>
-        Score : <p id="score">0</p>
-    </h3>
+    <p class="standard" id="score">Score: 0</p>
+
+    <br>
+    <input id="piece-sequence" placeholder="Enter a piece sequence...">
     <h6 id="debug"></h6>
 
     <script src="dist/main.js"></script>

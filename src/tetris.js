@@ -1,9 +1,8 @@
-const scoreElement = document.getElementById("score");
-const headerText = document.getElementById("header-text");
-const debugText = document.getElementById("debug");
+const scoreTextElement = document.getElementById("score");
+const headerTextElement = document.getElementById("header-text");
+const debugTextElement = document.getElementById("debug");
 
-import { PIECE_LIST } from "./tetrominoes.js";
-import { Piece } from "./piece.js";
+import { PieceSelector } from "./piece_selector.js";
 import { Canvas } from "./canvas.js";
 import {
   ROW,
@@ -26,14 +25,15 @@ for (let r = 0; r < ROW; r++) {
     m_board[r][c] = VACANT;
   }
 }
+let m_canvas = new Canvas(m_board);
+let m_pieceSelector = new PieceSelector(m_board, m_canvas, onGameOver);
+let m_currentPiece;
+let m_nextPiece;
 
-let m_canvas;
 let m_level;
 let m_gameState;
-let m_currentPiece;
 let m_score;
 let m_framecount;
-let m_nextPiece;
 
 // Controls
 let m_left_held;
@@ -73,7 +73,7 @@ function refreshHeaderText() {
       newText = "Paused";
       break;
   }
-  headerText.innerText = newText;
+  headerTextElement.innerText = newText;
 }
 
 function refreshDebugText() {
@@ -82,63 +82,12 @@ function refreshDebugText() {
   debugStr += "\nLeftKey: " + m_left_held;
   debugStr += "\nRightKey: " + m_right_held;
   debugStr += "\nDownKey: " + m_down_held;
-  debugText.innerText = debugStr;
+  debugTextElement.innerText = debugStr;
 }
 
 function onGameOver(argument) {
   m_gameState = GameState.GAME_OVER;
   refreshHeaderText();
-}
-
-function randomPiece(previousPieceId) {
-  // Follows the original RNG of NES tetris, including the dummy value 7 on the first roll
-  let r = Math.floor(Math.random() * (PIECE_LIST.length + 1));
-  if (r == PIECE_LIST.length || previousPieceId === PIECE_LIST[r][2]) {
-    // Rerolls once to reduce repeated pieces
-    r = Math.floor(Math.random() * PIECE_LIST.length);
-  }
-  return new Piece(
-    PIECE_LIST[r][0], // tetromino
-    PIECE_LIST[r][1], // color
-    PIECE_LIST[r][2], // string ID
-    m_board, // reference to the board
-    m_canvas, // reference to the canvas
-    onGameOver // callback function for game over
-  );
-}
-
-function testRandomPieceGenerator() {
-  // prettier-ignore
-  let counts = {
-    "S": 0,
-    "Z": 0,
-    "L": 0,
-    "J": 0,
-    "O": 0,
-    "T": 0,
-    "I": 0,
-    "repeat": 0
-  };
-  console.log(counts);
-  let cur = randomPiece();
-  let next = randomPiece(cur.id);
-  for (let i = 0; i < 1000; i++) {
-    cur = next;
-    next = randomPiece(cur.id);
-    counts[next.id] += 1;
-    if (next.equals(cur)) {
-      counts["repeat"] += 1;
-    }
-  }
-  console.log("Test result: ", counts);
-}
-//testRandomPieceGenerator();
-
-// Gets a new random piece. Will soon allow for inputted piece sequences
-function getNewPiece() {
-  m_currentPiece = m_nextPiece;
-  m_nextPiece = randomPiece(m_currentPiece.id);
-  m_canvas.drawNextBox(m_nextPiece);
 }
 
 function removeFullRows() {
@@ -170,9 +119,15 @@ function removeFullRows() {
     m_canvas.drawBoard();
 
     // Update the score
-    m_score += REWARDS[numRowsCleared];
-    scoreElement.innerHTML = m_score;
+    m_score += REWARDS[numRowsCleared] * (m_level + 1);
+    scoreTextElement.innerText = "Score: " + m_score;
   }
+}
+
+function getNewPiece() {
+  m_currentPiece = m_nextPiece;
+  m_nextPiece = m_pieceSelector.chooseNextPiece(m_currentPiece.id);
+  m_canvas.drawNextBox(m_nextPiece);
 }
 
 function moveCurrentPieceDown() {
@@ -294,16 +249,15 @@ document.addEventListener("keydown", keyDownListener);
 document.addEventListener("keyup", keyUpListener);
 
 function reset() {
-  m_canvas = new Canvas(m_board);
   m_canvas.drawBoard();
   refreshHeaderText();
 
-  m_nextPiece = randomPiece(""); // Will become the first piece
+  m_nextPiece = m_pieceSelector.randomPiece(""); // Will become the first piece
   getNewPiece();
 
   m_score = 0;
   m_framecount = 0;
-  m_level = 0;
+  m_level = 8;
   m_gameState = GameState.RUNNING;
 
   m_left_held = false;
