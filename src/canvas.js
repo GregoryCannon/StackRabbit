@@ -1,7 +1,7 @@
 const cvs = document.getElementById("tetris");
 const ctx = cvs.getContext("2d");
 
-import { ROW, COLUMN, SQUARE_SIZE } from "./tetris.js";
+import { ROW, COLUMN, SQUARE_SIZE } from "./constants.js";
 
 export function Canvas(board) {
   this.board = board;

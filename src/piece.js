@@ -1,4 +1,4 @@
-import { ROW, COLUMN, VACANT } from "./tetris.js";
+import { ROW, COLUMN, VACANT } from "./constants.js";
 
 // The Object Piece
 export function Piece(tetromino, color, board, canvas, onGameOver) {
@@ -68,10 +68,13 @@ Piece.prototype.moveLeft = function() {
 };
 
 // rotate the piece
-Piece.prototype.rotate = function() {
-  let nextPattern = this.tetromino[
-    (this.tetrominoN + 1) % this.tetromino.length
-  ];
+Piece.prototype.rotate = function(directionInversed) {
+  const offset = directionInversed ? -1 : 1;
+  const nextIndex =
+    (this.tetrominoN + offset + this.tetromino.length) % this.tetromino.length;
+  const nextPattern = this.tetromino[nextIndex];
+
+  console.log("offset: ", offset, "nextIndex: ", nextIndex);
   let kick = 0;
 
   if (this.collision(0, 0, nextPattern)) {
@@ -87,7 +90,7 @@ Piece.prototype.rotate = function() {
   if (!this.collision(kick, 0, nextPattern)) {
     this.unDraw();
     this.x += kick;
-    this.tetrominoN = (this.tetrominoN + 1) % this.tetromino.length; // (0+1)%4 => 1
+    this.tetrominoN = nextIndex;
     this.activeTetromino = this.tetromino[this.tetrominoN];
     this.draw();
   }

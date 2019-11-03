@@ -1,45 +1,18 @@
 const scoreElement = document.getElementById("score");
 const headerText = document.getElementById("header-text");
+const debugText = document.getElementById("debug");
 
 import { PIECE_LIST } from "./tetrominoes.js";
 import { Piece } from "./piece.js";
 import { Canvas } from "./canvas.js";
-
-export const ROW = 20;
-export const COLUMN = 10;
-export const SQUARE_SIZE = 20;
-export const VACANT = "BLACK"; // color of an empty square
-
-// How many points for X lines at a time (before scaling by level)
-const REWARDS = {
-  1: 40,
-  2: 100,
-  3: 300,
-  4: 1200
-};
-// How many frames it takes to drop one square
-const GRAVITY = {
-  0: 48,
-  1: 43,
-  2: 38,
-  3: 33,
-  4: 28,
-  5: 23,
-  6: 18,
-  7: 13,
-  8: 8,
-  9: 6,
-  10: 5,
-  11: 5,
-  12: 5,
-  13: 4,
-  14: 4,
-  15: 4,
-  16: 3,
-  17: 3,
-  18: 3,
-  19: 2
-};
+import {
+  ROW,
+  COLUMN,
+  VACANT,
+  GRAVITY,
+  REWARDS,
+  GameState
+} from "./constants.js";
 
 let m_board = [];
 for (let r = 0; r < ROW; r++) {
@@ -52,14 +25,7 @@ for (let r = 0; r < ROW; r++) {
 let m_canvas = new Canvas(m_board);
 m_canvas.drawBoard();
 
-const GameState = {
-  RUNNING: "running",
-  PAUSED: "paused",
-  GAME_OVER: "game over",
-  START_SCREEN: "start screen"
-};
-
-let m_level = 18;
+let m_level = 0;
 let m_gameState = GameState.RUNNING;
 let m_currentPiece = randomPiece();
 let m_score = 0;
@@ -72,7 +38,7 @@ function refreshHeaderText() {
       newText = "Welcome to Tetris Trainer!";
       break;
     case GameState.RUNNING:
-      newText = "" + m_framecount;
+      newText = "";
       break;
     case GameState.GAME_OVER:
       newText = "Game over!";
@@ -85,6 +51,14 @@ function refreshHeaderText() {
 }
 
 refreshHeaderText();
+
+function refreshDebugText() {
+  let debugStr = "";
+  debugStr += "DAS: " + m_DAS_count;
+  debugStr += "\nLeftKey: " + m_left_held;
+  debugStr += "\nRightKey: " + m_right_held;
+  debugStr += "\nDownKey: " + m_down_held;
+}
 
 function onGameOver(argument) {
   m_gameState = GameState.GAME_OVER;
@@ -163,6 +137,21 @@ const DAS_CHARGED = 10;
 const DAS_DOWN_CHARGED = 14;
 let m_DAS_count = 0;
 
+let LEFT_KEYCODE = 37;
+let RIGHT_KEYCODE = 39;
+let ROTATE_LEFT_KEYCODE = 90;
+let ROTATE_RIGHT_KEYCODE = 88;
+let DOWN_KEYCODE = 40;
+
+// My personal control setup
+if (true) {
+  LEFT_KEYCODE = 90;
+  RIGHT_KEYCODE = 88;
+  ROTATE_LEFT_KEYCODE = 86;
+  ROTATE_RIGHT_KEYCODE = 66;
+  DOWN_KEYCODE = 91;
+}
+
 function resetDAS() {
   m_DAS_count = 0;
 }
@@ -215,17 +204,25 @@ function keyDownListener(event) {
   // Piece movement - on key down
   // Move the piece once, and if appropriate, save that the key is held (for DAS)
   if (m_gameState == GameState.RUNNING) {
-    if (event.keyCode == 37) {
-      m_left_held = true;
-      m_currentPiece.moveLeft();
-    } else if (event.keyCode == 38) {
-      m_currentPiece.rotate();
-    } else if (event.keyCode == 39) {
-      m_right_held = true;
-      m_currentPiece.moveRight();
-    } else if (event.keyCode == 40) {
-      m_down_held = true;
-      moveCurrentPieceDown();
+    switch (event.keyCode) {
+      case LEFT_KEYCODE:
+        m_left_held = true;
+        m_currentPiece.moveLeft();
+        break;
+      case RIGHT_KEYCODE:
+        m_right_held = true;
+        m_currentPiece.moveRight();
+        break;
+      case ROTATE_LEFT_KEYCODE:
+        m_currentPiece.rotate(true);
+        break;
+      case ROTATE_RIGHT_KEYCODE:
+        m_currentPiece.rotate(false);
+        break;
+      case DOWN_KEYCODE:
+        m_down_held = true;
+        moveCurrentPieceDown();
+        break;
     }
   }
 
@@ -242,14 +239,16 @@ function keyDownListener(event) {
 function keyUpListener(event) {
   // Piece movement - on key up
   if (m_gameState == GameState.RUNNING) {
-    if (event.keyCode == 37) {
+    if (event.keyCode == LEFT_KEYCODE) {
       m_left_held = false;
-    } else if (event.keyCode == 39) {
+      m_DAS_count = 0;
+    } else if (event.keyCode == RIGHT_KEYCODE) {
       m_right_held = false;
-    } else if (event.keyCode == 40) {
+      m_DAS_count = 0;
+    } else if (event.keyCode == DOWN_KEYCODE) {
       m_down_held = false;
+      m_DAS_count = 0;
     }
-    m_DAS_count = 0;
   }
 }
 document.addEventListener("keydown", keyDownListener);
@@ -261,7 +260,7 @@ function gameLoop() {
 
   if (m_gameState == GameState.RUNNING) {
     m_framecount += 1;
-    refreshHeaderText();
+    refreshDebugText;
     if (m_framecount >= GRAVITY[m_level]) {
       moveCurrentPieceDown();
       m_framecount = 0;
