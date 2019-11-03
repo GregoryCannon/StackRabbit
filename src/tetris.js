@@ -97,7 +97,7 @@ function startGame() {
     m_level = 0;
   }
   m_gameState = GameState.RUNNING;
-  m_nextPiece = m_pieceSelector.randomPiece(""); // Will become the first piece
+  m_nextPiece = m_pieceSelector.chooseNextPiece(""); // Will become the first piece
   getNewPiece();
 }
 startGameButton.addEventListener("click", startGame);

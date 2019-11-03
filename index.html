@@ -17,6 +17,12 @@
             margin:0 auto;
             padding-left: 200px
         }
+        #level-select {
+            font-size: 18px;
+        }
+        #start-game {
+            font-size: 24pd;
+        }
         .standard {
             font-family: monospace;
             font-weight: bold;
@@ -31,9 +37,15 @@
     <p class="standard" id="score">Score: 0</p>
 
     <br>
-    <input id="level-select" placeholder="Select a starting level">
-    <input id="piece-sequence" placeholder="Enter a piece sequence...">
+    <input id="level-select" placeholder="Select a starting level"></input>
     <button id="start-game">Start!</button>
+
+    <br>
+    <textarea id="piece-sequence" placeholder="Enter a piece sequence..."></textarea>
+    <textarea id="paste-area" placeholder="Paste Image Here"></textarea>
+    <img id="pasted-image"/>
+
+    <br>
     <h6 id="debug"></h6>
 
     <script src="dist/main.js"></script>
