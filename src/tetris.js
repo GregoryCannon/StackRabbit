@@ -59,10 +59,11 @@ const GameState = {
   START_SCREEN: "start screen"
 };
 
-let m_level = 0;
+let m_level = 18;
 let m_gameState = GameState.RUNNING;
 let m_currentPiece = randomPiece();
 let m_score = 0;
+let m_framecount = 0;
 
 function refreshHeaderText() {
   let newText = "";
@@ -71,7 +72,7 @@ function refreshHeaderText() {
       newText = "Welcome to Tetris Trainer!";
       break;
     case GameState.RUNNING:
-      newText = "    ";
+      newText = "" + m_framecount;
       break;
     case GameState.GAME_OVER:
       newText = "Game over!";
@@ -137,39 +138,133 @@ function removeFullRows() {
 
 function moveCurrentPieceDown() {
   if (m_currentPiece.shouldLock()) {
+    // Lock in piece and get another
     m_currentPiece.lock();
     removeFullRows();
     m_currentPiece = randomPiece();
+    m_down_held = false; // make the player press down again if held
   } else {
+    // Move down as usual
     m_currentPiece.moveDown();
   }
 }
 
-// Control the piece
+let m_left_held = false;
+let m_right_held = false;
+let m_down_held = false;
+const Direction = {
+  LEFT: "left",
+  RIGHT: "right",
+  DOWN: "down",
+  NONE: "none"
+};
+const DAS_TRIGGER = 16;
+const DAS_CHARGED = 10;
+const DAS_DOWN_CHARGED = 14;
+let m_DAS_count = 0;
+
+function resetDAS() {
+  m_DAS_count = 0;
+}
+
+function tickDAS(callback) {
+  m_DAS_count += 1;
+  if (m_DAS_count >= DAS_TRIGGER) {
+    m_DAS_count = DAS_CHARGED;
+    callback();
+  }
+}
+
+function updateDAS() {
+  const numKeysHeld = m_down_held + m_left_held + m_right_held;
+  // If holding none or multiple keys, do nothing
+  if (numKeysHeld != 1) {
+    m_DAS_count = 0;
+  }
+  // Move piece down
+  if (m_down_held) {
+    // No need to wait when pressing down
+    if (m_DAS_count == 0) {
+      m_DAS_count = DAS_DOWN_CHARGED;
+    }
+    m_DAS_count += 1;
+    if (m_DAS_count >= DAS_TRIGGER) {
+      m_DAS_count = DAS_DOWN_CHARGED;
+      moveCurrentPieceDown();
+    }
+  }
+  // DAS left
+  if (m_left_held) {
+    tickDAS(function() {
+      m_currentPiece.moveLeft();
+    });
+  }
+  // DAS right
+  else if (m_right_held) {
+    tickDAS(function() {
+      m_currentPiece.moveRight();
+    });
+  }
+}
+
 function keyDownListener(event) {
+  // Override the browser's built-in key repeating
+  if (event.repeat) {
+    return;
+  }
+  // Piece movement - on key down
+  // Move the piece once, and if appropriate, save that the key is held (for DAS)
   if (m_gameState == GameState.RUNNING) {
     if (event.keyCode == 37) {
+      m_left_held = true;
       m_currentPiece.moveLeft();
     } else if (event.keyCode == 38) {
       m_currentPiece.rotate();
     } else if (event.keyCode == 39) {
+      m_right_held = true;
       m_currentPiece.moveRight();
     } else if (event.keyCode == 40) {
+      m_down_held = true;
       moveCurrentPieceDown();
     }
   }
+
+  // Client controls
+  if (event.keyCode == 80) {
+    // Letter 'P'
+    if (m_gameState == GameState.RUNNING) {
+      m_gameState = GameState.PAUSED;
+    } else if (m_gameState == GameState.PAUSED) {
+      m_gameState = GameState.RUNNING;
+    }
+  }
 }
-function keyUpListener(event) {}
+function keyUpListener(event) {
+  // Piece movement - on key up
+  if (m_gameState == GameState.RUNNING) {
+    if (event.keyCode == 37) {
+      m_left_held = false;
+    } else if (event.keyCode == 39) {
+      m_right_held = false;
+    } else if (event.keyCode == 40) {
+      m_down_held = false;
+    }
+    m_DAS_count = 0;
+  }
+}
 document.addEventListener("keydown", keyDownListener);
 document.addEventListener("keyup", keyUpListener);
 
-let framecount = 0;
+// 60 FPS game loop
 function gameLoop() {
+  updateDAS();
+
   if (m_gameState == GameState.RUNNING) {
-    framecount += 1;
-    if (framecount >= GRAVITY[m_level]) {
+    m_framecount += 1;
+    refreshHeaderText();
+    if (m_framecount >= GRAVITY[m_level]) {
       moveCurrentPieceDown();
-      framecount = 0;
+      m_framecount = 0;
     }
   }
   requestAnimationFrame(gameLoop);
