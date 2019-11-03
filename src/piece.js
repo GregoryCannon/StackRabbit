@@ -78,18 +78,17 @@ Piece.prototype.rotate = function(directionInversed) {
     (this.tetrominoN + offset + this.tetromino.length) % this.tetromino.length;
   const nextPattern = this.tetromino[nextIndex];
 
-  console.log("offset: ", offset, "nextIndex: ", nextIndex);
   let kick = 0;
 
-  if (this.collision(0, 0, nextPattern)) {
-    if (this.x > COLUMN / 2) {
-      // it's the right wall
-      kick = -1; // we need to move the piece to the left
-    } else {
-      // it's the left wall
-      kick = 1; // we need to move the piece to the right
-    }
-  }
+  // if (this.collision(0, 0, nextPattern)) {
+  //   if (this.x > COLUMN / 2) {
+  //     // it's the right wall
+  //     kick = -1; // we need to move the piece to the left
+  //   } else {
+  //     // it's the left wall
+  //     kick = 1; // we need to move the piece to the right
+  //   }
+  // }
 
   if (!this.collision(kick, 0, nextPattern)) {
     this.unDraw();

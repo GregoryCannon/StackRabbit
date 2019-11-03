@@ -58,3 +58,13 @@ export const PIECE_LIST = [
   [PIECE_I, "white", "I"],
   [PIECE_J, "blue", "J"]
 ];
+
+export const PIECE_LOOKUP = {
+  Z: [PIECE_Z, "red", "Z"],
+  S: [PIECE_S, "blue", "S"],
+  T: [PIECE_T, "white", "T"],
+  O: [PIECE_O, "white", "O"],
+  L: [PIECE_L, "red", "L"],
+  I: [PIECE_I, "white", "I"],
+  J: [PIECE_J, "blue", "J"]
+};

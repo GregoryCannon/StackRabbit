@@ -18,7 +18,6 @@ Canvas.prototype.drawSquare = function(x, y, color) {
 
 // draw the next box
 Canvas.prototype.drawNextBox = function(nextPiece) {
-  console.log("Drawing next piece for ", nextPiece);
   // All in units of SQUARE_SIZE
   const startX = COLUMN + 1;
   const startY = 2;

@@ -1,7 +1,3 @@
-const scoreTextElement = document.getElementById("score");
-const headerTextElement = document.getElementById("header-text");
-const debugTextElement = document.getElementById("debug");
-
 import { PieceSelector } from "./piece_selector.js";
 import { Canvas } from "./canvas.js";
 import {
@@ -16,6 +12,12 @@ import {
   DAS_CHARGED,
   DAS_DOWN_CHARGED
 } from "./constants.js";
+
+const scoreTextElement = document.getElementById("score");
+const headerTextElement = document.getElementById("header-text");
+const debugTextElement = document.getElementById("debug");
+const startGameButton = document.getElementById("start-game");
+const levelSelectElement = document.getElementById("level-select");
 
 // Initial empty board
 let m_board = [];
@@ -84,6 +86,21 @@ function refreshDebugText() {
   debugStr += "\nDownKey: " + m_down_held;
   debugTextElement.innerText = debugStr;
 }
+
+// Starts the game (called from html button onClick)
+function startGame() {
+  reset();
+  const levelSelected = parseInt(levelSelectElement.value);
+  if (Number.isInteger(levelSelected)) {
+    m_level = levelSelected;
+  } else {
+    m_level = 0;
+  }
+  m_gameState = GameState.RUNNING;
+  m_nextPiece = m_pieceSelector.randomPiece(""); // Will become the first piece
+  getNewPiece();
+}
+startGameButton.addEventListener("click", startGame);
 
 function onGameOver(argument) {
   m_gameState = GameState.GAME_OVER;
@@ -249,21 +266,26 @@ document.addEventListener("keydown", keyDownListener);
 document.addEventListener("keyup", keyUpListener);
 
 function reset() {
+  // Wipe the board
+  for (let r = 0; r < ROW; r++) {
+    m_board[r] = [];
+    for (let c = 0; c < COLUMN; c++) {
+      m_board[r][c] = VACANT;
+    }
+  }
   m_canvas.drawBoard();
-  refreshHeaderText();
-
-  m_nextPiece = m_pieceSelector.randomPiece(""); // Will become the first piece
-  getNewPiece();
 
   m_score = 0;
   m_framecount = 0;
-  m_level = 8;
-  m_gameState = GameState.RUNNING;
+  m_level = 0;
+  m_gameState = GameState.START_SCREEN;
 
   m_left_held = false;
   m_right_held = false;
   m_down_held = false;
   m_DAS_count = 0;
+
+  refreshHeaderText();
 }
 
 // 60 FPS game loop
