@@ -1,3 +1,5 @@
+import { VACANT, RED_COLOR, BLUE_COLOR, WHITE_COLOR } from "./constants.js";
+
 const PIECE_I = [
   [
     [0, 0, 0, 0],

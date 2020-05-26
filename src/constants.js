@@ -1,7 +1,11 @@
 export const ROW = 20;
 export const COLUMN = 10;
 export const SQUARE_SIZE = 20;
-export const VACANT = "BLACK"; // color of an empty square
+
+export const VACANT = "black"; // color of an empty square
+export const RED_COLOR = "red";
+export const BLUE_COLOR = "#2105f2";
+export const WHITE_COLOR = "white";
 
 // How many points for X lines at a time (before scaling by level)
 export const REWARDS = {
