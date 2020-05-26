@@ -54,21 +54,33 @@ Piece.prototype.moveDown = function () {
   this.draw();
 };
 
-// move Right the piece
+/**
+ * Attempt to move the piece right.
+ * @returns true if the piece moved */
 Piece.prototype.moveRight = function () {
-  if (!this.collision(1, 0, this.activeTetromino)) {
+  if (this.collision(1, 0, this.activeTetromino)) {
+    return false;
+  } else {
+    // No collision, move the piece
     this.unDraw();
     this.x++;
     this.draw();
+    return true;
   }
 };
 
-// move Left the piece
+/**
+ * Attempt to move the piece left.
+ * @returns true if the piece moved */
 Piece.prototype.moveLeft = function () {
-  if (!this.collision(-1, 0, this.activeTetromino)) {
+  if (this.collision(-1, 0, this.activeTetromino)) {
+    return false;
+  } else {
+    // No collision, move the piece
     this.unDraw();
     this.x--;
     this.draw();
+    return true;
   }
 };
 

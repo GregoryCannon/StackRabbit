@@ -9,7 +9,7 @@ import {
   REWARDS,
   GameState,
   DAS_TRIGGER,
-  DAS_CHARGED,
+  DAS_CHARGED_FLOOR,
   DAS_DOWN_CHARGED,
 } from "./constants.js";
 import { Piece } from "./piece.js";
@@ -46,6 +46,7 @@ let m_left_held;
 let m_right_held;
 let m_down_held;
 let m_DAS_count;
+let m_softDroppedLastFrame;
 
 // Default control setup
 let LEFT_KEYCODE = 37;
@@ -167,43 +168,52 @@ function resetDAS() {
   m_DAS_count = 0;
 }
 
-function tickDAS(callback) {
-  m_DAS_count += 1;
-  if (m_DAS_count >= DAS_TRIGGER) {
-    m_DAS_count = DAS_CHARGED;
-    callback();
+function handleHeldDirection(directionStr) {
+  // Increment DAS
+  m_DAS_count = Math.min(DAS_TRIGGER, m_DAS_count + 1);
+
+  if (m_DAS_count == 1 || m_DAS_count == DAS_TRIGGER) {
+    // Attempt to shift the piece
+    const didMove =
+      directionStr == "left"
+        ? m_currentPiece.moveLeft()
+        : m_currentPiece.moveRight();
+    if (didMove) {
+      // DAS is still "charged" so we reset it to the charged floor instead of 0
+      if (m_DAS_count == DAS_TRIGGER) {
+        m_DAS_count = DAS_CHARGED_FLOOR;
+      }
+    } else {
+      // Wall charge
+      m_DAS_count = 16;
+    }
   }
 }
 
-function updateDAS() {
+function handlePieceMovement() {
   const numKeysHeld = m_down_held + m_left_held + m_right_held;
-  // If holding none or multiple keys, do nothing
-  if (numKeysHeld != 1) {
-    m_DAS_count = 0;
+  // If holding multiple keys, do nothing
+  if (numKeysHeld > 1) {
+    return;
   }
   // Move piece down
-  if (m_down_held) {
-    // No need to wait when pressing down
-    if (m_DAS_count == 0) {
-      m_DAS_count = DAS_DOWN_CHARGED;
-    }
-    m_DAS_count += 1;
-    if (m_DAS_count >= DAS_TRIGGER) {
-      m_DAS_count = DAS_DOWN_CHARGED;
-      moveCurrentPieceDown();
-    }
+  if (m_down_held && !m_softDroppedLastFrame) {
+    moveCurrentPieceDown();
+    m_softDroppedLastFrame = true;
+    return;
+  } else {
+    m_softDroppedLastFrame = false;
   }
+
   // DAS left
   if (m_left_held) {
-    tickDAS(function () {
-      m_currentPiece.moveLeft();
-    });
+    handleHeldDirection("left");
+    return;
   }
+
   // DAS right
-  else if (m_right_held) {
-    tickDAS(function () {
-      m_currentPiece.moveRight();
-    });
+  if (m_right_held) {
+    handleHeldDirection("right");
   }
 }
 
@@ -217,12 +227,18 @@ function keyDownListener(event) {
   if (m_gameState == GameState.RUNNING) {
     switch (event.keyCode) {
       case LEFT_KEYCODE:
+        // Reset DAS, unless in ARE state
+        if (m_ARE == 0) {
+          resetDAS();
+        }
         m_left_held = true;
-        m_currentPiece.moveLeft();
         break;
       case RIGHT_KEYCODE:
+        // Reset DAS, unless in ARE state
+        if (m_ARE == 0) {
+          resetDAS();
+        }
         m_right_held = true;
-        m_currentPiece.moveRight();
         break;
       case ROTATE_LEFT_KEYCODE:
         m_currentPiece.rotate(true);
@@ -232,7 +248,6 @@ function keyDownListener(event) {
         break;
       case DOWN_KEYCODE:
         m_down_held = true;
-        moveCurrentPieceDown();
         break;
     }
   }
@@ -255,18 +270,13 @@ function keyUpListener(event) {
   if (m_gameState == GameState.RUNNING) {
     if (event.keyCode == LEFT_KEYCODE) {
       m_left_held = false;
-      m_DAS_count = 0;
     } else if (event.keyCode == RIGHT_KEYCODE) {
       m_right_held = false;
-      m_DAS_count = 0;
     } else if (event.keyCode == DOWN_KEYCODE) {
       m_down_held = false;
-      m_DAS_count = 0;
     }
   }
 }
-document.addEventListener("keydown", keyDownListener);
-document.addEventListener("keyup", keyUpListener);
 
 function resetLocalVariables() {
   m_score = 0;
@@ -279,6 +289,7 @@ function resetLocalVariables() {
   m_right_held = false;
   m_down_held = false;
   m_DAS_count = 0;
+  m_softDroppedLastFrame = false;
 }
 
 function startGame() {
@@ -310,11 +321,10 @@ function startGame() {
 
   m_gameState = GameState.RUNNING;
 }
-startGameButton.addEventListener("click", startGame);
 
 // 60 FPS game loop
 function gameLoop() {
-  updateDAS();
+  handlePieceMovement();
 
   if (m_gameState == GameState.RUNNING) {
     if (m_ARE > 0) {
@@ -332,6 +342,14 @@ function gameLoop() {
   }
   requestAnimationFrame(gameLoop);
 }
+
+/**
+ * SCRIPT START
+ */
+
+document.addEventListener("keydown", keyDownListener);
+document.addEventListener("keyup", keyUpListener);
+startGameButton.addEventListener("click", startGame);
 
 resetLocalVariables();
 m_canvas.drawBoard();

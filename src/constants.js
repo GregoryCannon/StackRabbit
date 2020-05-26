@@ -42,5 +42,5 @@ export const GameState = {
 };
 
 export const DAS_TRIGGER = 16;
-export const DAS_CHARGED = 10;
+export const DAS_CHARGED_FLOOR = 10;
 export const DAS_DOWN_CHARGED = 14; // Use the DAS counter to soft drop every 2 frames
