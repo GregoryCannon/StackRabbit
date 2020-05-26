@@ -23,10 +23,17 @@
         #start-game {
             font-size: 24pd;
         }
+        #pasted-image {
+            display: none;
+        }
         .standard {
             font-family: monospace;
             font-weight: bold;
             text-align: center;
+        }
+
+        button {
+            padding: 5px;
         }
     </style>
 </head>
@@ -43,10 +50,12 @@
     <br>
     <textarea id="piece-sequence" placeholder="Enter a piece sequence..."></textarea>
     <textarea id="paste-area" placeholder="Paste Image Here"></textarea>
+    <br>
     <img id="pasted-image"/>
 
     <br>
     <h6 id="debug"></h6>
+    <canvas id="dummy-canvas"></canvas>
 
     <script src="dist/main.js"></script>
 
