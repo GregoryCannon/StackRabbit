@@ -8,7 +8,6 @@ import {
   GRAVITY,
   REWARDS,
   GameState,
-  Direction,
   DAS_TRIGGER,
   DAS_CHARGED,
   DAS_DOWN_CHARGED,
