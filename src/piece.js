@@ -17,12 +17,12 @@ export function Piece(pieceData, board, canvas, onGameOver) {
   this.y = -2;
 }
 
-Piece.prototype.equals = function(otherPiece) {
+Piece.prototype.equals = function (otherPiece) {
   return this.id === otherPiece.id;
 };
 
 // fill function
-Piece.prototype.fill = function(color) {
+Piece.prototype.fill = function (color) {
   for (let r = 0; r < this.activeTetromino.length; r++) {
     for (let c = 0; c < this.activeTetromino.length; c++) {
       // Draw only occupied squares
@@ -34,28 +34,28 @@ Piece.prototype.fill = function(color) {
 };
 
 // draw a piece to the board
-Piece.prototype.draw = function() {
+Piece.prototype.draw = function () {
   this.fill(this.color);
 };
 
 // undraw a piece
-Piece.prototype.unDraw = function() {
+Piece.prototype.unDraw = function () {
   this.fill(VACANT);
 };
 
-Piece.prototype.shouldLock = function() {
+Piece.prototype.shouldLock = function () {
   return this.collision(0, 1, this.activeTetromino);
 };
 
 // move Down the piece
-Piece.prototype.moveDown = function() {
+Piece.prototype.moveDown = function () {
   this.unDraw();
   this.y++;
   this.draw();
 };
 
 // move Right the piece
-Piece.prototype.moveRight = function() {
+Piece.prototype.moveRight = function () {
   if (!this.collision(1, 0, this.activeTetromino)) {
     this.unDraw();
     this.x++;
@@ -64,7 +64,7 @@ Piece.prototype.moveRight = function() {
 };
 
 // move Left the piece
-Piece.prototype.moveLeft = function() {
+Piece.prototype.moveLeft = function () {
   if (!this.collision(-1, 0, this.activeTetromino)) {
     this.unDraw();
     this.x--;
@@ -73,7 +73,7 @@ Piece.prototype.moveLeft = function() {
 };
 
 // rotate the piece
-Piece.prototype.rotate = function(directionInversed) {
+Piece.prototype.rotate = function (directionInversed) {
   const offset = directionInversed ? -1 : 1;
   const nextIndex =
     (this.tetrominoN + offset + this.tetromino.length) % this.tetromino.length;
@@ -101,7 +101,7 @@ Piece.prototype.rotate = function(directionInversed) {
 };
 
 // Lock the piece in place
-Piece.prototype.lock = function() {
+Piece.prototype.lock = function () {
   for (let r = 0; r < this.activeTetromino.length; r++) {
     for (let c = 0; c < this.activeTetromino.length; c++) {
       // we skip the vacant squares
@@ -123,7 +123,7 @@ Piece.prototype.lock = function() {
 };
 
 // Collision fucntion
-Piece.prototype.collision = function(x, y, piece) {
+Piece.prototype.collision = function (x, y, piece) {
   for (let r = 0; r < piece.length; r++) {
     for (let c = 0; c < piece.length; c++) {
       // if the square is empty, we skip it

@@ -8,7 +8,7 @@ export const REWARDS = {
   1: 40,
   2: 100,
   3: 300,
-  4: 1200
+  4: 1200,
 };
 // How many frames it takes to drop one square
 export const GRAVITY = {
@@ -31,14 +31,14 @@ export const GRAVITY = {
   16: 3,
   17: 3,
   18: 3,
-  19: 2
+  19: 2,
 };
 
 export const GameState = {
   RUNNING: "running",
   PAUSED: "paused",
   GAME_OVER: "game over",
-  START_SCREEN: "start screen"
+  START_SCREEN: "start screen",
 };
 
 export const DAS_TRIGGER = 16;

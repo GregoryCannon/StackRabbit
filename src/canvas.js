@@ -8,7 +8,7 @@ export function Canvas(board) {
 }
 
 // draw a square
-Canvas.prototype.drawSquare = function(x, y, color) {
+Canvas.prototype.drawSquare = function (x, y, color) {
   ctx.fillStyle = color;
   ctx.fillRect(x * SQUARE_SIZE, y * SQUARE_SIZE, SQUARE_SIZE, SQUARE_SIZE);
 
@@ -17,7 +17,7 @@ Canvas.prototype.drawSquare = function(x, y, color) {
 };
 
 // draw the next box
-Canvas.prototype.drawNextBox = function(nextPiece) {
+Canvas.prototype.drawNextBox = function (nextPiece) {
   // All in units of SQUARE_SIZE
   const startX = COLUMN + 1;
   const startY = 2;
@@ -46,7 +46,7 @@ Canvas.prototype.drawNextBox = function(nextPiece) {
   }
 };
 
-Canvas.prototype.drawPieceStatusString = function(displayString) {
+Canvas.prototype.drawPieceStatusString = function (displayString) {
   const startX = (COLUMN + 1) * SQUARE_SIZE;
   const startY = 8 * SQUARE_SIZE;
 
@@ -61,7 +61,7 @@ Canvas.prototype.drawPieceStatusString = function(displayString) {
 };
 
 // draw the board
-Canvas.prototype.drawBoard = function() {
+Canvas.prototype.drawBoard = function () {
   for (let r = 0; r < ROW; r++) {
     for (let c = 0; c < COLUMN; c++) {
       this.drawSquare(c, r, this.board[r][c]);

@@ -11,7 +11,7 @@ import {
   Direction,
   DAS_TRIGGER,
   DAS_CHARGED,
-  DAS_DOWN_CHARGED
+  DAS_DOWN_CHARGED,
 } from "./constants.js";
 import { Piece } from "./piece.js";
 
@@ -189,13 +189,13 @@ function updateDAS() {
   }
   // DAS left
   if (m_left_held) {
-    tickDAS(function() {
+    tickDAS(function () {
       m_currentPiece.moveLeft();
     });
   }
   // DAS right
   else if (m_right_held) {
-    tickDAS(function() {
+    tickDAS(function () {
       m_currentPiece.moveRight();
     });
   }
@@ -278,7 +278,7 @@ function resetLocalVariables() {
 function startGame() {
   // Reset game values
   resetLocalVariables();
-  m_pieceSelector.restart();
+  m_pieceSelector.startReadingPieceSequence();
   m_boardLoader.resetBoard();
 
   // Refresh UI

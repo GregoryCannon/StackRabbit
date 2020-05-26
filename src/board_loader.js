@@ -13,7 +13,7 @@ export function BoardLoader(board, canvas) {
   setUpPasteability(this);
 }
 
-BoardLoader.prototype.resetBoard = function() {
+BoardLoader.prototype.resetBoard = function () {
   // Reload the board from the image, or reset the board
   // (have to iterate manually (not use this.board = ) to preserve the board reference that's passed around to all the files
   for (let r = 0; r < ROW; r++) {
@@ -24,11 +24,11 @@ BoardLoader.prototype.resetBoard = function() {
 };
 
 // Get whether the board has been loaded from an image
-BoardLoader.prototype.didLoadBoardStateFromImage = function() {
+BoardLoader.prototype.didLoadBoardStateFromImage = function () {
   return m_loadedStateFromImage;
 };
 
-BoardLoader.prototype.getBoardStateFromImage = function(img) {
+BoardLoader.prototype.getBoardStateFromImage = function (img) {
   var dummy_canvas = document.getElementById("dummy-canvas");
   var context = dummy_canvas.getContext("2d");
   dummy_canvas.width = img.width;
@@ -90,7 +90,7 @@ function clearFloatingPiece(board) {
 
 function setUpPasteability(boardLoaderThis) {
   // When an image is pasted, get the board state from it
-  pasteAreaElement.onpaste = function(event) {
+  pasteAreaElement.onpaste = function (event) {
     // use event.originalEvent.clipboard for newer chrome versions
     var items = (event.clipboardData || event.originalEvent.clipboardData)
       .items;
@@ -104,8 +104,8 @@ function setUpPasteability(boardLoaderThis) {
     // load image if there is a pasted image
     if (blob !== null) {
       var reader = new FileReader();
-      reader.onload = function(event) {
-        pastedImageElement.onload = function() {
+      reader.onload = function (event) {
+        pastedImageElement.onload = function () {
           boardLoaderThis.getBoardStateFromImage(pastedImageElement);
         };
         pastedImageElement.src = event.target.result;
