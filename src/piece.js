@@ -1,13 +1,14 @@
 import { ROW, COLUMN, VACANT } from "./constants.js";
+import { debugPrintBoard } from "./utils.js";
 
 // The Object Piece
-export function Piece(tetromino, color, id, board, canvas, onGameOver) {
-  this.tetromino = tetromino;
-  this.color = color;
+export function Piece(pieceData, board, canvas, onGameOver) {
+  this.tetromino = pieceData[0];
+  this.color = pieceData[1];
+  this.id = pieceData[2];
   this.board = board;
   this.canvas = canvas;
   this.onGameOver = onGameOver;
-  this.id = id;
 
   this.tetrominoN = 0; // Start from the first rotation
   this.activeTetromino = this.tetromino[this.tetrominoN];

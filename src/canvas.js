@@ -46,6 +46,20 @@ Canvas.prototype.drawNextBox = function(nextPiece) {
   }
 };
 
+Canvas.prototype.drawPieceStatusString = function(displayString) {
+  const startX = (COLUMN + 1) * SQUARE_SIZE;
+  const startY = 8 * SQUARE_SIZE;
+
+  // Clear previous text
+  ctx.fillStyle = "WHITE";
+  ctx.fillRect(startX, startY - 20, 100, 40);
+
+  // Write "x of x" text
+  ctx.font = "13px monospace";
+  ctx.fillStyle = "BLACK";
+  ctx.fillText(displayString, startX, startY, 100);
+};
+
 // draw the board
 Canvas.prototype.drawBoard = function() {
   for (let r = 0; r < ROW; r++) {

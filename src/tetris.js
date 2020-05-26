@@ -1,4 +1,5 @@
 import { PieceSelector } from "./piece_selector.js";
+import { BoardLoader } from "./board_loader.js";
 import { Canvas } from "./canvas.js";
 import {
   ROW,
@@ -12,11 +13,13 @@ import {
   DAS_CHARGED,
   DAS_DOWN_CHARGED
 } from "./constants.js";
+import { Piece } from "./piece.js";
 
 const scoreTextElement = document.getElementById("score");
 const headerTextElement = document.getElementById("header-text");
 const debugTextElement = document.getElementById("debug");
 const startGameButton = document.getElementById("start-game");
+const restartGameButton = document.getElementById("restart-game");
 const levelSelectElement = document.getElementById("level-select");
 
 // Initial empty board
@@ -28,7 +31,8 @@ for (let r = 0; r < ROW; r++) {
   }
 }
 let m_canvas = new Canvas(m_board);
-let m_pieceSelector = new PieceSelector(m_board, m_canvas, onGameOver);
+let m_pieceSelector = new PieceSelector();
+let m_boardLoader = new BoardLoader(m_board, m_canvas);
 let m_currentPiece;
 let m_nextPiece;
 
@@ -36,6 +40,7 @@ let m_level;
 let m_gameState;
 let m_score;
 let m_framecount;
+let m_ARE;
 
 // Controls
 let m_left_held;
@@ -51,7 +56,7 @@ let ROTATE_RIGHT_KEYCODE = 88;
 let DOWN_KEYCODE = 40;
 
 // My personal control setup
-if (true) {
+if (false) {
   LEFT_KEYCODE = 90;
   RIGHT_KEYCODE = 88;
   ROTATE_LEFT_KEYCODE = 86;
@@ -86,21 +91,6 @@ function refreshDebugText() {
   debugStr += "\nDownKey: " + m_down_held;
   debugTextElement.innerText = debugStr;
 }
-
-// Starts the game (called from html button onClick)
-function startGame() {
-  reset();
-  const levelSelected = parseInt(levelSelectElement.value);
-  if (Number.isInteger(levelSelected)) {
-    m_level = levelSelected;
-  } else {
-    m_level = 0;
-  }
-  m_gameState = GameState.RUNNING;
-  m_nextPiece = m_pieceSelector.chooseNextPiece(""); // Will become the first piece
-  getNewPiece();
-}
-startGameButton.addEventListener("click", startGame);
 
 function onGameOver(argument) {
   m_gameState = GameState.GAME_OVER;
@@ -143,8 +133,14 @@ function removeFullRows() {
 
 function getNewPiece() {
   m_currentPiece = m_nextPiece;
-  m_nextPiece = m_pieceSelector.chooseNextPiece(m_currentPiece.id);
+  m_nextPiece = new Piece(
+    m_pieceSelector.chooseNextPiece(m_currentPiece.id),
+    m_board,
+    m_canvas,
+    onGameOver
+  );
   m_canvas.drawNextBox(m_nextPiece);
+  m_canvas.drawPieceStatusString(m_pieceSelector.getStatusString());
 }
 
 function moveCurrentPieceDown() {
@@ -154,6 +150,7 @@ function moveCurrentPieceDown() {
     removeFullRows();
     getNewPiece();
     m_down_held = false; // make the player press down again if currently holding down
+    m_ARE = 12; // 10 frame delay before next piece
   } else {
     // Move down as usual
     m_currentPiece.moveDown();
@@ -265,18 +262,10 @@ function keyUpListener(event) {
 document.addEventListener("keydown", keyDownListener);
 document.addEventListener("keyup", keyUpListener);
 
-function reset() {
-  // Wipe the board
-  for (let r = 0; r < ROW; r++) {
-    m_board[r] = [];
-    for (let c = 0; c < COLUMN; c++) {
-      m_board[r][c] = VACANT;
-    }
-  }
-  m_canvas.drawBoard();
-
+function resetLocalVariables() {
   m_score = 0;
   m_framecount = 0;
+  m_ARE = 0;
   m_level = 0;
   m_gameState = GameState.START_SCREEN;
 
@@ -284,24 +273,61 @@ function reset() {
   m_right_held = false;
   m_down_held = false;
   m_DAS_count = 0;
-
-  refreshHeaderText();
 }
+
+function startGame() {
+  // Reset game values
+  resetLocalVariables();
+  m_pieceSelector.restart();
+  m_boardLoader.resetBoard();
+
+  // Refresh UI
+  m_canvas.drawBoard();
+  refreshHeaderText();
+
+  // Parse the level
+  const levelSelected = parseInt(levelSelectElement.value);
+  if (Number.isInteger(levelSelected)) {
+    m_level = levelSelected;
+  } else {
+    m_level = 0;
+  }
+
+  // Get the first piece and put it in the next piece slot. Will be bumped to current in getNewPiece()
+  m_nextPiece = new Piece(
+    m_pieceSelector.chooseNextPiece(""),
+    m_board,
+    m_canvas,
+    onGameOver
+  );
+  getNewPiece();
+
+  m_gameState = GameState.RUNNING;
+}
+startGameButton.addEventListener("click", startGame);
 
 // 60 FPS game loop
 function gameLoop() {
   updateDAS();
 
   if (m_gameState == GameState.RUNNING) {
-    m_framecount += 1;
-    refreshDebugText();
-    if (m_framecount >= GRAVITY[m_level]) {
-      moveCurrentPieceDown();
-      m_framecount = 0;
+    if (m_ARE > 0) {
+      // Waiting for next piece
+      m_ARE -= 1;
+    } else {
+      m_framecount += 1;
+      refreshDebugText();
+      // Move the piece down when appropriate
+      if (m_framecount >= GRAVITY[m_level]) {
+        moveCurrentPieceDown();
+        m_framecount = 0;
+      }
     }
   }
   requestAnimationFrame(gameLoop);
 }
 
-reset();
+resetLocalVariables();
+m_canvas.drawBoard();
+refreshHeaderText();
 gameLoop();
