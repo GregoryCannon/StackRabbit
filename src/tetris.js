@@ -128,11 +128,19 @@ function removeFullRows() {
     // Update the score
     m_score += REWARDS[numRowsCleared] * (m_level + 1);
     scoreTextElement.innerText = "Score: " + m_score;
+
+    // Return true to indicate lines cleared
+    return true;
   }
+  // Return false to indicate no lines cleared
+  return false;
 }
 
 function getNewPiece() {
   m_currentPiece = m_nextPiece;
+  // Piece status is drawn first since the read index increments when the next
+  // piece is selected
+  m_canvas.drawPieceStatusString(m_pieceSelector.getStatusString());
   m_nextPiece = new Piece(
     m_pieceSelector.chooseNextPiece(m_currentPiece.id),
     m_board,
@@ -140,7 +148,6 @@ function getNewPiece() {
     onGameOver
   );
   m_canvas.drawNextBox(m_nextPiece);
-  m_canvas.drawPieceStatusString(m_pieceSelector.getStatusString());
 }
 
 function moveCurrentPieceDown() {
@@ -149,8 +156,8 @@ function moveCurrentPieceDown() {
     m_currentPiece.lock();
     removeFullRows();
     getNewPiece();
-    m_down_held = false; // make the player press down again if currently holding down
-    m_ARE = 12; // 10 frame delay before next piece
+    m_down_held = false; // Make the player press down again if currently holding down
+    m_ARE = 12; // Frame delay before next piece
   } else {
     // Move down as usual
     m_currentPiece.moveDown();

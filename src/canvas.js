@@ -48,7 +48,7 @@ Canvas.prototype.drawNextBox = function (nextPiece) {
 
 Canvas.prototype.drawPieceStatusString = function (displayString) {
   const startX = (COLUMN + 1) * SQUARE_SIZE;
-  const startY = 8 * SQUARE_SIZE;
+  const startY = SQUARE_SIZE;
 
   // Clear previous text
   ctx.fillStyle = "WHITE";
