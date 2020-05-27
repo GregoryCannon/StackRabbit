@@ -1,5 +1,5 @@
-export const ROW = 20;
-export const COLUMN = 10;
+export const NUM_ROW = 20;
+export const NUM_COLUMN = 10;
 export const SQUARE_SIZE = 28;
 
 export const VACANT = "black"; // color of an empty square

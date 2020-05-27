@@ -1,4 +1,4 @@
-import { ROW, COLUMN, VACANT } from "./constants.js";
+import { NUM_ROW, NUM_COLUMN, VACANT } from "./constants.js";
 import { debugPrintBoard } from "./utils.js";
 
 // The Object Piece
@@ -134,7 +134,7 @@ Piece.prototype.collision = function (x, y, piece) {
       let newY = this.y + r + y;
 
       // conditions
-      if (newX < 0 || newX >= COLUMN || newY >= ROW) {
+      if (newX < 0 || newX >= NUM_COLUMN || newY >= NUM_ROW) {
         return true;
       }
       // skip newY < 0; board[-1] will crush our game

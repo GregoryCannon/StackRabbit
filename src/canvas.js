@@ -1,7 +1,7 @@
 const cvs = document.getElementById("main-canvas");
 const ctx = cvs.getContext("2d");
 
-import { ROW, COLUMN, SQUARE_SIZE } from "./constants.js";
+import { NUM_ROW, NUM_COLUMN, SQUARE_SIZE } from "./constants.js";
 
 export function Canvas(board) {
   this.board = board;
@@ -19,7 +19,7 @@ Canvas.prototype.drawSquare = function (x, y, color) {
 // draw the next box
 Canvas.prototype.drawNextBox = function (nextPiece) {
   // All in units of SQUARE_SIZE
-  const startX = COLUMN + 1;
+  const startX = NUM_COLUMN + 1;
   const startY = 2;
   const width = 5;
   const height = 4.5;
@@ -47,7 +47,7 @@ Canvas.prototype.drawNextBox = function (nextPiece) {
 };
 
 Canvas.prototype.drawPieceStatusString = function (displayString) {
-  const startX = (COLUMN + 1) * SQUARE_SIZE;
+  const startX = (NUM_COLUMN + 1) * SQUARE_SIZE;
   const startY = SQUARE_SIZE;
 
   // Clear previous text
@@ -62,8 +62,8 @@ Canvas.prototype.drawPieceStatusString = function (displayString) {
 
 // draw the board
 Canvas.prototype.drawBoard = function () {
-  for (let r = 0; r < ROW; r++) {
-    for (let c = 0; c < COLUMN; c++) {
+  for (let r = 0; r < NUM_ROW; r++) {
+    for (let c = 0; c < NUM_COLUMN; c++) {
       this.drawSquare(c, r, this.board[r][c]);
     }
   }

@@ -2,8 +2,8 @@ import { PieceSelector } from "./piece_selector.js";
 import { BoardLoader } from "./board_loader.js";
 import { Canvas } from "./canvas.js";
 import {
-  ROW,
-  COLUMN,
+  NUM_ROW,
+  NUM_COLUMN,
   VACANT,
   GRAVITY,
   REWARDS,
@@ -23,9 +23,9 @@ const levelSelectElement = document.getElementById("level-select");
 
 // Initial empty board
 let m_board = [];
-for (let r = 0; r < ROW; r++) {
+for (let r = 0; r < NUM_ROW; r++) {
   m_board[r] = [];
-  for (let c = 0; c < COLUMN; c++) {
+  for (let c = 0; c < NUM_COLUMN; c++) {
     m_board[r][c] = VACANT;
   }
 }
@@ -99,9 +99,9 @@ function onGameOver(argument) {
 
 function removeFullRows() {
   let numRowsCleared = 0;
-  for (let r = 0; r < ROW; r++) {
+  for (let r = 0; r < NUM_ROW; r++) {
     let isRowFull = true;
-    for (let c = 0; c < COLUMN; c++) {
+    for (let c = 0; c < NUM_COLUMN; c++) {
       if (m_board[r][c] == VACANT) {
         isRowFull = false;
         break;
@@ -111,12 +111,12 @@ function removeFullRows() {
       numRowsCleared += 1;
       // Move down all the rows above it
       for (let y = r; y > 1; y--) {
-        for (let c = 0; c < COLUMN; c++) {
+        for (let c = 0; c < NUM_COLUMN; c++) {
           m_board[y][c] = m_board[y - 1][c];
         }
       }
       // Clear out the very top row
-      for (let c = 0; c < COLUMN; c++) {
+      for (let c = 0; c < NUM_COLUMN; c++) {
         m_board[0][c] = VACANT;
       }
     }

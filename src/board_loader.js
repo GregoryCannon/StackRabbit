@@ -1,7 +1,7 @@
 const pasteAreaElement = document.getElementById("paste-area");
 const pastedImageElement = document.getElementById("pasted-image");
 
-import { ROW, COLUMN, VACANT } from "./constants.js";
+import { NUM_ROW, NUM_COLUMN, VACANT } from "./constants.js";
 
 let m_loadedStateFromImage = false;
 let m_loadedBoard = [];
@@ -16,8 +16,8 @@ export function BoardLoader(board, canvas) {
 BoardLoader.prototype.resetBoard = function () {
   // Reload the board from the image, or reset the board
   // (have to iterate manually (not use this.board = ) to preserve the board reference that's passed around to all the files
-  for (let r = 0; r < ROW; r++) {
-    for (let c = 0; c < COLUMN; c++) {
+  for (let r = 0; r < NUM_ROW; r++) {
+    for (let c = 0; c < NUM_COLUMN; c++) {
       this.board[r][c] = m_loadedStateFromImage ? m_loadedBoard[r][c] : VACANT;
     }
   }
@@ -40,8 +40,8 @@ BoardLoader.prototype.getBoardStateFromImage = function (img) {
   const rgbEmptyThreshold = 60; // If all three channels are <60/255, then the cell is "empty"
 
   // Iterate over the image and read the square colors into the board
-  for (let c = 0; c < COLUMN; c++) {
-    for (let r = 0; r < ROW; r++) {
+  for (let c = 0; c < NUM_COLUMN; c++) {
+    for (let r = 0; r < NUM_ROW; r++) {
       const x = Math.round((c + 0.5) * SQ);
       const y = Math.round((r + 0.5) * SQ);
       const pixelData = context.getImageData(x, y, 1, 1).data;
@@ -68,14 +68,14 @@ BoardLoader.prototype.getBoardStateFromImage = function (img) {
 function clearFloatingPiece(board) {
   // Start from the bottom, look for an empty row, and then clear all rows above that
   let startedClearing = false;
-  for (let r = ROW - 1; r >= 0; r--) {
+  for (let r = NUM_ROW - 1; r >= 0; r--) {
     if (startedClearing) {
-      for (let c = 0; c < COLUMN; c++) {
+      for (let c = 0; c < NUM_COLUMN; c++) {
         board[r][c] = VACANT;
       }
     } else {
       let rowEmpty = true;
-      for (let c = 0; c < COLUMN; c++) {
+      for (let c = 0; c < NUM_COLUMN; c++) {
         if (board[r][c] != VACANT) {
           rowEmpty = false;
           break;
