@@ -1,90 +1,38 @@
 <html>
+    <head>
+        <title>Tetris Game JS</title>
+        <link href="index.css" rel="stylesheet" type="text/css">
+    </head>
 
-<head>
-    <title>Tetris Game JS</title>
-    <style>
-        #score {
-            font-size: 24px;
-            display: inline-block;
-        }
+    <body>
+        <h1 class="standard">NES Tetris Trainer</h1>
+        <h2 class="standard" id="header-text"></h2>
 
-        #credits {
-            font-family: monospace;
-        }
+        <div id="main-panel">
+            <div>
+                <p class="standard" id="score">Score: 0</p>
 
-        #header-text {
-            min-height: 24px
-        }
+                <form id="game-options-form">
+                    <div>
+                        <input id="level-select" type="number" placeholder="Select a starting level"></input>
+                        <button id="start-game">Start!</button>
+                    </div>
 
-        #main-panel {
-            display: flex;
-            flex-direction: row;
-        }
+                    <textarea id="piece-sequence" placeholder="Enter a piece sequence..."></textarea>
+                </form>
+                
+                <textarea id="paste-area" placeholder="Paste Image Here"></textarea>
+                <img id="pasted-image" />
 
-        #main-canvas {
-            display: block;
-            margin: 0 auto;
-        }
-
-        #dummy-canvas {
-            display: none;
-        }
-
-        #level-select {
-            font-size: 18px;
-        }
-
-        #start-game {
-            font-size: 24pd;
-        }
-
-        #pasted-image {
-            display: none;
-        }
-
-        .standard {
-            font-family: monospace;
-            font-weight: bold;
-            text-align: center;
-        }
-
-        button {
-            padding: 5px;
-        }
-    </style>
-</head>
-
-<body>
-    <h1 class="standard">NES Tetris Trainer</h1>
-    <h2 class="standard" id="header-text"></h2>
-
-    <div id="main-panel">
-        <div>
-            <p class="standard" id="score">Score: 0</p>
-
-            <br>
-            <input id="level-select" placeholder="Select a starting level"></input>
-            <button id="start-game">Start!</button>
-
-            <br>
-            <textarea id="piece-sequence" placeholder="Enter a piece sequence..."></textarea>
-            <textarea id="paste-area" placeholder="Paste Image Here"></textarea>
-            <br>
-            <img id="pasted-image" />
-             
-            <br>
-            <h6 id="debug"></h6>
-            <canvas id="dummy-canvas"></canvas>
-
+                <h6 id="debug"></h6>
+                <canvas id="dummy-canvas"></canvas>
+            </div>
+            <canvas id="main-canvas" width="500" height="560"></canvas>
         </div>
+        <script src="dist/main.js"></script>
 
-            <canvas id="main-canvas" width="560" height="560"></canvas>
-    </div>
-    <script src="dist/main.js"></script>
-
-    <p id="credits">Developed by Gregory Cannon, based on the engine by <a target="_blank"
-            href="https://www.youtube.com/c/codeexplained">Code Explained</a>. Source code available on <a
-            href="https://github.com/GregoryCannon/TetrisTrainer">Github</a>.</p>
-</body>
-
+        <p id="credits">Developed by Gregory Cannon, based on the engine by <a target="_blank"
+                href="https://www.youtube.com/c/codeexplained">Code Explained</a>. Source code available on <a
+                href="https://github.com/GregoryCannon/TetrisTrainer">Github</a>.</p>
+    </body>
 </html>

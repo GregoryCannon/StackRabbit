@@ -4,14 +4,16 @@
   "description": "tetris trainer",
   "main": "src/tetris.js",
   "scripts": {
-    "start": "prettier src/*.js --write && webpack --progress --mode=development",
+    "start": "prettier src/*.js --write && webpack --progress --mode=development && webpack-dev-server",
+    "make": "prettier src/*.js --write && webpack --progress --mode=production",
     "format": "prettier --write \"src/**/*.+(js|jsx|json|css|md)\""
   },
   "author": "",
   "license": "ISC",
   "devDependencies": {
     "webpack": "^4.43.0",
-    "webpack-cli": "^3.3.11"
+    "webpack-cli": "^3.3.11",
+    "webpack-dev-server": "^3.11.0"
   },
   "dependencies": {
     "prettier": "^2.0.5"
