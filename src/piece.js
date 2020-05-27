@@ -1,5 +1,4 @@
 import { ROW, COLUMN, VACANT } from "./constants.js";
-import { debugPrintBoard } from "./utils.js";
 
 // The Object Piece
 export function Piece(pieceData, board, canvas, onGameOver) {
