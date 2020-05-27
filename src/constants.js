@@ -7,6 +7,13 @@ export const RED_COLOR = "red";
 export const BLUE_COLOR = "#2105f2";
 export const WHITE_COLOR = "white";
 
+export const Direction = Object.freeze({
+  LEFT: 1,
+  RIGHT: 2,
+  DOWN: 3,
+  UP: 4,
+});
+
 // How many points for X lines at a time (before scaling by level)
 export const REWARDS = {
   1: 40,
@@ -47,4 +54,3 @@ export const GameState = {
 
 export const DAS_TRIGGER = 16;
 export const DAS_CHARGED_FLOOR = 10;
-export const DAS_DOWN_CHARGED = 14; // Use the DAS counter to soft drop every 2 frames
