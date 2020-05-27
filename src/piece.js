@@ -43,6 +43,21 @@ Piece.prototype.unDraw = function () {
   this.fill(VACANT);
 };
 
+// Get the height of the lowest row that the piece occupies
+Piece.prototype.getHeightFromBottom = function () {
+  let maxY = 0;
+  for (let r = 0; r < this.activeTetromino.length; r++) {
+    for (let c = 0; c < this.activeTetromino.length; c++) {
+      // If the square is occupied by the piece, update the max
+      if (this.activeTetromino[r][c]) {
+        this.canvas.drawSquare(this.x + c, this.y + r, color);
+        maxY = Math.max(maxRow, this.y + r);
+      }
+    }
+  }
+  return NUM_ROW - maxY;
+}
+
 Piece.prototype.shouldLock = function () {
   return this.collision(0, 1, this.activeTetromino);
 };
