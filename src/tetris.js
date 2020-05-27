@@ -349,7 +349,10 @@ function gameLoop() {
 
 document.addEventListener("keydown", keyDownListener);
 document.addEventListener("keyup", keyUpListener);
-gameOptionsForm.addEventListener("submit", (e) => {e.preventDefault(); startGame();});
+gameOptionsForm.addEventListener("submit", (e) => {
+  e.preventDefault();
+  startGame();
+});
 
 resetLocalVariables();
 m_canvas.drawBoard();
