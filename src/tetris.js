@@ -15,7 +15,7 @@ import { InputManager } from "./input_manager.js";
 const scoreTextElement = document.getElementById("score");
 const headerTextElement = document.getElementById("header-text");
 const debugTextElement = document.getElementById("debug");
-const startGameButton = document.getElementById("start-game");
+const gameOptionsForm = document.getElementById("game-options-form");
 const restartGameButton = document.getElementById("restart-game");
 const levelSelectElement = document.getElementById("level-select");
 
@@ -257,7 +257,12 @@ document.addEventListener("keyup", (e) => {
   m_inputManager.keyUpListener(e);
 });
 
-startGameButton.addEventListener("click", startGame);
+document.addEventListener("keydown", keyDownListener);
+document.addEventListener("keyup", keyUpListener);
+gameOptionsForm.addEventListener("submit", (e) => {
+  e.preventDefault();
+  startGame();
+});
 
 resetLocalVariables();
 m_canvas.drawBoard();
