@@ -2,6 +2,10 @@
     box-sizing: border-box;
 }
 
+body {
+    min-width: 800px;
+}
+
 button {
     padding: 10px;
     background-color: orange;
@@ -21,6 +25,14 @@ button:focus {
 button:active {
     transform: translate(0px, 1px);
     outline: none;
+}
+
+input, textarea {
+    padding-left: 10px;
+}
+
+textarea {
+    padding-top: 5px;
 }
 
 .standard {
@@ -56,13 +68,29 @@ button:active {
     display: none;
 }
 
+#game-options-form {
+    margin: 0;
+}
+
+#game-options-form > * {
+    margin-bottom: 5px;
+}
+
 #level-select {
     font-size: 18px;
-    height: 50px;
+    height: 40px;
+    width: auto;
+    border-radius: 3px;
+    border: solid 1px gray;
 }
 
 #piece-sequence {
-    width: 80%;
+    width: 100%;
+    border-radius: 3px;
+}
+#paste-area {
+    width: 100%;
+    border-radius: 3px;
 }
 
 #pasted-image {
