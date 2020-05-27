@@ -17,7 +17,7 @@ import { Piece } from "./piece.js";
 const scoreTextElement = document.getElementById("score");
 const headerTextElement = document.getElementById("header-text");
 const debugTextElement = document.getElementById("debug");
-const startGameButton = document.getElementById("start-game");
+const gameOptionsForm = document.getElementById("game-options-form");
 const restartGameButton = document.getElementById("restart-game");
 const levelSelectElement = document.getElementById("level-select");
 
@@ -349,7 +349,7 @@ function gameLoop() {
 
 document.addEventListener("keydown", keyDownListener);
 document.addEventListener("keyup", keyUpListener);
-startGameButton.addEventListener("click", startGame);
+gameOptionsForm.addEventListener("submit", (e) => {e.preventDefault(); startGame();});
 
 resetLocalVariables();
 m_canvas.drawBoard();

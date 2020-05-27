@@ -1,3 +1,34 @@
+* {
+    box-sizing: border-box;
+}
+
+button {
+    padding: 10px;
+    background-color: orange;
+    border: none;
+    font-size: 16pt;
+    border-radius: 5px;
+}
+
+button:hover {
+    transform: translate(0px, -1px);
+}
+
+button:focus {
+    outline: none;
+}
+
+button:active {
+    transform: translate(0px, 1px);
+    outline: none;
+}
+
+.standard {
+    font-family: monospace;
+    font-weight: bold;
+    text-align: center;
+}
+
 #score {
     font-size: 24px;
     display: inline-block;
@@ -27,22 +58,13 @@
 
 #level-select {
     font-size: 18px;
+    height: 50px;
 }
 
-#start-game {
-    font-size: 24pd;
+#piece-sequence {
+    width: 80%;
 }
 
 #pasted-image {
     display: none;
-}
-
-.standard {
-    font-family: monospace;
-    font-weight: bold;
-    text-align: center;
-}
-
-button {
-    padding: 5px;
 }
