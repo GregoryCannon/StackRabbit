@@ -256,8 +256,6 @@ document.addEventListener("keyup", (e) => {
   m_inputManager.keyUpListener(e);
 });
 
-document.addEventListener("keydown", keyDownListener);
-document.addEventListener("keyup", keyUpListener);
 gameOptionsForm.addEventListener("submit", (e) => {
   e.preventDefault();
   startGame();
