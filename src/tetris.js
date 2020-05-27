@@ -232,7 +232,6 @@ function getGameState() {
 }
 
 function getARE() {
-  console.log("Retrieving ARE form getter");
   return m_ARE;
 }
 

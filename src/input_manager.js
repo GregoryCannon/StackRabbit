@@ -36,7 +36,6 @@ export function InputManager(
   this.rotateRightFunc = rotateRightFunc;
   this.getGameStateFunc = getGameStateFunc;
   this.getAREFunc = getAREFunc;
-  console.log("getGameStateFunc = ", getGameStateFunc);
 }
 
 InputManager.prototype.handleInputsThisFrame = function () {
@@ -85,7 +84,6 @@ InputManager.prototype.handleHeldDirection = function (direction) {
       }
     } else {
       // Wall charge
-      console.log("wall charge");
       this.dasCount = 16;
     }
   }
