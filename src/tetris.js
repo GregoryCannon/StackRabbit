@@ -16,6 +16,7 @@ const scoreTextElement = document.getElementById("score");
 const headerTextElement = document.getElementById("header-text");
 const debugTextElement = document.getElementById("debug");
 const gameOptionsForm = document.getElementById("game-options-form");
+const startGameButton = document.getElementById("start-game");
 const restartGameButton = document.getElementById("restart-game");
 const levelSelectElement = document.getElementById("level-select");
 
@@ -142,7 +143,7 @@ function startGame() {
 
   // Parse the level
   const levelSelected = parseInt(levelSelectElement.value);
-  if (Number.isInteger(levelSelected)) {
+  if (Number.isInteger(levelSelected) && levelSelected > 0) {
     m_level = levelSelected;
   } else {
     m_level = 0;
@@ -258,6 +259,7 @@ document.addEventListener("keyup", (e) => {
 
 gameOptionsForm.addEventListener("submit", (e) => {
   e.preventDefault();
+  startGameButton.focus();
   startGame();
 });
 
