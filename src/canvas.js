@@ -41,7 +41,7 @@ Canvas.prototype.drawNextBox = function (nextPiece) {
   const height = 4.5;
   const pieceStartX = startX + 0.5;
   const pieceStartY = startY + 0.5;
-  const color = COLOR_PALETTE[nextPiece.colorId][GetLevel()];
+  const color = COLOR_PALETTE[nextPiece.colorId][GetLevel()%10];
   // background
   ctx.fillStyle = "BLACK";
   ctx.fillRect(
@@ -83,7 +83,7 @@ Canvas.prototype.drawBoard = function () {
     for (let c = 0; c < NUM_COLUMN; c++) {
       let square = this.board[r][c];
       if(square !== 0) {
-        this.drawSquare(c, r, COLOR_PALETTE[square][level], square === 1);
+        this.drawSquare(c, r, COLOR_PALETTE[square][level%10], square === 1);
         
       } else {
         this.drawSquare(c, r, VACANT, square === 1);

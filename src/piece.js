@@ -32,7 +32,7 @@ Piece.prototype.fill = function (colorId) {
       // Draw only occupied squares
       if (this.activeTetromino[r][c]) {
         if (colorId !== 0) {
-          this.canvas.drawSquare(this.x + c, this.y + r, COLOR_PALETTE[colorId][level], border);
+          this.canvas.drawSquare(this.x + c, this.y + r, COLOR_PALETTE[colorId][level%10], border);
         } else {
           this.canvas.drawSquare(this.x + c, this.y + r, VACANT, border);
         }

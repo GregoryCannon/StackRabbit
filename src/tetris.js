@@ -192,7 +192,7 @@ function gameLoop() {
       }
     }
   }
-  requestAnimationFrame(gameLoop);
+  window.setTimeout(gameLoop, 17);
 }
 
 /** Delegate functions to controls code */
