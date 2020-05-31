@@ -53,7 +53,7 @@ Canvas.prototype.drawNextBox = function (nextPiece) {
 
   // draw the piece
   for (let r = 0; r < nextPiece.activeTetromino.length; r++) {
-    for (let c = 0; c < nextPiece.activeTetromino.length; c++) {
+    for (let c = 0; c < nextPiece.activeTetromino[r].length; c++) {
       // Draw only occupied squares
       if (nextPiece.activeTetromino[r][c]) {
         this.drawSquare(pieceStartX + c, pieceStartY + r, color);

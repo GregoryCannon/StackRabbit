@@ -28,7 +28,7 @@ Piece.prototype.fill = function (colorId) {
     border = true;
   }
   for (let r = 0; r < this.activeTetromino.length; r++) {
-    for (let c = 0; c < this.activeTetromino.length; c++) {
+    for (let c = 0; c < this.activeTetromino[r].length; c++) {
       // Draw only occupied squares
       if (this.activeTetromino[r][c]) {
         if (colorId !== 0) {
@@ -55,7 +55,7 @@ Piece.prototype.unDraw = function () {
 Piece.prototype.getHeightFromBottom = function () {
   let maxY = 0;
   for (let r = 0; r < this.activeTetromino.length; r++) {
-    for (let c = 0; c < this.activeTetromino.length; c++) {
+    for (let c = 0; c < this.activeTetromino[r].length; c++) {
       // If the square is occupied by the piece, update the max
       if (this.activeTetromino[r][c]) {
         this.canvas.drawSquare(this.x + c, this.y + r, color);
@@ -125,7 +125,7 @@ Piece.prototype.rotate = function (directionInversed) {
 // Lock the piece in place
 Piece.prototype.lock = function () {
   for (let r = 0; r < this.activeTetromino.length; r++) {
-    for (let c = 0; c < this.activeTetromino.length; c++) {
+    for (let c = 0; c < this.activeTetromino[r].length; c++) {
       // we skip the vacant squares
       if (!this.activeTetromino[r][c]) {
         continue;
@@ -147,7 +147,7 @@ Piece.prototype.lock = function () {
 // Collision fucntion
 Piece.prototype.collision = function (x, y, piece) {
   for (let r = 0; r < piece.length; r++) {
-    for (let c = 0; c < piece.length; c++) {
+    for (let c = 0; c < piece[r].length; c++) {
       // if the square is empty, we skip it
       if (!piece[r][c]) {
         continue;
