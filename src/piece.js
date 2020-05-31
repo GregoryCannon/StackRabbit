@@ -55,7 +55,7 @@ Piece.prototype.getHeightFromBottom = function () {
     }
   }
   return NUM_ROW - maxY;
-}
+};
 
 Piece.prototype.shouldLock = function () {
   return this.collision(0, 1, this.activeTetromino);
