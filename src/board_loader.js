@@ -2,6 +2,7 @@ const pasteAreaElement = document.getElementById("paste-area");
 const pastedImageElement = document.getElementById("pasted-image");
 
 import { NUM_ROW, NUM_COLUMN, VACANT } from "./constants.js";
+import { SquareState } from "./tetris.js"
 
 let m_loadedStateFromImage = false;
 let m_loadedBoard = [];
@@ -18,7 +19,7 @@ BoardLoader.prototype.resetBoard = function () {
   // (have to iterate manually (not use this.board = ) to preserve the board reference that's passed around to all the files
   for (let r = 0; r < NUM_ROW; r++) {
     for (let c = 0; c < NUM_COLUMN; c++) {
-      this.board[r][c] = m_loadedStateFromImage ? m_loadedBoard[r][c] : VACANT;
+      this.board[r][c] = m_loadedStateFromImage ? m_loadedBoard[r][c] : SquareState.empty;
     }
   }
 };
@@ -48,9 +49,9 @@ BoardLoader.prototype.getBoardStateFromImage = function (img) {
       if (
         Math.max(pixelData[0], pixelData[1], pixelData[2]) > rgbEmptyThreshold
       ) {
-        this.board[r][c] = "rgba(" + pixelData.join(",") + ")";
+        this.board[r][c] = SquareState.color1; //"rgba(" + pixelData.join(",") + ")";
       } else {
-        this.board[r][c] = VACANT;
+        this.board[r][c] = SquareState.empty;
       }
       context.fillStyle = "GREEN";
       context.fillRect(x, y, 5, 5);
@@ -71,12 +72,12 @@ function clearFloatingPiece(board) {
   for (let r = NUM_ROW - 1; r >= 0; r--) {
     if (startedClearing) {
       for (let c = 0; c < NUM_COLUMN; c++) {
-        board[r][c] = VACANT;
+        board[r][c] = SquareState.empty;
       }
     } else {
       let rowEmpty = true;
       for (let c = 0; c < NUM_COLUMN; c++) {
-        if (board[r][c] != VACANT) {
+        if (board[r][c] != SquareState.empty) {
           rowEmpty = false;
           break;
         }

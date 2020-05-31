@@ -7,7 +7,19 @@ export const RED_COLOR = "red";
 export const BLUE_COLOR = "#2105f2";
 export const WHITE_COLOR = "white";
 
-// color 1 is WHITE_COLOR, which is the main color of I, T, and O
+// color 1 is COLOR_3 with white in the center, which is used for I, T, and O
+export const COLOR_1 = {
+  0: "rgb(0,88,248)",
+  1: "rgb(0,168,0)",
+  2: "rgb(216,0,204)",
+  3: "rgb(0,88,248)",
+  4: "rgb(228,0,88",
+  5: "rgb(88,248,152)",
+  6: "rgb(248,56,0)",
+  7: "rgb(104,68,252)",
+  8: "rgb(0,88,248)",
+  9: "rgb(248,56,0)",
+};
 // color 2 is the main color of L and Z
 export const COLOR_2 = {
   0: "rgb(60,188,252)",
@@ -20,19 +32,15 @@ export const COLOR_2 = {
   7: "rgb(168,0,32)",
   8: "rgb(248,56,0)",
   9: "rgb(252,160,68)",
-}
+};
 // COLOR_3 is the main color of J and S
-export const COLOR_3 = {
-  0: "rgb(0,88,248)",
-  1: "rgb(0,168,0)",
-  2: "rgb(216,0,204)",
-  3: "rgb(0,88,248)",
-  4: "rgb(228,0,88",
-  5: "rgb(88,248,152)",
-  6: "rgb(248,56,0)",
-  7: "rgb(104,68,252)",
-  8: "rgb(0,88,248)",
-  9: "rgb(248,56,0)",
+// It is the same as COLOR_1, but fills the whole square
+export const COLOR_3 = Object.assign(COLOR_1);
+
+export const COLOR_PALETTE = {
+  1: COLOR_1,
+  2: COLOR_2,
+  3: COLOR_3
 }
 
 export const Direction = Object.freeze({
@@ -71,7 +79,7 @@ export const GRAVITY = {
   17: 3,
   18: 3,
   19: 2,
-  29: 1
+  29: 1,
 };
 
 export const GameState = {

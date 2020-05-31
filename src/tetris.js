@@ -21,11 +21,18 @@ const restartGameButton = document.getElementById("restart-game");
 const levelSelectElement = document.getElementById("level-select");
 
 // Initial empty board
+// 0 is empty space, 1 is T piece color, 2 is L piece color, 3 is J piece color
+export const SquareState = {
+  empty: 0,
+  color1: 1,
+  color2: 2,
+  color3: 3,
+}
 let m_board = [];
 for (let r = 0; r < NUM_ROW; r++) {
   m_board[r] = [];
   for (let c = 0; c < NUM_COLUMN; c++) {
-    m_board[r][c] = VACANT;
+    m_board[r][c] = SquareState.empty;
   }
 }
 let m_inputManager;
@@ -40,6 +47,15 @@ let m_gameState;
 let m_score;
 let m_framecount;
 let m_ARE;
+
+export const TriggerGameOver = () => {
+  onGameOver();
+}
+
+const onGameOver = () => {
+  m_gameState = GameState.GAME_OVER;
+  refreshHeaderText();
+}
 
 function refreshHeaderText() {
   let newText = "";
@@ -60,13 +76,12 @@ function refreshHeaderText() {
   headerTextElement.innerText = newText;
 }
 
-function refreshDebugText() {
-  debugTextElement.innerText = m_inputManager.getDebugText();
+export const GetLevel = () => {
+  return m_level;
 }
 
-function onGameOver() {
-  m_gameState = GameState.GAME_OVER;
-  refreshHeaderText();
+function refreshDebugText() {
+  debugTextElement.innerText = m_inputManager.getDebugText();
 }
 
 function removeFullRows() {
@@ -74,7 +89,7 @@ function removeFullRows() {
   for (let r = 0; r < NUM_ROW; r++) {
     let isRowFull = true;
     for (let c = 0; c < NUM_COLUMN; c++) {
-      if (m_board[r][c] == VACANT) {
+      if (m_board[r][c] == SquareState.empty) {
         isRowFull = false;
         break;
       }
@@ -89,7 +104,7 @@ function removeFullRows() {
       }
       // Clear out the very top row
       for (let c = 0; c < NUM_COLUMN; c++) {
-        m_board[0][c] = VACANT;
+        m_board[0][c] = SquareState.empty;
       }
     }
   }
@@ -116,8 +131,7 @@ function getNewPiece() {
   m_nextPiece = new Piece(
     m_pieceSelector.chooseNextPiece(m_currentPiece.id),
     m_board,
-    m_canvas,
-    onGameOver
+    m_canvas
   );
   m_canvas.drawNextBox(m_nextPiece);
 }
@@ -153,8 +167,7 @@ function startGame() {
   m_nextPiece = new Piece(
     m_pieceSelector.chooseNextPiece(""),
     m_board,
-    m_canvas,
-    onGameOver
+    m_canvas
   );
   getNewPiece();
 

@@ -1,13 +1,13 @@
-import { NUM_ROW, NUM_COLUMN, VACANT } from "./constants.js";
+import { NUM_ROW, NUM_COLUMN, VACANT, COLOR_PALETTE } from "./constants.js";
+import { GetLevel, TriggerGameOver } from "./tetris";
 
 // The Object Piece
 export function Piece(pieceData, board, canvas, onGameOver) {
   this.tetromino = pieceData[0];
-  this.color = pieceData[1];
+  this.colorId = pieceData[1];
   this.id = pieceData[2];
   this.board = board;
   this.canvas = canvas;
-  this.onGameOver = onGameOver;
 
   this.tetrominoN = 0; // Start from the first rotation
   this.activeTetromino = this.tetromino[this.tetrominoN];
@@ -21,12 +21,21 @@ Piece.prototype.equals = function (otherPiece) {
 };
 
 // fill function
-Piece.prototype.fill = function (color) {
+Piece.prototype.fill = function (colorId) {
+  let border = false
+  const level = GetLevel();
+  if(this.id === "T" || this.id === "O" || this.id === "I") {
+    border = true;
+  }
   for (let r = 0; r < this.activeTetromino.length; r++) {
     for (let c = 0; c < this.activeTetromino.length; c++) {
       // Draw only occupied squares
       if (this.activeTetromino[r][c]) {
-        this.canvas.drawSquare(this.x + c, this.y + r, color);
+        if (colorId !== 0) {
+          this.canvas.drawSquare(this.x + c, this.y + r, COLOR_PALETTE[colorId][level], border);
+        } else {
+          this.canvas.drawSquare(this.x + c, this.y + r, VACANT, border);
+        }
       }
     }
   }
@@ -34,12 +43,12 @@ Piece.prototype.fill = function (color) {
 
 // draw a piece to the board
 Piece.prototype.draw = function () {
-  this.fill(this.color);
+  this.fill(this.colorId);
 };
 
 // undraw a piece
 Piece.prototype.unDraw = function () {
-  this.fill(VACANT);
+  this.fill(0);
 };
 
 // Get the height of the lowest row that the piece occupies
@@ -123,11 +132,11 @@ Piece.prototype.lock = function () {
       }
       // pieces to lock on top = game over
       if (this.y + r < 0) {
-        this.onGameOver();
+        TriggerGameOver()
         break;
       }
       // we lock the piece
-      this.board[this.y + r][this.x + c] = this.color;
+      this.board[this.y + r][this.x + c] = this.colorId;
     }
   }
 
@@ -156,7 +165,7 @@ Piece.prototype.collision = function (x, y, piece) {
         continue;
       }
       // check if there is a locked piece alrady in place
-      if (this.board[newY][newX] != VACANT) {
+      if (this.board[newY][newX] != 0) {
         return true;
       }
     }

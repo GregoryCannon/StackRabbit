@@ -1,5 +1,3 @@
-import { VACANT, RED_COLOR, BLUE_COLOR, WHITE_COLOR } from "./constants.js";
-
 const PIECE_I = [
   [
     [0, 0, 0, 0],
@@ -132,22 +130,16 @@ const PIECE_Z = [
 ];
 
 // The piece list, with colors and letter identifiers
-export const PIECE_LIST = [
-  [PIECE_Z, "red", "Z"],
-  [PIECE_S, "blue", "S"],
-  [PIECE_T, "white", "T"],
-  [PIECE_O, "white", "O"],
-  [PIECE_L, "red", "L"],
-  [PIECE_I, "white", "I"],
-  [PIECE_J, "blue", "J"],
-];
 
+// [Definition, Color Set, Corresponding Letter]
 export const PIECE_LOOKUP = {
-  Z: [PIECE_Z, "red", "Z"],
-  S: [PIECE_S, "blue", "S"],
-  T: [PIECE_T, "white", "T"],
-  O: [PIECE_O, "white", "O"],
-  L: [PIECE_L, "red", "L"],
-  I: [PIECE_I, "white", "I"],
-  J: [PIECE_J, "blue", "J"],
+  Z: [PIECE_Z, 2, "Z"],
+  S: [PIECE_S, 3, "S"],
+  T: [PIECE_T, 1, "T"],
+  O: [PIECE_O, 1, "O"],
+  L: [PIECE_L, 2, "L"],
+  I: [PIECE_I, 1, "I"],
+  J: [PIECE_J, 3, "J"],
 };
+
+export const PIECE_LIST = Object.values(PIECE_LOOKUP);
