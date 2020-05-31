@@ -39,8 +39,8 @@ Canvas.prototype.drawNextBox = function (nextPiece) {
   const startY = 2;
   const width = 5;
   const height = 4.5;
-  const pieceStartX = startX + 0.5;
-  const pieceStartY = startY + 0.5;
+  const pieceStartX = nextPiece.id === "I" || nextPiece.id === "O" ? startX + 0.5 : startX;
+  const pieceStartY = nextPiece.id === "I" ? startY - 0.25 : startY + 0.25;
   const color = COLOR_PALETTE[nextPiece.colorId][GetLevel()%10];
   // background
   ctx.fillStyle = "BLACK";
@@ -52,11 +52,12 @@ Canvas.prototype.drawNextBox = function (nextPiece) {
   );
 
   // draw the piece
+  
   for (let r = 0; r < nextPiece.activeTetromino.length; r++) {
     for (let c = 0; c < nextPiece.activeTetromino[r].length; c++) {
       // Draw only occupied squares
       if (nextPiece.activeTetromino[r][c]) {
-        this.drawSquare(pieceStartX + c, pieceStartY + r, color);
+        this.drawSquare(pieceStartX + c, pieceStartY + r, color, nextPiece.colorId === 1);
       }
     }
   }
