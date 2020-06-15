@@ -96,3 +96,7 @@ textarea {
 #pasted-image {
     display: none;
 }
+
+#debug {
+    font-size: 15px;
+}
