@@ -115,7 +115,8 @@ Piece.prototype.moveLeft = function () {
 Piece.prototype.rotate = function (directionInversed) {
   const offset = directionInversed ? -1 : 1;
   const nextIndex =
-    (this.rotationIndex + offset + this.rotationList.length) % this.rotationList.length;
+    (this.rotationIndex + offset + this.rotationList.length) %
+    this.rotationList.length;
   const nextPattern = this.rotationList[nextIndex];
 
   if (!this.collision(0, 0, nextPattern)) {

@@ -15,21 +15,15 @@ export function Canvas(board) {
 }
 const borderWidth = SQUARE_SIZE / 7;
 
+/** Runs an animation to clear the lines passed in in an array.
+ * Doesn't affect the actual board, those updates come at the end of the animation. */
 Canvas.prototype.drawLineClears = function (rowsArray, frameNum) {
   if (frameNum >= 15) {
     // animation already done
     return;
   }
-  const rightColToClear = 5 + Math.floor(frameNum / 3); // 0 0 0 1 1 1 2 2 2 3 3 3 4 4 4
+  const rightColToClear = 5 + Math.floor(frameNum / 3);
   const leftColToClear = 9 - rightColToClear;
-  console.log(
-    "Line clear animation: left",
-    leftColToClear,
-    "right",
-    rightColToClear,
-    "frame",
-    frameNum
-  );
   for (const rowNum of rowsArray) {
     ctx.fillStyle = "black";
     ctx.fillRect(

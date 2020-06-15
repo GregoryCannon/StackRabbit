@@ -194,9 +194,10 @@ function gameLoop() {
         m_linesCleared,
         LINE_CLEAR_DELAY - m_lineClearDelay
       );
-    } else if (m_linesCleared.length > 0) {
-      // Done animating line clears
-      removeFullRows();
+      if (m_lineClearDelay == 0) {
+        // Clear the lines for real and shift stuff down
+        removeFullRows();
+      }
     } else if (m_ARE > 0) {
       // Waiting for next piece
       m_ARE -= 1;
@@ -214,9 +215,10 @@ function gameLoop() {
       }
     }
   }
-  // requestAnimationFrame(gameLoop);
   window.setTimeout(gameLoop, 16.33);
-  // window.setTimeout(gameLoop, 50);
+
+  // Slo-mo testing
+  // window.setTimeout(gameLoop, 50);  
 }
 
 /** Delegate functions to controls code */
@@ -233,7 +235,6 @@ function movePieceRight() {
 
 /** @returns whether the piece moved */
 function moveCurrentPieceDown() {
-  console.log("MOVING CURRENT PIECE DOWN");
   if (m_currentPiece.shouldLock()) {
     // Lock in piece and get another piece
     const lockHeight = m_currentPiece.getHeightFromBottom();
