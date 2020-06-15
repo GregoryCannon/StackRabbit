@@ -27,7 +27,7 @@ export const SquareState = {
   color1: 1,
   color2: 2,
   color3: 3,
-}
+};
 let m_board = [];
 for (let r = 0; r < NUM_ROW; r++) {
   m_board[r] = [];
@@ -50,12 +50,12 @@ let m_ARE;
 
 export const TriggerGameOver = () => {
   onGameOver();
-}
+};
 
 const onGameOver = () => {
   m_gameState = GameState.GAME_OVER;
   refreshHeaderText();
-}
+};
 
 function refreshHeaderText() {
   let newText = "";
@@ -78,7 +78,7 @@ function refreshHeaderText() {
 
 export const GetLevel = () => {
   return m_level;
-}
+};
 
 function refreshDebugText() {
   debugTextElement.innerText = m_inputManager.getDebugText();

@@ -2,7 +2,7 @@ const pasteAreaElement = document.getElementById("paste-area");
 const pastedImageElement = document.getElementById("pasted-image");
 
 import { NUM_ROW, NUM_COLUMN, VACANT } from "./constants.js";
-import { SquareState } from "./tetris.js"
+import { SquareState } from "./tetris.js";
 
 let m_loadedStateFromImage = false;
 let m_loadedBoard = [];
@@ -19,7 +19,9 @@ BoardLoader.prototype.resetBoard = function () {
   // (have to iterate manually (not use this.board = ) to preserve the board reference that's passed around to all the files
   for (let r = 0; r < NUM_ROW; r++) {
     for (let c = 0; c < NUM_COLUMN; c++) {
-      this.board[r][c] = m_loadedStateFromImage ? m_loadedBoard[r][c] : SquareState.empty;
+      this.board[r][c] = m_loadedStateFromImage
+        ? m_loadedBoard[r][c]
+        : SquareState.empty;
     }
   }
 };

@@ -1,7 +1,13 @@
 const cvs = document.getElementById("main-canvas");
 const ctx = cvs.getContext("2d");
 
-import { NUM_ROW, NUM_COLUMN, SQUARE_SIZE, VACANT, COLOR_PALETTE } from "./constants.js";
+import {
+  NUM_ROW,
+  NUM_COLUMN,
+  SQUARE_SIZE,
+  VACANT,
+  COLOR_PALETTE,
+} from "./constants.js";
 import { GetLevel } from "./tetris.js";
 
 export function Canvas(board) {
@@ -9,22 +15,42 @@ export function Canvas(board) {
 }
 const borderWidth = SQUARE_SIZE / 7;
 // draw a square
-Canvas.prototype.drawSquare = function (x, y, color, border=false) {
+Canvas.prototype.drawSquare = function (x, y, color, border = false) {
   // For I, T, and O
   ctx.fillStyle = color;
   ctx.fillRect(x * SQUARE_SIZE, y * SQUARE_SIZE, SQUARE_SIZE, SQUARE_SIZE);
 
-  if(border && color !== VACANT) {
+  if (border && color !== VACANT) {
     ctx.fillStyle = "white";
-    ctx.fillRect(x * SQUARE_SIZE + borderWidth, y * SQUARE_SIZE + borderWidth, SQUARE_SIZE - borderWidth * 2, SQUARE_SIZE - borderWidth * 2);
+    ctx.fillRect(
+      x * SQUARE_SIZE + borderWidth,
+      y * SQUARE_SIZE + borderWidth,
+      SQUARE_SIZE - borderWidth * 2,
+      SQUARE_SIZE - borderWidth * 2
+    );
   }
   // Draw 'shiny' part
-  if(color !== VACANT) {
+  if (color !== VACANT) {
     ctx.fillStyle = "white";
     ctx.fillRect(x * SQUARE_SIZE, y * SQUARE_SIZE, borderWidth, borderWidth);
-    ctx.fillRect(x * SQUARE_SIZE + borderWidth, y * SQUARE_SIZE + borderWidth, borderWidth, borderWidth);
-    ctx.fillRect(x * SQUARE_SIZE + borderWidth + borderWidth, y * SQUARE_SIZE + borderWidth, borderWidth, borderWidth);
-    ctx.fillRect(x * SQUARE_SIZE + borderWidth, y * SQUARE_SIZE + borderWidth + borderWidth, borderWidth, borderWidth);
+    ctx.fillRect(
+      x * SQUARE_SIZE + borderWidth,
+      y * SQUARE_SIZE + borderWidth,
+      borderWidth,
+      borderWidth
+    );
+    ctx.fillRect(
+      x * SQUARE_SIZE + borderWidth + borderWidth,
+      y * SQUARE_SIZE + borderWidth,
+      borderWidth,
+      borderWidth
+    );
+    ctx.fillRect(
+      x * SQUARE_SIZE + borderWidth,
+      y * SQUARE_SIZE + borderWidth + borderWidth,
+      borderWidth,
+      borderWidth
+    );
   }
   // Outline
   ctx.strokeStyle = "BLACK";
@@ -39,9 +65,10 @@ Canvas.prototype.drawNextBox = function (nextPiece) {
   const startY = 2;
   const width = 5;
   const height = 4.5;
-  const pieceStartX = nextPiece.id === "I" || nextPiece.id === "O" ? startX + 0.5 : startX;
+  const pieceStartX =
+    nextPiece.id === "I" || nextPiece.id === "O" ? startX + 0.5 : startX;
   const pieceStartY = nextPiece.id === "I" ? startY - 0.25 : startY + 0.25;
-  const color = COLOR_PALETTE[nextPiece.colorId][GetLevel()%10];
+  const color = COLOR_PALETTE[nextPiece.colorId][GetLevel() % 10];
   // background
   ctx.fillStyle = "BLACK";
   ctx.fillRect(
@@ -52,12 +79,17 @@ Canvas.prototype.drawNextBox = function (nextPiece) {
   );
 
   // draw the piece
-  
+
   for (let r = 0; r < nextPiece.activeTetromino.length; r++) {
     for (let c = 0; c < nextPiece.activeTetromino[r].length; c++) {
       // Draw only occupied squares
       if (nextPiece.activeTetromino[r][c]) {
-        this.drawSquare(pieceStartX + c, pieceStartY + r, color, nextPiece.colorId === 1);
+        this.drawSquare(
+          pieceStartX + c,
+          pieceStartY + r,
+          color,
+          nextPiece.colorId === 1
+        );
       }
     }
   }
@@ -79,13 +111,12 @@ Canvas.prototype.drawPieceStatusString = function (displayString) {
 
 // draw the board
 Canvas.prototype.drawBoard = function () {
-  const level = GetLevel();  
+  const level = GetLevel();
   for (let r = 0; r < NUM_ROW; r++) {
     for (let c = 0; c < NUM_COLUMN; c++) {
       let square = this.board[r][c];
-      if(square !== 0) {
-        this.drawSquare(c, r, COLOR_PALETTE[square][level%10], square === 1);
-        
+      if (square !== 0) {
+        this.drawSquare(c, r, COLOR_PALETTE[square][level % 10], square === 1);
       } else {
         this.drawSquare(c, r, VACANT, square === 1);
       }

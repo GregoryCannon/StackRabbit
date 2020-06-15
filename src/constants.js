@@ -40,8 +40,8 @@ export const COLOR_3 = Object.assign(COLOR_1);
 export const COLOR_PALETTE = {
   1: COLOR_1,
   2: COLOR_2,
-  3: COLOR_3
-}
+  3: COLOR_3,
+};
 
 export const Direction = Object.freeze({
   LEFT: 1,

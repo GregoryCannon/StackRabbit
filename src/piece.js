@@ -22,9 +22,9 @@ Piece.prototype.equals = function (otherPiece) {
 
 // fill function
 Piece.prototype.fill = function (colorId) {
-  let border = false
+  let border = false;
   const level = GetLevel();
-  if(this.id === "T" || this.id === "O" || this.id === "I") {
+  if (this.id === "T" || this.id === "O" || this.id === "I") {
     border = true;
   }
   for (let r = 0; r < this.activeTetromino.length; r++) {
@@ -32,7 +32,12 @@ Piece.prototype.fill = function (colorId) {
       // Draw only occupied squares
       if (this.activeTetromino[r][c]) {
         if (colorId !== 0) {
-          this.canvas.drawSquare(this.x + c, this.y + r, COLOR_PALETTE[colorId][level%10], border);
+          this.canvas.drawSquare(
+            this.x + c,
+            this.y + r,
+            COLOR_PALETTE[colorId][level % 10],
+            border
+          );
         } else {
           this.canvas.drawSquare(this.x + c, this.y + r, VACANT, border);
         }
@@ -132,7 +137,7 @@ Piece.prototype.lock = function () {
       }
       // pieces to lock on top = game over
       if (this.y + r < 0) {
-        TriggerGameOver()
+        TriggerGameOver();
         break;
       }
       // we lock the piece
