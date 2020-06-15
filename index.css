@@ -97,7 +97,7 @@ textarea {
     display: none;
 }
 
-#debug {
+#debug, #stats {
     font-size: 20px;
     text-align: right;
 }

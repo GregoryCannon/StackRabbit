@@ -17,6 +17,7 @@ import { InputManager } from "./input_manager.js";
 const scoreTextElement = document.getElementById("score");
 const headerTextElement = document.getElementById("header-text");
 const debugTextElement = document.getElementById("debug");
+const statsTextElement = document.getElementById("stats");
 const gameOptionsForm = document.getElementById("game-options-form");
 const startGameButton = document.getElementById("start-game");
 const restartGameButton = document.getElementById("restart-game");
@@ -86,6 +87,22 @@ export const GetLevel = () => {
 
 function refreshDebugText() {
   debugTextElement.innerText = m_inputManager.getDebugText();
+}
+
+function refreshStats() {
+  // Calculate parity, where the top left square is "1" and adjacent squares are "-1"
+  let parity = 0;
+  for (let r = 0; r < NUM_ROW; r++) {
+    for (let c = 0; c < NUM_COLUMN; c++) {
+      if (m_board[r][c] != SquareState.empty) {
+        // Add 1 or -1 to parity total based on the square's location
+        const cellConstant = (r + c) % 2 == 0 ? 1 : -1;
+        parity += cellConstant;
+      }
+    }
+  }
+
+  statsTextElement.innerText = "Parity: " + parity;
 }
 
 function getFullRows() {
@@ -205,6 +222,7 @@ function gameLoop() {
       m_inputManager.handleInputsThisFrame();
       m_gravityFrameCount += 1;
       refreshDebugText();
+      refreshStats();
       // Move the piece down when appropriate
       if (
         !m_inputManager.isSoftDropping() &&
@@ -218,7 +236,7 @@ function gameLoop() {
   window.setTimeout(gameLoop, 16.33);
 
   // Slo-mo testing
-  // window.setTimeout(gameLoop, 50);  
+  // window.setTimeout(gameLoop, 50);
 }
 
 /** Delegate functions to controls code */
