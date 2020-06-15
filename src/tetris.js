@@ -8,6 +8,7 @@ import {
   GRAVITY,
   REWARDS,
   GameState,
+  GameSubState
 } from "./constants.js";
 import { Piece } from "./piece.js";
 import { InputManager } from "./input_manager.js";
@@ -45,7 +46,7 @@ let m_nextPiece;
 let m_level;
 let m_gameState;
 let m_score;
-let m_framecount;
+let m_gravityFrameCount;
 let m_ARE;
 
 export const TriggerGameOver = () => {
@@ -138,7 +139,7 @@ function getNewPiece() {
 
 function resetLocalVariables() {
   m_score = 0;
-  m_framecount = 0;
+  m_gravityFrameCount = 0;
   m_ARE = 0;
   m_level = 0;
   m_gameState = GameState.START_SCREEN;
@@ -179,16 +180,20 @@ function gameLoop() {
   m_inputManager.handleInputsThisFrame();
 
   if (m_gameState == GameState.RUNNING) {
-    if (m_ARE > 0) {
+    if (m_lineClearDelay > 0){
+      // Waiting for line to clear
+      m_lineClearDelay -= 1;
+    }
+    else if (m_ARE > 0) {
       // Waiting for next piece
       m_ARE -= 1;
     } else {
-      m_framecount += 1;
+      m_gravityFrameCount += 1;
       refreshDebugText();
       // Move the piece down when appropriate
-      if (m_framecount >= GRAVITY[m_level]) {
+      if (m_gravityFrameCount >= GRAVITY[m_level]) {
         moveCurrentPieceDown();
-        m_framecount = 0;
+        m_gravityFrameCount = 0;
       }
     }
   }
@@ -213,14 +218,24 @@ function moveCurrentPieceDown() {
   if (m_currentPiece.shouldLock()) {
     // Lock in piece and get another piece
     m_currentPiece.lock();
-    removeFullRows();
-    getNewPiece();
+    
+    // Clear lines
+    const didClearLine = removeFullRows();
+    if (didClearLine){
+      m_lineClearDelay = 18;
+    }
+
+    // Get the ARE based on piece lock height
+    const pieceLockHeight = m_currentPiece.getHeightFromBottom();
     m_ARE = 12; // Frame delay before next piece
-    return false;
+
+    // Get a new piece
+    getNewPiece();
+    return false; // Return false because the piece didn't shift down
   } else {
     // Move down as usual
     m_currentPiece.moveDown();
-    return true;
+    return true; // Return true because the piece moved down
   }
 }
 
@@ -242,8 +257,18 @@ function togglePause() {
   }
 }
 
+function getGameSubState() {
+  if (m_lineClearDelay > 0){
+    return GameSubState.LINE_CLEAR;
+  } else if (m_ARE > 0){
+    return GameSubState.ARE;
+  } else {
+    return GameSubState.PIECE_ACTIVE;
+  }
+}
+
 function getGameState() {
-  return m_gameState;
+  return m_gameState
 }
 
 function getARE() {
@@ -261,6 +286,7 @@ m_inputManager = new InputManager(
   rotatePieceRight,
   togglePause,
   getGameState,
+  getGameSubState,
   getARE
 );
 

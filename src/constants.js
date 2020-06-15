@@ -89,5 +89,11 @@ export const GameState = {
   START_SCREEN: "start screen",
 };
 
+export const GameSubState = {
+  PIECE_ACTIVE: "piece active",
+  ARE: "are",
+  LINE_CLEAR: "line clear"
+}
+
 export const DAS_TRIGGER = 16;
 export const DAS_CHARGED_FLOOR = 10;

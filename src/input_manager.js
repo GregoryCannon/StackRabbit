@@ -3,6 +3,7 @@ import {
   DAS_TRIGGER,
   DAS_CHARGED_FLOOR,
   GameState,
+  GameSubState,
 } from "./constants.js";
 
 // Default control setup
@@ -20,6 +21,7 @@ export function InputManager(
   rotateRightFunc,
   togglePauseFunc,
   getGameStateFunc,
+  getGameSubStateFunc,
   getAREFunc
 ) {
   this.leftHeld = false;
@@ -35,6 +37,7 @@ export function InputManager(
   this.rotateLeftFunc = rotateLeftFunc;
   this.rotateRightFunc = rotateRightFunc;
   this.getGameStateFunc = getGameStateFunc;
+  this.getGameSubStateFunc = getGameSubStateFunc;
   this.getAREFunc = getAREFunc;
 }
 
@@ -49,7 +52,8 @@ InputManager.prototype.handleInputsThisFrame = function () {
   if (this.downHeld && !this.softDroppedLastFrame) {
     const didMove = this.moveDownFunc();
     if (!didMove) {
-      this.downHeld = false; // If it didn't move, then it locked in. Reset pushdown between pieces.
+      // If it didn't move, then it locked in. Reset pushdown between pieces.
+      this.downHeld = false;
     }
     this.softDroppedLastFrame = true;
     return;
@@ -133,12 +137,14 @@ InputManager.prototype.keyDownListener = function (event) {
 
 InputManager.prototype.keyUpListener = function (event) {
   // Piece movement - on key up
-  if (this.getGameStateFunc() == GameState.RUNNING) {
+  const mainGameState = this.getGameStateFunc();
+  const gameSubState = this.getGameSubStateFunc();
+  if (mainGameState == GameState.RUNNING) {
     if (event.keyCode == LEFT_KEYCODE) {
       this.leftHeld = false;
     } else if (event.keyCode == RIGHT_KEYCODE) {
       this.rightHeld = false;
-    } else if (event.keyCode == DOWN_KEYCODE) {
+    } else if (event.keyCode == DOWN_KEYCODE && gameSubState == GameSubState.PIECE_ACTIVE) {
       this.downHeld = false;
     }
   }
