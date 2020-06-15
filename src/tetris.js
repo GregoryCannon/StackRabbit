@@ -8,7 +8,8 @@ import {
   GRAVITY,
   REWARDS,
   GameState,
-  GameSubState
+  GameSubState,
+  LINE_CLEAR_DELAY,
 } from "./constants.js";
 import { Piece } from "./piece.js";
 import { InputManager } from "./input_manager.js";
@@ -48,6 +49,8 @@ let m_gameState;
 let m_score;
 let m_gravityFrameCount;
 let m_ARE;
+let m_lineClearDelay;
+let m_linesCleared;
 
 export const TriggerGameOver = () => {
   onGameOver();
@@ -85,8 +88,8 @@ function refreshDebugText() {
   debugTextElement.innerText = m_inputManager.getDebugText();
 }
 
-function removeFullRows() {
-  let numRowsCleared = 0;
+function getFullRows() {
+  let fullLines = [];
   for (let r = 0; r < NUM_ROW; r++) {
     let isRowFull = true;
     for (let c = 0; c < NUM_COLUMN; c++) {
@@ -96,32 +99,35 @@ function removeFullRows() {
       }
     }
     if (isRowFull) {
-      numRowsCleared += 1;
-      // Move down all the rows above it
-      for (let y = r; y > 1; y--) {
-        for (let c = 0; c < NUM_COLUMN; c++) {
-          m_board[y][c] = m_board[y - 1][c];
-        }
-      }
-      // Clear out the very top row
-      for (let c = 0; c < NUM_COLUMN; c++) {
-        m_board[0][c] = SquareState.empty;
-      }
+      fullLines.push(r);
     }
   }
-  if (numRowsCleared > 0) {
+  return fullLines;
+}
+
+function removeFullRows() {
+  for (const r of m_linesCleared) {
+    // Move down all the rows above it
+    for (let y = r; y > 1; y--) {
+      for (let c = 0; c < NUM_COLUMN; c++) {
+        m_board[y][c] = m_board[y - 1][c];
+      }
+    }
+    // Clear out the very top row (newly shifted into the screen)
+    for (let c = 0; c < NUM_COLUMN; c++) {
+      m_board[0][c] = SquareState.empty;
+    }
+  }
+  const numLinesCleared = m_linesCleared.length;
+  if (numLinesCleared > 0) {
     // Update the board
     m_canvas.drawBoard();
 
     // Update the score
-    m_score += REWARDS[numRowsCleared] * (m_level + 1);
+    m_score += REWARDS[numLinesCleared] * (m_level + 1);
     scoreTextElement.innerText = "Score: " + m_score;
-
-    // Return true to indicate lines cleared
-    return true;
   }
-  // Return false to indicate no lines cleared
-  return false;
+  m_linesCleared = [];
 }
 
 function getNewPiece() {
@@ -141,6 +147,8 @@ function resetLocalVariables() {
   m_score = 0;
   m_gravityFrameCount = 0;
   m_ARE = 0;
+  m_lineClearDelay = 0;
+  m_linesCleared = [];
   m_level = 0;
   m_gameState = GameState.START_SCREEN;
   m_inputManager.resetLocalVariables();
@@ -177,21 +185,30 @@ function startGame() {
 
 // 60 FPS game loop
 function gameLoop() {
-  m_inputManager.handleInputsThisFrame();
-
   if (m_gameState == GameState.RUNNING) {
-    if (m_lineClearDelay > 0){
-      // Waiting for line to clear
+    if (m_lineClearDelay > 0) {
+      // Still animating line clear
       m_lineClearDelay -= 1;
-    }
-    else if (m_ARE > 0) {
+      // Do subtraction so animation frames count up
+      m_canvas.drawLineClears(
+        m_linesCleared,
+        LINE_CLEAR_DELAY - m_lineClearDelay
+      );
+    } else if (m_linesCleared.length > 0) {
+      // Done animating line clears
+      removeFullRows();
+    } else if (m_ARE > 0) {
       // Waiting for next piece
       m_ARE -= 1;
     } else {
+      m_inputManager.handleInputsThisFrame();
       m_gravityFrameCount += 1;
       refreshDebugText();
       // Move the piece down when appropriate
-      if (m_gravityFrameCount >= GRAVITY[m_level]) {
+      if (
+        !m_inputManager.isSoftDropping() &&
+        m_gravityFrameCount >= GRAVITY[m_level]
+      ) {
         moveCurrentPieceDown();
         m_gravityFrameCount = 0;
       }
@@ -199,6 +216,7 @@ function gameLoop() {
   }
   // requestAnimationFrame(gameLoop);
   window.setTimeout(gameLoop, 16.33);
+  // window.setTimeout(gameLoop, 50);
 }
 
 /** Delegate functions to controls code */
@@ -215,22 +233,25 @@ function movePieceRight() {
 
 /** @returns whether the piece moved */
 function moveCurrentPieceDown() {
+  console.log("MOVING CURRENT PIECE DOWN");
   if (m_currentPiece.shouldLock()) {
     // Lock in piece and get another piece
+    const lockHeight = m_currentPiece.getHeightFromBottom();
     m_currentPiece.lock();
-    
+    getNewPiece();
+
     // Clear lines
-    const didClearLine = removeFullRows();
-    if (didClearLine){
-      m_lineClearDelay = 18;
+    m_linesCleared = getFullRows();
+    if (m_linesCleared.length > 0) {
+      m_lineClearDelay = LINE_CLEAR_DELAY; // Clear delay counts down from max val
     }
 
     // Get the ARE based on piece lock height
-    const pieceLockHeight = m_currentPiece.getHeightFromBottom();
-    m_ARE = 12; // Frame delay before next piece
+    /* ARE (frame delay before next piece) is 10 frames for 0-2 height, then an additional 
+      2 frames for each group of 4 above that.
+        E.g. 9 high would be: 10 + 2 + 2 = 14 frames */
+    m_ARE = 10 + Math.floor((lockHeight + 2) / 4) * 2;
 
-    // Get a new piece
-    getNewPiece();
     return false; // Return false because the piece didn't shift down
   } else {
     // Move down as usual
@@ -258,9 +279,9 @@ function togglePause() {
 }
 
 function getGameSubState() {
-  if (m_lineClearDelay > 0){
+  if (m_lineClearDelay > 0) {
     return GameSubState.LINE_CLEAR;
-  } else if (m_ARE > 0){
+  } else if (m_ARE > 0) {
     return GameSubState.ARE;
   } else {
     return GameSubState.PIECE_ACTIVE;
@@ -268,7 +289,7 @@ function getGameSubState() {
 }
 
 function getGameState() {
-  return m_gameState
+  return m_gameState;
 }
 
 function getARE() {

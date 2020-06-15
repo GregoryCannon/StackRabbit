@@ -14,6 +14,39 @@ export function Canvas(board) {
   this.board = board;
 }
 const borderWidth = SQUARE_SIZE / 7;
+
+Canvas.prototype.drawLineClears = function (rowsArray, frameNum) {
+  if (frameNum >= 15) {
+    // animation already done
+    return;
+  }
+  const rightColToClear = 5 + Math.floor(frameNum / 3); // 0 0 0 1 1 1 2 2 2 3 3 3 4 4 4
+  const leftColToClear = 9 - rightColToClear;
+  console.log(
+    "Line clear animation: left",
+    leftColToClear,
+    "right",
+    rightColToClear,
+    "frame",
+    frameNum
+  );
+  for (const rowNum of rowsArray) {
+    ctx.fillStyle = "black";
+    ctx.fillRect(
+      leftColToClear * SQUARE_SIZE,
+      rowNum * SQUARE_SIZE,
+      SQUARE_SIZE,
+      SQUARE_SIZE
+    );
+    ctx.fillRect(
+      rightColToClear * SQUARE_SIZE,
+      rowNum * SQUARE_SIZE,
+      SQUARE_SIZE,
+      SQUARE_SIZE
+    );
+  }
+};
+
 // draw a square
 Canvas.prototype.drawSquare = function (x, y, color, border = false) {
   // For I, T, and O

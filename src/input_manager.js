@@ -50,6 +50,7 @@ InputManager.prototype.handleInputsThisFrame = function () {
 
   // Move piece down
   if (this.downHeld && !this.softDroppedLastFrame) {
+    console.log("Soft dropping");
     const didMove = this.moveDownFunc();
     if (!didMove) {
       // If it didn't move, then it locked in. Reset pushdown between pieces.
@@ -71,6 +72,10 @@ InputManager.prototype.handleInputsThisFrame = function () {
   if (this.rightHeld) {
     this.handleHeldDirection(Direction.RIGHT);
   }
+};
+
+InputManager.prototype.isSoftDropping = function () {
+  return this.downHeld;
 };
 
 InputManager.prototype.handleHeldDirection = function (direction) {
@@ -144,7 +149,10 @@ InputManager.prototype.keyUpListener = function (event) {
       this.leftHeld = false;
     } else if (event.keyCode == RIGHT_KEYCODE) {
       this.rightHeld = false;
-    } else if (event.keyCode == DOWN_KEYCODE && gameSubState == GameSubState.PIECE_ACTIVE) {
+    } else if (
+      event.keyCode == DOWN_KEYCODE &&
+      gameSubState == GameSubState.PIECE_ACTIVE
+    ) {
       this.downHeld = false;
     }
   }
@@ -152,7 +160,11 @@ InputManager.prototype.keyUpListener = function (event) {
 
 InputManager.prototype.getDebugText = function () {
   let debugStr = "";
-  debugStr += "DAS: " + this.dasCount;
+  let dasVisualized = "";
+  for (let i = 0; i < this.dasCount; i++) {
+    dasVisualized += "x";
+  }
+  debugStr += "DAS: " + this.dasCount + "\n" + dasVisualized;
   debugStr += "\nLeftKey: " + this.leftHeld;
   debugStr += "\nRightKey: " + this.rightHeld;
   debugStr += "\nDownKey: " + this.downHeld;

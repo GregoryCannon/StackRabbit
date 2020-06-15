@@ -3,14 +3,14 @@ import { GetLevel, TriggerGameOver } from "./tetris";
 
 // The Object Piece
 export function Piece(pieceData, board, canvas, onGameOver) {
-  this.tetromino = pieceData[0];
+  this.rotationList = pieceData[0]; // All of the available rotations
   this.colorId = pieceData[1];
   this.id = pieceData[2];
   this.board = board;
   this.canvas = canvas;
 
-  this.tetrominoN = 0; // Start from the first rotation
-  this.activeTetromino = this.tetromino[this.tetrominoN];
+  this.rotationIndex = 0; // Start from the first rotation
+  this.activeTetromino = this.rotationList[this.rotationIndex];
 
   this.x = 3;
   this.y = -2;
@@ -63,8 +63,7 @@ Piece.prototype.getHeightFromBottom = function () {
     for (let c = 0; c < this.activeTetromino[r].length; c++) {
       // If the square is occupied by the piece, update the max
       if (this.activeTetromino[r][c]) {
-        this.canvas.drawSquare(this.x + c, this.y + r, color);
-        maxY = Math.max(maxRow, this.y + r);
+        maxY = Math.max(maxY, this.y + r);
       }
     }
   }
@@ -116,13 +115,13 @@ Piece.prototype.moveLeft = function () {
 Piece.prototype.rotate = function (directionInversed) {
   const offset = directionInversed ? -1 : 1;
   const nextIndex =
-    (this.tetrominoN + offset + this.tetromino.length) % this.tetromino.length;
-  const nextPattern = this.tetromino[nextIndex];
+    (this.rotationIndex + offset + this.rotationList.length) % this.rotationList.length;
+  const nextPattern = this.rotationList[nextIndex];
 
   if (!this.collision(0, 0, nextPattern)) {
     this.unDraw();
-    this.tetrominoN = nextIndex;
-    this.activeTetromino = this.tetromino[this.tetrominoN];
+    this.rotationIndex = nextIndex;
+    this.activeTetromino = this.rotationList[this.rotationIndex];
     this.draw();
   }
 };
