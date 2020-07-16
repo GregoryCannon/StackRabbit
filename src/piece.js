@@ -2,7 +2,7 @@ import { NUM_ROW, NUM_COLUMN, VACANT, COLOR_PALETTE } from "./constants.js";
 import { GetLevel, TriggerGameOver } from "./tetris";
 
 // The Object Piece
-export function Piece(pieceData, board, canvas, onGameOver) {
+export function Piece(pieceData, board, canvas) {
   this.rotationList = pieceData[0]; // All of the available rotations
   this.colorId = pieceData[1];
   this.id = pieceData[2];

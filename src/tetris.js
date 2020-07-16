@@ -22,6 +22,7 @@ const gameOptionsForm = document.getElementById("game-options-form");
 const startGameButton = document.getElementById("start-game");
 const restartGameButton = document.getElementById("restart-game");
 const levelSelectElement = document.getElementById("level-select");
+const mainCanvas = document.getElementById("main-canvas");
 
 // Initial empty board
 // 0 is empty space, 1 is T piece color, 2 is L piece color, 3 is J piece color
@@ -40,6 +41,11 @@ for (let r = 0; r < NUM_ROW; r++) {
 }
 let m_inputManager;
 let m_canvas = new Canvas(m_board);
+mainCanvas.addEventListener("mousedown", function (e) {
+  console.log("onClick");
+  m_canvas.onClick(e);
+});
+
 let m_pieceSelector = new PieceSelector();
 let m_boardLoader = new BoardLoader(m_board, m_canvas);
 let m_currentPiece;

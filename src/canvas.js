@@ -1,5 +1,5 @@
-const cvs = document.getElementById("main-canvas");
-const ctx = cvs.getContext("2d");
+const mainCanvas = document.getElementById("main-canvas");
+const context = mainCanvas.getContext("2d");
 
 import {
   NUM_ROW,
@@ -8,12 +8,26 @@ import {
   VACANT,
   COLOR_PALETTE,
 } from "./constants.js";
-import { GetLevel } from "./tetris.js";
+import { GetLevel, SquareState } from "./tetris.js";
 
 export function Canvas(board) {
   this.board = board;
 }
 const borderWidth = SQUARE_SIZE / 7;
+
+Canvas.prototype.onClick = function (event) {
+  const rect = mainCanvas.getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  const y = event.clientY - rect.top;
+  console.log("x: " + x + " y: " + y);
+  const r = Math.floor(y / SQUARE_SIZE);
+  const c = Math.floor(x / SQUARE_SIZE);
+  this.board[r][c] =
+    this.board[r][c] == SquareState.empty
+      ? SquareState.color1
+      : SquareState.empty;
+  this.drawBoard();
+};
 
 /** Runs an animation to clear the lines passed in in an array.
  * Doesn't affect the actual board, those updates come at the end of the animation. */
@@ -25,14 +39,14 @@ Canvas.prototype.drawLineClears = function (rowsArray, frameNum) {
   const rightColToClear = 5 + Math.floor(frameNum / 3);
   const leftColToClear = 9 - rightColToClear;
   for (const rowNum of rowsArray) {
-    ctx.fillStyle = "black";
-    ctx.fillRect(
+    context.fillStyle = "black";
+    context.fillRect(
       leftColToClear * SQUARE_SIZE,
       rowNum * SQUARE_SIZE,
       SQUARE_SIZE,
       SQUARE_SIZE
     );
-    ctx.fillRect(
+    context.fillRect(
       rightColToClear * SQUARE_SIZE,
       rowNum * SQUARE_SIZE,
       SQUARE_SIZE,
@@ -44,12 +58,12 @@ Canvas.prototype.drawLineClears = function (rowsArray, frameNum) {
 // draw a square
 Canvas.prototype.drawSquare = function (x, y, color, border = false) {
   // For I, T, and O
-  ctx.fillStyle = color;
-  ctx.fillRect(x * SQUARE_SIZE, y * SQUARE_SIZE, SQUARE_SIZE, SQUARE_SIZE);
+  context.fillStyle = color;
+  context.fillRect(x * SQUARE_SIZE, y * SQUARE_SIZE, SQUARE_SIZE, SQUARE_SIZE);
 
   if (border && color !== VACANT) {
-    ctx.fillStyle = "white";
-    ctx.fillRect(
+    context.fillStyle = "white";
+    context.fillRect(
       x * SQUARE_SIZE + borderWidth,
       y * SQUARE_SIZE + borderWidth,
       SQUARE_SIZE - borderWidth * 2,
@@ -58,21 +72,26 @@ Canvas.prototype.drawSquare = function (x, y, color, border = false) {
   }
   // Draw 'shiny' part
   if (color !== VACANT) {
-    ctx.fillStyle = "white";
-    ctx.fillRect(x * SQUARE_SIZE, y * SQUARE_SIZE, borderWidth, borderWidth);
-    ctx.fillRect(
+    context.fillStyle = "white";
+    context.fillRect(
+      x * SQUARE_SIZE,
+      y * SQUARE_SIZE,
+      borderWidth,
+      borderWidth
+    );
+    context.fillRect(
       x * SQUARE_SIZE + borderWidth,
       y * SQUARE_SIZE + borderWidth,
       borderWidth,
       borderWidth
     );
-    ctx.fillRect(
+    context.fillRect(
       x * SQUARE_SIZE + borderWidth + borderWidth,
       y * SQUARE_SIZE + borderWidth,
       borderWidth,
       borderWidth
     );
-    ctx.fillRect(
+    context.fillRect(
       x * SQUARE_SIZE + borderWidth,
       y * SQUARE_SIZE + borderWidth + borderWidth,
       borderWidth,
@@ -80,9 +99,19 @@ Canvas.prototype.drawSquare = function (x, y, color, border = false) {
     );
   }
   // Outline
-  ctx.strokeStyle = "BLACK";
-  ctx.strokeRect(x * SQUARE_SIZE, y * SQUARE_SIZE, SQUARE_SIZE, SQUARE_SIZE);
-  ctx.strokeRect(x * SQUARE_SIZE, y * SQUARE_SIZE, SQUARE_SIZE, SQUARE_SIZE);
+  context.strokeStyle = "BLACK";
+  context.strokeRect(
+    x * SQUARE_SIZE,
+    y * SQUARE_SIZE,
+    SQUARE_SIZE,
+    SQUARE_SIZE
+  );
+  context.strokeRect(
+    x * SQUARE_SIZE,
+    y * SQUARE_SIZE,
+    SQUARE_SIZE,
+    SQUARE_SIZE
+  );
 };
 
 // draw the next box
@@ -97,8 +126,8 @@ Canvas.prototype.drawNextBox = function (nextPiece) {
   const pieceStartY = nextPiece.id === "I" ? startY - 0.25 : startY + 0.25;
   const color = COLOR_PALETTE[nextPiece.colorId][GetLevel() % 10];
   // background
-  ctx.fillStyle = "BLACK";
-  ctx.fillRect(
+  context.fillStyle = "BLACK";
+  context.fillRect(
     startX * SQUARE_SIZE,
     startY * SQUARE_SIZE,
     width * SQUARE_SIZE,
@@ -127,13 +156,13 @@ Canvas.prototype.drawPieceStatusString = function (displayString) {
   const startY = SQUARE_SIZE;
 
   // Clear previous text
-  ctx.fillStyle = "WHITE";
-  ctx.fillRect(startX, startY - 20, 100, 40);
+  context.fillStyle = "WHITE";
+  context.fillRect(startX, startY - 20, 100, 40);
 
   // Write "x of x" text
-  ctx.font = "13px monospace";
-  ctx.fillStyle = "BLACK";
-  ctx.fillText(displayString, startX, startY, 100);
+  context.font = "13px monospace";
+  context.fillStyle = "BLACK";
+  context.fillText(displayString, startX, startY, 100);
 };
 
 // draw the board
