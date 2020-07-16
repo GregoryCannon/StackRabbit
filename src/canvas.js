@@ -160,9 +160,9 @@ Canvas.prototype.drawPieceStatusString = function (displayString) {
   context.fillRect(startX, startY - 20, 100, 40);
 
   // Write "x of x" text
-  context.font = "16px monospace";
+  context.font = "20px monospace";
   context.fillStyle = "BLACK";
-  context.fillText(displayString, startX, startY, 100);
+  context.fillText(displayString, startX, startY, 150);
 };
 
 Canvas.prototype.drawPiece = function (piece) {

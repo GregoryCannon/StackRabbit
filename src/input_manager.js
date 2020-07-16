@@ -165,9 +165,6 @@ InputManager.prototype.getDebugText = function () {
     dasVisualized += "x";
   }
   debugStr += "DAS: " + this.dasCount + "\n" + dasVisualized;
-  debugStr += "\nLeftKey: " + this.leftHeld;
-  debugStr += "\nRightKey: " + this.rightHeld;
-  debugStr += "\nDownKey: " + this.downHeld;
   return debugStr;
 };
 
