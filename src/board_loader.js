@@ -37,6 +37,7 @@ BoardLoader.prototype.getBoardStateFromImage = function (img) {
   dummy_canvas.width = img.width;
   dummy_canvas.height = img.height;
   context.drawImage(img, 0, 0);
+  this.resetBoard();
 
   const cropOffset = -0.3;
   const SQ = (img.height / 20 + img.width / 10) / 2 + cropOffset;

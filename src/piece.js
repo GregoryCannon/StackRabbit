@@ -1,5 +1,5 @@
 import { NUM_ROW, NUM_COLUMN, VACANT, COLOR_PALETTE } from "./constants.js";
-import { GetLevel, TriggerGameOver } from "./tetris";
+import { TriggerGameOver } from "./tetris";
 
 // The Object Piece
 export function Piece(pieceData, board, canvas) {
@@ -95,11 +95,7 @@ Piece.prototype.lock = function () {
       if (!this.activeTetromino[r][c]) {
         continue;
       }
-      // pieces to lock on top = game over
-      if (this.y + r < 0) {
-        TriggerGameOver();
-        break;
-      }
+
       // we lock the piece
       this.board[this.y + r][this.x + c] = this.colorId;
     }

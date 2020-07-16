@@ -13,8 +13,9 @@ export function PieceSelector() {}
   */
 
 PieceSelector.prototype.startReadingPieceSequence = function () {
-  // Get piece sequence
-  m_pieceSequenceStr = pieceListElement.value;
+  // Get piece sequence (with spaces trimmed)
+  m_pieceSequenceStr = pieceListElement.value.replace(/ /g, "");
+
   if (m_pieceSequenceStr.length > 0) {
     m_isReadingFromSequence = true;
     m_readIndex = 0;

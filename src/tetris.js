@@ -33,7 +33,7 @@ export const SquareState = {
 };
 
 // Create the initial empty board
-let m_board = []
+let m_board = [];
 for (let r = 0; r < NUM_ROW; r++) {
   m_board[r] = [];
   for (let c = 0; c < NUM_COLUMN; c++) {
@@ -69,15 +69,6 @@ export const GetCurrentPiece = () => {
 
 export const GetLevel = () => {
   return m_level;
-};
-
-export const TriggerGameOver = () => {
-  onGameOver();
-};
-
-const onGameOver = () => {
-  m_gameState = GameState.GAME_OVER;
-  refreshHeaderText();
 };
 
 function refreshHeaderText() {
@@ -161,8 +152,28 @@ function removeFullRows() {
   m_linesCleared = [];
 }
 
+function checkForGameOver() {
+  // If the current piece collides with the existing board as it spawns in, you die
+  const currentTetromino = m_currentPiece.activeTetromino;
+  for (let r = 0; r < currentTetromino.length; r++) {
+    for (let c = 0; c < currentTetromino[r].length; c++) {
+      if (
+        currentTetromino[r][c] &&
+        m_board[m_currentPiece.y + r][m_currentPiece.x + c]
+      ) {
+        m_gameState = GameState.GAME_OVER;
+        refreshHeaderText();
+        return;
+      }
+    }
+  }
+}
+
 function getNewPiece() {
   m_currentPiece = m_nextPiece;
+
+  checkForGameOver();
+
   // Piece status is drawn first since the read index increments when the next
   // piece is selected
   m_canvas.drawPieceStatusString(m_pieceSelector.getStatusString());
@@ -172,7 +183,6 @@ function getNewPiece() {
     m_canvas
   );
   m_canvas.drawPiece(m_currentPiece);
-  console.log("When new piece is added, it has y value ", m_currentPiece.y);
   m_canvas.drawNextBox(m_nextPiece);
 }
 
