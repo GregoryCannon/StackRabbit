@@ -13,47 +13,11 @@ export function Piece(pieceData, board, canvas) {
   this.activeTetromino = this.rotationList[this.rotationIndex];
 
   this.x = 3;
-  this.y = -2;
+  this.y = -1;
 }
 
 Piece.prototype.equals = function (otherPiece) {
   return this.id === otherPiece.id;
-};
-
-// fill function
-Piece.prototype.fill = function (colorId) {
-  let border = false;
-  const level = GetLevel();
-  if (this.id === "T" || this.id === "O" || this.id === "I") {
-    border = true;
-  }
-  for (let r = 0; r < this.activeTetromino.length; r++) {
-    for (let c = 0; c < this.activeTetromino[r].length; c++) {
-      // Draw only occupied squares
-      if (this.activeTetromino[r][c]) {
-        if (colorId !== 0) {
-          this.canvas.drawSquare(
-            this.x + c,
-            this.y + r,
-            COLOR_PALETTE[colorId][level % 10],
-            border
-          );
-        } else {
-          this.canvas.drawSquare(this.x + c, this.y + r, VACANT, border);
-        }
-      }
-    }
-  }
-};
-
-// draw a piece to the board
-Piece.prototype.draw = function () {
-  this.fill(this.colorId);
-};
-
-// undraw a piece
-Piece.prototype.unDraw = function () {
-  this.fill(0);
 };
 
 // Get the height of the lowest row that the piece occupies
@@ -76,9 +40,8 @@ Piece.prototype.shouldLock = function () {
 
 // move Down the piece
 Piece.prototype.moveDown = function () {
-  this.unDraw();
   this.y++;
-  this.draw();
+  this.canvas.drawBoard();
 };
 
 /**
@@ -89,9 +52,8 @@ Piece.prototype.moveRight = function () {
     return false;
   } else {
     // No collision, move the piece
-    this.unDraw();
     this.x++;
-    this.draw();
+    this.canvas.drawBoard();
     return true;
   }
 };
@@ -104,9 +66,8 @@ Piece.prototype.moveLeft = function () {
     return false;
   } else {
     // No collision, move the piece
-    this.unDraw();
     this.x--;
-    this.draw();
+    this.canvas.drawBoard();
     return true;
   }
 };
@@ -120,10 +81,9 @@ Piece.prototype.rotate = function (directionInversed) {
   const nextPattern = this.rotationList[nextIndex];
 
   if (!this.collision(0, 0, nextPattern)) {
-    this.unDraw();
     this.rotationIndex = nextIndex;
     this.activeTetromino = this.rotationList[this.rotationIndex];
-    this.draw();
+    this.canvas.drawBoard();
   }
 };
 

@@ -24,7 +24,6 @@ const restartGameButton = document.getElementById("restart-game");
 const levelSelectElement = document.getElementById("level-select");
 const mainCanvas = document.getElementById("main-canvas");
 
-// Initial empty board
 // 0 is empty space, 1 is T piece color, 2 is L piece color, 3 is J piece color
 export const SquareState = {
   empty: 0,
@@ -32,13 +31,16 @@ export const SquareState = {
   color2: 2,
   color3: 3,
 };
-let m_board = [];
+
+// Create the initial empty board
+let m_board = []
 for (let r = 0; r < NUM_ROW; r++) {
   m_board[r] = [];
   for (let c = 0; c < NUM_COLUMN; c++) {
     m_board[r][c] = SquareState.empty;
   }
 }
+
 let m_inputManager;
 let m_canvas = new Canvas(m_board);
 mainCanvas.addEventListener("mousedown", function (e) {
@@ -58,6 +60,16 @@ let m_gravityFrameCount;
 let m_ARE;
 let m_lineClearDelay;
 let m_linesCleared;
+
+// Exported methods that allow other classes to access the variables in this file
+
+export const GetCurrentPiece = () => {
+  return m_currentPiece;
+};
+
+export const GetLevel = () => {
+  return m_level;
+};
 
 export const TriggerGameOver = () => {
   onGameOver();
@@ -86,10 +98,6 @@ function refreshHeaderText() {
   }
   headerTextElement.innerText = newText;
 }
-
-export const GetLevel = () => {
-  return m_level;
-};
 
 function refreshDebugText() {
   debugTextElement.innerText = m_inputManager.getDebugText();
@@ -163,6 +171,8 @@ function getNewPiece() {
     m_board,
     m_canvas
   );
+  m_canvas.drawPiece(m_currentPiece);
+  console.log("When new piece is added, it has y value ", m_currentPiece.y);
   m_canvas.drawNextBox(m_nextPiece);
 }
 
@@ -183,10 +193,6 @@ function startGame() {
   m_pieceSelector.startReadingPieceSequence();
   m_boardLoader.resetBoard();
 
-  // Refresh UI
-  m_canvas.drawBoard();
-  refreshHeaderText();
-
   // Parse the level
   const levelSelected = parseInt(levelSelectElement.value);
   if (Number.isInteger(levelSelected) && levelSelected > 0) {
@@ -202,6 +208,10 @@ function startGame() {
     m_canvas
   );
   getNewPiece();
+
+  // Refresh UI
+  m_canvas.drawBoard();
+  refreshHeaderText();
 
   m_gameState = GameState.RUNNING;
 }

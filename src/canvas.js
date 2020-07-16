@@ -8,7 +8,7 @@ import {
   VACANT,
   COLOR_PALETTE,
 } from "./constants.js";
-import { GetLevel, SquareState } from "./tetris.js";
+import { GetLevel, GetCurrentPiece, SquareState } from "./tetris.js";
 
 export function Canvas(board) {
   this.board = board;
@@ -165,8 +165,34 @@ Canvas.prototype.drawPieceStatusString = function (displayString) {
   context.fillText(displayString, startX, startY, 100);
 };
 
+Canvas.prototype.drawPiece = function (piece) {
+  if (piece == undefined) {
+    return;
+  }
+  const level = GetLevel();
+  const border = piece.id === "T" || piece.id === "O" || piece.id === "I";
+  for (let r = 0; r < piece.activeTetromino.length; r++) {
+    for (let c = 0; c < piece.activeTetromino[r].length; c++) {
+      // Draw only occupied squares
+      if (piece.activeTetromino[r][c]) {
+        if (piece.colorId !== 0) {
+          this.drawSquare(
+            piece.x + c,
+            piece.y + r,
+            COLOR_PALETTE[piece.colorId][level % 10],
+            border
+          );
+        } else {
+          this.drawSquare(piece.x + c, piece.y + r, VACANT, border);
+        }
+      }
+    }
+  }
+};
+
 // draw the board
 Canvas.prototype.drawBoard = function () {
+  // First, draw the pieces already locked into the board
   const level = GetLevel();
   for (let r = 0; r < NUM_ROW; r++) {
     for (let c = 0; c < NUM_COLUMN; c++) {
@@ -178,4 +204,7 @@ Canvas.prototype.drawBoard = function () {
       }
     }
   }
+
+  // Then, draw the active piece
+  this.drawPiece(GetCurrentPiece());
 };
