@@ -203,6 +203,7 @@ function startGame() {
   m_ARE = 30; // Extra delay for first piece
   m_pieceSelector.startReadingPieceSequence();
   m_boardLoader.resetBoard();
+  m_gameState = GameState.RUNNING;
 
   // Parse the level
   const levelSelected = parseInt(levelSelectElement.value);
@@ -220,8 +221,6 @@ function startGame() {
   m_canvas.drawBoard();
   m_canvas.drawCurrentPiece();
   refreshHeaderText();
-
-  m_gameState = GameState.RUNNING;
 }
 
 function onLineClearStateEnded() {}

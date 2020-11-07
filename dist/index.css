@@ -62,14 +62,18 @@ textarea {
   min-height: 24px;
 }
 
-#main-panel {
+#main-area {
   display: flex;
   flex-direction: row;
 }
 
+#left-panel {
+  padding: 30px;
+}
+
 #main-canvas {
   display: block;
-  margin: 0 auto;
+  margin: auto;
   image-rendering: pixelated;
 }
 

@@ -20,7 +20,7 @@ export function Piece(pieceData, board) {
   this.activeTetromino = this.rotationList[this.rotationIndex];
 
   this.x = 3;
-  this.y = -1;
+  this.y = this.id == "I" ? -2 : -1; // The I piece spawns higher than the others
 }
 
 Piece.prototype.equals = function (otherPiece) {
