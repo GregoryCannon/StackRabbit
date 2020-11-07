@@ -4,11 +4,10 @@ import { Canvas } from "./canvas.js";
 import {
   NUM_ROW,
   NUM_COLUMN,
-  VACANT,
-  GRAVITY,
   REWARDS,
   GameState,
   LINE_CLEAR_DELAY,
+  GetGravity,
 } from "./constants.js";
 import { Piece } from "./piece.js";
 import { InputManager } from "./input_manager.js";
@@ -53,11 +52,13 @@ let m_nextPiece;
 
 let m_level;
 let m_lines;
+let m_nextTransitionLineCount;
 let m_gameState;
 let m_score;
 let m_gravityFrameCount;
 let m_ARE;
 let m_lineClearDelay;
+let m_firstPieceDelay;
 let m_linesPendingClear;
 
 // Exported methods that allow other classes to access the variables in this file
@@ -126,7 +127,19 @@ function getFullRows() {
   return fullLines;
 }
 
+function getLinesToTransition(levelNum) {
+  // Method from NES
+  if (levelNum < 10) {
+    return (levelNum + 1) * 10;
+  } else if (levelNum <= 15) {
+    return 100;
+  } else {
+    return (levelNum - 5) * 10;
+  }
+}
+
 function removeFullRows() {
+  const numLinesCleared = m_linesPendingClear.length;
   for (const r of m_linesPendingClear) {
     // Move down all the rows above it
     for (let y = r; y > 1; y--) {
@@ -139,17 +152,25 @@ function removeFullRows() {
       m_board[0][c] = SquareState.EMPTY;
     }
   }
-  const numLinesCleared = m_linesPendingClear.length;
+  m_linesPendingClear = [];
+
+  // Post-line clear processing
   if (numLinesCleared > 0) {
+    // Update the lines
+    m_lines += numLinesCleared;
+
+    // Maybe level transition
+    if (true) {
+      m_level += 1;
+    }
+
+    // Update the score (must be after lines + transition)
+    m_score += REWARDS[numLinesCleared] * (m_level + 1);
+
     // Update the board
     m_canvas.drawBoard();
-
-    // Update the score
-    m_score += REWARDS[numLinesCleared] * (m_level + 1);
-    m_lines += numLinesCleared;
     refreshScoreHUD();
   }
-  m_linesPendingClear = [];
 }
 
 function checkForGameOver() {
@@ -172,15 +193,17 @@ function checkForGameOver() {
 function getNewPiece() {
   m_currentPiece = m_nextPiece;
 
+  // Checked here because the game over condition depends on the newly spawned piece
   checkForGameOver();
 
-  // Piece status is drawn first since the read index increments when the next
+  // Piece status is drawn first, since the read index increments when the next
   // piece is selected
   m_canvas.drawPieceStatusString(m_pieceSelector.getStatusString());
   m_nextPiece = new Piece(
     m_pieceSelector.chooseNextPiece(m_currentPiece.id),
     m_board
   );
+
   // Draw the new piece in the next box
   m_canvas.drawNextBox(m_nextPiece);
 }
@@ -200,10 +223,10 @@ function resetLocalVariables() {
 function startGame() {
   // Reset game values
   resetLocalVariables();
-  m_ARE = 30; // Extra delay for first piece
+  m_firstPieceDelay = 30; // Extra delay for first piece
   m_pieceSelector.startReadingPieceSequence();
   m_boardLoader.resetBoard();
-  m_gameState = GameState.RUNNING;
+  m_gameState = GameState.FIRST_PIECE;
 
   // Parse the level
   const levelSelected = parseInt(levelSelectElement.value);
@@ -212,6 +235,9 @@ function startGame() {
   } else {
     m_level = 0;
   }
+
+  // Determine the number of lines till transition
+  m_nextTransitionLineCount = getLinesToTransition(m_level);
 
   // Get the first piece and put it in the next piece slot. Will be bumped to current in getNewPiece()
   m_nextPiece = new Piece(m_pieceSelector.chooseNextPiece(""), m_board);
@@ -224,35 +250,42 @@ function startGame() {
   refreshScoreHUD();
 }
 
-function onLineClearStateEnded() {}
-
-function onAREStateEnded() {
-  m_canvas.drawCurrentPiece();
-}
-
 function updateGameState() {
-  if (m_lineClearDelay < 0 || m_ARE < 0) {
-    throw new Error("Negative line clear or ARE");
-  }
-
-  if (m_gameState == GameState.LINE_CLEAR && m_lineClearDelay == 0) {
-    m_gameState = GameState.ARE;
-    onLineClearStateEnded();
-  } else if (m_gameState == GameState.ARE && m_ARE == 0) {
+  // FIRST PIECE -> RUNNING
+  if (m_gameState == GameState.FIRST_PIECE && m_firstPieceDelay == 0) {
     m_gameState = GameState.RUNNING;
-    onAREStateEnded();
-  } else if (m_gameState == GameState.RUNNING) {
+  } 
+  // LINE CLEAR -> ARE
+  else if (m_gameState == GameState.LINE_CLEAR && m_lineClearDelay == 0) {
+    m_gameState = GameState.ARE;
+  } 
+  // ARE -> RUNNING
+  else if (m_gameState == GameState.ARE && m_ARE == 0) {
+    // Draw the next piece, since it's the end of ARE (and that's how NES does it)
+    m_canvas.drawCurrentPiece();
+    m_gameState = GameState.RUNNING;
+  } 
+  else if (m_gameState == GameState.RUNNING) {
+    // RUNNING -> LINE CLEAR
     if (m_lineClearDelay > 0) {
       m_gameState = GameState.LINE_CLEAR;
-    } else if (m_ARE > 0) {
+    } 
+    // RUNNING -> ARE
+    else if (m_ARE > 0) {
       m_gameState = GameState.ARE;
     }
   }
+  // Otherwise, unchanged.
 }
 
 // 60 FPS game loop
 function gameLoop() {
   switch (m_gameState) {
+    case GameState.FIRST_PIECE:
+      // Waiting for first piece
+      m_firstPieceDelay -= 1;
+      break;
+
     case GameState.LINE_CLEAR:
       // Still animating line clear
       m_lineClearDelay -= 1;
@@ -285,7 +318,7 @@ function gameLoop() {
         m_gravityFrameCount += 1;
 
         // Move the piece down when appropriate
-        if (m_gravityFrameCount >= GRAVITY[m_level]) {
+        if (m_gravityFrameCount >= GetGravity(m_level)) {
           moveCurrentPieceDown();
           m_gravityFrameCount = 0;
         }
@@ -432,4 +465,6 @@ gameOptionsForm.addEventListener("submit", (e) => {
 resetLocalVariables();
 m_canvas.drawBoard();
 refreshHeaderText();
+refreshDebugText();
+refreshStats();
 gameLoop();

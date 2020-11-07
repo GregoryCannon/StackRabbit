@@ -179,6 +179,7 @@ InputManager.prototype.shouldListenToInput = function () {
   return (
     gameState == GameState.RUNNING ||
     gameState == GameState.LINE_CLEAR ||
-    gameState == GameState.ARE
+    gameState == GameState.ARE ||
+    gameState == GameState.FIRST_PIECE
   );
 };

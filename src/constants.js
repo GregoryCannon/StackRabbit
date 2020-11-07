@@ -59,7 +59,7 @@ export const REWARDS = {
   4: 1200,
 };
 // How many frames it takes to drop one square
-export const GRAVITY = {
+const GRAVITY = {
   0: 48,
   1: 43,
   2: 38,
@@ -83,7 +83,18 @@ export const GRAVITY = {
   29: 1,
 };
 
+export function GetGravity(levelNum) {
+  if (levelNum <= 18) {
+    return GRAVITY[levelNum];
+  } else if (levelNum < 29) {
+    return 2;
+  } else {
+    return 1;
+  }
+}
+
 export const GameState = {
+  FIRST_PIECE: "first piece",
   RUNNING: "running",
   PAUSED: "paused",
   GAME_OVER: "game over",

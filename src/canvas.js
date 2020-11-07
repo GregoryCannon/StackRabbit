@@ -45,9 +45,14 @@ Canvas.prototype.drawLineClears = function (rowsArray, frameNum) {
 Canvas.prototype.drawSquare = function (x, y, color, border = false) {
   // For I, T, and O
   context.fillStyle = color;
-  context.fillRect(x * SQUARE_SIZE, y * SQUARE_SIZE, 7 * PIXEL_SIZE, 7 * PIXEL_SIZE);
+  context.fillRect(
+    x * SQUARE_SIZE,
+    y * SQUARE_SIZE,
+    7 * PIXEL_SIZE,
+    7 * PIXEL_SIZE
+  );
 
-  if (color == VACANT){
+  if (color == VACANT) {
     context.fillStyle = "black";
     context.fillRect(
       x * SQUARE_SIZE,
@@ -70,12 +75,7 @@ Canvas.prototype.drawSquare = function (x, y, color, border = false) {
   // Draw 'shiny' part
   if (color !== VACANT) {
     context.fillStyle = "white";
-    context.fillRect(
-      x * SQUARE_SIZE,
-      y * SQUARE_SIZE,
-      PIXEL_SIZE,
-      PIXEL_SIZE
-    );
+    context.fillRect(x * SQUARE_SIZE, y * SQUARE_SIZE, PIXEL_SIZE, PIXEL_SIZE);
     context.fillRect(
       x * SQUARE_SIZE + PIXEL_SIZE,
       y * SQUARE_SIZE + PIXEL_SIZE,
