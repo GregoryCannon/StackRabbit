@@ -3,7 +3,6 @@ import {
   DAS_TRIGGER,
   DAS_CHARGED_FLOOR,
   GameState,
-  GameSubState,
 } from "./constants.js";
 
 // Default control setup
@@ -21,14 +20,9 @@ export function InputManager(
   rotateRightFunc,
   togglePauseFunc,
   getGameStateFunc,
-  getGameSubStateFunc,
   getAREFunc
 ) {
-  this.leftHeld = false;
-  this.rightHeld = false;
-  this.downHeld = false;
-  this.dasCount = 0;
-  this.softDroppedLastFrame = false;
+  this.resetLocalVariables();
 
   this.togglePauseFunc = togglePauseFunc;
   this.moveDownFunc = moveDownFunc;
@@ -37,24 +31,24 @@ export function InputManager(
   this.rotateLeftFunc = rotateLeftFunc;
   this.rotateRightFunc = rotateRightFunc;
   this.getGameStateFunc = getGameStateFunc;
-  this.getGameSubStateFunc = getGameSubStateFunc;
   this.getAREFunc = getAREFunc;
 }
 
 InputManager.prototype.handleInputsThisFrame = function () {
-  const numKeysHeld = this.downHeld + this.leftHeld + this.rightHeld;
   // If holding multiple keys, do nothing
+  const numKeysHeld = this.downHeld + this.leftHeld + this.rightHeld;
   if (numKeysHeld > 1) {
+    this.isSoftDropping = false;
     return;
   }
 
   // Move piece down
-  if (this.downHeld && !this.softDroppedLastFrame) {
+  if (this.isSoftDropping && !this.softDroppedLastFrame) {
     console.log("Soft dropping");
     const didMove = this.moveDownFunc();
     if (!didMove) {
-      // If it didn't move, then it locked in. Reset pushdown between pieces.
-      this.downHeld = false;
+      // If it didn't move, then it locked in. Reset soft drop between pieces.
+      this.isSoftDropping = false;
     }
     this.softDroppedLastFrame = true;
     return;
@@ -74,8 +68,8 @@ InputManager.prototype.handleInputsThisFrame = function () {
   }
 };
 
-InputManager.prototype.isSoftDropping = function () {
-  return this.downHeld;
+InputManager.prototype.getIsSoftDropping = function () {
+  return this.isSoftDropping;
 };
 
 InputManager.prototype.handleHeldDirection = function (direction) {
@@ -103,20 +97,21 @@ InputManager.prototype.keyDownListener = function (event) {
   if (event.repeat) {
     return;
   }
+  const gameState = this.getGameStateFunc();
   // Piece movement - on key down
   // Move the piece once, and if appropriate, save that the key is held (for DAS)
-  if (this.getGameStateFunc() == GameState.RUNNING) {
+  if (this.shouldListenToInput()) {
     switch (event.keyCode) {
       case LEFT_KEYCODE:
-        // Reset DAS, unless in ARE state
-        if (this.getAREFunc() == 0) {
+        // Reset DAS if not in ARE or line clear
+        if (gameState == GameState.RUNNING) {
           this.dasCount = 0;
         }
         this.leftHeld = true;
         break;
       case RIGHT_KEYCODE:
-        // Reset DAS, unless in ARE state
-        if (this.getAREFunc() == 0) {
+        // Reset DAS if not in ARE or line clear
+        if (gameState == GameState.RUNNING) {
           this.dasCount = 0;
         }
         this.rightHeld = true;
@@ -129,6 +124,7 @@ InputManager.prototype.keyDownListener = function (event) {
         break;
       case DOWN_KEYCODE:
         this.downHeld = true;
+        this.isSoftDropping = true;
         break;
     }
   }
@@ -142,18 +138,14 @@ InputManager.prototype.keyDownListener = function (event) {
 
 InputManager.prototype.keyUpListener = function (event) {
   // Piece movement - on key up
-  const mainGameState = this.getGameStateFunc();
-  const gameSubState = this.getGameSubStateFunc();
-  if (mainGameState == GameState.RUNNING) {
+  if (this.shouldListenToInput()) {
     if (event.keyCode == LEFT_KEYCODE) {
       this.leftHeld = false;
     } else if (event.keyCode == RIGHT_KEYCODE) {
       this.rightHeld = false;
-    } else if (
-      event.keyCode == DOWN_KEYCODE &&
-      gameSubState == GameSubState.PIECE_ACTIVE
-    ) {
+    } else if (event.keyCode == DOWN_KEYCODE) {
       this.downHeld = false;
+      this.isSoftDropping = false;
     }
   }
 };
@@ -164,6 +156,10 @@ InputManager.prototype.getDebugText = function () {
   for (let i = 0; i < this.dasCount; i++) {
     dasVisualized += "x";
   }
+  // Have something on the second line so it's always the same height
+  if (this.dasCount == 0) {
+    dasVisualized = ".";
+  }
   debugStr += "DAS: " + this.dasCount + "\n" + dasVisualized;
   return debugStr;
 };
@@ -172,6 +168,17 @@ InputManager.prototype.resetLocalVariables = function () {
   this.leftHeld = false;
   this.rightHeld = false;
   this.downHeld = false;
+  this.isSoftDropping = false;
   this.dasCount = 0;
   this.softDroppedLastFrame = false;
+};
+
+/** Checks if the game is in a state where keyboard inputs should be processed. */
+InputManager.prototype.shouldListenToInput = function () {
+  const gameState = this.getGameStateFunc();
+  return (
+    gameState == GameState.RUNNING ||
+    gameState == GameState.LINE_CLEAR ||
+    gameState == GameState.ARE
+  );
 };

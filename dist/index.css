@@ -1,106 +1,116 @@
 * {
-    box-sizing: border-box;
+  box-sizing: border-box;
 }
 
 body {
-    min-width: 800px;
+  min-width: 800px;
 }
 
 button {
-    padding: 10px;
-    background-color: orange;
-    border: none;
-    font-size: 16pt;
-    border-radius: 5px;
+  padding: 10px;
+  background-color: orange;
+  border: none;
+  font-size: 16pt;
+  border-radius: 5px;
 }
 
 button:hover {
-    transform: translate(0px, -1px);
+  transform: translate(0px, -1px);
 }
 
 button:focus {
-    outline: none;
+  outline: none;
 }
 
 button:active {
-    transform: translate(0px, 1px);
-    outline: none;
+  transform: translate(0px, 1px);
+  outline: none;
 }
 
-input, textarea {
-    padding-left: 10px;
+input,
+textarea {
+  padding-left: 10px;
 }
 
 textarea {
-    padding-top: 5px;
+  padding-top: 5px;
 }
 
 .standard {
-    font-family: monospace;
-    font-weight: bold;
-    text-align: center;
+  font-family: monospace;
+  font-weight: bold;
+  text-align: center;
 }
 
-#score {
-    font-size: 24px;
-    display: inline-block;
+#score-container {
+  margin-bottom: 40px;
+}
+
+#score-display,
+#lines-display,
+#level-display {
+  font-size: 24px;
+  margin: 0;
+  /* display: inline-block; */
 }
 
 #credits {
-    font-family: monospace;
+  font-family: monospace;
 }
 
 #header-text {
-    min-height: 24px
+  min-height: 24px;
 }
 
 #main-panel {
-    display: flex;
-    flex-direction: row;
+  display: flex;
+  flex-direction: row;
 }
 
 #main-canvas {
-    display: block;
-    margin: 0 auto;
-    image-rendering: pixelated;
+  display: block;
+  margin: 0 auto;
+  image-rendering: pixelated;
 }
 
 #dummy-canvas {
-    display: none;
+  display: none;
 }
 
 #game-options-form {
-    margin: 0;
+  margin: 0;
 }
 
 #game-options-form > * {
-    margin-bottom: 5px;
+  margin-bottom: 5px;
 }
 
 #level-select {
-    font-size: 18px;
-    height: 40px;
-    width: auto;
-    border-radius: 3px;
-    border: solid 1px gray;
+  font-size: 18px;
+  height: 40px;
+  width: auto;
+  border-radius: 3px;
+  border: solid 1px gray;
 }
 
 #piece-sequence {
-    width: 100%;
-    border-radius: 3px;
+  width: 100%;
+  border-radius: 3px;
 }
 #paste-area {
-    width: 100%;
-    border-radius: 3px;
+  width: 100%;
+  border-radius: 3px;
 }
 
 #pasted-image {
-    display: none;
+  display: none;
 }
 
-#debug, #stats, #how-to {
-    font-size: 20px;
-    font-family: monospace;
-    text-align: right;
-    font-weight: 500;
+#debug,
+#stats,
+#how-to {
+  font-size: 20px;
+  font-family: monospace;
+  text-align: right;
+  font-weight: 500;
 }

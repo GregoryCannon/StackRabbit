@@ -5,29 +5,15 @@ import {
   NUM_ROW,
   NUM_COLUMN,
   SQUARE_SIZE,
+  BORDER_WIDTH,
   VACANT,
   COLOR_PALETTE,
 } from "./constants.js";
-import { GetLevel, GetCurrentPiece, SquareState } from "./tetris.js";
+import { GetLevel, GetCurrentPiece } from "./tetris.js";
 
 export function Canvas(board) {
   this.board = board;
 }
-const borderWidth = SQUARE_SIZE / 7;
-
-Canvas.prototype.onClick = function (event) {
-  const rect = mainCanvas.getBoundingClientRect();
-  const x = event.clientX - rect.left;
-  const y = event.clientY - rect.top;
-  console.log("x: " + x + " y: " + y);
-  const r = Math.floor(y / SQUARE_SIZE);
-  const c = Math.floor(x / SQUARE_SIZE);
-  this.board[r][c] =
-    this.board[r][c] == SquareState.empty
-      ? SquareState.color1
-      : SquareState.empty;
-  this.drawBoard();
-};
 
 /** Runs an animation to clear the lines passed in in an array.
  * Doesn't affect the actual board, those updates come at the end of the animation. */
@@ -64,10 +50,10 @@ Canvas.prototype.drawSquare = function (x, y, color, border = false) {
   if (border && color !== VACANT) {
     context.fillStyle = "white";
     context.fillRect(
-      x * SQUARE_SIZE + borderWidth,
-      y * SQUARE_SIZE + borderWidth,
-      SQUARE_SIZE - borderWidth * 2,
-      SQUARE_SIZE - borderWidth * 2
+      x * SQUARE_SIZE + BORDER_WIDTH,
+      y * SQUARE_SIZE + BORDER_WIDTH,
+      SQUARE_SIZE - BORDER_WIDTH * 2,
+      SQUARE_SIZE - BORDER_WIDTH * 2
     );
   }
   // Draw 'shiny' part
@@ -76,26 +62,26 @@ Canvas.prototype.drawSquare = function (x, y, color, border = false) {
     context.fillRect(
       x * SQUARE_SIZE,
       y * SQUARE_SIZE,
-      borderWidth,
-      borderWidth
+      BORDER_WIDTH,
+      BORDER_WIDTH
     );
     context.fillRect(
-      x * SQUARE_SIZE + borderWidth,
-      y * SQUARE_SIZE + borderWidth,
-      borderWidth,
-      borderWidth
+      x * SQUARE_SIZE + BORDER_WIDTH,
+      y * SQUARE_SIZE + BORDER_WIDTH,
+      BORDER_WIDTH,
+      BORDER_WIDTH
     );
     context.fillRect(
-      x * SQUARE_SIZE + borderWidth + borderWidth,
-      y * SQUARE_SIZE + borderWidth,
-      borderWidth,
-      borderWidth
+      x * SQUARE_SIZE + BORDER_WIDTH + BORDER_WIDTH,
+      y * SQUARE_SIZE + BORDER_WIDTH,
+      BORDER_WIDTH,
+      BORDER_WIDTH
     );
     context.fillRect(
-      x * SQUARE_SIZE + borderWidth,
-      y * SQUARE_SIZE + borderWidth + borderWidth,
-      borderWidth,
-      borderWidth
+      x * SQUARE_SIZE + BORDER_WIDTH,
+      y * SQUARE_SIZE + BORDER_WIDTH + BORDER_WIDTH,
+      BORDER_WIDTH,
+      BORDER_WIDTH
     );
   }
   // Outline
@@ -118,7 +104,7 @@ Canvas.prototype.drawSquare = function (x, y, color, border = false) {
 Canvas.prototype.drawNextBox = function (nextPiece) {
   // All in units of SQUARE_SIZE
   const startX = NUM_COLUMN + 1;
-  const startY = 2;
+  const startY = 8;
   const width = 5;
   const height = 4.5;
   const pieceStartX =
@@ -153,7 +139,7 @@ Canvas.prototype.drawNextBox = function (nextPiece) {
 
 Canvas.prototype.drawPieceStatusString = function (displayString) {
   const startX = (NUM_COLUMN + 1) * SQUARE_SIZE;
-  const startY = SQUARE_SIZE;
+  const startY = 7 * SQUARE_SIZE;
   const width = 150;
 
   // Clear previous text
@@ -191,9 +177,30 @@ Canvas.prototype.drawPiece = function (piece) {
   }
 };
 
-// draw the board
+Canvas.prototype.unDrawPiece = function (piece) {
+  if (piece == undefined) {
+    return;
+  }
+  for (let r = 0; r < piece.activeTetromino.length; r++) {
+    for (let c = 0; c < piece.activeTetromino[r].length; c++) {
+      // Erase occupied squares
+      if (piece.activeTetromino[r][c]) {
+        this.drawSquare(piece.x + c, piece.y + r, VACANT, false);
+      }
+    }
+  }
+};
+
+Canvas.prototype.drawCurrentPiece = function () {
+  this.drawPiece(GetCurrentPiece());
+};
+
+Canvas.prototype.unDrawCurrentPiece = function () {
+  this.unDrawPiece(GetCurrentPiece());
+};
+
+// Draw the pieces locked into the board (NB: does not render the current piece)
 Canvas.prototype.drawBoard = function () {
-  // First, draw the pieces already locked into the board
   const level = GetLevel();
   for (let r = 0; r < NUM_ROW; r++) {
     for (let c = 0; c < NUM_COLUMN; c++) {
@@ -205,7 +212,4 @@ Canvas.prototype.drawBoard = function () {
       }
     }
   }
-
-  // Then, draw the active piece
-  this.drawPiece(GetCurrentPiece());
 };

@@ -1,13 +1,20 @@
 import { NUM_ROW, NUM_COLUMN, VACANT, COLOR_PALETTE } from "./constants.js";
 import { TriggerGameOver } from "./tetris";
 
-// The Object Piece
-export function Piece(pieceData, board, canvas) {
+/**
+ * Piece object, responsible for moving and rotating itself within the board.
+ * @param {[
+ *    rotationList: list<4x4 matrix>,
+ *    colorId: number,
+ *    id: string (piece letter names)
+ * ]} pieceData
+ * @param {int[][]} board
+ */
+export function Piece(pieceData, board) {
   this.rotationList = pieceData[0]; // All of the available rotations
   this.colorId = pieceData[1];
   this.id = pieceData[2];
   this.board = board;
-  this.canvas = canvas;
 
   this.rotationIndex = 0; // Start from the first rotation
   this.activeTetromino = this.rotationList[this.rotationIndex];
@@ -41,7 +48,6 @@ Piece.prototype.shouldLock = function () {
 // move Down the piece
 Piece.prototype.moveDown = function () {
   this.y++;
-  this.canvas.drawBoard();
 };
 
 /**
@@ -53,7 +59,6 @@ Piece.prototype.moveRight = function () {
   } else {
     // No collision, move the piece
     this.x++;
-    this.canvas.drawBoard();
     return true;
   }
 };
@@ -67,23 +72,22 @@ Piece.prototype.moveLeft = function () {
   } else {
     // No collision, move the piece
     this.x--;
-    this.canvas.drawBoard();
     return true;
   }
 };
 
 // rotate the piece
-Piece.prototype.rotate = function (directionInversed) {
-  const offset = directionInversed ? -1 : 1;
+Piece.prototype.rotate = function (isClockwise) {
+  const offset = isClockwise ? 1 : -1;
   const nextIndex =
     (this.rotationIndex + offset + this.rotationList.length) %
     this.rotationList.length;
   const nextPattern = this.rotationList[nextIndex];
 
+  // Rotate as long as the new orientation doesn't collide with the board
   if (!this.collision(0, 0, nextPattern)) {
     this.rotationIndex = nextIndex;
     this.activeTetromino = this.rotationList[this.rotationIndex];
-    this.canvas.drawBoard();
   }
 };
 
@@ -100,9 +104,6 @@ Piece.prototype.lock = function () {
       this.board[this.y + r][this.x + c] = this.colorId;
     }
   }
-
-  // update the board
-  this.canvas.drawBoard();
 };
 
 // Collision fucntion

@@ -1,6 +1,7 @@
 export const NUM_ROW = 20;
 export const NUM_COLUMN = 10;
 export const SQUARE_SIZE = 28;
+export const BORDER_WIDTH = SQUARE_SIZE / 7;
 
 export const VACANT = "black"; // color of an empty square
 export const RED_COLOR = "red";
@@ -87,10 +88,6 @@ export const GameState = {
   PAUSED: "paused",
   GAME_OVER: "game over",
   START_SCREEN: "start screen",
-};
-
-export const GameSubState = {
-  PIECE_ACTIVE: "piece active",
   ARE: "are",
   LINE_CLEAR: "line clear",
 };

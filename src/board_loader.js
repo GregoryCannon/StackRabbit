@@ -21,7 +21,7 @@ BoardLoader.prototype.resetBoard = function () {
     for (let c = 0; c < NUM_COLUMN; c++) {
       this.board[r][c] = m_loadedStateFromImage
         ? m_loadedBoard[r][c]
-        : SquareState.empty;
+        : SquareState.EMPTY;
     }
   }
 };
@@ -54,7 +54,7 @@ BoardLoader.prototype.getBoardStateFromImage = function (img) {
       ) {
         this.board[r][c] = SquareState.color1; //"rgba(" + pixelData.join(",") + ")";
       } else {
-        this.board[r][c] = SquareState.empty;
+        this.board[r][c] = SquareState.EMPTY;
       }
       context.fillStyle = "GREEN";
       context.fillRect(x, y, 5, 5);
@@ -75,12 +75,12 @@ function clearFloatingPiece(board) {
   for (let r = NUM_ROW - 1; r >= 0; r--) {
     if (startedClearing) {
       for (let c = 0; c < NUM_COLUMN; c++) {
-        board[r][c] = SquareState.empty;
+        board[r][c] = SquareState.EMPTY;
       }
     } else {
       let rowEmpty = true;
       for (let c = 0; c < NUM_COLUMN; c++) {
-        if (board[r][c] != SquareState.empty) {
+        if (board[r][c] != SquareState.EMPTY) {
           rowEmpty = false;
           break;
         }
