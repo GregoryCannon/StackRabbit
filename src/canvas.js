@@ -154,15 +154,18 @@ Canvas.prototype.drawNextBox = function (nextPiece) {
 Canvas.prototype.drawPieceStatusString = function (displayString) {
   const startX = (NUM_COLUMN + 1) * SQUARE_SIZE;
   const startY = SQUARE_SIZE;
+  const width = 150;
 
   // Clear previous text
+  console.log("--clearing");
   context.fillStyle = "WHITE";
-  context.fillRect(startX, startY - 20, 100, 40);
+  context.fillRect(startX, startY - 20, width, 40);
 
   // Write "x of x" text
+  console.log("--writing black text:", displayString);
   context.font = "20px monospace";
   context.fillStyle = "BLACK";
-  context.fillText(displayString, startX, startY, 150);
+  context.fillText(displayString, startX, startY, width);
 };
 
 Canvas.prototype.drawPiece = function (piece) {
