@@ -169,7 +169,7 @@ InputManager.prototype.resetLocalVariables = function () {
   this.rightHeld = false;
   this.downHeld = false;
   this.isSoftDropping = false;
-  this.dasCount = 0;
+  this.dasCount = 16; // Starts charged on the first piece
   this.softDroppedLastFrame = false;
 };
 

@@ -221,6 +221,7 @@ function startGame() {
   m_canvas.drawBoard();
   m_canvas.drawCurrentPiece();
   refreshHeaderText();
+  refreshScoreHUD();
 }
 
 function onLineClearStateEnded() {}

@@ -5,7 +5,7 @@ import {
   NUM_ROW,
   NUM_COLUMN,
   SQUARE_SIZE,
-  BORDER_WIDTH,
+  PIXEL_SIZE,
   VACANT,
   COLOR_PALETTE,
 } from "./constants.js";
@@ -45,15 +45,26 @@ Canvas.prototype.drawLineClears = function (rowsArray, frameNum) {
 Canvas.prototype.drawSquare = function (x, y, color, border = false) {
   // For I, T, and O
   context.fillStyle = color;
-  context.fillRect(x * SQUARE_SIZE, y * SQUARE_SIZE, SQUARE_SIZE, SQUARE_SIZE);
+  context.fillRect(x * SQUARE_SIZE, y * SQUARE_SIZE, 7 * PIXEL_SIZE, 7 * PIXEL_SIZE);
+
+  if (color == VACANT){
+    context.fillStyle = "black";
+    context.fillRect(
+      x * SQUARE_SIZE,
+      y * SQUARE_SIZE,
+      SQUARE_SIZE,
+      SQUARE_SIZE
+    );
+    return;
+  }
 
   if (border && color !== VACANT) {
     context.fillStyle = "white";
     context.fillRect(
-      x * SQUARE_SIZE + BORDER_WIDTH,
-      y * SQUARE_SIZE + BORDER_WIDTH,
-      SQUARE_SIZE - BORDER_WIDTH * 2,
-      SQUARE_SIZE - BORDER_WIDTH * 2
+      x * SQUARE_SIZE + PIXEL_SIZE,
+      y * SQUARE_SIZE + PIXEL_SIZE,
+      5 * PIXEL_SIZE,
+      5 * PIXEL_SIZE
     );
   }
   // Draw 'shiny' part
@@ -62,42 +73,28 @@ Canvas.prototype.drawSquare = function (x, y, color, border = false) {
     context.fillRect(
       x * SQUARE_SIZE,
       y * SQUARE_SIZE,
-      BORDER_WIDTH,
-      BORDER_WIDTH
+      PIXEL_SIZE,
+      PIXEL_SIZE
     );
     context.fillRect(
-      x * SQUARE_SIZE + BORDER_WIDTH,
-      y * SQUARE_SIZE + BORDER_WIDTH,
-      BORDER_WIDTH,
-      BORDER_WIDTH
+      x * SQUARE_SIZE + PIXEL_SIZE,
+      y * SQUARE_SIZE + PIXEL_SIZE,
+      PIXEL_SIZE,
+      PIXEL_SIZE
     );
     context.fillRect(
-      x * SQUARE_SIZE + BORDER_WIDTH + BORDER_WIDTH,
-      y * SQUARE_SIZE + BORDER_WIDTH,
-      BORDER_WIDTH,
-      BORDER_WIDTH
+      x * SQUARE_SIZE + PIXEL_SIZE + PIXEL_SIZE,
+      y * SQUARE_SIZE + PIXEL_SIZE,
+      PIXEL_SIZE,
+      PIXEL_SIZE
     );
     context.fillRect(
-      x * SQUARE_SIZE + BORDER_WIDTH,
-      y * SQUARE_SIZE + BORDER_WIDTH + BORDER_WIDTH,
-      BORDER_WIDTH,
-      BORDER_WIDTH
+      x * SQUARE_SIZE + PIXEL_SIZE,
+      y * SQUARE_SIZE + PIXEL_SIZE + PIXEL_SIZE,
+      PIXEL_SIZE,
+      PIXEL_SIZE
     );
   }
-  // Outline
-  context.strokeStyle = "BLACK";
-  context.strokeRect(
-    x * SQUARE_SIZE,
-    y * SQUARE_SIZE,
-    SQUARE_SIZE,
-    SQUARE_SIZE
-  );
-  context.strokeRect(
-    x * SQUARE_SIZE,
-    y * SQUARE_SIZE,
-    SQUARE_SIZE,
-    SQUARE_SIZE
-  );
 };
 
 // draw the next box

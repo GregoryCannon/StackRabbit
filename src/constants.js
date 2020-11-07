@@ -1,7 +1,7 @@
 export const NUM_ROW = 20;
 export const NUM_COLUMN = 10;
-export const SQUARE_SIZE = 28;
-export const BORDER_WIDTH = SQUARE_SIZE / 7;
+export const PIXEL_SIZE = 3; // i.e. the scaleup from 1 NES pixel
+export const SQUARE_SIZE = 8 * PIXEL_SIZE;
 
 export const VACANT = "black"; // color of an empty square
 export const RED_COLOR = "red";
