@@ -157,12 +157,10 @@ Canvas.prototype.drawPieceStatusString = function (displayString) {
   const width = 150;
 
   // Clear previous text
-  console.log("--clearing");
   context.fillStyle = "WHITE";
   context.fillRect(startX, startY - 20, width, 40);
 
   // Write "x of x" text
-  console.log("--writing black text:", displayString);
   context.font = "20px monospace";
   context.fillStyle = "BLACK";
   context.fillText(displayString, startX, startY, width);
