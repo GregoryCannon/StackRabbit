@@ -12,6 +12,7 @@ import {
 import { Piece } from "./piece.js";
 import { InputManager } from "./input_manager.js";
 import { BoardEditManager } from "./board_edit_manager.js";
+const GameSettings = require('./game_settings_manager');
 
 const scoreTextElement = document.getElementById("score-display");
 const linesTextElement = document.getElementById("lines-display");
@@ -160,8 +161,10 @@ function removeFullRows() {
     m_lines += numLinesCleared;
 
     // Maybe level transition
-    if (true) {
+    if (GameSettings.TransitionEveryLine() || m_lines >= m_nextTransitionLineCount) {
       m_level += 1;
+      
+      m_nextTransitionLineCount += 10;
     }
 
     // Update the score (must be after lines + transition)
@@ -169,6 +172,7 @@ function removeFullRows() {
 
     // Update the board
     m_canvas.drawBoard();
+    m_canvas.drawNextBox(m_nextPiece);
     refreshScoreHUD();
   }
 }
@@ -237,7 +241,7 @@ function startGame() {
   }
 
   // Determine the number of lines till transition
-  m_nextTransitionLineCount = getLinesToTransition(m_level);
+  m_nextTransitionLineCount = GameSettings.TransitionEvery10Lines() ? 10 : getLinesToTransition(m_level);
 
   // Get the first piece and put it in the next piece slot. Will be bumped to current in getNewPiece()
   m_nextPiece = new Piece(m_pieceSelector.chooseNextPiece(""), m_board);
