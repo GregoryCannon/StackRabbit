@@ -40,6 +40,10 @@ InputManager.prototype.getIsSoftDropping = function () {
   return this.isSoftDropping;
 };
 
+InputManager.prototype.getCellsSoftDropped = function () {
+  return this.cellSoftDropped;
+};
+
 InputManager.prototype.onPieceLock = function () {
   if (GameSettings.IsDASAlwaysCharged()) {
     this.setDASCharge(GameSettings.GetDASTriggerThreshold());
@@ -51,6 +55,7 @@ InputManager.prototype.resetLocalVariables = function () {
   this.rightHeld = false;
   this.downHeld = false;
   this.isSoftDropping = false;
+  this.cellSoftDropped = 0;
   this.dasCharge = GameSettings.GetDASTriggerThreshold(); // Starts charged on the first piece
   this.softDroppedLastFrame = false;
 };
@@ -60,15 +65,19 @@ InputManager.prototype.handleInputsThisFrame = function () {
   const dpadDirectionsHeld = this.downHeld + this.leftHeld + this.rightHeld;
   if (dpadDirectionsHeld > 1) {
     this.isSoftDropping = false;
+    this.cellSoftDropped = 0;
     return;
   }
 
   // Move piece down
   if (this.isSoftDropping && !this.softDroppedLastFrame) {
     const didMove = this.moveDownFunc();
-    if (!didMove) {
+    if (didMove) {
+      this.cellSoftDropped += 1;
+    } else {
       // If it didn't move, then it locked in. Reset soft drop between pieces.
       this.isSoftDropping = false;
+      this.cellSoftDropped = 0;
     }
     this.softDroppedLastFrame = true;
     return;
@@ -157,6 +166,7 @@ InputManager.prototype.keyUpListener = function (event) {
   } else if (event.keyCode == DOWN_KEYCODE) {
     this.downHeld = false;
     this.isSoftDropping = false; // Can stop soft dropping in any state
+    this.cellSoftDropped = 0;
   }
 };
 

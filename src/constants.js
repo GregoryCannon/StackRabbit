@@ -89,6 +89,13 @@ const GRAVITY = {
   29: 1,
 };
 
+export function CalculatePushdownPoints(cellsSoftDropped) {
+  if (cellsSoftDropped >= 16) {
+    return cellsSoftDropped - 6; // Simulate the hex conversion bug in NES
+  }
+  return cellsSoftDropped;
+}
+
 export function GetGravity(levelNum) {
   if (levelNum <= 18) {
     return GRAVITY[levelNum];

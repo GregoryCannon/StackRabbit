@@ -8,6 +8,7 @@ import {
   GameState,
   LINE_CLEAR_DELAY,
   GetGravity,
+  CalculatePushdownPoints,
 } from "./constants.js";
 import { Piece } from "./piece.js";
 import { InputManager } from "./input_manager.js";
@@ -58,9 +59,10 @@ let m_gameState;
 let m_score;
 let m_gravityFrameCount;
 let m_ARE;
-let m_lineClearDelay;
+let m_lineClearFrames;
 let m_firstPieceDelay;
 let m_linesPendingClear;
+let m_pendingPoints;
 
 // Exported methods that allow other classes to access the variables in this file
 
@@ -176,12 +178,11 @@ function removeFullRows() {
     }
 
     // Update the score (must be after lines + transition)
-    m_score += REWARDS[numLinesCleared] * (m_level + 1);
+    m_pendingPoints += REWARDS[numLinesCleared] * (m_level + 1);
 
     // Update the board
     m_canvas.drawBoard();
     m_canvas.drawNextBox(m_nextPiece);
-    refreshScoreHUD();
   }
 }
 
@@ -220,8 +221,9 @@ function resetLocalVariables() {
   m_score = 0;
   m_gravityFrameCount = 0;
   m_ARE = 0;
-  m_lineClearDelay = 0;
+  m_lineClearFrames = 0;
   m_linesPendingClear = [];
+  m_pendingPoints = 0;
   m_lines = 0;
   m_level = 0;
   m_gameState = GameState.START_SCREEN;
@@ -269,11 +271,16 @@ function updateGameState() {
     m_gameState = GameState.RUNNING;
   }
   // LINE CLEAR -> ARE
-  else if (m_gameState == GameState.LINE_CLEAR && m_lineClearDelay == 0) {
+  else if (m_gameState == GameState.LINE_CLEAR && m_lineClearFrames == 0) {
     m_gameState = GameState.ARE;
   }
   // ARE -> RUNNING
   else if (m_gameState == GameState.ARE && m_ARE == 0) {
+    // Add pending score to score total and refresh score UI
+    m_score += m_pendingPoints;
+    m_pendingPoints = 0;
+    refreshScoreHUD();
+
     // Draw the next piece, since it's the end of ARE (and that's how NES does it)
     m_canvas.drawCurrentPiece();
     // Checked here because the game over condition depends on the newly spawned piece
@@ -285,7 +292,7 @@ function updateGameState() {
     }
   } else if (m_gameState == GameState.RUNNING) {
     // RUNNING -> LINE CLEAR
-    if (m_lineClearDelay > 0) {
+    if (m_lineClearFrames > 0) {
       m_gameState = GameState.LINE_CLEAR;
     }
     // RUNNING -> ARE
@@ -306,13 +313,13 @@ function gameLoop() {
 
     case GameState.LINE_CLEAR:
       // Still animating line clear
-      m_lineClearDelay -= 1;
+      m_lineClearFrames -= 1;
       // Do subtraction so animation frames count up
       m_canvas.drawLineClears(
         m_linesPendingClear,
-        LINE_CLEAR_DELAY - m_lineClearDelay
+        LINE_CLEAR_DELAY - m_lineClearFrames
       );
-      if (m_lineClearDelay == 0) {
+      if (m_lineClearFrames == 0) {
         // Clear the lines for real and shift stuff down
         removeFullRows();
       }
@@ -395,8 +402,13 @@ function moveCurrentPieceDown() {
     // Clear lines
     m_linesPendingClear = getFullRows();
     if (m_linesPendingClear.length > 0) {
-      m_lineClearDelay = LINE_CLEAR_DELAY; // Clear delay counts down from max val
+      m_lineClearFrames = LINE_CLEAR_DELAY; // Clear delay counts down from max val
     }
+
+    // Add pushdown points
+    m_pendingPoints += CalculatePushdownPoints(
+      m_inputManager.getCellsSoftDropped()
+    );
 
     // Get the ARE based on piece lock height
     /* ARE (frame delay before next piece) is 10 frames for 0-2 height, then an additional 
