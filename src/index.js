@@ -504,4 +504,5 @@ m_canvas.drawBoard();
 m_canvas.drawNextBox(null);
 refreshHeaderText();
 refreshStats();
+refreshScoreHUD();
 gameLoop();

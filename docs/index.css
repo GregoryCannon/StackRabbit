@@ -58,14 +58,16 @@ textarea {
 
 #main-area {
   display: flex;
-  flex-grow: true;
   flex-direction: row;
+  max-width: 1000px;
+  overflow: hidden;
+  margin: 0 auto;
   align-items: flex-start;
 }
 
 #left-panel {
   position: relative;
-  background-color: #4d5d6f;
+  background-color: #a29792;
   padding: 40px 60px 40px 20px;
   width: 300px;
   transition: margin-left 0.4s ease-in-out;
