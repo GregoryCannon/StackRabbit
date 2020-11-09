@@ -101,7 +101,11 @@ Piece.prototype.lock = function () {
       }
 
       // we lock the piece
-      this.board[this.y + r][this.x + c] = this.colorId;
+      const newY = this.y + r;
+      const newX = this.x + c;
+      if (newY >= 0 && newY < NUM_ROW && newX >= 0 && newX < NUM_COLUMN) {
+        this.board[this.y + r][this.x + c] = this.colorId;
+      }
     }
   }
 };
