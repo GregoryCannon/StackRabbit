@@ -5,8 +5,7 @@
   "description": "tetris trainer",
   "main": "src/index.js",
   "scripts": {
-    "deploy": "gh-pages -d dist",
-    "deploy2": "gh-pages -d /",
+    "deploy": "npm run make && gh-pages -d docs",
     "start": "prettier src/*.js --write && webpack --progress --mode=development && webpack-dev-server",
     "make": "prettier src/*.js --write && webpack --progress --mode=production",
     "format": "prettier --write \"src/**/*.+(js|jsx|json|css|md)\""
