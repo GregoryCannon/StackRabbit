@@ -6,8 +6,10 @@ import {
   NUM_COLUMN,
   SQUARE_SIZE,
   PIXEL_SIZE,
+  NEXT_BOX_WIDTH,
   VACANT,
   COLOR_PALETTE,
+  BOARD_WIDTH,
 } from "./constants.js";
 import { GetLevel, GetCurrentPiece } from "./index.js";
 
@@ -47,15 +49,6 @@ Canvas.prototype.drawLineClears = function (rowsArray, frameNum) {
 
 // draw a square
 Canvas.prototype.drawSquare = function (x, y, color, border = false) {
-  // For I, T, and O
-  context.fillStyle = color;
-  context.fillRect(
-    x * SQUARE_SIZE,
-    y * SQUARE_SIZE,
-    7 * PIXEL_SIZE,
-    7 * PIXEL_SIZE
-  );
-
   if (color == VACANT) {
     context.fillStyle = "black";
     context.fillRect(
@@ -66,6 +59,15 @@ Canvas.prototype.drawSquare = function (x, y, color, border = false) {
     );
     return;
   }
+
+  // For I, T, and O
+  context.fillStyle = color;
+  context.fillRect(
+    x * SQUARE_SIZE,
+    y * SQUARE_SIZE,
+    7 * PIXEL_SIZE,
+    7 * PIXEL_SIZE
+  );
 
   if (border && color !== VACANT) {
     context.fillStyle = "white";
@@ -147,8 +149,8 @@ Canvas.prototype.drawNextBox = function (nextPiece) {
 
 Canvas.prototype.drawScoreDisplay = function (score) {
   const width = 5 * SQUARE_SIZE;
-  const startX = (NUM_COLUMN + 1) * SQUARE_SIZE;
-  const startY = 1 * SQUARE_SIZE;
+  const startX = BOARD_WIDTH + SQUARE_SIZE;
+  const startY = 0.5 * SQUARE_SIZE;
 
   const formattedScore = ("0".repeat(6) + score).slice(-6);
   this.drawMultiLineText(
@@ -160,9 +162,39 @@ Canvas.prototype.drawScoreDisplay = function (score) {
   );
 };
 
+Canvas.prototype.drawLinesDisplay = function (numLines) {
+  const width = NEXT_BOX_WIDTH;
+  const startX = BOARD_WIDTH + SQUARE_SIZE;
+  const startY = 3 * SQUARE_SIZE;
+
+  const formattedScore = ("0".repeat(3) + numLines).slice(-3);
+  this.drawMultiLineText(
+    ["LINES", formattedScore],
+    startX,
+    startY,
+    width,
+    "center"
+  );
+};
+
+Canvas.prototype.drawLevelDisplay = function (level) {
+  const width = NEXT_BOX_WIDTH;
+  const startX = BOARD_WIDTH + SQUARE_SIZE;
+  const startY = 14 * SQUARE_SIZE;
+
+  const formattedScore = ("0".repeat(2) + level).slice(-2);
+  this.drawMultiLineText(
+    ["LEVEL", formattedScore],
+    startX,
+    startY,
+    width,
+    "center"
+  );
+};
+
 Canvas.prototype.drawPieceStatusDisplay = function (linesOfText) {
-  const width = 5 * SQUARE_SIZE;
-  const startX = (NUM_COLUMN + 1) * SQUARE_SIZE;
+  const width = NEXT_BOX_WIDTH;
+  const startX = BOARD_WIDTH + SQUARE_SIZE;
   const startY = 6 * SQUARE_SIZE;
 
   this.drawMultiLineText(linesOfText, startX, startY, width, "center");

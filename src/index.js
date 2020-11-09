@@ -92,19 +92,28 @@ function refreshHeaderText() {
 }
 
 function refreshStats() {
-  // Calculate parity, where the top left square is "1" and adjacent squares are "-1"
-  let parity = 0;
-  for (let r = 0; r < NUM_ROW; r++) {
-    for (let c = 0; c < NUM_COLUMN; c++) {
-      if (m_board[r][c] != SquareState.EMPTY) {
-        // Add 1 or -1 to parity total based on the square's location
-        const cellConstant = (r + c) % 2 == 0 ? 1 : -1;
-        parity += cellConstant;
+  const calcParity = function (startCol, endCol) {
+    // Calculate parity, where the top left square is "1" and adjacent squares are "-1"
+    let parity = 0;
+    for (let r = 0; r < NUM_ROW; r++) {
+      for (let c = startCol; c < endCol; c++) {
+        if (r >= 18) {
+        }
+        if (m_board[r][c] != SquareState.EMPTY) {
+          // Add 1 or -1 to parity total based on the square's location
+          const cellConstant = (r + c) % 2 == 0 ? 1 : -1;
+          parity += cellConstant;
+        }
       }
     }
-  }
+    return Math.abs(parity);
+  };
 
-  statsTextElement.innerText = "Parity: " + parity;
+  const leftParity = calcParity(0, 5);
+  const middleParity = calcParity(3, 7);
+  const rightParity = calcParity(5, 10);
+
+  statsTextElement.innerText = `Parity: \nL=${leftParity} \nM=${middleParity} \nR=${rightParity}`;
 }
 
 function getFullRows() {
@@ -176,7 +185,7 @@ function removeFullRows() {
   }
 }
 
-function checkForGameOver() {
+function isGameOver() {
   // If the current piece collides with the existing board as it spawns in, you die
   const currentTetromino = m_currentPiece.activeTetromino;
   for (let r = 0; r < currentTetromino.length; r++) {
@@ -185,19 +194,15 @@ function checkForGameOver() {
         currentTetromino[r][c] &&
         m_board[m_currentPiece.y + r][m_currentPiece.x + c]
       ) {
-        m_gameState = GameState.GAME_OVER;
-        refreshHeaderText();
-        return;
+        return true;
       }
     }
   }
+  return false;
 }
 
 function getNewPiece() {
   m_currentPiece = m_nextPiece;
-
-  // Checked here because the game over condition depends on the newly spawned piece
-  checkForGameOver();
 
   // Piece status is drawn first, since the read index increments when the next
   // piece is selected
@@ -255,6 +260,9 @@ function startGame() {
   refreshScoreHUD();
 }
 
+/** Progress the game state, and perform any other updates that occur on
+ * particular game state transitions
+ * */
 function updateGameState() {
   // FIRST PIECE -> RUNNING
   if (m_gameState == GameState.FIRST_PIECE && m_firstPieceDelay == 0) {
@@ -268,7 +276,13 @@ function updateGameState() {
   else if (m_gameState == GameState.ARE && m_ARE == 0) {
     // Draw the next piece, since it's the end of ARE (and that's how NES does it)
     m_canvas.drawCurrentPiece();
-    m_gameState = GameState.RUNNING;
+    // Checked here because the game over condition depends on the newly spawned piece
+    if (isGameOver()) {
+      m_gameState = GameState.GAME_OVER;
+      refreshHeaderText();
+    } else {
+      m_gameState = GameState.RUNNING;
+    }
   } else if (m_gameState == GameState.RUNNING) {
     // RUNNING -> LINE CLEAR
     if (m_lineClearDelay > 0) {
@@ -328,9 +342,6 @@ function gameLoop() {
         }
       }
 
-      // Refresh displays
-      refreshStats();
-
       break;
   }
 
@@ -343,10 +354,10 @@ function gameLoop() {
 }
 
 function refreshScoreHUD() {
-  scoreTextElement.innerText = "Score: " + m_score;
-  linesTextElement.innerText = "Lines: " + m_lines;
-  levelTextElement.innerText = "Level: " + m_level;
+  console.log("refreshing score display");
+  m_canvas.drawLevelDisplay(m_level);
   m_canvas.drawScoreDisplay(m_score);
+  m_canvas.drawLinesDisplay(m_lines);
 }
 
 /** Delegate functions to controls code */
@@ -374,6 +385,9 @@ function moveCurrentPieceDown() {
     m_currentPiece.lock();
     m_inputManager.onPieceLock();
     m_canvas.drawBoard();
+
+    // Refresh board-based
+    refreshStats();
 
     // Get a new piece but --don't render it-- till after ARE
     getNewPiece();

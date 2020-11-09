@@ -1,60 +1,56 @@
 <html>
-    <head>
-        <title>Tetris Game JS</title>
-        <link href="https://fonts.googleapis.com/css2?family=Changa:wght@400;500&family=Press+Start+2P&display=swap" rel="stylesheet">
-        <link href="index.css" rel="stylesheet" type="text/css">
-    </head>
 
-    <body>
-        <h1 class="standard">NES Tetris Trainer</h1>
-        <h2 class="standard" id="header-text"></h2>
+<head>
+    <title>Tetris Game JS</title>
+    <link href="https://fonts.googleapis.com/css2?family=Changa:wght@400;500&family=Press+Start+2P&display=swap"
+        rel="stylesheet">
+    <link href="index.css" rel="stylesheet" type="text/css">
+</head>
 
-        <div id="main-area">
-            <div id="left-panel">
-                <button id="left-panel-toggle-open">
-                    <
-                </button>
-                    <div id="score-container">
-                        <p class="standard" id="score-display">Score: 0</p>
-                    <p class="standard" id="lines-display">Lines: 0</p>
-                    <p class="standard" id="level-display">Level: 0</p>
-    
-                    </div>
-                
+<body>
+    <h1 class="standard">NES Tetris Trainer</h1>
+    <h2 class="standard" id="header-text"></h2>
+
+    <div id="main-area">
+        <div id="left-panel">
+            <button id="left-panel-toggle-open">
+                < </button>
+
                     <form id="game-options-form">
                         <div>
                             <input id="level-select" type="number" placeholder="Select a starting level"></input>
                             <button id="start-game">Start!</button>
                         </div>
-    
+
                         <textarea id="piece-sequence" placeholder="Enter a piece sequence..."></textarea>
                     </form>
-                    
+
                     <textarea id="paste-area" placeholder="Paste Image Here"></textarea>
                     <img id="pasted-image" />
-    
+
                     <h4 id="stats"></h4>
-    
+
                     <h4 id="debug"></h4>
-    
+
                     <h4 id="how-to">
-                        <em>Controls:</em><br/>
-                        Click on blocks to toggle them on/off <br/>
-                        Use arrow keys to move pieces <br/>
-                        Use Z and X to rotate pieces <br/>
+                        <em>Controls:</em><br />
+                        Click on blocks to toggle them on/off <br />
+                        Use arrow keys to move pieces <br />
+                        Use Z and X to rotate pieces <br />
                         Use P to pause/unpause
                     </h4>
-                
-            </div>
 
-            <div id="right-panel">
-                <canvas id="dummy-canvas"></canvas>
-                <canvas id="main-canvas" width="500" height="560"></canvas>
-            </div>
         </div>
-        <script src="main.js"></script>
 
-        <p id="credits">Developed by Greg Cannon and Christian Harris. Source code available on <a
-                href="https://github.com/GregoryCannon/TetrisTrainer">Github</a>.</p>
-    </body>
+        <div id="right-panel">
+            <canvas id="dummy-canvas"></canvas>
+            <canvas id="main-canvas" width="500" height="560"></canvas>
+        </div>
+    </div>
+    <script src="main.js"></script>
+
+    <p id="credits">Developed by Greg Cannon and Christian Harris. Source code available on <a
+            href="https://github.com/GregoryCannon/TetrisTrainer">Github</a>.</p>
+</body>
+
 </html>

@@ -1,13 +1,7 @@
 /**
  * Handle UI animations that are indepedent of the main tetris game
  */
-import {
-  NUM_ROW,
-  NUM_COLUMN,
-  SQUARE_SIZE,
-  BOARD_HEIGHT,
-  BOARD_WIDTH,
-} from "./constants.js";
+import { BOARD_HEIGHT, DISPLAY_FULL_WIDTH } from "./constants.js";
 
 // Get elements
 const mainCanvas = document.getElementById("main-canvas");
@@ -20,7 +14,7 @@ leftPanel.style.minHeight = BOARD_HEIGHT + 60;
 
 // Resize the canvas based on the square size
 mainCanvas.setAttribute("height", BOARD_HEIGHT);
-mainCanvas.setAttribute("width", BOARD_WIDTH);
+mainCanvas.setAttribute("width", DISPLAY_FULL_WIDTH);
 
 leftPanelOpenToggle.addEventListener("click", function (e) {
   leftPanelIsOpen = !leftPanelIsOpen;
