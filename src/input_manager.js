@@ -22,7 +22,6 @@ export function InputManager(
 ) {
   this.resetLocalVariables();
 
-  this.debugFrameCount = 0;
   this.togglePauseFunc = togglePauseFunc;
   this.moveDownFunc = moveDownFunc;
   this.moveLeftFunc = moveLeftFunc;
@@ -57,8 +56,6 @@ InputManager.prototype.resetLocalVariables = function () {
 };
 
 InputManager.prototype.handleInputsThisFrame = function () {
-  this.debugFrameCount += 1;
-
   // If holding multiple keys, do nothing
   const dpadDirectionsHeld = this.downHeld + this.leftHeld + this.rightHeld;
   if (dpadDirectionsHeld > 1) {
