@@ -346,6 +346,7 @@ function refreshScoreHUD() {
   scoreTextElement.innerText = "Score: " + m_score;
   linesTextElement.innerText = "Lines: " + m_lines;
   levelTextElement.innerText = "Level: " + m_level;
+  m_canvas.drawScoreDisplay(m_score);
 }
 
 /** Delegate functions to controls code */

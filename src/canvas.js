@@ -1,11 +1,6 @@
 const mainCanvas = document.getElementById("main-canvas");
 const context = mainCanvas.getContext("2d");
 
-const NESFont = new FontFace(
-  "nesFont",
-  "https://fonts.gstatic.com/s/changa/v10/2-cm9JNi2YuVOUckZpy-eOz1pQ.woff2"
-);
-
 import {
   NUM_ROW,
   NUM_COLUMN,
@@ -22,7 +17,6 @@ mainCanvas.setAttribute("width", SQUARE_SIZE * (NUM_COLUMN + 7)); // +6 for next
 
 export function Canvas(board) {
   this.board = board;
-  NESFont.load();
 }
 
 /** Runs an animation to clear the lines passed in in an array.
@@ -154,9 +148,16 @@ Canvas.prototype.drawNextBox = function (nextPiece) {
 Canvas.prototype.drawScoreDisplay = function (score) {
   const width = 5 * SQUARE_SIZE;
   const startX = (NUM_COLUMN + 1) * SQUARE_SIZE;
-  const startY = 2 * SQUARE_SIZE;
+  const startY = 1 * SQUARE_SIZE;
 
-  this.drawMultiLineText(["SCORE", score], startX, startY, width, "center");
+  const formattedScore = ("0".repeat(6) + score).slice(-6);
+  this.drawMultiLineText(
+    ["SCORE", formattedScore],
+    startX,
+    startY,
+    width,
+    "center"
+  );
 };
 
 Canvas.prototype.drawPieceStatusDisplay = function (linesOfText) {
