@@ -9,7 +9,11 @@ import {
   VACANT,
   COLOR_PALETTE,
 } from "./constants.js";
-import { GetLevel, GetCurrentPiece } from "./tetris.js";
+import { GetLevel, GetCurrentPiece } from "./index.js";
+
+// Resize the canvas based on the square size
+mainCanvas.setAttribute("height", SQUARE_SIZE * NUM_ROW);
+mainCanvas.setAttribute("width", SQUARE_SIZE * (NUM_COLUMN + 7)); // +6 for next boxk
 
 export function Canvas(board) {
   this.board = board;

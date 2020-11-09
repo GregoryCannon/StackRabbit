@@ -12,6 +12,7 @@ import {
 import { Piece } from "./piece.js";
 import { InputManager } from "./input_manager.js";
 import { BoardEditManager } from "./board_edit_manager.js";
+import "./ui_manager";
 const GameSettings = require("./game_settings_manager");
 
 const scoreTextElement = document.getElementById("score-display");
@@ -371,7 +372,6 @@ function moveCurrentPieceDown() {
     const lockHeight = m_currentPiece.getHeightFromBottom();
     m_currentPiece.lock();
     m_inputManager.onPieceLock();
-    console.log("piece lock");
     m_canvas.drawBoard();
 
     // Get a new piece but --don't render it-- till after ARE

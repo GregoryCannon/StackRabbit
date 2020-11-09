@@ -58,7 +58,6 @@ InputManager.prototype.resetLocalVariables = function () {
 
 InputManager.prototype.handleInputsThisFrame = function () {
   this.debugFrameCount += 1;
-  console.log(this.debugFrameCount, this.dasCharge);
 
   // If holding multiple keys, do nothing
   const dpadDirectionsHeld = this.downHeld + this.leftHeld + this.rightHeld;
@@ -69,7 +68,6 @@ InputManager.prototype.handleInputsThisFrame = function () {
 
   // Move piece down
   if (this.isSoftDropping && !this.softDroppedLastFrame) {
-    console.log("Soft dropping");
     const didMove = this.moveDownFunc();
     if (!didMove) {
       // If it didn't move, then it locked in. Reset soft drop between pieces.
@@ -135,6 +133,15 @@ InputManager.prototype.keyDownListener = function (event) {
         this.isSoftDropping = true;
         break;
     }
+  } else {
+    switch (event.keyCode) {
+      case ROTATE_LEFT_KEYCODE:
+        console.log("rotate rejected, state: ", this.getGameStateFunc());
+        break;
+      case ROTATE_RIGHT_KEYCODE:
+        console.log("rotate rejected, state: ", this.getGameStateFunc());
+        break;
+    }
   }
 
   // Client controls
@@ -165,12 +172,7 @@ InputManager.prototype.tryShiftPiece = function (direction) {
   const didMove =
     direction == Direction.LEFT ? this.moveLeftFunc() : this.moveRightFunc();
   // Wall charge if it didn't move
-  if (didMove) {
-    console.log(this.debugFrameCount, "Shift");
-  }
-
   if (!didMove) {
-    console.log("wallcharge");
     this.setDASCharge(GameSettings.GetDASTriggerThreshold());
   }
   return didMove;

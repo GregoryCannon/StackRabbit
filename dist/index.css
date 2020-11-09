@@ -3,7 +3,8 @@
 }
 
 body {
-  min-width: 800px;
+  margin: 0;
+  padding-top: 20px;
 }
 
 button {
@@ -64,17 +65,36 @@ textarea {
 
 #main-area {
   display: flex;
+  flex-grow: true;
   flex-direction: row;
+  align-items: flex-start;
 }
 
 #left-panel {
+  position: relative;
+  background-color: rebeccapurple;
+  padding: 40px 60px 40px 20px;
+  width: 300px;
+  transition: margin-left 0.4s ease-in-out;
+}
+
+#left-panel-toggle-open {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  width: 40px;
+}
+
+#right-panel {
+  display: block;
+  margin: 0 auto;
+  background: darkgray;
   padding: 30px;
 }
 
 #main-canvas {
-  display: block;
-  margin: auto;
   image-rendering: pixelated;
+  margin: auto;
 }
 
 #dummy-canvas {

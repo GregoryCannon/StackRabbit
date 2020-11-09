@@ -1,5 +1,5 @@
 export function IsDASAlwaysCharged() {
-  return true;
+  return false;
 }
 
 function UseKillscreenDAS12Hz() {

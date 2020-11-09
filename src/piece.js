@@ -1,5 +1,5 @@
 import { NUM_ROW, NUM_COLUMN, VACANT, COLOR_PALETTE } from "./constants.js";
-import { TriggerGameOver } from "./tetris";
+import { TriggerGameOver } from ".";
 
 /**
  * Piece object, responsible for moving and rotating itself within the board.

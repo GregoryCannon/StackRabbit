@@ -10,40 +10,46 @@
 
         <div id="main-area">
             <div id="left-panel">
-                <div id="score-container">
-                    <p class="standard" id="score-display">Score: 0</p>
-                <p class="standard" id="lines-display">Lines: 0</p>
-                <p class="standard" id="level-display">Level: 0</p>
-
-                </div>
-            
-                <form id="game-options-form">
-                    <div>
-                        <input id="level-select" type="number" placeholder="Select a starting level"></input>
-                        <button id="start-game">Start!</button>
+                <button id="left-panel-toggle-open">
+                    >
+                </button>
+                    <div id="score-container">
+                        <p class="standard" id="score-display">Score: 0</p>
+                    <p class="standard" id="lines-display">Lines: 0</p>
+                    <p class="standard" id="level-display">Level: 0</p>
+    
                     </div>
-
-                    <textarea id="piece-sequence" placeholder="Enter a piece sequence..."></textarea>
-                </form>
                 
-                <textarea id="paste-area" placeholder="Paste Image Here"></textarea>
-                <img id="pasted-image" />
-
-                <h4 id="stats"></h4>
-
-                <h4 id="debug"></h4>
-
-                <h4 id="how-to">
-                    <em>Controls:</em><br/>
-                    Click on blocks to toggle them on/off <br/>
-                    Use arrow keys to move pieces <br/>
-                    Use Z and X to rotate pieces <br/>
-                    Use P to pause/unpause
-                </h4>
-        
-                <canvas id="dummy-canvas"></canvas>
+                    <form id="game-options-form">
+                        <div>
+                            <input id="level-select" type="number" placeholder="Select a starting level"></input>
+                            <button id="start-game">Start!</button>
+                        </div>
+    
+                        <textarea id="piece-sequence" placeholder="Enter a piece sequence..."></textarea>
+                    </form>
+                    
+                    <textarea id="paste-area" placeholder="Paste Image Here"></textarea>
+                    <img id="pasted-image" />
+    
+                    <h4 id="stats"></h4>
+    
+                    <h4 id="debug"></h4>
+    
+                    <h4 id="how-to">
+                        <em>Controls:</em><br/>
+                        Click on blocks to toggle them on/off <br/>
+                        Use arrow keys to move pieces <br/>
+                        Use Z and X to rotate pieces <br/>
+                        Use P to pause/unpause
+                    </h4>
+                
             </div>
-            <canvas id="main-canvas" width="500" height="560"></canvas>
+
+            <div id="right-panel">
+                <canvas id="dummy-canvas"></canvas>
+                <canvas id="main-canvas" width="500" height="560"></canvas>
+            </div>
         </div>
         <script src="main.js"></script>
 
