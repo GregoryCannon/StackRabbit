@@ -1,12 +1,33 @@
+export function IsDASAlwaysCharged() {
+  return true;
+}
 
-export function DASAlwaysCharged() {
+function UseKillscreenDAS12Hz() {
   return false;
 }
 
-export function TransitionEvery10Lines() {
+export function ShouldTransitionEvery10Lines() {
   return false;
 }
 
-export function TransitionEveryLine() {
+export function ShouldTransitionEveryLine() {
   return false;
+}
+
+export function GetDASUnchargedFloor() {
+  if (IsDASAlwaysCharged()) {
+    return 10;
+  }
+  return 0;
+}
+
+export function GetDASChargedFloor() {
+  return 10;
+}
+
+export function GetDASTriggerThreshold() {
+  if (UseKillscreenDAS12Hz()) {
+    return 22;
+  }
+  return 16;
 }

@@ -12,13 +12,12 @@ import {
 import { Piece } from "./piece.js";
 import { InputManager } from "./input_manager.js";
 import { BoardEditManager } from "./board_edit_manager.js";
-const GameSettings = require('./game_settings_manager');
+const GameSettings = require("./game_settings_manager");
 
 const scoreTextElement = document.getElementById("score-display");
 const linesTextElement = document.getElementById("lines-display");
 const levelTextElement = document.getElementById("level-display");
 const headerTextElement = document.getElementById("header-text");
-const debugTextElement = document.getElementById("debug");
 const statsTextElement = document.getElementById("stats");
 const gameOptionsForm = document.getElementById("game-options-form");
 const startGameButton = document.getElementById("start-game");
@@ -91,10 +90,6 @@ function refreshHeaderText() {
   headerTextElement.innerText = newText;
 }
 
-function refreshDebugText() {
-  debugTextElement.innerText = m_inputManager.getDebugText();
-}
-
 function refreshStats() {
   // Calculate parity, where the top left square is "1" and adjacent squares are "-1"
   let parity = 0;
@@ -161,9 +156,12 @@ function removeFullRows() {
     m_lines += numLinesCleared;
 
     // Maybe level transition
-    if (GameSettings.TransitionEveryLine() || m_lines >= m_nextTransitionLineCount) {
+    if (
+      GameSettings.ShouldTransitionEveryLine() ||
+      m_lines >= m_nextTransitionLineCount
+    ) {
       m_level += 1;
-      
+
       m_nextTransitionLineCount += 10;
     }
 
@@ -241,7 +239,9 @@ function startGame() {
   }
 
   // Determine the number of lines till transition
-  m_nextTransitionLineCount = GameSettings.TransitionEvery10Lines() ? 10 : getLinesToTransition(m_level);
+  m_nextTransitionLineCount = GameSettings.ShouldTransitionEvery10Lines()
+    ? 10
+    : getLinesToTransition(m_level);
 
   // Get the first piece and put it in the next piece slot. Will be bumped to current in getNewPiece()
   m_nextPiece = new Piece(m_pieceSelector.chooseNextPiece(""), m_board);
@@ -258,22 +258,21 @@ function updateGameState() {
   // FIRST PIECE -> RUNNING
   if (m_gameState == GameState.FIRST_PIECE && m_firstPieceDelay == 0) {
     m_gameState = GameState.RUNNING;
-  } 
+  }
   // LINE CLEAR -> ARE
   else if (m_gameState == GameState.LINE_CLEAR && m_lineClearDelay == 0) {
     m_gameState = GameState.ARE;
-  } 
+  }
   // ARE -> RUNNING
   else if (m_gameState == GameState.ARE && m_ARE == 0) {
     // Draw the next piece, since it's the end of ARE (and that's how NES does it)
     m_canvas.drawCurrentPiece();
     m_gameState = GameState.RUNNING;
-  } 
-  else if (m_gameState == GameState.RUNNING) {
+  } else if (m_gameState == GameState.RUNNING) {
     // RUNNING -> LINE CLEAR
     if (m_lineClearDelay > 0) {
       m_gameState = GameState.LINE_CLEAR;
-    } 
+    }
     // RUNNING -> ARE
     else if (m_ARE > 0) {
       m_gameState = GameState.ARE;
@@ -329,7 +328,6 @@ function gameLoop() {
       }
 
       // Refresh displays
-      refreshDebugText();
       refreshStats();
 
       break;
@@ -339,8 +337,8 @@ function gameLoop() {
 
   window.setTimeout(gameLoop, 16.67);
 
-  // Slo-mo testing
-  // window.setTimeout(gameLoop, 50);
+  // Slow motion testing
+  // window.setTimeout(gameLoop, 100);
 }
 
 function refreshScoreHUD() {
@@ -372,6 +370,8 @@ function moveCurrentPieceDown() {
     // Lock in piece and re-render the board
     const lockHeight = m_currentPiece.getHeightFromBottom();
     m_currentPiece.lock();
+    m_inputManager.onPieceLock();
+    console.log("piece lock");
     m_canvas.drawBoard();
 
     // Get a new piece but --don't render it-- till after ARE
@@ -412,7 +412,10 @@ function rotatePieceRight() {
 }
 
 function togglePause() {
-  if (m_gameState == GameState.RUNNING) {
+  if (
+    m_gameState == GameState.RUNNING ||
+    m_gameState == GameState.FIRST_PIECE
+  ) {
     m_gameState = GameState.PAUSED;
     refreshHeaderText();
   } else if (m_gameState == GameState.PAUSED) {
@@ -469,6 +472,5 @@ gameOptionsForm.addEventListener("submit", (e) => {
 resetLocalVariables();
 m_canvas.drawBoard();
 refreshHeaderText();
-refreshDebugText();
 refreshStats();
 gameLoop();

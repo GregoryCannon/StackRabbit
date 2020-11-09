@@ -103,6 +103,4 @@ export const GameState = {
   LINE_CLEAR: "line clear",
 };
 
-export const DAS_TRIGGER = 16;
-export const DAS_CHARGED_FLOOR = 10;
 export const LINE_CLEAR_DELAY = 18;

@@ -1,9 +1,7 @@
-import {
-  Direction,
-  DAS_TRIGGER,
-  DAS_CHARGED_FLOOR,
-  GameState,
-} from "./constants.js";
+import { Direction, GameState } from "./constants.js";
+const GameSettings = require("./game_settings_manager");
+
+const debugTextElement = document.getElementById("debug");
 
 // Default control setup
 let LEFT_KEYCODE = 37;
@@ -24,6 +22,7 @@ export function InputManager(
 ) {
   this.resetLocalVariables();
 
+  this.debugFrameCount = 0;
   this.togglePauseFunc = togglePauseFunc;
   this.moveDownFunc = moveDownFunc;
   this.moveLeftFunc = moveLeftFunc;
@@ -34,10 +33,36 @@ export function InputManager(
   this.getAREFunc = getAREFunc;
 }
 
+/* ---------------------
+    Called by parent
+---------------------- */
+
+InputManager.prototype.getIsSoftDropping = function () {
+  return this.isSoftDropping;
+};
+
+InputManager.prototype.onPieceLock = function () {
+  if (GameSettings.IsDASAlwaysCharged()) {
+    this.setDASCharge(GameSettings.GetDASTriggerThreshold());
+  }
+};
+
+InputManager.prototype.resetLocalVariables = function () {
+  this.leftHeld = false;
+  this.rightHeld = false;
+  this.downHeld = false;
+  this.isSoftDropping = false;
+  this.dasCharge = GameSettings.GetDASTriggerThreshold(); // Starts charged on the first piece
+  this.softDroppedLastFrame = false;
+};
+
 InputManager.prototype.handleInputsThisFrame = function () {
+  this.debugFrameCount += 1;
+  console.log(this.debugFrameCount, this.dasCharge);
+
   // If holding multiple keys, do nothing
-  const numKeysHeld = this.downHeld + this.leftHeld + this.rightHeld;
-  if (numKeysHeld > 1) {
+  const dpadDirectionsHeld = this.downHeld + this.leftHeld + this.rightHeld;
+  if (dpadDirectionsHeld > 1) {
     this.isSoftDropping = false;
     return;
   }
@@ -68,53 +93,37 @@ InputManager.prototype.handleInputsThisFrame = function () {
   }
 };
 
-InputManager.prototype.getIsSoftDropping = function () {
-  return this.isSoftDropping;
-};
-
-InputManager.prototype.handleHeldDirection = function (direction) {
-  // Increment DAS
-  this.dasCount = Math.min(DAS_TRIGGER, this.dasCount + 1);
-
-  if (this.dasCount == 1 || this.dasCount == DAS_TRIGGER) {
-    // Attempt to shift the piece
-    const didMove =
-      direction == Direction.LEFT ? this.moveLeftFunc() : this.moveRightFunc();
-    if (didMove) {
-      // DAS is still "charged" so we reset it to the charged floor instead of 0
-      if (this.dasCount == DAS_TRIGGER) {
-        this.dasCount = DAS_CHARGED_FLOOR;
-      }
-    } else {
-      // Wall charge
-      this.dasCount = 16;
-    }
-  }
-};
+/* ---------------------
+    Key listeners 
+---------------------- */
 
 InputManager.prototype.keyDownListener = function (event) {
   // Override the browser's built-in key repeating
   if (event.repeat) {
     return;
   }
-  const gameState = this.getGameStateFunc();
-  // Piece movement - on key down
-  // Move the piece once, and if appropriate, save that the key is held (for DAS)
-  if (this.shouldListenToInput()) {
+
+  // Track whether keys are held regardless of state
+  switch (event.keyCode) {
+    case LEFT_KEYCODE:
+      this.leftHeld = true;
+      break;
+    case RIGHT_KEYCODE:
+      this.rightHeld = true;
+      break;
+    case DOWN_KEYCODE:
+      this.downHeld = true;
+      break;
+  }
+
+  // Only actually move the pieces if in the proper game state
+  if (shouldPerformPieceMovements(this.getGameStateFunc())) {
     switch (event.keyCode) {
       case LEFT_KEYCODE:
-        // Reset DAS if not in ARE or line clear
-        if (gameState == GameState.RUNNING) {
-          this.dasCount = 0;
-        }
-        this.leftHeld = true;
+        this.handleTappedDirection(Direction.LEFT);
         break;
       case RIGHT_KEYCODE:
-        // Reset DAS if not in ARE or line clear
-        if (gameState == GameState.RUNNING) {
-          this.dasCount = 0;
-        }
-        this.rightHeld = true;
+        this.handleTappedDirection(Direction.RIGHT);
         break;
       case ROTATE_LEFT_KEYCODE:
         this.rotateLeftFunc();
@@ -123,7 +132,6 @@ InputManager.prototype.keyDownListener = function (event) {
         this.rotateRightFunc();
         break;
       case DOWN_KEYCODE:
-        this.downHeld = true;
         this.isSoftDropping = true;
         break;
     }
@@ -137,49 +145,82 @@ InputManager.prototype.keyDownListener = function (event) {
 };
 
 InputManager.prototype.keyUpListener = function (event) {
-  // Piece movement - on key up
-  if (this.shouldListenToInput()) {
-    if (event.keyCode == LEFT_KEYCODE) {
-      this.leftHeld = false;
-    } else if (event.keyCode == RIGHT_KEYCODE) {
-      this.rightHeld = false;
-    } else if (event.keyCode == DOWN_KEYCODE) {
-      this.downHeld = false;
-      this.isSoftDropping = false;
+  // Track whether keys are held regardless of state
+  if (event.keyCode == LEFT_KEYCODE) {
+    this.leftHeld = false;
+  } else if (event.keyCode == RIGHT_KEYCODE) {
+    this.rightHeld = false;
+  } else if (event.keyCode == DOWN_KEYCODE) {
+    this.downHeld = false;
+    this.isSoftDropping = false; // Can stop soft dropping in any state
+  }
+};
+
+/* ---------------------
+    Private helpers
+---------------------- */
+
+InputManager.prototype.tryShiftPiece = function (direction) {
+  // Try to move the piece and store whether it actually did or not
+  const didMove =
+    direction == Direction.LEFT ? this.moveLeftFunc() : this.moveRightFunc();
+  // Wall charge if it didn't move
+  if (didMove) {
+    console.log(this.debugFrameCount, "Shift");
+  }
+
+  if (!didMove) {
+    console.log("wallcharge");
+    this.setDASCharge(GameSettings.GetDASTriggerThreshold());
+  }
+  return didMove;
+};
+
+InputManager.prototype.handleHeldDirection = function (direction) {
+  const DASTriggerThreshold = GameSettings.GetDASTriggerThreshold();
+  // Increment DAS
+  this.setDASCharge(Math.min(DASTriggerThreshold, this.dasCharge + 1));
+
+  // Attempt to shift the piece once it hits the trigger
+  if (this.dasCharge == DASTriggerThreshold) {
+    const didMove = this.tryShiftPiece(direction);
+    if (didMove) {
+      // Move DAS to charged floor for another cycle of ARR
+      this.setDASCharge(GameSettings.GetDASChargedFloor());
     }
   }
 };
 
-InputManager.prototype.getDebugText = function () {
+// Handle single taps of the dpad, if in the proper state
+InputManager.prototype.handleTappedDirection = function (direction) {
+  if (shouldPerformPieceMovements(this.getGameStateFunc())) {
+    // DAS loses charges on tap
+    this.setDASCharge(GameSettings.GetDASUnchargedFloor());
+    this.tryShiftPiece(direction);
+  }
+};
+
+// Updates the DAS charge and refreshes the debug text
+InputManager.prototype.setDASCharge = function (value) {
+  this.dasCharge = value;
+  this.refreshDebugText();
+};
+
+InputManager.prototype.refreshDebugText = function () {
   let debugStr = "";
   let dasVisualized = "";
-  for (let i = 0; i < this.dasCount; i++) {
+  for (let i = 0; i < this.dasCharge; i++) {
     dasVisualized += "x";
   }
   // Have something on the second line so it's always the same height
-  if (this.dasCount == 0) {
+  if (this.dasCharge == 0) {
     dasVisualized = ".";
   }
-  debugStr += "DAS: " + this.dasCount + "\n" + dasVisualized;
-  return debugStr;
+  debugStr += "DAS: " + this.dasCharge + "\n" + dasVisualized;
+  debugTextElement.innerText = debugStr;
 };
 
-InputManager.prototype.resetLocalVariables = function () {
-  this.leftHeld = false;
-  this.rightHeld = false;
-  this.downHeld = false;
-  this.isSoftDropping = false;
-  this.dasCount = 16; // Starts charged on the first piece
-  this.softDroppedLastFrame = false;
-};
-
-/** Checks if the game is in a state where keyboard inputs should be processed. */
-InputManager.prototype.shouldListenToInput = function () {
-  const gameState = this.getGameStateFunc();
-  return (
-    gameState == GameState.RUNNING ||
-    gameState == GameState.LINE_CLEAR ||
-    gameState == GameState.ARE ||
-    gameState == GameState.FIRST_PIECE
-  );
-};
+// Checks if the game state allows for piece movements
+function shouldPerformPieceMovements(gameState) {
+  return gameState == GameState.RUNNING || gameState == GameState.FIRST_PIECE;
+}
