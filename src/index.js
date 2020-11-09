@@ -201,7 +201,7 @@ function getNewPiece() {
 
   // Piece status is drawn first, since the read index increments when the next
   // piece is selected
-  m_canvas.drawPieceStatusString(m_pieceSelector.getStatusString());
+  m_canvas.drawPieceStatusDisplay(m_pieceSelector.getStatusDisplay());
   m_nextPiece = new Piece(
     m_pieceSelector.chooseNextPiece(m_currentPiece.id),
     m_board
@@ -455,6 +455,9 @@ mainCanvas.addEventListener("mousemove", function (e) {
 mainCanvas.addEventListener("mouseup", function (e) {
   m_boardEditManager.onMouseUp(e);
 });
+mainCanvas.addEventListener("mouseleave", function (e) {
+  m_boardEditManager.onMouseUp(e);
+});
 
 document.addEventListener("keydown", (e) => {
   m_inputManager.keyDownListener(e);
@@ -471,6 +474,7 @@ gameOptionsForm.addEventListener("submit", (e) => {
 
 resetLocalVariables();
 m_canvas.drawBoard();
+m_canvas.drawNextBox(null);
 refreshHeaderText();
 refreshStats();
 gameLoop();

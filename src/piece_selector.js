@@ -33,12 +33,15 @@ PieceSelector.prototype.chooseNextPiece = function (currentPieceId) {
   return this.getRandomPiece(currentPieceId);
 };
 
-// Get summary of piece status (e.g. "Random piece" or e.g. "Piece 5 of 13")
-PieceSelector.prototype.getStatusString = function () {
+/**
+ * Get summary of piece status (e.g. "Random piece" or e.g. "Piece 5 of 13"),
+ * split over two lines.
+ */
+PieceSelector.prototype.getStatusDisplay = function () {
   if (m_isReadingFromSequence) {
-    return "Piece " + (m_readIndex + 1) + " of " + m_pieceSequenceStr.length;
+    return ["Piece ", m_readIndex + 1 + " of " + m_pieceSequenceStr.length];
   }
-  return "Random piece";
+  return ["Random", "Piece"];
 };
 
 /**

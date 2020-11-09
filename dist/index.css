@@ -5,11 +5,14 @@
 body {
   margin: 0;
   padding-top: 20px;
+  background-color: rgb(102 107 111);
+  color: white;
 }
 
 button {
   padding: 10px;
-  background-color: orange;
+  background-color: #ff6978;
+  color: white;
   border: none;
   font-size: 16pt;
   border-radius: 5px;
@@ -38,8 +41,8 @@ textarea {
 }
 
 .standard {
-  font-family: monospace;
-  font-weight: bold;
+  font-family: "Changa", sans-serif;
+  font-weight: 400;
   text-align: center;
 }
 
@@ -50,7 +53,8 @@ textarea {
 #score-display,
 #lines-display,
 #level-display {
-  font-size: 24px;
+  font-family: "Press Start 2p", "Changa", sans-serif;
+  font-size: 18px;
   margin: 0;
   /* display: inline-block; */
 }
@@ -72,10 +76,13 @@ textarea {
 
 #left-panel {
   position: relative;
-  background-color: rebeccapurple;
+  background-color: #4d5d6f;
   padding: 40px 60px 40px 20px;
   width: 300px;
   transition: margin-left 0.4s ease-in-out;
+  /* border: 1px solid black; */
+  /* border-radius: 0 10px 10px 0; */
+  /* box-shadow: 0 0 5px black; */
 }
 
 #left-panel-toggle-open {
@@ -88,7 +95,7 @@ textarea {
 #right-panel {
   display: block;
   margin: 0 auto;
-  background: darkgray;
+  background: #989898;
   padding: 30px;
 }
 

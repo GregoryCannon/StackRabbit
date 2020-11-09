@@ -1,6 +1,11 @@
 const mainCanvas = document.getElementById("main-canvas");
 const context = mainCanvas.getContext("2d");
 
+const NESFont = new FontFace(
+  "nesFont",
+  "https://fonts.gstatic.com/s/changa/v10/2-cm9JNi2YuVOUckZpy-eOz1pQ.woff2"
+);
+
 import {
   NUM_ROW,
   NUM_COLUMN,
@@ -17,6 +22,7 @@ mainCanvas.setAttribute("width", SQUARE_SIZE * (NUM_COLUMN + 7)); // +6 for next
 
 export function Canvas(board) {
   this.board = board;
+  NESFont.load();
 }
 
 /** Runs an animation to clear the lines passed in in an array.
@@ -101,17 +107,17 @@ Canvas.prototype.drawSquare = function (x, y, color, border = false) {
   }
 };
 
-// draw the next box
+/**
+ * Draws the next box. If nextPiece is nonnull, draws the piece in it.
+ * @param {Piece object} nextPiece
+ */
 Canvas.prototype.drawNextBox = function (nextPiece) {
   // All in units of SQUARE_SIZE
   const startX = NUM_COLUMN + 1;
   const startY = 8;
   const width = 5;
   const height = 4.5;
-  const pieceStartX =
-    nextPiece.id === "I" || nextPiece.id === "O" ? startX + 0.5 : startX;
-  const pieceStartY = nextPiece.id === "I" ? startY - 0.25 : startY + 0.25;
-  const color = COLOR_PALETTE[nextPiece.colorId][GetLevel() % 10];
+
   // background
   context.fillStyle = "BLACK";
   context.fillRect(
@@ -121,36 +127,74 @@ Canvas.prototype.drawNextBox = function (nextPiece) {
     height * SQUARE_SIZE
   );
 
-  // draw the piece
+  if (nextPiece != null) {
+    const pieceStartX =
+      nextPiece.id === "I" || nextPiece.id === "O" ? startX + 0.5 : startX;
+    const pieceStartY = nextPiece.id === "I" ? startY - 0.25 : startY + 0.25;
+    const color = COLOR_PALETTE[nextPiece.colorId][GetLevel() % 10];
 
-  for (let r = 0; r < nextPiece.activeTetromino.length; r++) {
-    for (let c = 0; c < nextPiece.activeTetromino[r].length; c++) {
-      // Draw only occupied squares
-      if (nextPiece.activeTetromino[r][c]) {
-        this.drawSquare(
-          pieceStartX + c,
-          pieceStartY + r,
-          color,
-          nextPiece.colorId === 1
-        );
+    // draw the piece
+
+    for (let r = 0; r < nextPiece.activeTetromino.length; r++) {
+      for (let c = 0; c < nextPiece.activeTetromino[r].length; c++) {
+        // Draw only occupied squares
+        if (nextPiece.activeTetromino[r][c]) {
+          this.drawSquare(
+            pieceStartX + c,
+            pieceStartY + r,
+            color,
+            nextPiece.colorId === 1
+          );
+        }
       }
     }
   }
 };
 
-Canvas.prototype.drawPieceStatusString = function (displayString) {
+Canvas.prototype.drawScoreDisplay = function (score) {
+  const width = 5 * SQUARE_SIZE;
   const startX = (NUM_COLUMN + 1) * SQUARE_SIZE;
-  const startY = 7 * SQUARE_SIZE;
-  const width = 150;
+  const startY = 2 * SQUARE_SIZE;
+
+  this.drawMultiLineText(["SCORE", score], startX, startY, width, "center");
+};
+
+Canvas.prototype.drawPieceStatusDisplay = function (linesOfText) {
+  const width = 5 * SQUARE_SIZE;
+  const startX = (NUM_COLUMN + 1) * SQUARE_SIZE;
+  const startY = 6 * SQUARE_SIZE;
+
+  this.drawMultiLineText(linesOfText, startX, startY, width, "center");
+};
+
+Canvas.prototype.drawMultiLineText = function (
+  linesOfText,
+  startX,
+  startY,
+  width,
+  align
+) {
+  const lineHeight = 20;
 
   // Clear previous text
-  context.fillStyle = "WHITE";
-  context.fillRect(startX, startY - 20, width, 40);
+  context.clearRect(startX, startY, width, linesOfText.length * lineHeight);
 
   // Write "x of x" text
-  context.font = "20px monospace";
+  context.textAlign = "center";
+  context.font = "18px 'Press Start 2P'";
   context.fillStyle = "BLACK";
-  context.fillText(displayString, startX, startY, width);
+
+  const alignOffsetFactor = align == "center" ? width / 2 : 0;
+
+  let lineIndex = 0;
+  for (let line of linesOfText) {
+    context.fillText(
+      line.toUpperCase(),
+      startX + alignOffsetFactor,
+      startY + (lineIndex + 1) * lineHeight
+    );
+    lineIndex++;
+  }
 };
 
 Canvas.prototype.drawPiece = function (piece) {

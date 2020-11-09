@@ -1,6 +1,6 @@
 export const NUM_ROW = 20;
 export const NUM_COLUMN = 10;
-export const PIXEL_SIZE = 4; // i.e. the scaleup from 1 NES pixel
+export const PIXEL_SIZE = 3; // i.e. the scaleup from 1 NES pixel
 export const SQUARE_SIZE = 8 * PIXEL_SIZE;
 export const BOARD_HEIGHT = SQUARE_SIZE * NUM_ROW;
 export const BOARD_WIDTH = SQUARE_SIZE * (NUM_COLUMN + 7); // Extra columns for next box
