@@ -5,7 +5,7 @@ export const SQUARE_SIZE = 8 * PIXEL_SIZE;
 
 export const BOARD_HEIGHT = SQUARE_SIZE * NUM_ROW;
 export const BOARD_WIDTH = SQUARE_SIZE * NUM_COLUMN;
-export const DISPLAY_FULL_WIDTH = SQUARE_SIZE * (NUM_COLUMN + 7); // Extra columns for next box
+export const DISPLAY_FULL_WIDTH = SQUARE_SIZE * (NUM_COLUMN + 6); // Extra columns for next box
 export const BOARD_TOP_MARGIN = 2 * SQUARE_SIZE;
 export const NEXT_BOX_WIDTH = 5 * SQUARE_SIZE;
 
