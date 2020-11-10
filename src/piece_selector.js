@@ -39,7 +39,7 @@ PieceSelector.prototype.chooseNextPiece = function (currentPieceId) {
  */
 PieceSelector.prototype.getStatusDisplay = function () {
   if (m_isReadingFromSequence) {
-    return ["Piece ", m_readIndex + 1 + " of " + m_pieceSequenceStr.length];
+    return ["Piece ", m_readIndex + 1 + "/" + m_pieceSequenceStr.length];
   }
   return ["Random", "Piece"];
 };

@@ -23,7 +23,7 @@ leftPanelOpenToggle.addEventListener("click", function (e) {
     leftPanel.style.marginLeft = 0;
     leftPanelOpenToggle.innerText = "<";
   } else {
-    leftPanel.style.marginLeft = -260;
+    leftPanel.style.marginLeft = -280;
     leftPanelOpenToggle.innerText = ">";
   }
 });

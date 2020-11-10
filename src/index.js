@@ -26,6 +26,7 @@ const startGameButton = document.getElementById("start-game");
 const restartGameButton = document.getElementById("restart-game");
 const levelSelectElement = document.getElementById("level-select");
 const mainCanvas = document.getElementById("main-canvas");
+const rightPanel = document.getElementById("right-panel");
 
 // 0 is empty space, 1 is T piece color, 2 is L piece color, 3 is J piece color
 export const SquareState = {
@@ -482,7 +483,7 @@ mainCanvas.addEventListener("mousemove", function (e) {
 mainCanvas.addEventListener("mouseup", function (e) {
   m_boardEditManager.onMouseUp(e);
 });
-mainCanvas.addEventListener("mouseleave", function (e) {
+rightPanel.addEventListener("mouseleave", function (e) {
   m_boardEditManager.onMouseUp(e);
 });
 

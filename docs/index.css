@@ -7,6 +7,7 @@ body {
   padding-top: 20px;
   background-color: rgb(102 107 111);
   color: white;
+  font-family: "Changa", sans-serif;
 }
 
 button {
@@ -19,7 +20,7 @@ button {
 }
 
 button:hover {
-  transform: translate(0px, -1px);
+  background-color: #f1a13e;
 }
 
 button:focus {
@@ -69,7 +70,7 @@ textarea {
   position: relative;
   background-color: #a29792;
   padding: 40px 60px 40px 20px;
-  width: 300px;
+  width: 320px;
   transition: margin-left 0.4s ease-in-out;
   /* border: 1px solid black; */
   /* border-radius: 0 10px 10px 0; */
@@ -79,8 +80,42 @@ textarea {
 #left-panel-toggle-open {
   position: absolute;
   top: 50%;
+  margin-top: -100px;
   right: 0;
   width: 40px;
+  height: 200px;
+}
+
+#controls-container {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: center;
+  padding: 4px;
+  background-color: white;
+  color: black;
+  position: absolute;
+  bottom: 0;
+  left: 20px;
+  right: 60px;
+  bottom: 40px;
+}
+
+.key-combo {
+  margin: 0 8px;
+}
+
+.key-combo img {
+  display: block;
+  margin: 0 auto;
+}
+
+.key-explanation {
+  font-family: "Changa", sans-serif;
+  text-align: center;
+  line-height: 15px;
+  font-size: 15px;
+  max-height: 15px;
 }
 
 #right-panel {
@@ -129,10 +164,9 @@ textarea {
 }
 
 #debug,
-#stats,
-#how-to {
+#stats {
+  font-family: sans-serif;
   font-size: 20px;
-  font-family: monospace;
   text-align: right;
   font-weight: 500;
 }

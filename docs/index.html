@@ -20,6 +20,7 @@
                         <div>
                             <input id="level-select" type="number" placeholder="Select a starting level"></input>
                             <button id="start-game">Start!</button>
+                            <button id="dig-simulator">Dig Practice</button>
                         </div>
 
                         <textarea id="piece-sequence" placeholder="Enter a piece sequence..."></textarea>
@@ -32,14 +33,25 @@
 
                     <h4 id="debug"></h4>
 
-                    <h4 id="how-to">
-                        <em>Controls:</em><br />
-                        Click on blocks to toggle them on/off <br />
-                        Use arrow keys to move pieces <br />
-                        Use Z and X to rotate pieces <br />
-                        Use P to pause/unpause
-                    </h4>
+                    <div id=controls-container>
+                        <div class="key-combo">
+                            <div class="key-explanation">Rotate pieces</div>
+                            <img width=60 height=30 src="/static/KeyZX.png" </div>
+                        </div>
 
+                        <div class="key-combo">
+                            <div class="key-explanation">Move pieces</div>
+                            <img width=90 height=30 src="/static/KeyArrows.png" </div>
+                        </div>
+                        <div class="key-combo">
+                            <div class="key-explanation">Pause</div>
+                            <img width=30 height=30 src="/static/KeyP.png" </div>
+                        </div>
+                        <div class="key-combo">
+                            <div class="key-explanation">Edit board</div>
+                            <img width=30 height=30 src="/static/Mouse icon.png" </div>
+                        </div>
+                    </div>
         </div>
 
         <div id="right-panel">
