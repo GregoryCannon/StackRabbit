@@ -1,7 +1,6 @@
 const mainCanvas = document.getElementById("main-canvas");
 
-import { SquareState } from ".";
-import { SQUARE_SIZE } from "./constants.js";
+import { SQUARE_SIZE, SquareState } from "./constants.js";
 
 export function BoardEditManager(board, canvas) {
   this.board = board;

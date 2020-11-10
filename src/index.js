@@ -5,14 +5,16 @@ import {
   NUM_ROW,
   NUM_COLUMN,
   REWARDS,
-  GameState,
   LINE_CLEAR_DELAY,
+  GameState,
+  SquareState,
   GetGravity,
   CalculatePushdownPoints,
 } from "./constants.js";
 import { Piece } from "./piece.js";
 import { InputManager } from "./input_manager.js";
 import { BoardEditManager } from "./board_edit_manager.js";
+import { BoardGenerator } from "./board_generator.js";
 import "./ui_manager";
 const GameSettings = require("./game_settings_manager");
 
@@ -28,14 +30,6 @@ const levelSelectElement = document.getElementById("level-select");
 const mainCanvas = document.getElementById("main-canvas");
 const rightPanel = document.getElementById("right-panel");
 
-// 0 is empty space, 1 is T piece color, 2 is L piece color, 3 is J piece color
-export const SquareState = {
-  EMPTY: 0,
-  COLOR1: 1,
-  COLOR2: 2,
-  COLOR3: 3,
-};
-
 // Create the initial empty board
 let m_board = [];
 for (let r = 0; r < NUM_ROW; r++) {
@@ -48,6 +42,7 @@ for (let r = 0; r < NUM_ROW; r++) {
 let m_inputManager;
 let m_canvas = new Canvas(m_board);
 let m_boardEditManager = new BoardEditManager(m_board, m_canvas);
+let m_boardGenerator = new BoardGenerator(m_board);
 let m_pieceSelector = new PieceSelector();
 let m_boardLoader = new BoardLoader(m_board, m_canvas);
 let m_currentPiece;
@@ -236,7 +231,7 @@ function startGame() {
   resetLocalVariables();
   m_firstPieceDelay = 30; // Extra delay for first piece
   m_pieceSelector.startReadingPieceSequence();
-  m_boardLoader.resetBoard();
+  // m_boardLoader.resetBoard();
   m_gameState = GameState.FIRST_PIECE;
 
   // Parse the level
@@ -496,7 +491,20 @@ document.addEventListener("keyup", (e) => {
 
 gameOptionsForm.addEventListener("submit", (e) => {
   e.preventDefault();
-  startGameButton.focus();
+  mainCanvas.focus();
+
+  m_boardGenerator.loadEmptyBoard(m_board);
+  m_canvas.drawBoard();
+  startGame();
+});
+document.getElementById("random-board").addEventListener("click", (e) => {
+  m_boardGenerator.loadStandardBoard(m_board);
+  m_canvas.drawBoard();
+  startGame();
+});
+document.getElementById("dig-practice").addEventListener("click", (e) => {
+  m_boardGenerator.loadDigBoard();
+  m_canvas.drawBoard();
   startGame();
 });
 

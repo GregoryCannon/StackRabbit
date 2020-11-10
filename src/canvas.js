@@ -10,8 +10,10 @@ import {
   VACANT,
   COLOR_PALETTE,
   BOARD_WIDTH,
+  SquareState,
 } from "./constants.js";
 import { GetLevel, GetCurrentPiece } from "./index.js";
+const GameSettings = require("./game_settings_manager");
 
 // Resize the canvas based on the square size
 mainCanvas.setAttribute("height", SQUARE_SIZE * NUM_ROW);
@@ -288,6 +290,104 @@ Canvas.prototype.drawBoard = function () {
       } else {
         this.drawSquare(c, r, VACANT, square === 1);
       }
+    }
+  }
+
+  if (GameSettings.ShouldShowDiggingHints()) {
+    this.drawDiggingHints();
+  }
+};
+
+function filledIfExists(row, col, board) {
+  if (col < 0 || col >= NUM_COLUMN || row < 0 || row >= NUM_ROW) {
+    return true;
+  }
+  return board[row][col] != SquareState.EMPTY;
+}
+
+function getTopmostHole(board) {
+  for (let r = 0; r < NUM_ROW; r++) {
+    for (let c = 0; c < NUM_COLUMN; c++) {
+      if (
+        board[r][c] == SquareState.EMPTY &&
+        filledIfExists(r - 1, c, board) &&
+        filledIfExists(r + 1, c, board) &&
+        filledIfExists(r, c - 1, board) &&
+        filledIfExists(r, c + 1, board)
+      ) {
+        return [r, c];
+      }
+    }
+  }
+  return [];
+}
+
+function getRowsCoveringWell(board) {
+  let r = NUM_ROW - 1;
+  let rowsCoveringWell = [];
+  while (!filledIfExists(r, NUM_COLUMN - 1, board)) {
+    r--;
+  }
+  while (r >= 0 && filledIfExists(r, NUM_COLUMN - 1, board)) {
+    rowsCoveringWell.push(r);
+    r--;
+  }
+  return rowsCoveringWell;
+}
+
+function fillRow(row, color, board) {
+  console.log("filling row", row);
+  for (let loopCol = 0; loopCol < NUM_COLUMN; loopCol++) {
+    if (board[row][loopCol] == SquareState.EMPTY) {
+      context.fillStyle = color;
+      context.fillRect(
+        loopCol * SQUARE_SIZE + PIXEL_SIZE,
+        row * SQUARE_SIZE + PIXEL_SIZE,
+        SQUARE_SIZE - 3 * PIXEL_SIZE,
+        SQUARE_SIZE - 3 * PIXEL_SIZE
+      );
+    }
+  }
+}
+
+Canvas.prototype.drawDiggingHints = function () {
+  const topMostHole = getTopmostHole(this.board);
+  const rowsCoveringWell = getRowsCoveringWell(this.board);
+
+  console.log("hole", topMostHole, topMostHole == []);
+  console.log("well", rowsCoveringWell);
+
+  if (topMostHole.length > 0) {
+    console.log("A");
+    // Find the rows that need to be cleared
+    const row = topMostHole[0];
+    const col = topMostHole[1];
+    let rowsToClear = [];
+
+    let currentRow = row - 1;
+    while (currentRow >= 0 && filledIfExists(currentRow, col, this.board)) {
+      rowsToClear.push(currentRow);
+      currentRow -= 1;
+    }
+
+    // Draw a yellow circle in the topmost hole
+    const centerY = (row + 0.45) * SQUARE_SIZE;
+    const centerX = (col + 0.45) * SQUARE_SIZE;
+    const radius = SQUARE_SIZE / 4;
+    context.fillStyle = "yellow";
+    context.beginPath();
+    context.arc(centerX, centerY, radius, 0, 2 * Math.PI, false);
+    context.fill();
+
+    // Fill in the empty spaces with red in rows that need to be cleared
+    for (let loopRow of rowsToClear) {
+      fillRow(loopRow, "#842424", this.board);
+    }
+  } else if (rowsCoveringWell.length > 0) {
+    console.log("B");
+    // Fill in the empty spaces with red in rows that need to be cleared
+    for (let loopRow of rowsCoveringWell) {
+      fillRow(loopRow, "#215E30", this.board);
     }
   }
 };

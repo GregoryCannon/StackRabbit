@@ -14,6 +14,14 @@ export const RED_COLOR = "red";
 export const BLUE_COLOR = "#2105f2";
 export const WHITE_COLOR = "white";
 
+// 0 is empty space, 1 is T piece color, 2 is L piece color, 3 is J piece color
+export const SquareState = {
+  EMPTY: 0,
+  COLOR1: 1,
+  COLOR2: 2,
+  COLOR3: 3,
+};
+
 // color 1 is COLOR_3 with white in the center, which is used for I, T, and O
 export const COLOR_1 = {
   0: "rgb(0,88,248)",

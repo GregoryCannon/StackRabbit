@@ -14,6 +14,10 @@ export function ShouldTransitionEveryLine() {
   return false;
 }
 
+export function ShouldShowDiggingHints() {
+  return true;
+}
+
 export function GetDASUnchargedFloor() {
   if (IsDASAlwaysCharged()) {
     return 10;

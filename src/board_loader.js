@@ -2,7 +2,7 @@ const pasteAreaElement = document.getElementById("paste-area");
 const pastedImageElement = document.getElementById("pasted-image");
 
 import { NUM_ROW, NUM_COLUMN, VACANT } from "./constants.js";
-import { SquareState } from "./index.js";
+import { SquareState } from "./constants.js";
 
 let m_loadedStateFromImage = false;
 let m_loadedBoard = [];
