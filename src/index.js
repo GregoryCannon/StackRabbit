@@ -407,7 +407,7 @@ function moveCurrentPieceDown() {
     );
 
     // Get the ARE based on piece lock height
-    /* ARE (frame delay before next piece) is 10 frames for 0-2 height, then an additional 
+    /* ARE (frame delay before next piece) is 10 frames for 0-2 height, then an additional
       2 frames for each group of 4 above that.
         E.g. 9 high would be: 10 + 2 + 2 = 14 frames */
     m_ARE = 10 + Math.floor((lockHeight + 2) / 4) * 2;
