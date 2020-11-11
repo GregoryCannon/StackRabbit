@@ -29,7 +29,7 @@ BoardGenerator.prototype.loadStandardBoard = function () {
 
   let currentHeight = getRandomInt(6, 10);
   for (let col = 0; col < NUM_COLUMN - 1; col++) {
-    const heightThisCol = Math.min(16, Math.max(0, currentHeight));
+    const heightThisCol = Math.min(12, Math.max(0, currentHeight));
     // There's some subtraction here because the origin is at the top
     // but 0 height is at the bottom
     for (let row = NUM_ROW - heightThisCol - 1; row < NUM_ROW; row++) {

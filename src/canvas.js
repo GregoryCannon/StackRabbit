@@ -336,7 +336,6 @@ function getRowsCoveringWell(board) {
 }
 
 function fillRow(row, color, board) {
-  console.log("filling row", row);
   for (let loopCol = 0; loopCol < NUM_COLUMN; loopCol++) {
     if (board[row][loopCol] == SquareState.EMPTY) {
       context.fillStyle = color;
@@ -354,11 +353,7 @@ Canvas.prototype.drawDiggingHints = function () {
   const topMostHole = getTopmostHole(this.board);
   const rowsCoveringWell = getRowsCoveringWell(this.board);
 
-  console.log("hole", topMostHole, topMostHole == []);
-  console.log("well", rowsCoveringWell);
-
   if (topMostHole.length > 0) {
-    console.log("A");
     // Find the rows that need to be cleared
     const row = topMostHole[0];
     const col = topMostHole[1];
@@ -384,7 +379,6 @@ Canvas.prototype.drawDiggingHints = function () {
       fillRow(loopRow, "#842424", this.board);
     }
   } else if (rowsCoveringWell.length > 0) {
-    console.log("B");
     // Fill in the empty spaces with red in rows that need to be cleared
     for (let loopRow of rowsCoveringWell) {
       fillRow(loopRow, "#215E30", this.board);
