@@ -36,12 +36,13 @@ BoardLoader.prototype.getBoardStateFromImage = function (img) {
   var context = dummy_canvas.getContext("2d");
   dummy_canvas.width = img.width;
   dummy_canvas.height = img.height;
+  dummy_canvas.style.display = "block";
   context.drawImage(img, 0, 0);
   this.resetBoard();
 
-  const cropOffset = -0.3;
+  const cropOffset = -0.1;
   const SQ = (img.height / 20 + img.width / 10) / 2 + cropOffset;
-  const rgbEmptyThreshold = 60; // If all three channels are <60/255, then the cell is "empty"
+  const rgbEmptyThreshold = 30; // If all three channels are <60/255, then the cell is "empty"
 
   // Iterate over the image and read the square colors into the board
   for (let c = 0; c < NUM_COLUMN; c++) {
@@ -52,24 +53,37 @@ BoardLoader.prototype.getBoardStateFromImage = function (img) {
       if (
         Math.max(pixelData[0], pixelData[1], pixelData[2]) > rgbEmptyThreshold
       ) {
-        this.board[r][c] = SquareState.color1; //"rgba(" + pixelData.join(",") + ")";
+        if (r >= 7 && r <= 9) {
+          console.log(r, c, pixelData, "FULL");
+        }
+        context.fillStyle = "RED";
+        this.board[r][c] = SquareState.COLOR2;
       } else {
+        if (r >= 7 && r <= 9) {
+          console.log(r, c, pixelData, "EMPTY");
+        }
+        context.fillStyle = "GREEN";
+
         this.board[r][c] = SquareState.EMPTY;
       }
-      context.fillStyle = "GREEN";
-      context.fillRect(x, y, 5, 5);
+      context.fillRect(x, y, 3, 3);
     }
   }
 
   // Edit out the currently falling piece from the boardstate
-  clearFloatingPiece(this.board);
+  clearFloatingPiece(this.board, context, SQ);
   m_loadedBoard = JSON.parse(JSON.stringify(this.board)); // Save a copy of the loaded board
   this.canvas.drawBoard();
   m_loadedStateFromImage = true;
+
+  // Hide the dummy canvas afterwards
+  setTimeout(() => {
+    dummy_canvas.style.display = "none";
+  }, 3000);
 };
 
 // Remove the piece from midair when loading a board from a screenshot
-function clearFloatingPiece(board) {
+function clearFloatingPiece(board, dummyContext, SQ) {
   // Start from the bottom, look for an empty row, and then clear all rows above that
   let startedClearing = false;
   for (let r = NUM_ROW - 1; r >= 0; r--) {
@@ -87,6 +101,9 @@ function clearFloatingPiece(board) {
       }
       if (rowEmpty) {
         startedClearing = true;
+
+        dummyContext.fillStyle = "BLACK";
+        dummyContext.fillRect(0, 0, SQ * NUM_COLUMN, r * SQ);
       }
     }
   }

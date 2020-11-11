@@ -53,3 +53,9 @@ button:active {
   margin: 0 auto;
   align-items: flex-start;
 }
+
+#dummy-canvas {
+  display: none;
+  margin: 0 auto;
+  transition: height 2s ease;
+}
