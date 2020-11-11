@@ -11,8 +11,8 @@
 </head>
 
 <body>
-    <h1 class="center">NES Tetris Trainer</h1>
-    <h2 class="center" id="header-text"></h2>
+    <h1 class="text-center">NES Tetris Trainer</h1>
+    <h2 class="text-center" id="header-text"></h2>
 
     <div id="main-area">
 
@@ -20,26 +20,23 @@
             <button id="left-panel-toggle-button">
             </button>
 
-            <span class="section-title">
+            <h6 class="section-title">
                 Presets
-            </span>
+            </h6>
 
-            <button class="preset-button">Standard</button>
-            <button class="preset-button">Random Board</button>
-            <button class="preset-button">Dig Practice</button>
-            <button class="preset-button">Slow Killscreen</button>
-            <button class="preset-button">Slow 19+</button>
+            <button class="preset-button" id="preset-standard">Standard</button>
+            <button class="preset-button" id="preset-random-board">Random Board</button>
+            <button class="preset-button" id="preset-dig-practice">Dig Practice</button>
+            <button class="preset-button" id="preset-slow-killscreen">Slow Killscreen</button>
+            <button class="preset-button" id="slow-19-plus">Slow 19+</button>
 
-            <form id="game-options-form">
-                <div>
-                    <input id="level-select" type="number" placeholder="Select a starting level"></input>
-                    <button id="start-game">Start!</button>
-                    <button type="button" id="random-board">Random Board</button>
-                    <button type="button" id="dig-practice">Dig Practice</button>
-                </div>
+            <h6 class="section-title">
+                Game Settings
+            </h6>
 
-                <textarea id="piece-sequence" placeholder="Enter a piece sequence..."></textarea>
-            </form>
+            <input id="level-select" type="number" placeholder="Select a starting level"></input>
+
+            <textarea id="piece-sequence" placeholder="Enter a piece sequence..."></textarea>
 
             <textarea id="paste-area" placeholder="Paste Image Here"></textarea>
             <img id="pasted-image" />
@@ -47,6 +44,13 @@
             <h4 id="stats"></h4>
 
             <h4 id="debug"></h4>
+
+            <center>
+                <button class="button-primary" id="start-button">
+                    Start!
+                </button>
+            </center>
+
         </div>
 
         <div id="right-panel">

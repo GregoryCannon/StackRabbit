@@ -493,21 +493,28 @@ document.addEventListener("keyup", (e) => {
   m_inputManager.keyUpListener(e);
 });
 
-gameOptionsForm.addEventListener("submit", (e) => {
+document.getElementById("preset-standard").addEventListener("click", (e) => {
+  m_boardGenerator.loadEmptyBoard();
+  m_canvas.drawBoard();
+});
+document
+  .getElementById("preset-random-board")
+  .addEventListener("click", (e) => {
+    m_boardGenerator.loadStandardBoard();
+    m_canvas.drawBoard();
+  });
+document
+  .getElementById("preset-dig-practice")
+  .addEventListener("click", (e) => {
+    m_boardGenerator.loadDigBoard();
+    m_canvas.drawBoard();
+  });
+
+document.getElementById("start-button").addEventListener("click", (e) => {
   e.preventDefault();
   mainCanvas.focus();
 
-  m_boardGenerator.loadEmptyBoard(m_board);
-  m_canvas.drawBoard();
-  startGame();
-});
-document.getElementById("random-board").addEventListener("click", (e) => {
-  m_boardGenerator.loadStandardBoard(m_board);
-  m_canvas.drawBoard();
-  startGame();
-});
-document.getElementById("dig-practice").addEventListener("click", (e) => {
-  m_boardGenerator.loadDigBoard();
+  m_boardGenerator.loadEmptyBoard();
   m_canvas.drawBoard();
   startGame();
 });

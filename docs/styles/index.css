@@ -11,7 +11,7 @@ body {
   font-weight: 400;
 }
 
-.center {
+.text-center {
   text-align: center;
 }
 
@@ -33,11 +33,6 @@ button:focus {
 button:active {
   transform: translate(0px, 1px);
   outline: none;
-}
-
-.button-primary {
-  padding: 10px;
-  font-size: 15pt;
 }
 
 #credits {
