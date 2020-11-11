@@ -34,14 +34,33 @@
                 Game Settings
             </h6>
 
-            <input id="level-select" type="number" placeholder="Select a starting level"></input>
+            <div id="game-settings">
 
-            <textarea id="piece-sequence" placeholder="Enter a piece sequence..."></textarea>
+                <table id="game-settings-table">
+                    <tr>
+                        <td>
+                            Level
+                        </td>
+                        <td>
+                            <input id="level-select" type="number" placeholder="Starting level"></input>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>
+                            Piece Sequence
+                        </td>
+                        <td>
+                            <textarea id="piece-sequence" placeholder="Enter a piece sequence..."></textarea>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+
 
             <textarea id="paste-area" placeholder="Paste Image Here"></textarea>
             <img id="pasted-image" />
 
-            <h4 id="stats"></h4>
+            <h4 style="display: none" id="stats"></h4>
 
             <h4 id="debug"></h4>
 

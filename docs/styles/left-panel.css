@@ -39,19 +39,35 @@
   background: #f7786f;
 }
 
+#game-settings-table {
+  font-family: "Changa", sans-serif;
+  line-height: 16px;
+  font-size: 18px;
+}
+
+#game-settings-table input {
+  font-family: "Changa", sans-serif;
+  font-size: 16px;
+}
+
+#game-settings-table textarea {
+  max-width: 150px;
+  max-height: 80px;
+}
+
 #level-select {
+  width: 100%;
   font-size: 18px;
   height: 40px;
-  width: auto;
   border-radius: 3px;
   border: solid 1px gray;
 }
 
 #piece-sequence {
-  width: 100%;
   border-radius: 3px;
 }
 #paste-area {
+  margin-top: 30px;
   width: 100%;
   border-radius: 3px;
 }
