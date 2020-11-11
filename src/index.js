@@ -301,6 +301,7 @@ function updateGameState() {
 
 // 60 FPS game loop
 function gameLoop() {
+  const start = Date.now();
   switch (m_gameState) {
     case GameState.FIRST_PIECE:
       // Waiting for first piece
@@ -350,7 +351,10 @@ function gameLoop() {
 
   updateGameState();
 
-  window.setTimeout(gameLoop, 16.67);
+  const msElapsed = Date.now() - start;
+  console.log("Ms elapsed:", msElapsed);
+
+  window.setTimeout(gameLoop, 16.67 - msElapsed);
 
   // Slow motion testing
   // window.setTimeout(gameLoop, 100);
