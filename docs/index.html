@@ -1,61 +1,52 @@
 <html>
 
 <head>
-    <title>Tetris Game JS</title>
+    <title>NES Tetris Trainer</title>
     <link href="https://fonts.googleapis.com/css2?family=Changa:wght@400;500&family=Press+Start+2P&display=swap"
         rel="stylesheet">
-    <link href="index.css" rel="stylesheet" type="text/css">
+    <link href="styles/index.css" rel="stylesheet" type="text/css">
+    <link href="styles/left-panel.css" rel="stylesheet" type="text/css">
+    <link href="styles/right-panel.css" rel="stylesheet" type="text/css">
+    <link href="styles/bottom-panel.css" rel="stylesheet" type="text/css">
 </head>
 
 <body>
-    <h1 class="standard">NES Tetris Trainer</h1>
-    <h2 class="standard" id="header-text"></h2>
+    <h1 class="center">NES Tetris Trainer</h1>
+    <h2 class="center" id="header-text"></h2>
 
     <div id="main-area">
 
         <div id="left-panel">
-            <button id="left-panel-toggle-open">
-                < </button>
+            <button id="left-panel-toggle-button">
+            </button>
 
-                    <form id="game-options-form">
-                        <div>
-                            <input id="level-select" type="number" placeholder="Select a starting level"></input>
-                            <button id="start-game">Start!</button>
-                            <button type="button" id="random-board">Random Board</button>
-                            <button type="button" id="dig-practice">Dig Practice</button>
-                        </div>
+            <span class="section-title">
+                Presets
+            </span>
 
-                        <textarea id="piece-sequence" placeholder="Enter a piece sequence..."></textarea>
-                    </form>
+            <button class="preset-button">Standard</button>
+            <button class="preset-button">Random Board</button>
+            <button class="preset-button">Dig Practice</button>
+            <button class="preset-button">Slow Killscreen</button>
+            <button class="preset-button">Slow 19+</button>
 
-                    <textarea id="paste-area" placeholder="Paste Image Here"></textarea>
-                    <img id="pasted-image" />
+            <form id="game-options-form">
+                <div>
+                    <input id="level-select" type="number" placeholder="Select a starting level"></input>
+                    <button id="start-game">Start!</button>
+                    <button type="button" id="random-board">Random Board</button>
+                    <button type="button" id="dig-practice">Dig Practice</button>
+                </div>
 
-                    <h4 id="stats"></h4>
+                <textarea id="piece-sequence" placeholder="Enter a piece sequence..."></textarea>
+            </form>
 
-                    <h4 id="debug"></h4>
+            <textarea id="paste-area" placeholder="Paste Image Here"></textarea>
+            <img id="pasted-image" />
 
+            <h4 id="stats"></h4>
 
-                    <div id=controls-container>
-                        <div class="key-combo">
-                            <div class="key-explanation">Rotate pieces</div>
-                            <img width=60 height=30 src="static/KeyZX.png"></img>
-                        </div>
-
-                        <div class="key-combo">
-                            <div class="key-explanation">Move pieces</div>
-                            <img width=90 height=30 src="static/KeyArrows.png"> </img>
-                        </div>
-                        <div class="key-combo">
-                            <div class="key-explanation">Pause</div>
-                            <img width=30 height=30 src="static/KeyP.png"> </img>
-                        </div>
-                        <div class="key-combo">
-                            <div class="key-explanation">Edit board</div>
-                            <img width=30 height=30 src="static/Mouse icon.png"> </img>
-                        </div>
-                    </div>
-
+            <h4 id="debug"></h4>
         </div>
 
         <div id="right-panel">
@@ -64,10 +55,32 @@
         </div>
     </div>
 
-    <script src="main.js"></script>
+    <div id="bottom-panel">
+        <div id=controls-container>
+            <div class="key-combo">
+                <div class="key-explanation">Rotate pieces</div>
+                <img width=60 height=30 src="static/KeyZX.png"></img>
+            </div>
 
-    <p id="credits">Developed by Greg Cannon and Christian Harris. Source code available on <a
-            href="https://github.com/GregoryCannon/TetrisTrainer">Github</a>.</p>
+            <div class="key-combo">
+                <div class="key-explanation">Move pieces</div>
+                <img width=90 height=30 src="static/KeyArrows.png"> </img>
+            </div>
+            <div class="key-combo">
+                <div class="key-explanation">Pause</div>
+                <img width=30 height=30 src="static/KeyP.png"> </img>
+            </div>
+            <div class="key-combo">
+                <div class="key-explanation">Edit board</div>
+                <img width=30 height=30 src="static/Mouse icon.png"> </img>
+            </div>
+        </div>
+
+        <p id="credits">Developed by Greg Cannon with help from Christian Harris. Source code available on <a
+                href="https://github.com/GregoryCannon/TetrisTrainer">Github</a>.</p>
+    </div>
+
+    <script src="main.js"></script>
 </body>
 
 </html>

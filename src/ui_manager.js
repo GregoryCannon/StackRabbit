@@ -5,7 +5,7 @@ import { BOARD_HEIGHT, DISPLAY_FULL_WIDTH } from "./constants.js";
 
 // Get elements
 const mainCanvas = document.getElementById("main-canvas");
-const leftPanelOpenToggle = document.getElementById("left-panel-toggle-open");
+const leftPanelOpenToggle = document.getElementById("left-panel-toggle-button");
 const leftPanel = document.getElementById("left-panel");
 const rightPanel = document.getElementById("right-panel");
 let leftPanelIsOpen = true;
@@ -16,6 +16,7 @@ leftPanel.style.minHeight = BOARD_HEIGHT + 60;
 mainCanvas.setAttribute("height", BOARD_HEIGHT);
 mainCanvas.setAttribute("width", DISPLAY_FULL_WIDTH);
 
+leftPanelOpenToggle.innerText = "<"; // Set here b/c the < messes with the HTML auto-format
 leftPanelOpenToggle.addEventListener("click", function (e) {
   leftPanelIsOpen = !leftPanelIsOpen;
 

@@ -1,0 +1,15 @@
+#right-panel {
+  display: block;
+  margin: 0 auto;
+  background: #cacaca;
+  padding: 30px;
+}
+
+#main-canvas {
+  image-rendering: pixelated;
+  margin: auto;
+}
+
+#dummy-canvas {
+  display: none;
+}

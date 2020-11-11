@@ -1,0 +1,45 @@
+#left-panel {
+  position: relative;
+  background-color: #a29792;
+  padding: 40px 60px 40px 20px;
+  width: 320px;
+  transition: margin-left 0.4s ease-in-out;
+}
+
+#left-panel-toggle-button {
+  position: absolute;
+  top: 50%;
+  margin-top: -100px;
+  right: 0;
+  width: 40px;
+  height: 200px;
+}
+
+#level-select {
+  font-size: 18px;
+  height: 40px;
+  width: auto;
+  border-radius: 3px;
+  border: solid 1px gray;
+}
+
+#piece-sequence {
+  width: 100%;
+  border-radius: 3px;
+}
+#paste-area {
+  width: 100%;
+  border-radius: 3px;
+}
+
+#pasted-image {
+  display: none;
+}
+
+#debug,
+#stats {
+  font-family: sans-serif;
+  font-size: 20px;
+  text-align: right;
+  font-weight: 500;
+}
