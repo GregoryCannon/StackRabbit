@@ -352,7 +352,7 @@ function gameLoop() {
   updateGameState();
 
   const msElapsed = Date.now() - start;
-  console.log("Ms elapsed:", msElapsed);
+  // console.log("Ms elapsed:", msElapsed);
 
   window.setTimeout(gameLoop, 16.67 - msElapsed);
 
