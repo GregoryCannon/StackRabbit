@@ -1,5 +1,5 @@
 #bottom-panel {
-  margin-top: 40px;
+  margin-top: 24px;
   text-align: center;
 }
 
@@ -28,4 +28,10 @@
   line-height: 15px;
   font-size: 15px;
   max-height: 15px;
+}
+
+#credits {
+  font-family: monospace;
+  display: block;
+  padding: 5px;
 }

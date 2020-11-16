@@ -22,6 +22,16 @@ body {
   text-align: center;
 }
 
+h1 {
+  margin: 10px 0 0 0;
+}
+
+#header-text {
+  min-height: 40px;
+  margin: 0 0 10px 0;
+  font-size: 20px;
+}
+
 button {
   color: white;
   border: none;
@@ -42,27 +52,20 @@ button:active {
   outline: none;
 }
 
-#credits {
-  font-family: monospace;
-  display: inline-block;
-}
-
-h1 {
-  margin: 30px 0 0 0;
-}
-
-#header-text {
-  min-height: 44px;
-  margin: 0 0 20px 0;
-  font-size: 24px;
-}
-
 #main-area {
   display: flex;
   flex-direction: row;
   overflow: hidden;
   margin: 0 auto;
   align-items: flex-start;
+}
+
+#left-spacer {
+  flex-grow: 1;
+}
+
+#right-spacer {
+  flex-grow: 4;
 }
 
 #dummy-canvas {
