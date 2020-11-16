@@ -51,17 +51,30 @@
   font-size: 16px;
 }
 
+#level-select {
+  width: 100%;
+  font-size: 18px;
+  height: 25px;
+  border-radius: 3px;
+  border: solid 1px gray;
+}
+
+.level-button {
+  padding: 4px 8px;
+  margin-bottom: 2px;
+}
+
 #game-settings-table textarea {
   max-width: 150px;
   max-height: 80px;
 }
 
-#level-select {
-  width: 100%;
-  font-size: 18px;
-  height: 40px;
-  border-radius: 3px;
-  border: solid 1px gray;
+#game-settings-table select {
+  max-width: 150px;
+  min-height: 35px;
+  white-space: normal;
+  /* For Firefox: */
+  text-overflow: ellipsis;
 }
 
 #piece-sequence {

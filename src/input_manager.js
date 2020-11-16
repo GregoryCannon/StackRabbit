@@ -46,7 +46,7 @@ InputManager.prototype.getCellsSoftDropped = function () {
 
 InputManager.prototype.onPieceLock = function () {
   if (GameSettings.ShouldSetDASChargeOnPieceStart()) {
-    this.setDASCharge(GameSettings.GetDASChargeOnPieceStart());
+    this.setDASCharge(GameSettings.GetDASWallChargeAmount());
   }
 };
 
@@ -118,13 +118,13 @@ InputManager.prototype.keyDownListener = function (event) {
       event.preventDefault();
       break;
     case DOWN_KEYCODE:
-      event.preventDefault();
       this.downHeld = true;
       break;
   }
 
   // Only actually move the pieces if in the proper game state
-  if (shouldPerformPieceMovements(this.getGameStateFunc())) {
+  const gameState = this.getGameStateFunc();
+  if (canMovePiecesSideways(gameState)) {
     switch (event.keyCode) {
       case LEFT_KEYCODE:
         this.handleTappedDirection(Direction.LEFT);
@@ -132,6 +132,10 @@ InputManager.prototype.keyDownListener = function (event) {
       case RIGHT_KEYCODE:
         this.handleTappedDirection(Direction.RIGHT);
         break;
+    }
+  }
+  if (canDoAllPieceMovements(gameState)) {
+    switch (event.keyCode) {
       case ROTATE_LEFT_KEYCODE:
         this.rotateLeftFunc();
         break;
@@ -205,7 +209,7 @@ InputManager.prototype.handleHeldDirection = function (direction) {
 
 // Handle single taps of the dpad, if in the proper state
 InputManager.prototype.handleTappedDirection = function (direction) {
-  if (shouldPerformPieceMovements(this.getGameStateFunc())) {
+  if (canMovePiecesSideways(this.getGameStateFunc())) {
     // Update the DAS charge
     this.setDASCharge(GameSettings.GetDASChargeAfterTap());
 
@@ -239,7 +243,12 @@ InputManager.prototype.refreshDebugText = function () {
   debugTextElement.innerText = debugStr;
 };
 
-// Checks if the game state allows for piece movements
-function shouldPerformPieceMovements(gameState) {
+// Checks if the game state allows for piece movements horizontally
+function canMovePiecesSideways(gameState) {
   return gameState == GameState.RUNNING || gameState == GameState.FIRST_PIECE;
+}
+
+// Checks if the game state allows for downward piece movement
+function canDoAllPieceMovements(gameState) {
+  return gameState == GameState.RUNNING;
 }

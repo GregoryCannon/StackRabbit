@@ -93,7 +93,7 @@ export function GetDASChargeAfterTap() {
 }
 
 /** Gets the DAS value given to all pieces on piece spawn, assuming IsDASAlwaysCharged is true. */
-export function GetDASChargeOnPieceStart() {
+export function GetDASWallChargeAmount() {
   // This settings only applies when DAS is always charged
   if (!ShouldSetDASChargeOnPieceStart()) {
     throw new Error(
@@ -101,9 +101,12 @@ export function GetDASChargeOnPieceStart() {
     );
   }
   switch (GetDASSpeed()) {
+    // For the DAS speeds that are in between whole number frames (e.g slower than 4F but faster than 5F),
+    // give them a worse DAS charge on every wallcharge and piece spawn
     case DASSpeed.SLOW_MEDIUM:
-      // Give a worse DAS charge so that it's slower than perfect 5F DAS
       return GetDASChargedFloor() + 2;
+    case DASSpeed.FAST:
+      return GetDASChargedFloor();
     default:
       // All other speeds have DAS auto-wall-charged on piece spawn
       return GetDASTriggerThreshold();
