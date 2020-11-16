@@ -45,8 +45,8 @@ InputManager.prototype.getCellsSoftDropped = function () {
 };
 
 InputManager.prototype.onPieceLock = function () {
-  if (GameSettings.IsDASAlwaysCharged()) {
-    this.setDASCharge(GameSettings.GetDASTriggerThreshold());
+  if (GameSettings.ShouldSetDASChargeOnPieceStart()) {
+    this.setDASCharge(GameSettings.GetDASChargeOnPieceStart());
   }
 };
 
@@ -111,11 +111,14 @@ InputManager.prototype.keyDownListener = function (event) {
   switch (event.keyCode) {
     case LEFT_KEYCODE:
       this.leftHeld = true;
+      event.preventDefault();
       break;
     case RIGHT_KEYCODE:
       this.rightHeld = true;
+      event.preventDefault();
       break;
     case DOWN_KEYCODE:
+      event.preventDefault();
       this.downHeld = true;
       break;
   }
@@ -203,8 +206,9 @@ InputManager.prototype.handleHeldDirection = function (direction) {
 // Handle single taps of the dpad, if in the proper state
 InputManager.prototype.handleTappedDirection = function (direction) {
   if (shouldPerformPieceMovements(this.getGameStateFunc())) {
-    // DAS loses charges on tap
-    this.setDASCharge(GameSettings.GetDASUnchargedFloor());
+    // Update the DAS charge
+    this.setDASCharge(GameSettings.GetDASChargeAfterTap());
+
     this.tryShiftPiece(direction);
   }
 };

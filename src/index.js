@@ -53,6 +53,7 @@ let m_lines;
 let m_nextTransitionLineCount;
 let m_gameState;
 let m_score;
+let m_tetrisCount;
 let m_gravityFrameCount;
 let m_ARE;
 let m_lineClearFrames;
@@ -89,24 +90,24 @@ function refreshHeaderText() {
   headerTextElement.innerText = newText;
 }
 
-function refreshStats() {
-  const calcParity = function (startCol, endCol) {
-    // Calculate parity, where the top left square is "1" and adjacent squares are "-1"
-    let parity = 0;
-    for (let r = 0; r < NUM_ROW; r++) {
-      for (let c = startCol; c < endCol; c++) {
-        if (r >= 18) {
-        }
-        if (m_board[r][c] != SquareState.EMPTY) {
-          // Add 1 or -1 to parity total based on the square's location
-          const cellConstant = (r + c) % 2 == 0 ? 1 : -1;
-          parity += cellConstant;
-        }
+function calcParity(startCol, endCol) {
+  // Calculate parity, where the top left square is "1" and adjacent squares are "-1"
+  let parity = 0;
+  for (let r = 0; r < NUM_ROW; r++) {
+    for (let c = startCol; c < endCol; c++) {
+      if (r >= 18) {
+      }
+      if (m_board[r][c] != SquareState.EMPTY) {
+        // Add 1 or -1 to parity total based on the square's location
+        const cellConstant = (r + c) % 2 == 0 ? 1 : -1;
+        parity += cellConstant;
       }
     }
-    return Math.abs(parity);
-  };
+  }
+  return Math.abs(parity);
+}
 
+function refreshStats() {
   const leftParity = calcParity(0, 5);
   const middleParity = calcParity(3, 7);
   const rightParity = calcParity(5, 10);
@@ -163,6 +164,11 @@ function removeFullRows() {
     // Update the lines
     m_lines += numLinesCleared;
 
+    // Update the tetris rate
+    if (numLinesCleared == 4) {
+      m_tetrisCount += 1;
+    }
+
     // Maybe level transition
     if (
       GameSettings.ShouldTransitionEveryLine() ||
@@ -215,6 +221,7 @@ function getNewPiece() {
 
 function resetLocalVariables() {
   m_score = 0;
+  m_tetrisCount = 0;
   m_gravityFrameCount = 0;
   m_ARE = 0;
   m_lineClearFrames = 0;
@@ -352,9 +359,10 @@ function gameLoop() {
   updateGameState();
 
   const msElapsed = Date.now() - start;
+  const desiredFPS = GameSettings.GameIsHalfSpeed() ? 30 : 60;
   // console.log("Ms elapsed:", msElapsed);
 
-  window.setTimeout(gameLoop, 16.67 - msElapsed);
+  window.setTimeout(gameLoop, 1000 / desiredFPS - msElapsed);
 
   // Slow motion testing
   // window.setTimeout(gameLoop, 100);
@@ -365,6 +373,7 @@ function refreshScoreHUD() {
   m_canvas.drawLevelDisplay(m_level);
   m_canvas.drawScoreDisplay(m_score);
   m_canvas.drawLinesDisplay(m_lines);
+  m_canvas.drawTetrisRateDisplay(m_tetrisCount, m_lines);
 }
 
 /** Delegate functions to controls code */

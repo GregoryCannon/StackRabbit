@@ -150,7 +150,7 @@ Canvas.prototype.drawNextBox = function (nextPiece) {
 };
 
 Canvas.prototype.drawScoreDisplay = function (score) {
-  const width = 5 * SQUARE_SIZE;
+  const width = NEXT_BOX_WIDTH;
   const startX = BOARD_WIDTH + SQUARE_SIZE;
   const startY = 0.5 * SQUARE_SIZE;
 
@@ -187,6 +187,25 @@ Canvas.prototype.drawLevelDisplay = function (level) {
   const formattedScore = ("0".repeat(2) + level).slice(-2);
   this.drawMultiLineText(
     ["LEVEL", formattedScore],
+    startX,
+    startY,
+    width,
+    "center"
+  );
+};
+
+Canvas.prototype.drawTetrisRateDisplay = function (tetrisCount, lines) {
+  const width = NEXT_BOX_WIDTH;
+  const startX = BOARD_WIDTH + SQUARE_SIZE;
+  const startY = 17 * SQUARE_SIZE;
+
+  let tetrisRate = 0;
+  if (lines > 0) {
+    tetrisRate = (4 * tetrisCount) / lines;
+  }
+  const formattedTetrisRate = parseInt(tetrisRate * 100);
+  this.drawMultiLineText(
+    ["TRT", formattedTetrisRate + "%"],
     startX,
     startY,
     width,

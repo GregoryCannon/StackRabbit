@@ -11,96 +11,124 @@
 </head>
 
 <body>
-    <h1 class="text-center">NES Tetris Trainer</h1>
-    <h2 class="text-center" id="header-text"></h2>
+    <div id="body-inner">
+        <h1 class="text-center">NES Tetris Trainer</h1>
+        <h2 class="text-center" id="header-text"></h2>
 
-    <div id="main-area">
+        <div id="main-area">
 
-        <div id="left-panel">
-            <button id="left-panel-toggle-button">
-            </button>
-
-            <h6 class="section-title">
-                Presets
-            </h6>
-
-            <button class="preset-button" id="preset-standard">Standard</button>
-            <button class="preset-button" id="preset-random-board">Random Board</button>
-            <button class="preset-button" id="preset-dig-practice">Dig Practice</button>
-            <button class="preset-button" id="preset-slow-killscreen" style="display: none">Slow Killscreen</button>
-            <button class="preset-button" id="slow-19-plus" style="display: none">Slow 19+</button>
-
-            <h6 class="section-title">
-                Game Settings
-            </h6>
-
-            <div id="game-settings">
-
-                <table id="game-settings-table">
-                    <tr>
-                        <td>
-                            Level
-                        </td>
-                        <td>
-                            <input id="level-select" type="number" placeholder="Starting level"></input>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td>
-                            Piece Sequence
-                        </td>
-                        <td>
-                            <textarea id="piece-sequence" placeholder="Enter a piece sequence..."></textarea>
-                        </td>
-                    </tr>
-                </table>
-
-            </div>
-
-            <canvas id="dummy-canvas"></canvas>
-            <textarea id="paste-area" placeholder="Paste Image Here"></textarea>
-            <img id="pasted-image" />
-
-            <h4 style="display: none" id="stats"></h4>
-
-            <h4 id="debug"></h4>
-
-            <center>
-                <button class="button-primary" id="start-button">
-                    Start!
+            <div id="left-panel">
+                <button id="left-panel-toggle-button">
                 </button>
-            </center>
 
+                <h6 class="section-title">
+                    Presets
+                </h6>
+
+                <button class="preset-button" id="preset-standard">Standard</button>
+                <button class="preset-button" id="preset-random-board">Random Board</button>
+                <button class="preset-button" id="preset-dig-practice">Dig Practice</button>
+                <button class="preset-button" id="preset-slow-killscreen" style="display: none">Slow Killscreen</button>
+                <button class="preset-button" id="slow-19-plus" style="display: none">Slow 19+</button>
+
+                <h6 class="section-title">
+                    Game Settings
+                </h6>
+
+                <div id="game-settings">
+
+                    <table id="game-settings-table">
+                        <tr>
+                            <td>
+                                Level
+                            </td>
+                            <td>
+                                <input id="level-select" type="number" placeholder="Starting level"></input>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>
+                                Piece Sequence
+                            </td>
+                            <td>
+                                <textarea id="piece-sequence" placeholder="Enter a piece sequence..."></textarea>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>
+                                DAS Speed
+                            </td>
+                            <td>
+                                <select id="das-speed-dropdown">
+                                    <option value="0">Standard DAS (6 left 19)</option>
+                                    <option value="1">Slow-Medium Tapper (7 left 19)</option>
+                                    <option value="2">Medium Tapper (8 left 19)</option>
+                                    <option value="3">Fast Tapper (9 left 19)</option>
+                                    <option value="4">4 Frame DAS (10 left 19)</option>
+                                </select>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>
+                                DAS Behavior
+                            </td>
+                            <td>
+                                <select id="das-behavior-dropdown">
+                                    <option value="0">Standard</option>
+                                    <option value="1">Always Charged</option>
+                                    <option value="2">Charged on Piece Spawn</option>
+                                </select>
+                            </td>
+                        </tr>
+                    </table>
+
+                </div>
+
+                <canvas id="dummy-canvas"></canvas>
+                <textarea id="paste-area" placeholder="Paste Image Here"></textarea>
+                <img id="pasted-image" />
+
+                <h4 style="display: none" id="stats"></h4>
+
+                <h4 id="debug"></h4>
+
+                <center>
+                    <button class="button-primary" id="start-button">
+                        Start!
+                    </button>
+                </center>
+
+            </div>
+
+            <div id="right-panel">
+                <canvas id="main-canvas" width="500" height="560"></canvas>
+            </div>
         </div>
 
-        <div id="right-panel">
-            <canvas id="main-canvas" width="500" height="560"></canvas>
+        <div id="bottom-panel">
+            <div id=controls-container>
+                <div class="key-combo">
+                    <div class="key-explanation">Rotate pieces</div>
+                    <img width=60 height=30 src="static/KeyZX.png"></img>
+                </div>
+
+                <div class="key-combo">
+                    <div class="key-explanation">Move pieces</div>
+                    <img width=90 height=30 src="static/KeyArrows.png"> </img>
+                </div>
+                <div class="key-combo">
+                    <div class="key-explanation">Pause</div>
+                    <img width=30 height=30 src="static/KeyP.png"> </img>
+                </div>
+                <div class="key-combo">
+                    <div class="key-explanation">Edit board</div>
+                    <img width=30 height=30 src="static/Mouse icon.png"> </img>
+                </div>
+            </div>
+
+            <p id="credits">Developed by Greg Cannon with help from Christian Harris. Source code available on <a
+                    href="https://github.com/GregoryCannon/TetrisTrainer">Github</a>.</p>
         </div>
-    </div>
-
-    <div id="bottom-panel">
-        <div id=controls-container>
-            <div class="key-combo">
-                <div class="key-explanation">Rotate pieces</div>
-                <img width=60 height=30 src="static/KeyZX.png"></img>
-            </div>
-
-            <div class="key-combo">
-                <div class="key-explanation">Move pieces</div>
-                <img width=90 height=30 src="static/KeyArrows.png"> </img>
-            </div>
-            <div class="key-combo">
-                <div class="key-explanation">Pause</div>
-                <img width=30 height=30 src="static/KeyP.png"> </img>
-            </div>
-            <div class="key-combo">
-                <div class="key-explanation">Edit board</div>
-                <img width=30 height=30 src="static/Mouse icon.png"> </img>
-            </div>
-        </div>
-
-        <p id="credits">Developed by Greg Cannon with help from Christian Harris. Source code available on <a
-                href="https://github.com/GregoryCannon/TetrisTrainer">Github</a>.</p>
     </div>
 
     <script src="main.js"></script>

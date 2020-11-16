@@ -36,7 +36,6 @@ BoardLoader.prototype.getBoardStateFromImage = function (img) {
   var context = dummy_canvas.getContext("2d");
   dummy_canvas.width = img.width;
   dummy_canvas.height = img.height;
-  dummy_canvas.style.display = "block";
   context.drawImage(img, 0, 0);
   this.resetBoard();
 
