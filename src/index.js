@@ -39,21 +39,26 @@ for (let r = 0; r < NUM_ROW; r++) {
   }
 }
 
+// Manager objects
 let m_inputManager;
 let m_canvas = new Canvas(m_board);
 let m_boardEditManager = new BoardEditManager(m_board, m_canvas);
 let m_boardGenerator = new BoardGenerator(m_board);
 let m_pieceSelector = new PieceSelector();
 let m_boardLoader = new BoardLoader(m_board, m_canvas);
+
+// State relevant to game itself
 let m_currentPiece;
 let m_nextPiece;
-
 let m_level;
 let m_lines;
 let m_nextTransitionLineCount;
 let m_gameState;
 let m_score;
 let m_tetrisCount;
+
+// State relevant to game **implementation**
+let m_isPaused;
 let m_gravityFrameCount;
 let m_ARE;
 let m_lineClearFrames;
@@ -73,20 +78,19 @@ export const GetLevel = () => {
 
 function refreshHeaderText() {
   let newText = "";
-  switch (m_gameState) {
-    case GameState.START_SCREEN:
-      newText = "Welcome to Tetris Trainer!";
-      break;
-    case GameState.RUNNING:
-      newText = "";
-      break;
-    case GameState.GAME_OVER:
-      newText = "Game over!";
-      break;
-    case GameState.PAUSED:
-      newText = "Paused";
-      break;
+  if (m_isPaused) {
+    newText = "Paused";
+  } else {
+    switch (m_gameState) {
+      case GameState.START_SCREEN:
+        newText = "Welcome to Tetris Trainer!";
+        break;
+      case GameState.GAME_OVER:
+        newText = "Game over!";
+        break;
+    }
   }
+
   headerTextElement.innerText = newText;
 }
 
@@ -220,6 +224,7 @@ function getNewPiece() {
 }
 
 function resetLocalVariables() {
+  m_isPaused = false;
   m_score = 0;
   m_tetrisCount = 0;
   m_gravityFrameCount = 0;
@@ -238,7 +243,6 @@ function startGame() {
   resetLocalVariables();
   m_firstPieceDelay = 30; // Extra delay for first piece
   m_pieceSelector.startReadingPieceSequence();
-  // m_boardLoader.resetBoard();
   m_gameState = GameState.FIRST_PIECE;
 
   // Parse the level
@@ -309,55 +313,58 @@ function updateGameState() {
 // 60 FPS game loop
 function gameLoop() {
   const start = Date.now();
-  switch (m_gameState) {
-    case GameState.FIRST_PIECE:
-      // Waiting for first piece
-      m_firstPieceDelay -= 1;
-      break;
 
-    case GameState.LINE_CLEAR:
-      // Still animating line clear
-      m_lineClearFrames -= 1;
-      // Do subtraction so animation frames count up
-      m_canvas.drawLineClears(
-        m_linesPendingClear,
-        LINE_CLEAR_DELAY - m_lineClearFrames
-      );
-      if (m_lineClearFrames == 0) {
-        // Clear the lines for real and shift stuff down
-        removeFullRows();
-      }
-      break;
+  // If paused, just do nothing.
+  if (!m_isPaused) {
+    switch (m_gameState) {
+      case GameState.FIRST_PIECE:
+        // Waiting for first piece
+        m_firstPieceDelay -= 1;
+        break;
 
-    case GameState.ARE:
-      // Waiting for next piece
-      m_ARE -= 1;
-      break;
-
-    case GameState.RUNNING:
-      // Handle inputs
-      m_inputManager.handleInputsThisFrame();
-
-      // Handle gravity
-      if (m_inputManager.getIsSoftDropping()) {
-        // Reset gravity for if they stop soft dropping
-        m_gravityFrameCount = 0;
-      } else {
-        // Increment gravity and shift down if appropriate
-        m_gravityFrameCount += 1;
-
-        // Move the piece down when appropriate
-        if (m_gravityFrameCount >= GetGravity(m_level)) {
-          moveCurrentPieceDown();
-          m_gravityFrameCount = 0;
+      case GameState.LINE_CLEAR:
+        // Still animating line clear
+        m_lineClearFrames -= 1;
+        // Do subtraction so animation frames count up
+        m_canvas.drawLineClears(
+          m_linesPendingClear,
+          LINE_CLEAR_DELAY - m_lineClearFrames
+        );
+        if (m_lineClearFrames == 0) {
+          // Clear the lines for real and shift stuff down
+          removeFullRows();
         }
-      }
+        break;
 
-      break;
+      case GameState.ARE:
+        // Waiting for next piece
+        m_ARE -= 1;
+        break;
+
+      case GameState.RUNNING:
+        // Handle inputs
+        m_inputManager.handleInputsThisFrame();
+
+        // Handle gravity
+        if (m_inputManager.getIsSoftDropping()) {
+          // Reset gravity for if they stop soft dropping
+          m_gravityFrameCount = 0;
+        } else {
+          // Increment gravity and shift down if appropriate
+          m_gravityFrameCount += 1;
+
+          // Move the piece down when appropriate
+          if (m_gravityFrameCount >= GetGravity(m_level)) {
+            moveCurrentPieceDown();
+            m_gravityFrameCount = 0;
+          }
+        }
+
+        break;
+    }
+
+    updateGameState();
   }
-
-  updateGameState();
-
   const msElapsed = Date.now() - start;
   const desiredFPS = GameSettings.GameIsHalfSpeed() ? 30 : 60;
   // console.log("Ms elapsed:", msElapsed);
@@ -448,16 +455,10 @@ function rotatePieceRight() {
 }
 
 function togglePause() {
-  if (
-    m_gameState == GameState.RUNNING ||
-    m_gameState == GameState.FIRST_PIECE
-  ) {
-    m_gameState = GameState.PAUSED;
-    refreshHeaderText();
-  } else if (m_gameState == GameState.PAUSED) {
-    m_gameState = GameState.RUNNING;
-    refreshHeaderText();
-  }
+  // Pause using an independent variable so it'll finish all the
+  // calculations for the current frame, then stop subsequent frames
+  m_isPaused = !m_isPaused;
+  refreshHeaderText();
 }
 
 function getGameState() {
