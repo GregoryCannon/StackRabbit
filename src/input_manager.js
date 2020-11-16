@@ -229,7 +229,13 @@ InputManager.prototype.refreshDebugText = function () {
   if (this.dasCharge == 0) {
     dasVisualized = ".";
   }
-  debugStr += "DAS: " + this.dasCharge + "\n" + dasVisualized;
+  debugStr +=
+    "DAS: " +
+    this.dasCharge +
+    "/" +
+    GameSettings.GetDASTriggerThreshold() +
+    "\n" +
+    dasVisualized;
   debugTextElement.innerText = debugStr;
 };
 
