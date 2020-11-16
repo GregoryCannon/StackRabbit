@@ -241,7 +241,7 @@ function resetLocalVariables() {
 function startGame() {
   // Reset game values
   resetLocalVariables();
-  m_firstPieceDelay = 30; // Extra delay for first piece
+  m_firstPieceDelay = 90; // Extra delay for first piece
   m_pieceSelector.startReadingPieceSequence();
   m_gameState = GameState.FIRST_PIECE;
 
@@ -320,6 +320,9 @@ function gameLoop() {
       case GameState.FIRST_PIECE:
         // Waiting for first piece
         m_firstPieceDelay -= 1;
+
+        // Allow piece movement during first piece
+        m_inputManager.handleInputsThisFrame();
         break;
 
       case GameState.LINE_CLEAR:
@@ -506,18 +509,21 @@ document.addEventListener("keyup", (e) => {
 document.getElementById("preset-standard").addEventListener("click", (e) => {
   m_boardGenerator.loadEmptyBoard();
   m_canvas.drawBoard();
+  startGame();
 });
 document
   .getElementById("preset-random-board")
   .addEventListener("click", (e) => {
     m_boardGenerator.loadStandardBoard();
     m_canvas.drawBoard();
+    startGame();
   });
 document
   .getElementById("preset-dig-practice")
   .addEventListener("click", (e) => {
     m_boardGenerator.loadDigBoard();
     m_canvas.drawBoard();
+    startGame();
   });
 
 document.getElementById("start-button").addEventListener("click", (e) => {
