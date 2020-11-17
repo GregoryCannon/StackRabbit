@@ -132,16 +132,16 @@ InputManager.prototype.keyDownListener = function (event) {
       case RIGHT_KEYCODE:
         this.handleTappedDirection(Direction.RIGHT);
         break;
-    }
-  }
-  if (canDoAllPieceMovements(gameState)) {
-    switch (event.keyCode) {
       case ROTATE_LEFT_KEYCODE:
         this.rotateLeftFunc();
         break;
       case ROTATE_RIGHT_KEYCODE:
         this.rotateRightFunc();
         break;
+    }
+  }
+  if (canDoAllPieceMovements(gameState)) {
+    switch (event.keyCode) {
       case DOWN_KEYCODE:
         this.isSoftDropping = true;
         break;

@@ -369,17 +369,12 @@ function gameLoop() {
     updateGameState();
   }
   const msElapsed = Date.now() - start;
-  const desiredFPS = GameSettings.GameIsHalfSpeed() ? 30 : 60;
-  // console.log("Ms elapsed:", msElapsed);
+  const desiredFPS = 60 * GameSettings.GetGameSpeedMultiplier();
 
   window.setTimeout(gameLoop, 1000 / desiredFPS - msElapsed);
-
-  // Slow motion testing
-  // window.setTimeout(gameLoop, 100);
 }
 
 function refreshScoreHUD() {
-  console.log("refreshing score display");
   m_canvas.drawLevelDisplay(m_level);
   m_canvas.drawScoreDisplay(m_score);
   m_canvas.drawLinesDisplay(m_lines);
@@ -511,6 +506,13 @@ document.getElementById("preset-standard").addEventListener("click", (e) => {
   m_canvas.drawBoard();
   startGame();
 });
+document
+  .getElementById("preset-standard-tap")
+  .addEventListener("click", (e) => {
+    m_boardGenerator.loadEmptyBoard();
+    m_canvas.drawBoard();
+    startGame();
+  });
 document
   .getElementById("preset-random-board")
   .addEventListener("click", (e) => {

@@ -1,7 +1,10 @@
 #right-panel {
   display: block;
   margin: 0 auto;
-  background: #cacaca;
+}
+
+#game-container {
+  background: hsl(0, 0%, 79%);
   padding: 30px;
 }
 

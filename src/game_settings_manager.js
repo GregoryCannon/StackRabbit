@@ -1,5 +1,8 @@
 const dasSpeedDropdown = document.getElementById("das-speed-dropdown");
 const dasBehaviorDropdown = document.getElementById("das-behavior-dropdown");
+const gameSpeedDropdown = document.getElementById("game-speed-dropdown");
+const diggingHintsCheckbox = document.getElementById("digging-hints-checkbox");
+const transition10Checkbox = document.getElementById("transition-10-checkbox");
 
 export const DASSpeed = Object.freeze({
   STANDARD: "standard",
@@ -40,7 +43,7 @@ const DAS_BEHAVIOR_LIST = [
 /* ------ LEVEL TRANSITIONS -------- */
 
 export function ShouldTransitionEvery10Lines() {
-  return false;
+  return transition10Checkbox.checked;
 }
 
 export function ShouldTransitionEveryLine() {
@@ -50,11 +53,11 @@ export function ShouldTransitionEveryLine() {
 /* -------- GAMEPLAY --------- */
 
 export function ShouldShowDiggingHints() {
-  return false;
+  return diggingHintsCheckbox.checked;
 }
 
-export function GameIsHalfSpeed() {
-  return false;
+export function GetGameSpeedMultiplier() {
+  return gameSpeedDropdown.value;
 }
 
 /* --------- DAS --------- */

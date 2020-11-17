@@ -52,6 +52,10 @@ button:active {
   outline: none;
 }
 
+button:disabled {
+  background-color: #bbb;
+}
+
 #main-area {
   display: flex;
   flex-direction: row;

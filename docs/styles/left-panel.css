@@ -1,7 +1,7 @@
 #left-panel {
   position: relative;
   background-color: #a29792;
-  padding: 30px 50px 30px 20px;
+  padding: 30px 20px 30px 20px;
   width: 320px;
   transition: margin-left 0.4s ease-in-out;
 }
@@ -40,36 +40,38 @@
   background: #f7786f;
 }
 
-#game-settings-table {
+.settings-table {
   font-family: "Changa", sans-serif;
   line-height: 16px;
   font-size: 18px;
 }
 
-#game-settings-table input {
+.settings-table input {
   font-family: "Changa", sans-serif;
   font-size: 16px;
 }
 
 #level-select {
-  width: 100%;
-  font-size: 18px;
+  margin: 0 auto;
   height: 25px;
-  border-radius: 3px;
+  font-size: 18px;
+  text-align: center;
+  border-radius: 5px;
   border: solid 1px gray;
 }
 
 .level-button {
-  padding: 4px 8px;
+  padding: 7px 6px;
+  min-width: 28px;
   margin-bottom: 2px;
 }
 
-#game-settings-table textarea {
+.settings-table textarea {
   max-width: 150px;
   max-height: 80px;
 }
 
-#game-settings-table select {
+.settings-table select {
   max-width: 150px;
   min-height: 35px;
   white-space: normal;
@@ -81,7 +83,6 @@
   border-radius: 3px;
 }
 #paste-area {
-  margin-top: 30px;
   width: 100%;
   border-radius: 3px;
 }
