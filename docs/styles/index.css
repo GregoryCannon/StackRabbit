@@ -53,6 +53,7 @@ button:active {
 }
 
 button:disabled {
+  display: none;
   background-color: #bbb;
 }
 
@@ -64,12 +65,30 @@ button:disabled {
   align-items: flex-start;
 }
 
-#left-spacer {
+#left-spacer,
+#middle-spacer,
+#right-spacer {
   flex-grow: 1;
 }
 
-#right-spacer {
-  flex-grow: 4;
+#advanced-stats {
+}
+
+.stats-header,
+.stats-content {
+  text-align: left;
+}
+
+.stats-header {
+  font-size: 24px;
+  font-weight: 700;
+  margin-bottom: 0;
+}
+
+.stats-content {
+  min-width: 100px;
+  font-size: 18px;
+  font-weight: 400;
 }
 
 #dummy-canvas {

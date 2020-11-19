@@ -22,7 +22,7 @@ const scoreTextElement = document.getElementById("score-display");
 const linesTextElement = document.getElementById("lines-display");
 const levelTextElement = document.getElementById("level-display");
 const headerTextElement = document.getElementById("header-text");
-const statsTextElement = document.getElementById("stats");
+const parityStatsDiv = document.getElementById("parity-stats");
 const gameOptionsForm = document.getElementById("game-options-form");
 const startGameButton = document.getElementById("start-game");
 const restartGameButton = document.getElementById("restart-game");
@@ -116,7 +116,7 @@ function refreshStats() {
   const middleParity = calcParity(3, 7);
   const rightParity = calcParity(5, 10);
 
-  statsTextElement.innerText = `Parity: \nL=${leftParity} \nM=${middleParity} \nR=${rightParity}`;
+  parityStatsDiv.innerText = `Left: ${leftParity} \nMiddle: ${middleParity} \nRight: ${rightParity}`;
 }
 
 function getFullRows() {
@@ -267,6 +267,7 @@ function startGame() {
   m_canvas.drawCurrentPiece();
   refreshHeaderText();
   refreshScoreHUD();
+  refreshStats();
 }
 
 /** Progress the game state, and perform any other updates that occur on
@@ -407,7 +408,7 @@ function moveCurrentPieceDown() {
     m_inputManager.onPieceLock();
     m_canvas.drawBoard();
 
-    // Refresh board-based
+    // Refresh board-based stats
     refreshStats();
 
     // Get a new piece but --don't render it-- till after ARE
@@ -540,6 +541,7 @@ document.getElementById("start-button").addEventListener("click", (e) => {
 resetLocalVariables();
 m_canvas.drawBoard();
 m_canvas.drawNextBox(null);
+m_inputManager.refreshDebugText();
 refreshHeaderText();
 refreshStats();
 refreshScoreHUD();

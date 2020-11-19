@@ -1,7 +1,7 @@
 import { Direction, GameState } from "./constants.js";
 const GameSettings = require("./game_settings_manager");
 
-const debugTextElement = document.getElementById("debug");
+const dasStatsDiv = document.getElementById("das-stats");
 
 // Default control setup
 let LEFT_KEYCODE = 37;
@@ -227,20 +227,19 @@ InputManager.prototype.refreshDebugText = function () {
   let debugStr = "";
   let dasVisualized = "";
   for (let i = 0; i < this.dasCharge; i++) {
-    dasVisualized += "x";
+    dasVisualized += "|";
   }
   // Have something on the second line so it's always the same height
   if (this.dasCharge == 0) {
     dasVisualized = ".";
   }
   debugStr +=
-    "DAS: " +
     this.dasCharge +
     "/" +
     GameSettings.GetDASTriggerThreshold() +
     "\n" +
     dasVisualized;
-  debugTextElement.innerText = debugStr;
+  dasStatsDiv.innerText = debugStr;
 };
 
 // Checks if the game state allows for piece movements horizontally
