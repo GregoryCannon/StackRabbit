@@ -76,6 +76,10 @@ export const GetLevel = () => {
   return m_level;
 };
 
+export const GetIsPaused = () => {
+  return m_isPaused;
+};
+
 function refreshHeaderText() {
   let newText = "";
   if (m_isPaused) {
@@ -94,11 +98,11 @@ function refreshHeaderText() {
   headerTextElement.innerText = newText;
 }
 
-function calcParity(startCol, endCol) {
+export function calcParity(startCol, endCol) {
   // Calculate parity, where the top left square is "1" and adjacent squares are "-1"
   let parity = 0;
   for (let r = 0; r < NUM_ROW; r++) {
-    for (let c = startCol; c < endCol; c++) {
+    for (let c = Math.max(0, startCol); c < Math.min(endCol, 10); c++) {
       if (r >= 18) {
       }
       if (m_board[r][c] != SquareState.EMPTY) {

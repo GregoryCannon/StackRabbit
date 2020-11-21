@@ -1,4 +1,5 @@
 import { Direction, GameState } from "./constants.js";
+import { GetIsPaused } from "./index.js";
 const GameSettings = require("./game_settings_manager");
 
 const dasStatsDiv = document.getElementById("das-stats");
@@ -244,10 +245,13 @@ InputManager.prototype.refreshDebugText = function () {
 
 // Checks if the game state allows for piece movements horizontally
 function canMovePiecesSideways(gameState) {
-  return gameState == GameState.RUNNING || gameState == GameState.FIRST_PIECE;
+  return (
+    !GetIsPaused() &&
+    (gameState == GameState.RUNNING || gameState == GameState.FIRST_PIECE)
+  );
 }
 
 // Checks if the game state allows for downward piece movement
 function canDoAllPieceMovements(gameState) {
-  return gameState == GameState.RUNNING;
+  return !GetIsPaused() && gameState == GameState.RUNNING;
 }

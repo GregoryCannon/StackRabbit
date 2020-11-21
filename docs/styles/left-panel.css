@@ -16,6 +16,11 @@
   display: none;
 }
 
+.left-panel-section {
+  margin-top: 5px;
+  background: #857e79;
+}
+
 .section-title {
   margin: 0;
   font-weight: 400;
@@ -31,6 +36,7 @@
 }
 
 #start-button {
+  margin-top: 20px;
   padding: 10px 30px;
   font-size: 20px;
   background: #ff3223;
@@ -66,9 +72,12 @@
   margin-bottom: 2px;
 }
 
+.settings-table {
+  font-size: 16px;
+}
+
 .settings-table textarea {
   max-width: 150px;
-  max-height: 80px;
 }
 
 .settings-table select {
@@ -81,10 +90,16 @@
 
 #piece-sequence {
   border-radius: 3px;
+  height: 45px;
+  max-height: 45px;
 }
+
 #paste-area {
-  width: 100%;
+  resize: none;
+  width: 75%;
   border-radius: 3px;
+  max-height: 36px;
+  height: 36px;
 }
 
 #pasted-image {

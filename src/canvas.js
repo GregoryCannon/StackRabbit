@@ -12,7 +12,7 @@ import {
   BOARD_WIDTH,
   SquareState,
 } from "./constants.js";
-import { GetLevel, GetCurrentPiece } from "./index.js";
+import { GetLevel, GetCurrentPiece, calcParity } from "./index.js";
 const GameSettings = require("./game_settings_manager");
 
 // Resize the canvas based on the square size
@@ -315,6 +315,7 @@ Canvas.prototype.drawBoard = function () {
   if (GameSettings.ShouldShowDiggingHints()) {
     this.drawDiggingHints();
   }
+  this.drawParityHints();
 };
 
 function filledIfExists(row, col, board) {
@@ -354,16 +355,20 @@ function getRowsCoveringWell(board) {
   return rowsCoveringWell;
 }
 
+function fillSquare(row, col, color) {
+  context.fillStyle = color;
+  context.fillRect(
+    col * SQUARE_SIZE + PIXEL_SIZE,
+    row * SQUARE_SIZE + PIXEL_SIZE,
+    SQUARE_SIZE - 3 * PIXEL_SIZE,
+    SQUARE_SIZE - 3 * PIXEL_SIZE
+  );
+}
+
 function fillRow(row, color, board) {
   for (let loopCol = 0; loopCol < NUM_COLUMN; loopCol++) {
     if (board[row][loopCol] == SquareState.EMPTY) {
-      context.fillStyle = color;
-      context.fillRect(
-        loopCol * SQUARE_SIZE + PIXEL_SIZE,
-        row * SQUARE_SIZE + PIXEL_SIZE,
-        SQUARE_SIZE - 3 * PIXEL_SIZE,
-        SQUARE_SIZE - 3 * PIXEL_SIZE
-      );
+      fillSquare(row, loopCol, color);
     }
   }
 }
@@ -401,6 +406,60 @@ Canvas.prototype.drawDiggingHints = function () {
     // Fill in the empty spaces with red in rows that need to be cleared
     for (let loopRow of rowsCoveringWell) {
       fillRow(loopRow, "#215E30", this.board);
+    }
+  }
+};
+
+function numToSingleDigiHex(num) {
+  num = Math.floor(num);
+  if (num < 0) {
+    throw new Error("Can't convert negative num to hex");
+  }
+  if (num < 10) {
+    return "" + num;
+  } else if (num < 16) {
+    return ["a", "b", "c", "d", "e", "f"][num - 10];
+  } else {
+    // Max out at 16 because single digit
+    return "f";
+  }
+}
+
+Canvas.prototype.drawParityHints = function () {
+  const localParities = [];
+  for (let c = 0; c < NUM_COLUMN; c++) {
+    localParities[c] = calcParity(c - 2, c + 3);
+  }
+
+  console.log("localparities", localParities);
+  // Normalize over the nearby columns
+  let normalizedLocalParities = [];
+  for (let i = 0; i < NUM_COLUMN; i++) {
+    let total = 0;
+    let numAdded = 0;
+    [i - 1, i, i + 1].forEach((x) => {
+      if (x >= 0 && x < NUM_COLUMN) {
+        total += localParities[x];
+        numAdded += 1;
+      }
+    });
+    if (numAdded == 0) {
+      throw new Error("None added");
+    }
+    normalizedLocalParities[i] = total / numAdded; // numAdded is never 0 since the col itself will always be added
+  }
+  console.log("norm localparities", normalizedLocalParities);
+
+  for (let c = 0; c < NUM_COLUMN; c++) {
+    const normalizedLocalParity = normalizedLocalParities[c];
+    for (let r = 0; r < NUM_ROW; r++) {
+      if (this.board[r][c] == SquareState.EMPTY) {
+        // Get a shade of red proportional to the parity
+        const transformedParity = Math.max(5 * normalizedLocalParity - 4, 0);
+        const alphaChannel = numToSingleDigiHex(transformedParity);
+        const fillColor = "#ff0000" + alphaChannel + alphaChannel;
+        fillSquare(r, c, fillColor);
+      }
     }
   }
 };

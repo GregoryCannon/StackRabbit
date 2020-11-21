@@ -41,7 +41,7 @@ BoardLoader.prototype.getBoardStateFromImage = function (img) {
 
   const cropOffset = -0.1;
   const SQ = (img.height / 20 + img.width / 10) / 2 + cropOffset;
-  const rgbEmptyThreshold = 30; // If all three channels are <60/255, then the cell is "empty"
+  const rgbEmptyThreshold = 30; // If all three channels are <30/255, then the cell is "empty"
 
   // Iterate over the image and read the square colors into the board
   for (let c = 0; c < NUM_COLUMN; c++) {

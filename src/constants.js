@@ -2,6 +2,7 @@ export const NUM_ROW = 20;
 export const NUM_COLUMN = 10;
 export const PIXEL_SIZE = 3; // i.e. the scaleup from 1 NES pixel
 export const SQUARE_SIZE = 8 * PIXEL_SIZE;
+export const LINE_CLEAR_DELAY = 18;
 
 export const BOARD_HEIGHT = SQUARE_SIZE * NUM_ROW;
 export const BOARD_WIDTH = SQUARE_SIZE * NUM_COLUMN;
@@ -124,4 +125,16 @@ export const GameState = {
   LINE_CLEAR: "line clear",
 };
 
-export const LINE_CLEAR_DELAY = 18;
+export const DASSpeed = Object.freeze({
+  STANDARD: "standard",
+  SLOW_MEDIUM: "slow_medium",
+  MEDIUM: "medium",
+  FAST: "fast",
+  FASTDAS: "Fast DAS",
+});
+
+export const DASBehavior = Object.freeze({
+  STANDARD: "standard",
+  ALWAYS_CHARGED: "always_charged",
+  CHARGE_ON_PIECE_SPAWN: "charge_on_piece_spawn",
+});

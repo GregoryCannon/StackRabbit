@@ -37,113 +37,119 @@
                 <button class="preset-button" id="preset-random-board" style="display: none">Random Board</button>
 
 
-                <h6 class="section-title">
-                    Game Settings
-                </h6>
+                <div class="left-panel-section">
+                    <h6 class="section-title">
+                        Game Settings
+                    </h6>
 
 
-                <table class="settings-table">
-                    <tr>
-                        <td>
-                            Level
-                        </td>
-                        <td>
-                            <input id="level-select" type="number" value="8"></input>
-                            <br>
-                            <button class="level-button" id="level-0">0</button>
-                            <button class="level-button" id="level-8">8</button>
-                            <button class="level-button" id="level-15">15</button>
-                            <button class="level-button" id="level-18">18</button>
-                            <button class="level-button" id="level-19">19</button>
-                            <button class="level-button" id="level-29">29</button>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td>
-                            Game Speed
-                        </td>
-                        <td>
-                            <select id="game-speed-dropdown">
-                                <option value=1>100%</option>
-                                <option value=0.5>50%</option>
-                                <option value=0.333333333>33%</option>
-                            </select>
-                        </td>
-                    </tr>
+                    <table class="settings-table">
+                        <tr>
+                            <td>
+                                Level
+                            </td>
+                            <td>
+                                <input id="level-select" type="number" value="8"></input>
+                                <br>
+                                <button class="level-button" id="level-0">0</button>
+                                <button class="level-button" id="level-8">8</button>
+                                <button class="level-button" id="level-15">15</button>
+                                <button class="level-button" id="level-18">18</button>
+                                <button class="level-button" id="level-19">19</button>
+                                <button class="level-button" id="level-29">29</button>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>
+                                Game Speed
+                            </td>
+                            <td>
+                                <select id="game-speed-dropdown">
+                                    <option value=1>100%</option>
+                                    <option value=0.5>50%</option>
+                                    <option value=0.333333333>33%</option>
+                                </select>
+                            </td>
+                        </tr>
 
-                </table>
+                    </table>
+                </div>
 
-                <h6 class="section-title">
-                    Controls Settings
-                </h6>
+                <div class="left-panel-section">
+                    <h6 class="section-title">
+                        Controls Settings
+                    </h6>
 
-                <table class="settings-table">
-                    <tr>
-                        <td>
-                            DAS Speed
-                        </td>
-                        <td>
-                            <select id="das-speed-dropdown">
-                                <option value="0">Standard DAS (6 left 19)</option>
-                                <option value="1">Slow-Medium Tapper (7 left 19)</option>
-                                <option value="2">Medium Tapper (8 left 19)</option>
-                                <option value="3">Fast Tapper (9 left 19)</option>
-                                <option value="4">4 Frame DAS (10 left 19)</option>
-                            </select>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td>
-                            DAS Behavior
-                        </td>
-                        <td>
-                            <select id="das-behavior-dropdown">
-                                <option value="0">Standard</option>
-                                <option value="2">Charged on Piece Spawn (Recommended)</option>
-                                <option value="1">Always Charged</option>
-                            </select>
-                        </td>
-                    </tr>
-                </table>
+                    <table class="settings-table">
+                        <tr>
+                            <td>
+                                DAS Speed
+                            </td>
+                            <td>
+                                <select id="das-speed-dropdown">
+                                    <option value="0">Standard DAS (6 left 19)</option>
+                                    <option value="1">Slow-Medium Tapper (7 left 19)</option>
+                                    <option value="2">Medium Tapper (8 left 19)</option>
+                                    <option value="3">Fast Tapper (9 left 19)</option>
+                                    <option value="4">4 Frame DAS (10 left 19)</option>
+                                </select>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>
+                                DAS Behavior
+                            </td>
+                            <td>
+                                <select id="das-behavior-dropdown">
+                                    <option value="0">Standard</option>
+                                    <option value="2">Charged on Piece Spawn (Recommended)</option>
+                                    <option value="1">Always Charged</option>
+                                </select>
+                            </td>
+                        </tr>
+                    </table>
+                </div>
+                <div class="left-panel-section">
+                    <h6 class="section-title">
+                        Optional Modifications
+                    </h6>
 
-                <h6 class="section-title">
-                    Optional Modifications
-                </h6>
+                    <table class="settings-table">
+                        <tr>
+                            <td>
+                                Piece Sequence
+                            </td>
+                            <td>
+                                <textarea id="piece-sequence" placeholder="Random (type here to override)"></textarea>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>
+                                Transition every 10 lines
+                            </td>
+                            <td>
+                                <input id="transition-10-checkbox" type="checkbox">
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>
+                                Show digging hints
+                            </td>
+                            <td>
+                                <input id="digging-hints-checkbox" type="checkbox">
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>
+                                Starting Board
+                            </td>
+                            <td>
+                                <textarea id="paste-area" placeholder="Paste Image Here"></textarea>
+                            </td>
+                        </tr>
+                    </table>
 
-                <table class="settings-table">
-                    <tr>
-                        <td>
-                            Piece Sequence
-                        </td>
-                        <td>
-                            <textarea id="piece-sequence" placeholder="Random (type here to override)"></textarea>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td>
-                            Starting Board
-                        </td>
-                        <td>
-                            <textarea id="paste-area" placeholder="Paste Image Here"></textarea>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td>
-                            Transition every 10 lines
-                        </td>
-                        <td>
-                            <input id="transition-10-checkbox" type="checkbox">
-                        </td>
-                    </tr>
-                    <tr>
-                        <td>
-                            Show digging hints
-                        </td>
-                        <td>
-                            <input id="digging-hints-checkbox" type="checkbox">
-                        </td>
-                    </tr>
-                </table>
+                </div>
 
 
 

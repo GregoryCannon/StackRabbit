@@ -7,13 +7,13 @@ body {
   color: white;
   font-family: "Changa", sans-serif;
   font-weight: 400;
-  background-color: #4a5054;
+  background-color: #292c2d;
 }
 
 #body-inner {
   margin: 0 auto;
   padding-top: 20px;
-  background-color: rgb(102 107 111);
+  background-color: rgb(63 69 74);
   max-width: 1100px;
   box-shadow: 0 0 100px black;
 }
@@ -53,7 +53,6 @@ button:active {
 }
 
 button:disabled {
-  display: none;
   background-color: #bbb;
 }
 
@@ -69,9 +68,6 @@ button:disabled {
 #middle-spacer,
 #right-spacer {
   flex-grow: 1;
-}
-
-#advanced-stats {
 }
 
 .stats-header,
