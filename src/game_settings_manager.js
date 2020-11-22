@@ -12,10 +12,18 @@ export function ShouldTransitionEveryLine() {
   return false;
 }
 
+export function GetStartingLevel() {
+  return Ui.GetStartingLevel();
+}
+
 /* -------- GAMEPLAY --------- */
 
 export function ShouldShowDiggingHints() {
   return Ui.GetDiggingHintsEnabled();
+}
+
+export function ShouldShowParityHints() {
+  return Ui.GetParityHintsEnabled();
 }
 
 export function GetGameSpeedMultiplier() {

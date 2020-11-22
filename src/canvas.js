@@ -315,7 +315,9 @@ Canvas.prototype.drawBoard = function () {
   if (GameSettings.ShouldShowDiggingHints()) {
     this.drawDiggingHints();
   }
-  this.drawParityHints();
+  if (GameSettings.ShouldShowParityHints()) {
+    this.drawParityHints();
+  }
 };
 
 function filledIfExists(row, col, board) {

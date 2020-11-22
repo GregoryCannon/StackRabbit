@@ -17,16 +17,10 @@ import { BoardEditManager } from "./board_edit_manager.js";
 import { BoardGenerator } from "./board_generator.js";
 import "./ui_manager";
 const GameSettings = require("./game_settings_manager");
+const GameSettingsUi = require("./game_settings_ui_manager");
 
-const scoreTextElement = document.getElementById("score-display");
-const linesTextElement = document.getElementById("lines-display");
-const levelTextElement = document.getElementById("level-display");
 const headerTextElement = document.getElementById("header-text");
 const parityStatsDiv = document.getElementById("parity-stats");
-const gameOptionsForm = document.getElementById("game-options-form");
-const startGameButton = document.getElementById("start-game");
-const restartGameButton = document.getElementById("restart-game");
-const levelSelectElement = document.getElementById("level-select");
 const mainCanvas = document.getElementById("main-canvas");
 const rightPanel = document.getElementById("right-panel");
 
@@ -250,7 +244,7 @@ function startGame() {
   m_gameState = GameState.FIRST_PIECE;
 
   // Parse the level
-  const levelSelected = parseInt(levelSelectElement.value);
+  const levelSelected = GameSettings.GetStartingLevel();
   if (Number.isInteger(levelSelected) && levelSelected > 0) {
     m_level = levelSelected;
   } else {
@@ -472,19 +466,15 @@ function getARE() {
   return m_ARE;
 }
 
-/**
- * SCRIPT START
- */
-m_inputManager = new InputManager(
-  moveCurrentPieceDown,
-  movePieceLeft,
-  movePieceRight,
-  rotatePieceLeft,
-  rotatePieceRight,
-  togglePause,
-  getGameState,
-  getARE
-);
+function getBoardStatus() {
+  return m_boardStatus;
+}
+
+function setBoardStatus(value) {
+  m_boardStatus = value;
+}
+
+/* --------- MOUSE & KEY INPUT ---------- */
 
 mainCanvas.addEventListener("mousedown", function (e) {
   m_boardEditManager.onMouseDown(e);
@@ -506,7 +496,10 @@ document.addEventListener("keyup", (e) => {
   m_inputManager.keyUpListener(e);
 });
 
+/* --------- Preset buttons --------- */
+
 document.getElementById("preset-standard").addEventListener("click", (e) => {
+  GameSettingsUi.loadStandardPreset();
   m_boardGenerator.loadEmptyBoard();
   m_canvas.drawBoard();
   startGame();
@@ -514,34 +507,61 @@ document.getElementById("preset-standard").addEventListener("click", (e) => {
 document
   .getElementById("preset-standard-tap")
   .addEventListener("click", (e) => {
+    GameSettingsUi.loadStandardTapPreset();
     m_boardGenerator.loadEmptyBoard();
-    m_canvas.drawBoard();
-    startGame();
-  });
-document
-  .getElementById("preset-random-board")
-  .addEventListener("click", (e) => {
-    m_boardGenerator.loadStandardBoard();
     m_canvas.drawBoard();
     startGame();
   });
 document
   .getElementById("preset-dig-practice")
   .addEventListener("click", (e) => {
+    GameSettingsUi.loadDigPracticePreset();
     m_boardGenerator.loadDigBoard();
     m_canvas.drawBoard();
     startGame();
   });
-
-document.getElementById("start-button").addEventListener("click", (e) => {
-  e.preventDefault();
-  mainCanvas.focus();
-
+document.getElementById("preset-killscreen").addEventListener("click", (e) => {
+  GameSettingsUi.loadKillscreenPreset();
+  m_boardGenerator.loadEmptyBoard();
+  m_canvas.drawBoard();
+  startGame();
+});
+document
+  .getElementById("preset-slow-killscreen")
+  .addEventListener("click", (e) => {
+    GameSettingsUi.loadSlowKillscreenPreset();
+    m_boardGenerator.loadEmptyBoard();
+    m_canvas.drawBoard();
+    startGame();
+  });
+document.getElementById("preset-slow-19").addEventListener("click", (e) => {
+  GameSettingsUi.loadSlow19Preset();
   m_boardGenerator.loadEmptyBoard();
   m_canvas.drawBoard();
   startGame();
 });
 
+document.getElementById("start-button").addEventListener("click", (e) => {
+  e.preventDefault();
+  m_boardGenerator.loadEmptyBoard();
+  mainCanvas.focus();
+  m_canvas.drawBoard();
+  startGame();
+});
+
+/**
+ * SCRIPT START
+ */
+m_inputManager = new InputManager(
+  moveCurrentPieceDown,
+  movePieceLeft,
+  movePieceRight,
+  rotatePieceLeft,
+  rotatePieceRight,
+  togglePause,
+  getGameState,
+  getARE
+);
 resetLocalVariables();
 m_canvas.drawBoard();
 m_canvas.drawNextBox(null);

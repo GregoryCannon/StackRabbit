@@ -26,15 +26,14 @@
                 </h6>
 
                 <button class="preset-button" id="preset-standard">Standard</button>
+                <button class="preset-button" id="preset-standard-tap">Standard (Tapper)</button>
                 <button class="preset-button" id="preset-dig-practice">Dig Practice</button>
-                <!-- To be completed -->
-                <button class="preset-button" id="preset-standard-tap" disabled>Standard (Tapper)</button>
-                <button class="preset-button" id="drought-practice" disabled>Drought Practice</button>
-                <button class="preset-button" id="drought-practice" disabled>Killscreen Practice</button>
-                <button class="preset-button" id="preset-slow-killscreen" disabled>Slow Killscreen</button>
-                <button class="preset-button" id="slow-19-plus" disabled>Slow 19+</button>
+                <button class="preset-button" id="preset-drought" disabled>Drought Practice</button>
+                <button class="preset-button" id="preset-killscreen">Killscreen Practice</button>
+                <button class="preset-button" id="preset-slow-killscreen">Slow Killscreen</button>
+                <button class="preset-button" id="preset-slow-19">Slow 19+</button>
                 <!-- Unused -->
-                <button class="preset-button" id="preset-random-board" style="display: none">Random Board</button>
+                <button class=" preset-button" id="preset-random-board" style="display: none">Random Board</button>
 
 
                 <div class="left-panel-section">
@@ -65,7 +64,7 @@
                             </td>
                             <td>
                                 <select id="game-speed-dropdown">
-                                    <option value=1>100%</option>
+                                    <option value=1>Standard</option>
                                     <option value=0.5>50%</option>
                                     <option value=0.333333333>33%</option>
                                 </select>
@@ -137,6 +136,14 @@
                             </td>
                             <td>
                                 <input id="digging-hints-checkbox" type="checkbox">
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>
+                                Show parity hints
+                            </td>
+                            <td>
+                                <input id="parity-hints-checkbox" type="checkbox">
                             </td>
                         </tr>
                         <tr>
