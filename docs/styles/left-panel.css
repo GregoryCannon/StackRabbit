@@ -76,6 +76,10 @@
   font-size: 16px;
 }
 
+.setting-label {
+  text-align: right;
+}
+
 .settings-table textarea {
   max-width: 150px;
 }

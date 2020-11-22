@@ -30,6 +30,10 @@ export function GetGameSpeedMultiplier() {
   return Ui.GetGameSpeedMultiplier();
 }
 
+export function ShouldReduceLongBars() {
+  return Ui.GetDroughtModeEnabled();
+}
+
 /* --------- DAS --------- */
 
 export function ShouldSetDASChargeOnPieceStart() {

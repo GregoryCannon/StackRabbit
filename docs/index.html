@@ -28,7 +28,7 @@
                 <button class="preset-button" id="preset-standard">Standard</button>
                 <button class="preset-button" id="preset-standard-tap">Standard (Tapper)</button>
                 <button class="preset-button" id="preset-dig-practice">Dig Practice</button>
-                <button class="preset-button" id="preset-drought" disabled>Drought Practice</button>
+                <button class="preset-button" id="preset-drought">Drought Practice</button>
                 <button class="preset-button" id="preset-killscreen">Killscreen Practice</button>
                 <button class="preset-button" id="preset-slow-killscreen">Slow Killscreen</button>
                 <button class="preset-button" id="preset-slow-19">Slow 19+</button>
@@ -44,7 +44,7 @@
 
                     <table class="settings-table">
                         <tr>
-                            <td>
+                            <td class="setting-label">
                                 Level
                             </td>
                             <td>
@@ -59,7 +59,7 @@
                             </td>
                         </tr>
                         <tr>
-                            <td>
+                            <td class="setting-label">
                                 Game Speed
                             </td>
                             <td>
@@ -81,7 +81,7 @@
 
                     <table class="settings-table">
                         <tr>
-                            <td>
+                            <td class="setting-label">
                                 DAS Speed
                             </td>
                             <td>
@@ -95,7 +95,7 @@
                             </td>
                         </tr>
                         <tr>
-                            <td>
+                            <td class="setting-label">
                                 DAS Behavior
                             </td>
                             <td>
@@ -115,7 +115,7 @@
 
                     <table class="settings-table">
                         <tr>
-                            <td>
+                            <td class="setting-label">
                                 Piece Sequence
                             </td>
                             <td>
@@ -123,7 +123,7 @@
                             </td>
                         </tr>
                         <tr>
-                            <td>
+                            <td class="setting-label">
                                 Transition every 10 lines
                             </td>
                             <td>
@@ -131,7 +131,15 @@
                             </td>
                         </tr>
                         <tr>
+                            <td class="setting-label">
+                                Reduce long bars
+                            </td>
                             <td>
+                                <input id="drought-checkbox" type="checkbox">
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="setting-label">
                                 Show digging hints
                             </td>
                             <td>
@@ -139,7 +147,7 @@
                             </td>
                         </tr>
                         <tr>
-                            <td>
+                            <td class="setting-label">
                                 Show parity hints
                             </td>
                             <td>
@@ -147,7 +155,7 @@
                             </td>
                         </tr>
                         <tr>
-                            <td>
+                            <td class="setting-label">
                                 Starting Board
                             </td>
                             <td>
@@ -157,8 +165,6 @@
                     </table>
 
                 </div>
-
-
 
                 <canvas id="dummy-canvas"></canvas>
                 <img id="pasted-image" />

@@ -520,6 +520,12 @@ document
     m_canvas.drawBoard();
     startGame();
   });
+document.getElementById("preset-drought").addEventListener("click", (e) => {
+  GameSettingsUi.loadDroughtPreset();
+  m_boardGenerator.loadEmptyBoard();
+  m_canvas.drawBoard();
+  startGame();
+});
 document.getElementById("preset-killscreen").addEventListener("click", (e) => {
   GameSettingsUi.loadKillscreenPreset();
   m_boardGenerator.loadEmptyBoard();
@@ -563,10 +569,14 @@ m_inputManager = new InputManager(
   getARE
 );
 resetLocalVariables();
-m_canvas.drawBoard();
-m_canvas.drawNextBox(null);
-m_inputManager.refreshDebugText();
-refreshHeaderText();
-refreshStats();
-refreshScoreHUD();
-gameLoop();
+
+// Render after a small delay so the font loads
+window.setTimeout(() => {
+  m_canvas.drawBoard();
+  m_canvas.drawNextBox(null);
+  m_inputManager.refreshDebugText();
+  refreshHeaderText();
+  refreshStats();
+  refreshScoreHUD();
+  gameLoop();
+}, 20);

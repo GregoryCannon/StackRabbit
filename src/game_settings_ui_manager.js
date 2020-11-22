@@ -3,6 +3,7 @@ import { DASSpeed, DASBehavior } from "./constants";
 const dasSpeedDropdown = document.getElementById("das-speed-dropdown");
 const dasBehaviorDropdown = document.getElementById("das-behavior-dropdown");
 const gameSpeedDropdown = document.getElementById("game-speed-dropdown");
+const droughtCheckbox = document.getElementById("drought-checkbox");
 const diggingHintsCheckbox = document.getElementById("digging-hints-checkbox");
 const parityHintsCheckbox = document.getElementById("parity-hints-checkbox");
 const transition10Checkbox = document.getElementById("transition-10-checkbox");
@@ -43,15 +44,23 @@ export function GetTransition10Lines() {
   return transition10Checkbox.checked;
 }
 
-export function SetTransition10Lines(enabled) {
+function SetTransition10Lines(enabled) {
   transition10Checkbox.checked = enabled;
+}
+
+export function GetDroughtModeEnabled() {
+  return droughtCheckbox.checked;
+}
+
+function SetDroughtModeEnabled(value) {
+  droughtCheckbox.checked = value;
 }
 
 export function GetDiggingHintsEnabled() {
   return diggingHintsCheckbox.checked;
 }
 
-export function SetDiggingHintsEnabled(enabled) {
+function SetDiggingHintsEnabled(enabled) {
   diggingHintsCheckbox.checked = enabled;
 }
 
@@ -59,7 +68,7 @@ export function GetParityHintsEnabled() {
   return parityHintsCheckbox.checked;
 }
 
-export function SetParityHintsEnabled(enabled) {
+function SetParityHintsEnabled(enabled) {
   parityHintsCheckbox.checked = enabled;
 }
 
@@ -67,7 +76,7 @@ export function GetGameSpeedMultiplier() {
   return gameSpeedDropdown.value;
 }
 
-export function SetGameSpeedMultiplier(value) {
+function SetGameSpeedMultiplier(value) {
   gameSpeedDropdown.value = value;
 }
 
@@ -76,7 +85,7 @@ export function GetDASSpeed() {
   return DAS_SPEED_LIST[speedIndex];
 }
 
-export function SetDASSpeed(value) {
+function SetDASSpeed(value) {
   dasSpeedDropdown.value = DAS_SPEED_LIST.findIndex((x) => x == value);
 }
 
@@ -85,7 +94,7 @@ export function GetDASBehavior() {
   return DAS_BEHAVIOR_LIST[behaviorIndex];
 }
 
-export function SetDASBehavior(value) {
+function SetDASBehavior(value) {
   dasBehaviorDropdown.value = DAS_BEHAVIOR_LIST.findIndex((x) => x == value);
 }
 
@@ -101,7 +110,7 @@ export function GetPieceSequence() {
   return cleansedStr;
 }
 
-export function SetPieceSequence(value) {
+function SetPieceSequence(value) {
   pieceSequenceText.value = value;
 }
 
@@ -113,6 +122,7 @@ export function loadStandardPreset() {
   SetDASSpeed(DASSpeed.STANDARD);
   SetDASBehavior(DASBehavior.STANDARD);
   SetGameSpeedMultiplier(1);
+  SetDroughtModeEnabled(false);
   SetPieceSequence("");
   SetTransition10Lines(false);
   if (GetStartingLevel() > 18) {
@@ -124,6 +134,7 @@ export function loadStandardTapPreset() {
   SetDASSpeed(DASSpeed.MEDIUM);
   SetDASBehavior(DASBehavior.CHARGE_ON_PIECE_SPAWN);
   SetGameSpeedMultiplier(1);
+  SetDroughtModeEnabled(false);
   SetPieceSequence("");
   SetTransition10Lines(false);
   if (GetStartingLevel() > 18) {
@@ -135,6 +146,7 @@ export function loadDigPracticePreset() {
   SetDiggingHintsEnabled(true);
   SetParityHintsEnabled(false);
   SetGameSpeedMultiplier(1);
+  SetDroughtModeEnabled(false);
   SetPieceSequence("");
   SetTransition10Lines(false);
   if (GetStartingLevel() > 18) {
@@ -147,6 +159,8 @@ export function loadKillscreenPreset() {
   SetDASBehavior(DASBehavior.CHARGE_ON_PIECE_SPAWN);
   SetStartingLevel(29);
   SetGameSpeedMultiplier(1);
+  SetDiggingHintsEnabled(false);
+  SetDroughtModeEnabled(false);
   SetPieceSequence("");
   SetTransition10Lines(false);
 }
@@ -156,6 +170,8 @@ export function loadSlowKillscreenPreset() {
   SetDASBehavior(DASBehavior.CHARGE_ON_PIECE_SPAWN);
   SetStartingLevel(29);
   SetGameSpeedMultiplier(0.5);
+  SetDiggingHintsEnabled(false);
+  SetDroughtModeEnabled(false);
   SetPieceSequence("");
   SetTransition10Lines(false);
 }
@@ -164,6 +180,19 @@ export function loadSlow19Preset() {
   SetStartingLevel(19);
   SetDASBehavior(DASBehavior.CHARGE_ON_PIECE_SPAWN);
   SetGameSpeedMultiplier(0.5);
+  SetDiggingHintsEnabled(false);
+  SetDroughtModeEnabled(false);
   SetPieceSequence("");
   SetTransition10Lines(true);
+}
+
+export function loadDroughtPreset() {
+  SetGameSpeedMultiplier(1);
+  SetDiggingHintsEnabled(false);
+  SetDroughtModeEnabled(true);
+  SetPieceSequence("");
+  SetTransition10Lines(false);
+  if (GetStartingLevel() > 18) {
+    SetStartingLevel(18);
+  }
 }

@@ -1,6 +1,7 @@
-const pieceListElement = document.getElementById("piece-sequence");
-
 import { PIECE_LIST, PIECE_LOOKUP } from "./tetrominoes.js";
+const GameSettings = require("./game_settings_manager");
+
+const pieceListElement = document.getElementById("piece-sequence");
 
 let m_pieceSequenceStr = "";
 let m_readIndex = 0;
@@ -66,7 +67,13 @@ PieceSelector.prototype.getPresetPiece = function () {
 PieceSelector.prototype.getRandomPiece = function (previousPieceId) {
   // Roll once 0-7, where 7 is a dummy value
   let r = Math.floor(Math.random() * (PIECE_LIST.length + 1));
-  if (r == PIECE_LIST.length || previousPieceId === PIECE_LIST[r][2]) {
+  const tempPieceId = r !== PIECE_LIST.length ? PIECE_LIST[r][2] : "";
+  console.log(tempPieceId);
+  if (
+    r == PIECE_LIST.length || // Re-roll dummy value
+    tempPieceId === previousPieceId || // Re-roll repeat piece
+    (GameSettings.ShouldReduceLongBars() && tempPieceId == "I") // Re-roll I pieces when drought mode on
+  ) {
     // Reroll once for repeats (or dummy) to reduce repeated pieces
     r = Math.floor(Math.random() * PIECE_LIST.length);
   }
