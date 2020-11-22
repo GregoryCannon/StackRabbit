@@ -33,7 +33,7 @@ leftPanelOpenToggle.addEventListener("click", function (e) {
 const levelSelectInput = document.getElementById("level-select");
 
 // Assign on click listeners, e.g. #level-0 sets it to 0.
-[0, 8, 15, 18, 19, 29].forEach((num) => {
+[0, 5, 8, 9, 15, 18, 19, 29].forEach((num) => {
   document.getElementById("level-" + num).addEventListener("click", (e) => {
     levelSelectInput.value = num;
   });

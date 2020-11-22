@@ -28,13 +28,6 @@
   font-size: 20px;
 }
 
-.preset-button {
-  display: inline-block;
-  padding: 8px 5px;
-  font-size: 16px;
-  margin-bottom: 4px;
-}
-
 #start-button {
   margin-top: 20px;
   padding: 10px 30px;
@@ -55,21 +48,6 @@
 .settings-table input {
   font-family: "Changa", sans-serif;
   font-size: 16px;
-}
-
-#level-select {
-  margin: 0 auto;
-  height: 25px;
-  font-size: 18px;
-  text-align: center;
-  border-radius: 5px;
-  border: solid 1px gray;
-}
-
-.level-button {
-  padding: 7px 6px;
-  min-width: 28px;
-  margin-bottom: 2px;
 }
 
 .settings-table {

@@ -1,8 +1,6 @@
 import { PIECE_LIST, PIECE_LOOKUP } from "./tetrominoes.js";
 const GameSettings = require("./game_settings_manager");
 
-const pieceListElement = document.getElementById("piece-sequence");
-
 let m_pieceSequenceStr = "";
 let m_readIndex = 0;
 let m_isReadingFromSequence = false;
@@ -15,7 +13,7 @@ export function PieceSelector() {}
 
 PieceSelector.prototype.startReadingPieceSequence = function () {
   // Get piece sequence (with spaces trimmed)
-  m_pieceSequenceStr = pieceListElement.value.replace(/ /g, "");
+  m_pieceSequenceStr = GameSettings.GetPieceSequence();
 
   if (m_pieceSequenceStr.length > 0) {
     m_isReadingFromSequence = true;

@@ -34,6 +34,10 @@ export function ShouldReduceLongBars() {
   return Ui.GetDroughtModeEnabled();
 }
 
+export function GetPieceSequence() {
+  return Ui.GetPieceSequence();
+}
+
 /* --------- DAS --------- */
 
 export function ShouldSetDASChargeOnPieceStart() {

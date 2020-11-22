@@ -6,6 +6,81 @@
 #game-container {
   background: hsl(0, 0%, 79%);
   padding: 30px;
+  position: relative;
+}
+
+#pre-game-config {
+  position: absolute;
+  background-color: black;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  padding: 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.preset-section-title {
+  text-align: center;
+}
+
+.presets-section {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+}
+
+.preset-button {
+  display: inline-block;
+  font-size: 16px;
+  padding: 4px;
+}
+
+.presets-section button {
+  margin: 3px;
+}
+
+#level-select-container {
+  max-width: 220px;
+  margin-top: 50px;
+}
+
+#level-select {
+  margin: 0 auto;
+  height: 25px;
+  font-size: 18px;
+  text-align: center;
+  border-radius: 5px;
+  border: solid 1px gray;
+}
+
+#level-select-title {
+  text-align: center;
+}
+
+#level-select-container input {
+  max-width: 60px;
+  font-family: "Changa", sans-serif;
+  font-size: 20px;
+}
+
+#level-choice-buttons {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.level-button {
+  min-width: 45px;
+  min-height: 40px;
+  margin-bottom: 2px;
+  font-size: 15px;
+  font-family: "Press Start 2P", sans-serif;
 }
 
 #main-canvas {

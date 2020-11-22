@@ -37,6 +37,7 @@ button {
   border: none;
   background-color: #f38805;
   border-radius: 5px;
+  font-family: "Changa", sans-serif;
 }
 
 button:hover {

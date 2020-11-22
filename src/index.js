@@ -20,6 +20,7 @@ const GameSettings = require("./game_settings_manager");
 const GameSettingsUi = require("./game_settings_ui_manager");
 
 const headerTextElement = document.getElementById("header-text");
+const preGameConfigDiv = document.getElementById("pre-game-config");
 const parityStatsDiv = document.getElementById("parity-stats");
 const mainCanvas = document.getElementById("main-canvas");
 const rightPanel = document.getElementById("right-panel");
@@ -73,49 +74,6 @@ export const GetLevel = () => {
 export const GetIsPaused = () => {
   return m_isPaused;
 };
-
-function refreshHeaderText() {
-  let newText = "";
-  if (m_isPaused) {
-    newText = "Paused";
-  } else {
-    switch (m_gameState) {
-      case GameState.START_SCREEN:
-        newText = "Welcome to Tetris Trainer!";
-        break;
-      case GameState.GAME_OVER:
-        newText = "Game over!";
-        break;
-    }
-  }
-
-  headerTextElement.innerText = newText;
-}
-
-export function calcParity(startCol, endCol) {
-  // Calculate parity, where the top left square is "1" and adjacent squares are "-1"
-  let parity = 0;
-  for (let r = 0; r < NUM_ROW; r++) {
-    for (let c = Math.max(0, startCol); c < Math.min(endCol, 10); c++) {
-      if (r >= 18) {
-      }
-      if (m_board[r][c] != SquareState.EMPTY) {
-        // Add 1 or -1 to parity total based on the square's location
-        const cellConstant = (r + c) % 2 == 0 ? 1 : -1;
-        parity += cellConstant;
-      }
-    }
-  }
-  return Math.abs(parity);
-}
-
-function refreshStats() {
-  const leftParity = calcParity(0, 5);
-  const middleParity = calcParity(3, 7);
-  const rightParity = calcParity(5, 10);
-
-  parityStatsDiv.innerText = `Left: ${leftParity} \nMiddle: ${middleParity} \nRight: ${rightParity}`;
-}
 
 function getFullRows() {
   let fullLines = [];
@@ -266,6 +224,7 @@ function startGame() {
   refreshHeaderText();
   refreshScoreHUD();
   refreshStats();
+  refreshPreGame();
 }
 
 /** Progress the game state, and perform any other updates that occur on
@@ -292,6 +251,7 @@ function updateGameState() {
     // Checked here because the game over condition depends on the newly spawned piece
     if (isGameOver()) {
       m_gameState = GameState.GAME_OVER;
+      refreshPreGame();
       refreshHeaderText();
     } else {
       m_gameState = GameState.RUNNING;
@@ -373,11 +333,65 @@ function gameLoop() {
   window.setTimeout(gameLoop, 1000 / desiredFPS - msElapsed);
 }
 
+function refreshHeaderText() {
+  let newText = "";
+  if (m_isPaused) {
+    newText = "Paused";
+  } else {
+    switch (m_gameState) {
+      case GameState.START_SCREEN:
+        newText = "Welcome to Tetris Trainer!";
+        break;
+      case GameState.GAME_OVER:
+        newText = "Game over!";
+        break;
+    }
+  }
+
+  headerTextElement.innerText = newText;
+}
+
+export function calcParity(startCol, endCol) {
+  // Calculate parity, where the top left square is "1" and adjacent squares are "-1"
+  let parity = 0;
+  for (let r = 0; r < NUM_ROW; r++) {
+    for (let c = Math.max(0, startCol); c < Math.min(endCol, 10); c++) {
+      if (r >= 18) {
+      }
+      if (m_board[r][c] != SquareState.EMPTY) {
+        // Add 1 or -1 to parity total based on the square's location
+        const cellConstant = (r + c) % 2 == 0 ? 1 : -1;
+        parity += cellConstant;
+      }
+    }
+  }
+  return Math.abs(parity);
+}
+
+function refreshStats() {
+  const leftParity = calcParity(0, 5);
+  const middleParity = calcParity(3, 7);
+  const rightParity = calcParity(5, 10);
+
+  parityStatsDiv.innerText = `Left: ${leftParity} \nMiddle: ${middleParity} \nRight: ${rightParity}`;
+}
+
 function refreshScoreHUD() {
   m_canvas.drawLevelDisplay(m_level);
   m_canvas.drawScoreDisplay(m_score);
   m_canvas.drawLinesDisplay(m_lines);
   m_canvas.drawTetrisRateDisplay(m_tetrisCount, m_lines);
+}
+
+function refreshPreGame() {
+  if (
+    m_gameState == GameState.START_SCREEN ||
+    m_gameState == GameState.GAME_OVER
+  ) {
+    preGameConfigDiv.style.visibility = "visible";
+  } else {
+    preGameConfigDiv.style.visibility = "hidden";
+  }
 }
 
 /** Delegate functions to controls code */

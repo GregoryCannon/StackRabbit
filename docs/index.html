@@ -21,21 +21,6 @@
                 <button id="left-panel-toggle-button">
                 </button>
 
-                <h6 class="section-title">
-                    Presets
-                </h6>
-
-                <button class="preset-button" id="preset-standard">Standard</button>
-                <button class="preset-button" id="preset-standard-tap">Standard (Tapper)</button>
-                <button class="preset-button" id="preset-dig-practice">Dig Practice</button>
-                <button class="preset-button" id="preset-drought">Drought Practice</button>
-                <button class="preset-button" id="preset-killscreen">Killscreen Practice</button>
-                <button class="preset-button" id="preset-slow-killscreen">Slow Killscreen</button>
-                <button class="preset-button" id="preset-slow-19">Slow 19+</button>
-                <!-- Unused -->
-                <button class=" preset-button" id="preset-random-board" style="display: none">Random Board</button>
-
-
                 <div class="left-panel-section">
                     <h6 class="section-title">
                         Game Settings
@@ -45,17 +30,18 @@
                     <table class="settings-table">
                         <tr>
                             <td class="setting-label">
-                                Level
+                                Piece Sequence
                             </td>
                             <td>
-                                <input id="level-select" type="number" value="8"></input>
-                                <br>
-                                <button class="level-button" id="level-0">0</button>
-                                <button class="level-button" id="level-8">8</button>
-                                <button class="level-button" id="level-15">15</button>
-                                <button class="level-button" id="level-18">18</button>
-                                <button class="level-button" id="level-19">19</button>
-                                <button class="level-button" id="level-29">29</button>
+                                <textarea id="piece-sequence" placeholder="Random (type here to override)"></textarea>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="setting-label">
+                                Starting Board
+                            </td>
+                            <td>
+                                <textarea id="paste-area" placeholder="Paste Image Here"></textarea>
                             </td>
                         </tr>
                         <tr>
@@ -116,14 +102,6 @@
                     <table class="settings-table">
                         <tr>
                             <td class="setting-label">
-                                Piece Sequence
-                            </td>
-                            <td>
-                                <textarea id="piece-sequence" placeholder="Random (type here to override)"></textarea>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td class="setting-label">
                                 Transition every 10 lines
                             </td>
                             <td>
@@ -154,26 +132,12 @@
                                 <input id="parity-hints-checkbox" type="checkbox">
                             </td>
                         </tr>
-                        <tr>
-                            <td class="setting-label">
-                                Starting Board
-                            </td>
-                            <td>
-                                <textarea id="paste-area" placeholder="Paste Image Here"></textarea>
-                            </td>
-                        </tr>
                     </table>
 
                 </div>
 
                 <canvas id="dummy-canvas"></canvas>
                 <img id="pasted-image" />
-
-                <center>
-                    <button class="button-primary" id="start-button">
-                        Start!
-                    </button>
-                </center>
 
             </div>
 
@@ -182,7 +146,64 @@
             <div id="right-panel">
                 <div id="game-container">
                     <canvas id="main-canvas" width="500" height="560"></canvas>
+
+                    <div id="pre-game-config">
+
+                        <div id="presets-panel">
+                            <h6 class="section-title">
+                                Presets
+                            </h6>
+
+                            <div class="preset-section-title">Normal Play</div>
+                            <div class="presets-section">
+                                <button class="preset-button" id="preset-standard">Standard</button>
+                                <button class="preset-button" id="preset-standard-tap">Standard (Tapper)</button>
+                            </div>
+
+                            <div class="preset-section-title">Specific Practice</div>
+                            <div class="presets-section">
+                                <button class="preset-button" id="preset-dig-practice">Dig Practice</button>
+                                <button class="preset-button" id="preset-drought">Drought Practice</button>
+                                <button class="preset-button" id="preset-killscreen">Killscreen Practice</button>
+                                <button class="preset-button" id="preset-slow-killscreen">Slow Killscreen</button>
+                                <button class="preset-button" id="preset-slow-19">Slow 19+</button>
+                            </div>
+
+                            <div class="preset-section-title">Exploration</div>
+                            <div class="presets-section">
+                                <button class="preset-button" id="preset-edit-board" disabled>Edit Board</button>
+                                <button class="preset-button" id="preset-custom-sequence" disabled>Custom
+                                    Sequence</button>
+                            </div>
+
+                            <!-- Unused -->
+                            <button class=" preset-button" id="preset-random-board" style="display: none">Random
+                                Board</button>
+
+                        </div>
+                        <div id="level-select-container">
+                            <div id="level-select-title"><span>Level: </span><input id="level-select" type="number"
+                                    value="8"></input></div>
+                            <div id="level-choice-buttons">
+                                <button class="level-button" id="level-0">0</button>
+                                <button class="level-button" id="level-5">5</button>
+                                <button class="level-button" id="level-8">8</button>
+                                <button class="level-button" id="level-9">9</button>
+                                <button class="level-button" id="level-15">15</button>
+                                <button class="level-button" id="level-18">18</button>
+                                <button class="level-button" id="level-19">19</button>
+                                <button class="level-button" id="level-29">29</button>
+                            </div>
+                        </div>
+
+                        <center>
+                            <button class="button-primary" id="start-button">
+                                Start!
+                            </button>
+                        </center>
+                    </div>
                 </div>
+
 
                 <div id="bottom-panel">
                     <div id=controls-container>
@@ -223,6 +244,7 @@
 
             <div id="right-spacer"></div>
         </div>
+    </div>
 
 
     </div>

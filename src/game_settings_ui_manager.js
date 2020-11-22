@@ -100,7 +100,7 @@ function SetDASBehavior(value) {
 
 export function GetPieceSequence() {
   const sequenceRaw = pieceSequenceText.value;
-  const allCaps = sequenceRaw.toUpper();
+  const allCaps = sequenceRaw.toUpperCase();
   let cleansedStr = "";
   for (const char of allCaps) {
     if (["I", "O", "L", "J", "T", "S", "Z"].includes(char)) {
