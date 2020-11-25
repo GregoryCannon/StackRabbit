@@ -116,13 +116,14 @@ export function GetGravity(levelNum) {
 }
 
 export const GameState = {
-  FIRST_PIECE: "first piece",
+  FIRST_PIECE: "first_piece",
   RUNNING: "running",
   PAUSED: "paused",
-  GAME_OVER: "game over",
-  START_SCREEN: "start screen",
+  GAME_OVER: "game_over",
+  START_SCREEN: "start_screen",
   ARE: "are",
-  LINE_CLEAR: "line clear",
+  LINE_CLEAR: "line_clear",
+  EDIT_STARTING_BOARD: "edit_starting_board",
 };
 
 export const DASSpeed = Object.freeze({
@@ -137,4 +138,10 @@ export const DASBehavior = Object.freeze({
   STANDARD: "standard",
   ALWAYS_CHARGED: "always_charged",
   CHARGE_ON_PIECE_SPAWN: "charge_on_piece_spawn",
+});
+
+export const StartingBoardType = Object.freeze({
+  EMPTY: "empty",
+  DIG_PRACTICE: "dig practice",
+  CUSTOM: "custom",
 });

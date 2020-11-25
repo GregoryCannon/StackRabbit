@@ -1,14 +1,23 @@
-import { DASSpeed, DASBehavior } from "./constants";
+import { DASSpeed, DASBehavior, StartingBoardType } from "./constants";
+import {
+  SettingType,
+  SITE_DEFAULTS,
+  STANDARD_PRESET,
+  STANDARD_TAPPER_PRESET,
+} from "./game_settings_presets";
 
 const dasSpeedDropdown = document.getElementById("das-speed-dropdown");
 const dasBehaviorDropdown = document.getElementById("das-behavior-dropdown");
 const gameSpeedDropdown = document.getElementById("game-speed-dropdown");
+const startingBoardDropdown = document.getElementById("starting-board");
 const droughtCheckbox = document.getElementById("drought-checkbox");
 const diggingHintsCheckbox = document.getElementById("digging-hints-checkbox");
 const parityHintsCheckbox = document.getElementById("parity-hints-checkbox");
 const transition10Checkbox = document.getElementById("transition-10-checkbox");
 const pieceSequenceText = document.getElementById("piece-sequence");
 const levelSelectElement = document.getElementById("level-select");
+
+const playerSettings = JSON.parse(JSON.stringify(SITE_DEFAULTS));
 
 /* List of DAS speeds in order that they're listed in the UI dropdown.
    This essentially acts as a lookup table because the <option>s in the HTML have 
@@ -32,12 +41,53 @@ const DAS_BEHAVIOR_LIST = [
   DASBehavior.CHARGE_ON_PIECE_SPAWN,
 ];
 
-export function GetStartingLevel() {
-  return parseInt(levelSelectElement.value);
+/* List of starting board types in order that they're listed in the UI dropdown. */
+const STARTING_BOARD_LIST = [
+  StartingBoardType.EMPTY,
+  StartingBoardType.DIG_PRACTICE,
+  StartingBoardType.CUSTOM,
+];
+
+function setSetting(settingName, value) {
+  switch (settingName) {
+    case "DASSpeed":
+      dasSpeedDropdown.value = DAS_SPEED_LIST.findIndex((x) => x == value);
+      break;
+    case "DASBehavior":
+      dasBehaviorDropdown.value = DAS_BEHAVIOR_LIST.findIndex(
+        (x) => x == value
+      );
+      break;
+    case "DroughtModeEnabled":
+      droughtCheckbox.checked = value;
+      break;
+    case "DiggingHintsEnabled":
+      diggingHintsCheckbox.checked = value;
+      break;
+    case "GameSpeedMultiplier":
+      gameSpeedDropdown.value = value;
+      break;
+    case "ParityHintsEnabled":
+      parityHintsCheckbox.checked = value;
+      break;
+    case "PieceSequence":
+      pieceSequenceText.value = value;
+      break;
+    case "Transition10Lines":
+      transition10Checkbox.checked = value;
+      break;
+    case "StartingBoardType":
+      startingBoardDropdown.value = STARTING_BOARD_LIST.findIndex(
+        (x) => x == value
+      );
+      break;
+    case "StartingLevel":
+      levelSelectElement.value = value;
+  }
 }
 
-function SetStartingLevel(value) {
-  levelSelectElement.value = value;
+export function GetStartingLevel() {
+  return parseInt(levelSelectElement.value);
 }
 
 export function GetTransition10Lines() {
@@ -52,32 +102,16 @@ export function GetDroughtModeEnabled() {
   return droughtCheckbox.checked;
 }
 
-function SetDroughtModeEnabled(value) {
-  droughtCheckbox.checked = value;
-}
-
 export function GetDiggingHintsEnabled() {
   return diggingHintsCheckbox.checked;
-}
-
-function SetDiggingHintsEnabled(enabled) {
-  diggingHintsCheckbox.checked = enabled;
 }
 
 export function GetParityHintsEnabled() {
   return parityHintsCheckbox.checked;
 }
 
-function SetParityHintsEnabled(enabled) {
-  parityHintsCheckbox.checked = enabled;
-}
-
 export function GetGameSpeedMultiplier() {
   return gameSpeedDropdown.value;
-}
-
-function SetGameSpeedMultiplier(value) {
-  gameSpeedDropdown.value = value;
 }
 
 export function GetDASSpeed() {
@@ -85,17 +119,9 @@ export function GetDASSpeed() {
   return DAS_SPEED_LIST[speedIndex];
 }
 
-function SetDASSpeed(value) {
-  dasSpeedDropdown.value = DAS_SPEED_LIST.findIndex((x) => x == value);
-}
-
 export function GetDASBehavior() {
   const behaviorIndex = parseInt(dasBehaviorDropdown.value);
   return DAS_BEHAVIOR_LIST[behaviorIndex];
-}
-
-function SetDASBehavior(value) {
-  dasBehaviorDropdown.value = DAS_BEHAVIOR_LIST.findIndex((x) => x == value);
 }
 
 export function GetPieceSequence() {
@@ -110,21 +136,77 @@ export function GetPieceSequence() {
   return cleansedStr;
 }
 
-function SetPieceSequence(value) {
-  pieceSequenceText.value = value;
+export function GetStartingBoardType() {
+  return STARTING_BOARD_LIST[startingBoardDropdown.value];
 }
 
 /* ---------- PRESETS ----------- */
 
-function disableOptionalMods() {}
+/*
+const dasSpeedDropdown = document.getElementById("das-speed-dropdown");
+const dasBehaviorDropdown = document.getElementById("das-behavior-dropdown");
+const gameSpeedDropdown = document.getElementById("game-speed-dropdown");
+const startingBoardDropdown = document.getElementById("starting-board");
+const droughtCheckbox = document.getElementById("drought-checkbox");
+const diggingHintsCheckbox = document.getElementById("digging-hints-checkbox");
+const parityHintsCheckbox = document.getElementById("parity-hints-checkbox");
+const transition10Checkbox = document.getElementById("transition-10-checkbox");
+const pieceSequenceText = document.getElementById("piece-sequence");
+const levelSelectElement = document.getElementById("level-select");
+
+*/
+
+export function loadPreset(presetObj) {
+  const settingsList = [
+    ["DASSpeed", dasSpeedDropdown],
+    ["DASBehavior", dasBehaviorDropdown],
+    ["DroughtModeEnabled", droughtCheckbox],
+    ["DiggingHintsEnabled", diggingHintsCheckbox],
+    ["GameSpeedMultiplier", gameSpeedDropdown],
+    ["ParityHintsEnabled", parityHintsCheckbox],
+    ["PieceSequence", pieceSequenceText],
+    ["Transition10Lines", transition10Checkbox],
+    ["StartingBoardType", startingBoardDropdown],
+    ["StartingLevel", levelSelectElement],
+  ];
+
+  for (const entry of settingsList) {
+    const key = entry[0];
+    const inputElement = entry[1];
+    const containerToHighlight =
+      key == "StartingLevel"
+        ? inputElement.parentElement
+        : inputElement.parentElement.parentElement;
+    const containerToDisable = inputElement.parentElement.parentElement;
+    if (key in presetObj) {
+      // Specified in the preset
+      setSetting(key, presetObj[key].value);
+
+      // Highlight that section to indicate it was changed by the preset
+      containerToHighlight.classList.add("selected-row");
+      if (presetObj[key].type == SettingType.REQUIRED) {
+        containerToDisable.classList.add("disabled-row");
+      }
+    } else {
+      // Not specified in the preset
+      setSetting(key, playerSettings[key]);
+
+      // Remove any highlights on that section
+      containerToHighlight.classList.remove("selected-row");
+      containerToDisable.classList.remove("disabled-row");
+    }
+  }
+}
 
 export function loadStandardPreset() {
   SetDASSpeed(DASSpeed.STANDARD);
   SetDASBehavior(DASBehavior.STANDARD);
   SetGameSpeedMultiplier(1);
   SetDroughtModeEnabled(false);
+  SetDiggingHintsEnabled(false);
   SetPieceSequence("");
   SetTransition10Lines(false);
+  setStartingBoardType(StartingBoardType.EMPTY);
   if (GetStartingLevel() > 18) {
     SetStartingLevel(18);
   }
@@ -135,8 +217,10 @@ export function loadStandardTapPreset() {
   SetDASBehavior(DASBehavior.CHARGE_ON_PIECE_SPAWN);
   SetGameSpeedMultiplier(1);
   SetDroughtModeEnabled(false);
+  SetDiggingHintsEnabled(false);
   SetPieceSequence("");
   SetTransition10Lines(false);
+  setStartingBoardType(StartingBoardType.EMPTY);
   if (GetStartingLevel() > 18) {
     SetStartingLevel(18);
   }
@@ -149,6 +233,7 @@ export function loadDigPracticePreset() {
   SetDroughtModeEnabled(false);
   SetPieceSequence("");
   SetTransition10Lines(false);
+  setStartingBoardType(StartingBoardType.DIG_PRACTICE);
   if (GetStartingLevel() > 18) {
     SetStartingLevel(18);
   }
@@ -163,6 +248,7 @@ export function loadKillscreenPreset() {
   SetDroughtModeEnabled(false);
   SetPieceSequence("");
   SetTransition10Lines(false);
+  setStartingBoardType(StartingBoardType.EMPTY);
 }
 
 export function loadSlowKillscreenPreset() {
@@ -174,6 +260,7 @@ export function loadSlowKillscreenPreset() {
   SetDroughtModeEnabled(false);
   SetPieceSequence("");
   SetTransition10Lines(false);
+  setStartingBoardType(StartingBoardType.EMPTY);
 }
 
 export function loadSlow19Preset() {
@@ -192,6 +279,19 @@ export function loadDroughtPreset() {
   SetDroughtModeEnabled(true);
   SetPieceSequence("");
   SetTransition10Lines(false);
+  setStartingBoardType(StartingBoardType.EMPTY);
+  if (GetStartingLevel() > 18) {
+    SetStartingLevel(18);
+  }
+}
+
+export function loadEditBoardPreset() {
+  SetGameSpeedMultiplier(1);
+  SetDiggingHintsEnabled(false);
+  SetDroughtModeEnabled(false);
+  SetPieceSequence("");
+  SetTransition10Lines(false);
+  setStartingBoardType(StartingBoardType.CUSTOM);
   if (GetStartingLevel() > 18) {
     SetStartingLevel(18);
   }

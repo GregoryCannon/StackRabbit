@@ -23,6 +23,10 @@
   justify-content: center;
 }
 
+#presets-panel-title {
+  font-size: 24px;
+}
+
 .preset-section-title {
   text-align: center;
 }
@@ -37,7 +41,7 @@
 .preset-button {
   display: inline-block;
   font-size: 16px;
-  padding: 4px;
+  padding: 2px 4px;
 }
 
 .presets-section button {
@@ -45,8 +49,8 @@
 }
 
 #level-select-container {
-  max-width: 220px;
-  margin-top: 50px;
+  max-width: 200px;
+  margin-top: 30px;
 }
 
 #level-select {
@@ -76,11 +80,23 @@
 }
 
 .level-button {
-  min-width: 45px;
-  min-height: 40px;
-  margin-bottom: 2px;
+  min-width: 44px;
+  min-height: 32px;
+  margin: 2px;
   font-size: 15px;
+  padding: 2px;
   font-family: "Press Start 2P", sans-serif;
+}
+
+#start-button {
+  margin-top: 20px;
+  padding: 4px 30px;
+  font-size: 20px;
+  background: #ff3223;
+}
+
+#start-button:hover {
+  background: #f7786f;
 }
 
 #main-canvas {

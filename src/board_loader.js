@@ -52,15 +52,9 @@ BoardLoader.prototype.getBoardStateFromImage = function (img) {
       if (
         Math.max(pixelData[0], pixelData[1], pixelData[2]) > rgbEmptyThreshold
       ) {
-        if (r >= 7 && r <= 9) {
-          console.log(r, c, pixelData, "FULL");
-        }
         context.fillStyle = "RED";
         this.board[r][c] = SquareState.COLOR2;
       } else {
-        if (r >= 7 && r <= 9) {
-          console.log(r, c, pixelData, "EMPTY");
-        }
         context.fillStyle = "GREEN";
 
         this.board[r][c] = SquareState.EMPTY;

@@ -41,6 +41,11 @@
                                 Starting Board
                             </td>
                             <td>
+                                <select id="starting-board">
+                                    <option value="0">Empty</option>
+                                    <option value="1">Dig Practice</option>
+                                    <option value="2">Custom</option>
+                                </select>
                                 <textarea id="paste-area" placeholder="Paste Image Here"></textarea>
                             </td>
                         </tr>
@@ -150,7 +155,7 @@
                     <div id="pre-game-config">
 
                         <div id="presets-panel">
-                            <h6 class="section-title">
+                            <h6 id="presets-panel-title" class="section-title">
                                 Presets
                             </h6>
 
@@ -171,7 +176,7 @@
 
                             <div class="preset-section-title">Exploration</div>
                             <div class="presets-section">
-                                <button class="preset-button" id="preset-edit-board" disabled>Edit Board</button>
+                                <button class="preset-button" id="preset-edit-board">Edit Board</button>
                                 <button class="preset-button" id="preset-custom-sequence" disabled>Custom
                                     Sequence</button>
                             </div>
@@ -183,7 +188,7 @@
                         </div>
                         <div id="level-select-container">
                             <div id="level-select-title"><span>Level: </span><input id="level-select" type="number"
-                                    value="8"></input></div>
+                                    value="15"></input></div>
                             <div id="level-choice-buttons">
                                 <button class="level-button" id="level-0">0</button>
                                 <button class="level-button" id="level-5">5</button>
@@ -206,29 +211,8 @@
 
 
                 <div id="bottom-panel">
-                    <div id=controls-container>
-                        <div class="key-combo">
-                            <div class="key-explanation">Rotate pieces</div>
-                            <img width=60 height=30 src="static/KeyZX.png"></img>
-                        </div>
-
-                        <div class="key-combo">
-                            <div class="key-explanation">Move pieces</div>
-                            <img width=90 height=30 src="static/KeyArrows.png"> </img>
-                        </div>
-                        <div class="key-combo">
-                            <div class="key-explanation">Pause</div>
-                            <img width=30 height=30 src="static/KeyP.png"> </img>
-                        </div>
-                        <div class="key-combo">
-                            <div class="key-explanation">Edit board</div>
-                            <img width=30 height=30 src="static/Mouse icon.png"> </img>
-                        </div>
-                    </div>
-
                     <div id="credits">Developed by Greg Cannon with help from Christian Harris.<br> Source code
                         available on <a href="https://github.com/GregoryCannon/TetrisTrainer">Github</a>.</div>
-
                 </div>
             </div>
 
@@ -240,6 +224,34 @@
                 <h3 class="stats-header">Parity</h3>
                 <div class="stats-content" id="parity-stats"></div>
 
+                <div id=controls-container>
+                    <div class="key-combo">
+                        <div class="key-explanation">Rotate pieces</div>
+                        <img width=60 height=30 src="static/Win-ZX.png"></img>
+                    </div>
+
+                    <div class="key-combo">
+                        <div class="key-explanation">Move pieces</div>
+                        <img width=100 height=30 src="static/Win-Arrows.png"> </img>
+                    </div>
+                    <div class="key-combo">
+                        <div class="key-explanation">Edit board</div>
+                        <img width=30 height=30 src="static/Mouse icon.png"> </img>
+                    </div>
+                    <div class="key-combo">
+                        <div class="key-explanation">Start/Pause</div>
+                        <img width=60 height=30 src="static/Win-Enter.png"> </img>
+                    </div>
+                    <div class="key-combo">
+                        <div class="key-explanation">Restart</div>
+                        <img width=30 height=30 src="static/Win-R.png"> </img>
+                    </div>
+                    <div class="key-combo">
+                        <div class="key-explanation">Quit to Menu</div>
+                        <img width=30 height=30 src="static/Win-Q.png"> </img>
+                    </div>
+
+                </div>
             </div>
 
             <div id="right-spacer"></div>

@@ -38,6 +38,10 @@ export function GetPieceSequence() {
   return Ui.GetPieceSequence();
 }
 
+export function GetStartingBoardType() {
+  return Ui.GetStartingBoardType();
+}
+
 /* --------- DAS --------- */
 
 export function ShouldSetDASChargeOnPieceStart() {

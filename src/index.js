@@ -10,12 +10,23 @@ import {
   SquareState,
   GetGravity,
   CalculatePushdownPoints,
+  StartingBoardType,
 } from "./constants.js";
 import { Piece } from "./piece.js";
 import { InputManager } from "./input_manager.js";
 import { BoardEditManager } from "./board_edit_manager.js";
 import { BoardGenerator } from "./board_generator.js";
 import "./ui_manager";
+import {
+  DIG_PRACTICE_PRESET,
+  DROUGHT_PRESET,
+  EDIT_BOARD_PRESET,
+  KILLSCREEN_PRESET,
+  SLOW_19_PRESET,
+  SLOW_KILLSCREEN_PRESET,
+  STANDARD_PRESET,
+  STANDARD_TAPPER_PRESET,
+} from "./game_settings_presets.js";
 const GameSettings = require("./game_settings_manager");
 const GameSettingsUi = require("./game_settings_ui_manager");
 
@@ -218,7 +229,23 @@ function startGame() {
   m_nextPiece = new Piece(m_pieceSelector.chooseNextPiece(""), m_board);
   getNewPiece();
 
+  // Generate the starting board based on the desired starting board type
+  switch (GameSettings.GetStartingBoardType()) {
+    case StartingBoardType.EMPTY:
+      m_boardGenerator.loadEmptyBoard();
+      break;
+
+    case StartingBoardType.DIG_PRACTICE:
+      m_boardGenerator.loadDigBoard();
+      break;
+
+    case StartingBoardType.CUSTOM:
+      // do nothing, since there's already a board there
+      break;
+  }
+
   // Refresh UI
+  mainCanvas.focus();
   m_canvas.drawBoard();
   m_canvas.drawCurrentPiece();
   refreshHeaderText();
@@ -342,6 +369,10 @@ function refreshHeaderText() {
       case GameState.START_SCREEN:
         newText = "Welcome to Tetris Trainer!";
         break;
+      case GameState.EDIT_STARTING_BOARD:
+        newText =
+          "Use your mouse to edit the board, then click enter to start!";
+        break;
       case GameState.GAME_OVER:
         newText = "Game over!";
         break;
@@ -384,10 +415,7 @@ function refreshScoreHUD() {
 }
 
 function refreshPreGame() {
-  if (
-    m_gameState == GameState.START_SCREEN ||
-    m_gameState == GameState.GAME_OVER
-  ) {
+  if (m_gameState == GameState.START_SCREEN) {
     preGameConfigDiv.style.visibility = "visible";
   } else {
     preGameConfigDiv.style.visibility = "hidden";
@@ -472,6 +500,15 @@ function togglePause() {
   refreshHeaderText();
 }
 
+function gameStateIsInGame() {
+  return (
+    m_gameState == GameState.FIRST_PIECE ||
+    m_gameState == GameState.RUNNING ||
+    m_gameState == GameState.ARE ||
+    m_gameState == GameState.LINE_CLEAR
+  );
+}
+
 function getGameState() {
   return m_gameState;
 }
@@ -512,61 +549,79 @@ document.addEventListener("keyup", (e) => {
 
 /* --------- Preset buttons --------- */
 
-document.getElementById("preset-standard").addEventListener("click", (e) => {
-  GameSettingsUi.loadStandardPreset();
-  m_boardGenerator.loadEmptyBoard();
-  m_canvas.drawBoard();
-  startGame();
-});
-document
-  .getElementById("preset-standard-tap")
-  .addEventListener("click", (e) => {
-    GameSettingsUi.loadStandardTapPreset();
-    m_boardGenerator.loadEmptyBoard();
-    m_canvas.drawBoard();
-    startGame();
+const presetsMap = {
+  "preset-standard": STANDARD_PRESET,
+  "preset-standard-tap": STANDARD_TAPPER_PRESET,
+  "preset-dig-practice": DIG_PRACTICE_PRESET,
+  "preset-drought": DROUGHT_PRESET,
+  "preset-killscreen": KILLSCREEN_PRESET,
+  "preset-slow-killscreen": SLOW_KILLSCREEN_PRESET,
+  "preset-slow-19": SLOW_19_PRESET,
+};
+
+function deselectAllPresets() {
+  for (const id in presetsMap) {
+    document.getElementById(id).classList.remove("selected");
+  }
+}
+
+// Add click listeners for all the standard preset buttons
+for (const id in presetsMap) {
+  const presetObj = presetsMap[id];
+
+  document.getElementById(id).addEventListener("click", (e) => {
+    // Load the corresponding preset
+    GameSettingsUi.loadPreset(presetObj);
+    // Select that preset
+    deselectAllPresets();
+    document.getElementById(id).classList.add("selected");
   });
-document
-  .getElementById("preset-dig-practice")
-  .addEventListener("click", (e) => {
-    GameSettingsUi.loadDigPracticePreset();
-    m_boardGenerator.loadDigBoard();
-    m_canvas.drawBoard();
-    startGame();
-  });
-document.getElementById("preset-drought").addEventListener("click", (e) => {
-  GameSettingsUi.loadDroughtPreset();
+}
+
+document.getElementById("preset-edit-board").addEventListener("click", (e) => {
+  GameSettingsUi.loadPreset(EDIT_BOARD_PRESET);
   m_boardGenerator.loadEmptyBoard();
   m_canvas.drawBoard();
-  startGame();
-});
-document.getElementById("preset-killscreen").addEventListener("click", (e) => {
-  GameSettingsUi.loadKillscreenPreset();
-  m_boardGenerator.loadEmptyBoard();
-  m_canvas.drawBoard();
-  startGame();
-});
-document
-  .getElementById("preset-slow-killscreen")
-  .addEventListener("click", (e) => {
-    GameSettingsUi.loadSlowKillscreenPreset();
-    m_boardGenerator.loadEmptyBoard();
-    m_canvas.drawBoard();
-    startGame();
-  });
-document.getElementById("preset-slow-19").addEventListener("click", (e) => {
-  GameSettingsUi.loadSlow19Preset();
-  m_boardGenerator.loadEmptyBoard();
-  m_canvas.drawBoard();
-  startGame();
+  m_gameState = GameState.EDIT_STARTING_BOARD;
+  refreshPreGame();
+  refreshHeaderText();
 });
 
-document.getElementById("start-button").addEventListener("click", (e) => {
-  e.preventDefault();
-  m_boardGenerator.loadEmptyBoard();
-  mainCanvas.focus();
-  m_canvas.drawBoard();
-  startGame();
+document
+  .getElementById("start-button")
+  .addEventListener("click", (e) => startGame());
+
+document.addEventListener("keydown", (e) => {
+  switch (e.key) {
+    case "r":
+      // Restart
+      if (gameStateIsInGame() || m_gameState == GameState.GAME_OVER) {
+        startGame();
+      }
+      break;
+
+    case "Enter":
+      // Either starts, pauses, or continues after game over
+      if (m_gameState == GameState.GAME_OVER) {
+        m_gameState = GameState.START_SCREEN;
+        refreshHeaderText();
+        refreshPreGame();
+      } else if (m_gameState == GameState.START_SCREEN) {
+        onStartButtonClicked();
+      } else if (m_gameState == GameState.EDIT_STARTING_BOARD) {
+        startGame();
+      } else if (gameStateIsInGame()) {
+        togglePause();
+      }
+      break;
+
+    case "q":
+      // Quits to menu
+      m_gameState = GameState.START_SCREEN;
+      refreshHeaderText();
+      refreshPreGame();
+      break;
+  }
 });
 
 /**
@@ -583,6 +638,7 @@ m_inputManager = new InputManager(
   getARE
 );
 resetLocalVariables();
+document.getElementById("preset-standard").click();
 
 // Render after a small delay so the font loads
 window.setTimeout(() => {

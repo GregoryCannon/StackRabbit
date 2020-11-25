@@ -66,7 +66,6 @@ PieceSelector.prototype.getRandomPiece = function (previousPieceId) {
   // Roll once 0-7, where 7 is a dummy value
   let r = Math.floor(Math.random() * (PIECE_LIST.length + 1));
   const tempPieceId = r !== PIECE_LIST.length ? PIECE_LIST[r][2] : "";
-  console.log(tempPieceId);
   if (
     r == PIECE_LIST.length || // Re-roll dummy value
     tempPieceId === previousPieceId || // Re-roll repeat piece

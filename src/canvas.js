@@ -433,7 +433,6 @@ Canvas.prototype.drawParityHints = function () {
     localParities[c] = calcParity(c - 2, c + 3);
   }
 
-  console.log("localparities", localParities);
   // Normalize over the nearby columns
   let normalizedLocalParities = [];
   for (let i = 0; i < NUM_COLUMN; i++) {
@@ -450,7 +449,6 @@ Canvas.prototype.drawParityHints = function () {
     }
     normalizedLocalParities[i] = total / numAdded; // numAdded is never 0 since the col itself will always be added
   }
-  console.log("norm localparities", normalizedLocalParities);
 
   for (let c = 0; c < NUM_COLUMN; c++) {
     const normalizedLocalParity = normalizedLocalParities[c];

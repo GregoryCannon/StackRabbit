@@ -57,6 +57,11 @@ button:disabled {
   background-color: #bbb;
 }
 
+.selected,
+.selected:hover {
+  background-color: rgb(255, 73, 73);
+}
+
 #main-area {
   display: flex;
   flex-direction: row;
@@ -65,10 +70,13 @@ button:disabled {
   align-items: flex-start;
 }
 
-#left-spacer,
+#left-spacer {
+  flex-grow: 1;
+}
+
 #middle-spacer,
 #right-spacer {
-  flex-grow: 1;
+  flex-grow: 2;
 }
 
 .stats-header,

@@ -125,7 +125,7 @@ InputManager.prototype.keyDownListener = function (event) {
 
   // Only actually move the pieces if in the proper game state
   const gameState = this.getGameStateFunc();
-  if (canMovePiecesSideways(gameState)) {
+  if (canMovePiecesSidewaysOrRotate(gameState)) {
     switch (event.keyCode) {
       case LEFT_KEYCODE:
         this.handleTappedDirection(Direction.LEFT);
@@ -156,12 +156,6 @@ InputManager.prototype.keyDownListener = function (event) {
         console.log("rotate rejected, state: ", this.getGameStateFunc());
         break;
     }
-  }
-
-  // Client controls
-  if (event.keyCode == 80) {
-    // Letter 'P' pauses and unpauses
-    this.togglePauseFunc();
   }
 };
 
@@ -210,7 +204,7 @@ InputManager.prototype.handleHeldDirection = function (direction) {
 
 // Handle single taps of the dpad, if in the proper state
 InputManager.prototype.handleTappedDirection = function (direction) {
-  if (canMovePiecesSideways(this.getGameStateFunc())) {
+  if (canMovePiecesSidewaysOrRotate(this.getGameStateFunc())) {
     // Update the DAS charge
     this.setDASCharge(GameSettings.GetDASChargeAfterTap());
 
@@ -244,7 +238,7 @@ InputManager.prototype.refreshDebugText = function () {
 };
 
 // Checks if the game state allows for piece movements horizontally
-function canMovePiecesSideways(gameState) {
+function canMovePiecesSidewaysOrRotate(gameState) {
   return (
     !GetIsPaused() &&
     (gameState == GameState.RUNNING || gameState == GameState.FIRST_PIECE)
