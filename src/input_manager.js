@@ -140,13 +140,6 @@ InputManager.prototype.keyDownListener = function (event) {
         this.rotateRightFunc();
         break;
     }
-  }
-  if (canDoAllPieceMovements(gameState)) {
-    switch (event.keyCode) {
-      case DOWN_KEYCODE:
-        this.isSoftDropping = true;
-        break;
-    }
   } else {
     switch (event.keyCode) {
       case ROTATE_LEFT_KEYCODE:
@@ -154,6 +147,14 @@ InputManager.prototype.keyDownListener = function (event) {
         break;
       case ROTATE_RIGHT_KEYCODE:
         console.log("rotate rejected, state: ", this.getGameStateFunc());
+        break;
+    }
+  }
+
+  if (canDoAllPieceMovements(gameState)) {
+    switch (event.keyCode) {
+      case DOWN_KEYCODE:
+        this.isSoftDropping = true;
         break;
     }
   }
