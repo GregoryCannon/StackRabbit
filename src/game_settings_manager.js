@@ -4,62 +4,67 @@ const Ui = require("./game_settings_ui_manager");
 
 /* ------ LEVEL TRANSITIONS -------- */
 
-export function ShouldTransitionEvery10Lines() {
-  return Ui.GetTransition10Lines();
+export function shouldTransitionEvery10Lines() {
+  return Ui.getTransition10Lines();
 }
 
-export function ShouldTransitionEveryLine() {
+export function shouldTransitionEveryLine() {
   return false;
 }
 
-export function GetStartingLevel() {
-  return Ui.GetStartingLevel();
+export function getStartingLevel() {
+  return Ui.getStartingLevel();
 }
 
 /* -------- GAMEPLAY --------- */
 
-export function ShouldShowDiggingHints() {
-  return Ui.GetDiggingHintsEnabled();
+export function shouldShowDiggingHints() {
+  return Ui.getDiggingHintsEnabled();
 }
 
-export function ShouldShowParityHints() {
-  return Ui.GetParityHintsEnabled();
+export function shouldShowParityHints() {
+  return Ui.getParityHintsEnabled();
 }
 
-export function GetGameSpeedMultiplier() {
-  return Ui.GetGameSpeedMultiplier();
+export function getGameSpeedMultiplier() {
+  return Ui.getGameSpeedMultiplier();
 }
 
-export function ShouldReduceLongBars() {
-  return Ui.GetDroughtModeEnabled();
+// e.g. if game at half speed, skip every other frame
+export function getFrameSkipCount() {
+  return Math.round(1 / Ui.getGameSpeedMultiplier());
 }
 
-export function GetPieceSequence() {
-  return Ui.GetPieceSequence();
+export function shouldReduceLongBars() {
+  return Ui.getDroughtModeEnabled();
 }
 
-export function GetStartingBoardType() {
-  return Ui.GetStartingBoardType();
+export function getPieceSequence() {
+  return Ui.getPieceSequence();
+}
+
+export function getStartingBoardType() {
+  return Ui.getStartingBoardType();
 }
 
 /* --------- DAS --------- */
 
-export function ShouldSetDASChargeOnPieceStart() {
-  const dasBehavior = Ui.GetDASBehavior();
+export function shouldSetDASChargeOnPieceStart() {
+  const dasBehavior = Ui.getDASBehavior();
   return (
     dasBehavior == DASBehavior.ALWAYS_CHARGED ||
     dasBehavior == DASBehavior.CHARGE_ON_PIECE_SPAWN
   );
 }
 
-export function IsDASAlwaysCharged() {
-  return Ui.GetDASBehavior() == DASBehavior.ALWAYS_CHARGED;
+export function isDASAlwaysCharged() {
+  return Ui.getDASBehavior() == DASBehavior.ALWAYS_CHARGED;
 }
 
-export function GetDASChargeAfterTap() {
+export function getDASChargeAfterTap() {
   // If DAS is set to 'always charged', set it to the charged floor (to avoid double shifts)
-  if (Ui.GetDASBehavior() == DASBehavior.ALWAYS_CHARGED) {
-    return GetDASChargedFloor();
+  if (Ui.getDASBehavior() == DASBehavior.ALWAYS_CHARGED) {
+    return getDASChargedFloor();
   }
   // Otherwise, DAS loses its charge on tap
   else {
@@ -67,28 +72,22 @@ export function GetDASChargeAfterTap() {
   }
 }
 
-/** Gets the DAS value given to all pieces on piece spawn, assuming IsDASAlwaysCharged is true. */
-export function GetDASWallChargeAmount() {
-  // This settings only applies when DAS is always charged
-  if (!ShouldSetDASChargeOnPieceStart()) {
-    throw new Error(
-      "Requested DASChargeOnPieceStart when ShouldSetDASChargeOnPieceStart evaluated to 'false'."
-    );
-  }
-  switch (Ui.GetDASSpeed()) {
+/** Gets the DAS value set on wall charge, or maybe on piece spawn (depending on the DAS behavior setting) */
+export function getDASWallChargeAmount() {
+  switch (Ui.getDASSpeed()) {
     // For the DAS speeds that are in between whole number frames (e.g slower than 4F but faster than 5F),
     // give them a worse DAS charge on every wallcharge and piece spawn
     case DASSpeed.SLOW_MEDIUM:
-      return GetDASChargedFloor() + 2;
+      return getDASChargedFloor() + 2;
     case DASSpeed.FAST:
-      return GetDASChargedFloor();
+      return getDASChargedFloor();
     default:
       // All other speeds have DAS auto-wall-charged on piece spawn
-      return GetDASTriggerThreshold();
+      return getDASTriggerThreshold();
   }
 }
 
-export function GetDASChargedFloor() {
+export function getDASChargedFloor() {
   return 10;
 }
 
@@ -96,9 +95,9 @@ export function GetDASUnchargedFloor() {
   return 0;
 }
 
-export function GetDASTriggerThreshold() {
+export function getDASTriggerThreshold() {
   let ARR;
-  const dasSpeed = Ui.GetDASSpeed();
+  const dasSpeed = Ui.getDASSpeed();
   switch (dasSpeed) {
     case DASSpeed.STANDARD:
       ARR = 6;
@@ -114,5 +113,5 @@ export function GetDASTriggerThreshold() {
     default:
       throw new Error("Unknown DAS speed: " + dasSpeed);
   }
-  return GetDASChargedFloor() + ARR;
+  return getDASChargedFloor() + ARR;
 }

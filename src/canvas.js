@@ -300,6 +300,7 @@ Canvas.prototype.unDrawCurrentPiece = function () {
 
 // Draw the pieces locked into the board (NB: does not render the current piece)
 Canvas.prototype.drawBoard = function () {
+  // const drawStart = window.performance.now();
   const level = GetLevel();
   for (let r = 0; r < NUM_ROW; r++) {
     for (let c = 0; c < NUM_COLUMN; c++) {
@@ -312,12 +313,14 @@ Canvas.prototype.drawBoard = function () {
     }
   }
 
-  if (GameSettings.ShouldShowDiggingHints()) {
+  if (GameSettings.shouldShowDiggingHints()) {
     this.drawDiggingHints();
   }
-  if (GameSettings.ShouldShowParityHints()) {
+  if (GameSettings.shouldShowParityHints()) {
     this.drawParityHints();
   }
+  // const drawEnd = window.performance.now();
+  // console.log(drawEnd - drawStart);
 };
 
 function filledIfExists(row, col, board) {

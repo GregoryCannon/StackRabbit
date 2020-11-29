@@ -13,11 +13,14 @@ export function PieceSelector() {}
 
 PieceSelector.prototype.startReadingPieceSequence = function () {
   // Get piece sequence (with spaces trimmed)
-  m_pieceSequenceStr = GameSettings.GetPieceSequence();
+  m_pieceSequenceStr = GameSettings.getPieceSequence();
+  console.log("peice sequence:", m_pieceSequenceStr);
 
   if (m_pieceSequenceStr.length > 0) {
     m_isReadingFromSequence = true;
     m_readIndex = 0;
+  } else {
+    m_isReadingFromSequence = false;
   }
 };
 
@@ -69,7 +72,7 @@ PieceSelector.prototype.getRandomPiece = function (previousPieceId) {
   if (
     r == PIECE_LIST.length || // Re-roll dummy value
     tempPieceId === previousPieceId || // Re-roll repeat piece
-    (GameSettings.ShouldReduceLongBars() && tempPieceId == "I") // Re-roll I pieces when drought mode on
+    (GameSettings.shouldReduceLongBars() && tempPieceId == "I") // Re-roll I pieces when drought mode on
   ) {
     // Reroll once for repeats (or dummy) to reduce repeated pieces
     r = Math.floor(Math.random() * PIECE_LIST.length);

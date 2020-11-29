@@ -71,6 +71,12 @@ let m_lineClearFrames;
 let m_firstPieceDelay;
 let m_linesPendingClear;
 let m_pendingPoints;
+let m_gameLoopFrameCount;
+
+// State relevant to debugging
+let m_totalMsElapsed;
+let m_numFrames;
+let m_maxMsElapsed;
 
 // Exported methods that allow other classes to access the variables in this file
 
@@ -142,7 +148,7 @@ function removeFullRows() {
 
     // Maybe level transition
     if (
-      GameSettings.ShouldTransitionEveryLine() ||
+      GameSettings.shouldTransitionEveryLine() ||
       m_lines >= m_nextTransitionLineCount
     ) {
       m_level += 1;
@@ -191,46 +197,43 @@ function getNewPiece() {
 }
 
 function resetLocalVariables() {
-  m_isPaused = false;
-  m_score = 0;
-  m_tetrisCount = 0;
-  m_gravityFrameCount = 0;
-  m_ARE = 0;
-  m_lineClearFrames = 0;
-  m_linesPendingClear = [];
-  m_pendingPoints = 0;
-  m_lines = 0;
-  m_level = 0;
-  m_gameState = GameState.START_SCREEN;
-  m_inputManager.resetLocalVariables();
-}
-
-function startGame() {
-  // Reset game values
-  resetLocalVariables();
-  m_firstPieceDelay = 90; // Extra delay for first piece
-  m_pieceSelector.startReadingPieceSequence();
-  m_gameState = GameState.FIRST_PIECE;
-
   // Parse the level
-  const levelSelected = GameSettings.GetStartingLevel();
-  if (Number.isInteger(levelSelected) && levelSelected > 0) {
-    m_level = levelSelected;
-  } else {
-    m_level = 0;
-  }
+  m_level = GameSettings.getStartingLevel();
 
   // Determine the number of lines till transition
-  m_nextTransitionLineCount = GameSettings.ShouldTransitionEvery10Lines()
+  m_nextTransitionLineCount = GameSettings.shouldTransitionEvery10Lines()
     ? 10
     : getLinesToTransition(m_level);
 
   // Get the first piece and put it in the next piece slot. Will be bumped to current in getNewPiece()
+  m_pieceSelector.startReadingPieceSequence();
   m_nextPiece = new Piece(m_pieceSelector.chooseNextPiece(""), m_board);
   getNewPiece();
 
+  m_score = 0;
+  m_tetrisCount = 0;
+  m_lines = 0;
+
+  // Implementation variables
+  m_ARE = 0;
+  m_pendingPoints = 0;
+  m_lineClearFrames = 0;
+  m_linesPendingClear = [];
+  m_gravityFrameCount = 0;
+  m_isPaused = false;
+  m_gameLoopFrameCount = GameSettings.getFrameSkipCount();
+  m_firstPieceDelay = 0;
+  m_inputManager.resetLocalVariables();
+
+  // Debug variables
+  m_totalMsElapsed = 0;
+  m_numFrames = 0;
+  m_maxMsElapsed = 0;
+}
+
+function startGame() {
   // Generate the starting board based on the desired starting board type
-  switch (GameSettings.GetStartingBoardType()) {
+  switch (GameSettings.getStartingBoardType()) {
     case StartingBoardType.EMPTY:
       m_boardGenerator.loadEmptyBoard();
       break;
@@ -240,12 +243,23 @@ function startGame() {
       break;
 
     case StartingBoardType.CUSTOM:
-      // do nothing, since there's already a board there
+      if (m_gameState == GameState.EDIT_STARTING_BOARD) {
+        // do nothing, since there's already a board there
+      } else {
+        m_boardGenerator.loadEmptyBoard();
+      }
       break;
   }
 
+  // Reset game values
+  resetLocalVariables();
+
+  // Start the game in the first piece state
+  m_firstPieceDelay = 90; // Extra delay for first piece
+  m_gameState = GameState.FIRST_PIECE;
+
   // Refresh UI
-  mainCanvas.focus();
+  document.activeElement.blur();
   m_canvas.drawBoard();
   m_canvas.drawCurrentPiece();
   refreshHeaderText();
@@ -280,6 +294,14 @@ function updateGameState() {
       m_gameState = GameState.GAME_OVER;
       refreshPreGame();
       refreshHeaderText();
+
+      // debugging
+      console.log(
+        "Average:",
+        (m_totalMsElapsed / m_numFrames).toFixed(3),
+        "Max:",
+        m_maxMsElapsed.toFixed(3)
+      );
     } else {
       m_gameState = GameState.RUNNING;
     }
@@ -296,10 +318,8 @@ function updateGameState() {
   // Otherwise, unchanged.
 }
 
-// 60 FPS game loop
-function gameLoop() {
-  const start = Date.now();
-
+// Main implementation game logic, triggered by gameLoop()
+function runOneFrame() {
   // If paused, just do nothing.
   if (!m_isPaused) {
     switch (m_gameState) {
@@ -354,10 +374,29 @@ function gameLoop() {
 
     updateGameState();
   }
-  const msElapsed = Date.now() - start;
-  const desiredFPS = 60 * GameSettings.GetGameSpeedMultiplier();
 
-  window.setTimeout(gameLoop, 1000 / desiredFPS - msElapsed);
+  // Legacy code from using window timeout instead of animation frame
+  // const desiredFPS = 60 * GameSettings.getGameSpeedMultiplier();
+  // window.setTimeout(gameLoop, 1000 / desiredFPS - msElapsed);
+}
+
+// 60 FPS game loop
+function gameLoop() {
+  m_gameLoopFrameCount -= 1;
+  if (m_gameLoopFrameCount == 0) {
+    m_gameLoopFrameCount = GameSettings.getFrameSkipCount();
+
+    // Run a frame
+    const start = window.performance.now();
+    runOneFrame();
+    const msElapsed = window.performance.now() - start;
+
+    // Update debug statistics
+    m_numFrames += 1;
+    m_totalMsElapsed += msElapsed;
+    m_maxMsElapsed = Math.max(m_maxMsElapsed, msElapsed);
+  }
+  requestAnimationFrame(gameLoop);
 }
 
 function refreshHeaderText() {
@@ -574,13 +613,17 @@ for (const id in presetsMap) {
     GameSettingsUi.loadPreset(presetObj);
     // Select that preset
     deselectAllPresets();
+    console.log("selecting:", id);
     document.getElementById(id).classList.add("selected");
   });
 }
 
 document.getElementById("preset-edit-board").addEventListener("click", (e) => {
   GameSettingsUi.loadPreset(EDIT_BOARD_PRESET);
+
+  m_level = GameSettings.getStartingLevel();
   m_boardGenerator.loadEmptyBoard();
+  m_currentPiece = null; // Don't want a piece to be rendered at the top of the screen during editing
   m_canvas.drawBoard();
   m_gameState = GameState.EDIT_STARTING_BOARD;
   refreshPreGame();
@@ -606,9 +649,10 @@ document.addEventListener("keydown", (e) => {
         m_gameState = GameState.START_SCREEN;
         refreshHeaderText();
         refreshPreGame();
-      } else if (m_gameState == GameState.START_SCREEN) {
-        onStartButtonClicked();
-      } else if (m_gameState == GameState.EDIT_STARTING_BOARD) {
+      } else if (
+        m_gameState == GameState.START_SCREEN ||
+        m_gameState == GameState.EDIT_STARTING_BOARD
+      ) {
         startGame();
       } else if (gameStateIsInGame()) {
         togglePause();

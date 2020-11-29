@@ -46,8 +46,14 @@ InputManager.prototype.getCellsSoftDropped = function () {
 };
 
 InputManager.prototype.onPieceLock = function () {
-  if (GameSettings.ShouldSetDASChargeOnPieceStart()) {
-    this.setDASCharge(GameSettings.GetDASWallChargeAmount());
+  if (GameSettings.shouldSetDASChargeOnPieceStart()) {
+    this.setDASCharge(GameSettings.getDASWallChargeAmount());
+  } else {
+    // Don't allow DAS charges higher than the wall charge amount.
+    // This is used on DAS speeds with higher ARR but intentionally handicapped starting charges
+    this.setDASCharge(
+      Math.min(GameSettings.getDASWallChargeAmount(), this.dasCharge)
+    );
   }
 };
 
@@ -57,7 +63,7 @@ InputManager.prototype.resetLocalVariables = function () {
   this.downHeld = false;
   this.isSoftDropping = false;
   this.cellSoftDropped = 0;
-  this.dasCharge = GameSettings.GetDASTriggerThreshold(); // Starts charged on the first piece
+  this.dasCharge = GameSettings.getDASTriggerThreshold(); // Starts charged on the first piece
   this.softDroppedLastFrame = false;
 };
 
@@ -183,13 +189,13 @@ InputManager.prototype.tryShiftPiece = function (direction) {
     direction == Direction.LEFT ? this.moveLeftFunc() : this.moveRightFunc();
   // Wall charge if it didn't move
   if (!didMove) {
-    this.setDASCharge(GameSettings.GetDASTriggerThreshold());
+    this.setDASCharge(GameSettings.getDASTriggerThreshold());
   }
   return didMove;
 };
 
 InputManager.prototype.handleHeldDirection = function (direction) {
-  const DASTriggerThreshold = GameSettings.GetDASTriggerThreshold();
+  const DASTriggerThreshold = GameSettings.getDASTriggerThreshold();
   // Increment DAS
   this.setDASCharge(Math.min(DASTriggerThreshold, this.dasCharge + 1));
 
@@ -198,7 +204,7 @@ InputManager.prototype.handleHeldDirection = function (direction) {
     const didMove = this.tryShiftPiece(direction);
     if (didMove) {
       // Move DAS to charged floor for another cycle of ARR
-      this.setDASCharge(GameSettings.GetDASChargedFloor());
+      this.setDASCharge(GameSettings.getDASChargedFloor());
     }
   }
 };
@@ -207,7 +213,7 @@ InputManager.prototype.handleHeldDirection = function (direction) {
 InputManager.prototype.handleTappedDirection = function (direction) {
   if (canMovePiecesSidewaysOrRotate(this.getGameStateFunc())) {
     // Update the DAS charge
-    this.setDASCharge(GameSettings.GetDASChargeAfterTap());
+    this.setDASCharge(GameSettings.getDASChargeAfterTap());
 
     this.tryShiftPiece(direction);
   }
@@ -232,7 +238,7 @@ InputManager.prototype.refreshDebugText = function () {
   debugStr +=
     this.dasCharge +
     "/" +
-    GameSettings.GetDASTriggerThreshold() +
+    GameSettings.getDASTriggerThreshold() +
     "\n" +
     dasVisualized;
   dasStatsDiv.innerText = debugStr;

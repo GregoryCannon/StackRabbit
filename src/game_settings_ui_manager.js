@@ -17,7 +17,7 @@ const transition10Checkbox = document.getElementById("transition-10-checkbox");
 const pieceSequenceText = document.getElementById("piece-sequence");
 const levelSelectElement = document.getElementById("level-select");
 
-const playerSettings = JSON.parse(JSON.stringify(SITE_DEFAULTS));
+const playerSettings = getUserPreferencesFromCookie();
 
 /* List of DAS speeds in order that they're listed in the UI dropdown.
    This essentially acts as a lookup table because the <option>s in the HTML have 
@@ -47,6 +47,72 @@ const STARTING_BOARD_LIST = [
   StartingBoardType.DIG_PRACTICE,
   StartingBoardType.CUSTOM,
 ];
+
+function saveUserPreferencesToCookie() {
+  document.cookie =
+    escape(JSON.stringify(playerSettings)) +
+    "; expires=Thu, 18 Dec 2030 12:00:00 UTC";
+  console.log("cookie:", document.cookie);
+}
+
+function getUserPreferencesFromCookie() {
+  if (document.cookie) {
+    console.log("cookie:", document.cookie);
+    const firstCookie = document.cookie.split(";")[0];
+    return JSON.parse(unescape(firstCookie));
+  }
+  return JSON.parse(JSON.stringify(SITE_DEFAULTS));
+}
+
+function onLevelChanged() {
+  // Select the button corresponding to the current level, if there is one
+  for (const button of document.getElementById("level-choice-buttons")
+    .children) {
+    if (button.id.split("-")[1] === levelSelectElement.value) {
+      button.classList.add("selected");
+    } else {
+      button.classList.remove("selected");
+    }
+  }
+}
+
+function addOnChangeListeners() {
+  // When user changes a preference manually, associate it with their user cookie so the preference is remembered
+  dasSpeedDropdown.addEventListener("change", (e) => {
+    playerSettings["DASSpeed"] = getDASSpeed();
+    saveUserPreferencesToCookie();
+  });
+  dasBehaviorDropdown.addEventListener("change", (e) => {
+    playerSettings["DASBehavior"] = getDASBehavior();
+    saveUserPreferencesToCookie();
+  });
+  diggingHintsCheckbox.addEventListener("change", (e) => {
+    playerSettings["DiggingHintsEnabled"] = getDiggingHintsEnabled();
+    saveUserPreferencesToCookie();
+  });
+  parityHintsCheckbox.addEventListener("change", (e) => {
+    playerSettings["ParityHintsEnabled"] = getParityHintsEnabled();
+    saveUserPreferencesToCookie();
+  });
+
+  // Also update the level select buttons
+  levelSelectElement.addEventListener("change", (e) => {
+    onLevelChanged();
+  });
+}
+addOnChangeListeners();
+
+// Assign on click listeners, e.g. #level-0 sets it to 0.
+[0, 5, 8, 9, 15, 18, 19, 29].forEach((num) => {
+  document.getElementById("level-" + num).addEventListener("click", (e) => {
+    levelSelectElement.value = num;
+    onLevelChanged();
+
+    // Update the starting level in cookies
+    playerSettings["StartingLevel"] = getStartingLevel();
+    saveUserPreferencesToCookie();
+  });
+});
 
 function setSetting(settingName, value) {
   switch (settingName) {
@@ -83,48 +149,47 @@ function setSetting(settingName, value) {
       break;
     case "StartingLevel":
       levelSelectElement.value = value;
+      onLevelChanged();
+      break;
   }
 }
 
-export function GetStartingLevel() {
-  return parseInt(levelSelectElement.value);
+export function getStartingLevel() {
+  const tempLevel = parseInt(levelSelectElement.value);
+  return Math.max(tempLevel, 0);
 }
 
-export function GetTransition10Lines() {
+export function getTransition10Lines() {
   return transition10Checkbox.checked;
 }
 
-function SetTransition10Lines(enabled) {
-  transition10Checkbox.checked = enabled;
-}
-
-export function GetDroughtModeEnabled() {
+export function getDroughtModeEnabled() {
   return droughtCheckbox.checked;
 }
 
-export function GetDiggingHintsEnabled() {
+export function getDiggingHintsEnabled() {
   return diggingHintsCheckbox.checked;
 }
 
-export function GetParityHintsEnabled() {
+export function getParityHintsEnabled() {
   return parityHintsCheckbox.checked;
 }
 
-export function GetGameSpeedMultiplier() {
+export function getGameSpeedMultiplier() {
   return gameSpeedDropdown.value;
 }
 
-export function GetDASSpeed() {
+export function getDASSpeed() {
   const speedIndex = parseInt(dasSpeedDropdown.value);
   return DAS_SPEED_LIST[speedIndex];
 }
 
-export function GetDASBehavior() {
+export function getDASBehavior() {
   const behaviorIndex = parseInt(dasBehaviorDropdown.value);
   return DAS_BEHAVIOR_LIST[behaviorIndex];
 }
 
-export function GetPieceSequence() {
+export function getPieceSequence() {
   const sequenceRaw = pieceSequenceText.value;
   const allCaps = sequenceRaw.toUpperCase();
   let cleansedStr = "";
@@ -136,25 +201,11 @@ export function GetPieceSequence() {
   return cleansedStr;
 }
 
-export function GetStartingBoardType() {
+export function getStartingBoardType() {
   return STARTING_BOARD_LIST[startingBoardDropdown.value];
 }
 
 /* ---------- PRESETS ----------- */
-
-/*
-const dasSpeedDropdown = document.getElementById("das-speed-dropdown");
-const dasBehaviorDropdown = document.getElementById("das-behavior-dropdown");
-const gameSpeedDropdown = document.getElementById("game-speed-dropdown");
-const startingBoardDropdown = document.getElementById("starting-board");
-const droughtCheckbox = document.getElementById("drought-checkbox");
-const diggingHintsCheckbox = document.getElementById("digging-hints-checkbox");
-const parityHintsCheckbox = document.getElementById("parity-hints-checkbox");
-const transition10Checkbox = document.getElementById("transition-10-checkbox");
-const pieceSequenceText = document.getElementById("piece-sequence");
-const levelSelectElement = document.getElementById("level-select");
-
-*/
 
 export function loadPreset(presetObj) {
   const settingsList = [
