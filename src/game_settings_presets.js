@@ -110,3 +110,10 @@ export const EDIT_BOARD_PRESET = {
     value: StartingBoardType.CUSTOM,
   },
 };
+
+export const CUSTOM_SEQUENCE_PRESET = {
+  PieceSequence: {
+    type: SettingType.DEFAULT,
+    value: "",
+  },
+};

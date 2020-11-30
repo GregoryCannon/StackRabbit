@@ -19,6 +19,7 @@ import { BoardGenerator } from "./board_generator.js";
 import { HistoryManager } from "./history_manager.js";
 import "./ui_manager";
 import {
+  CUSTOM_SEQUENCE_PRESET,
   DIG_PRACTICE_PRESET,
   DROUGHT_PRESET,
   EDIT_BOARD_PRESET,
@@ -65,9 +66,9 @@ let m_nextTransitionLineCount;
 let m_gameState;
 let m_score;
 let m_tetrisCount;
+let m_isPaused = false;
 
 // State relevant to game **implementation**
-let m_isPaused;
 let m_gravityFrameCount;
 let m_ARE;
 let m_lineClearFrames;
@@ -213,6 +214,8 @@ function resetGameVariables() {
   m_score = 0;
   m_tetrisCount = 0;
   m_lines = 0;
+
+  m_isPaused = false;
 }
 
 function resetImplementationVariables() {
@@ -222,7 +225,6 @@ function resetImplementationVariables() {
   m_lineClearFrames = 0;
   m_linesPendingClear = [];
   m_gravityFrameCount = 0;
-  m_isPaused = false;
   m_gameLoopFrameCount = GameSettings.getFrameSkipCount();
   m_firstPieceDelay = 0;
   m_inputManager.resetLocalVariables();
@@ -666,6 +668,7 @@ const presetsMap = {
   "preset-killscreen": KILLSCREEN_PRESET,
   "preset-slow-killscreen": SLOW_KILLSCREEN_PRESET,
   "preset-slow-19": SLOW_19_PRESET,
+  "preset-custom-sequence": CUSTOM_SEQUENCE_PRESET,
 };
 
 function deselectAllPresets() {
