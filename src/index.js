@@ -16,6 +16,7 @@ import { Piece } from "./piece.js";
 import { InputManager } from "./input_manager.js";
 import { BoardEditManager } from "./board_edit_manager.js";
 import { BoardGenerator } from "./board_generator.js";
+import { HistoryManager } from "./history_manager.js";
 import "./ui_manager";
 import {
   DIG_PRACTICE_PRESET,
@@ -27,6 +28,7 @@ import {
   STANDARD_PRESET,
   STANDARD_TAPPER_PRESET,
 } from "./game_settings_presets.js";
+import { PIECE_LOOKUP } from "./tetrominoes.js";
 const GameSettings = require("./game_settings_manager");
 const GameSettingsUi = require("./game_settings_ui_manager");
 
@@ -37,7 +39,7 @@ const mainCanvas = document.getElementById("main-canvas");
 const rightPanel = document.getElementById("right-panel");
 
 // Create the initial empty board
-let m_board = [];
+const m_board = []; // All board changes are in-place, so it is a const
 for (let r = 0; r < NUM_ROW; r++) {
   m_board[r] = [];
   for (let c = 0; c < NUM_COLUMN; c++) {
@@ -52,6 +54,7 @@ let m_boardEditManager = new BoardEditManager(m_board, m_canvas);
 let m_boardGenerator = new BoardGenerator(m_board);
 let m_pieceSelector = new PieceSelector();
 let m_boardLoader = new BoardLoader(m_board, m_canvas);
+let m_historyManager = new HistoryManager();
 
 // State relevant to game itself
 let m_currentPiece;
@@ -186,17 +189,14 @@ function getNewPiece() {
 
   // Piece status is drawn first, since the read index increments when the next
   // piece is selected
-  m_canvas.drawPieceStatusDisplay(m_pieceSelector.getStatusDisplay());
-  m_nextPiece = new Piece(
-    m_pieceSelector.chooseNextPiece(m_currentPiece.id),
-    m_board
-  );
+  m_nextPiece = new Piece(m_pieceSelector.getNextPiece(), m_board);
 
   // Draw the new piece in the next box
   m_canvas.drawNextBox(m_nextPiece);
+  m_canvas.drawPieceStatusDisplay(m_pieceSelector.getStatusDisplay());
 }
 
-function resetLocalVariables() {
+function resetGameVariables() {
   // Parse the level
   m_level = GameSettings.getStartingLevel();
 
@@ -206,14 +206,16 @@ function resetLocalVariables() {
     : getLinesToTransition(m_level);
 
   // Get the first piece and put it in the next piece slot. Will be bumped to current in getNewPiece()
-  m_pieceSelector.startReadingPieceSequence();
-  m_nextPiece = new Piece(m_pieceSelector.chooseNextPiece(""), m_board);
+  m_pieceSelector.generatePieceSequence();
+  m_nextPiece = new Piece(m_pieceSelector.getNextPiece(), m_board);
   getNewPiece();
 
   m_score = 0;
   m_tetrisCount = 0;
   m_lines = 0;
+}
 
+function resetImplementationVariables() {
   // Implementation variables
   m_ARE = 0;
   m_pendingPoints = 0;
@@ -252,7 +254,9 @@ function startGame() {
   }
 
   // Reset game values
-  resetLocalVariables();
+  resetGameVariables();
+  resetImplementationVariables();
+  saveSnapshotToHistory();
 
   // Start the game in the first piece state
   m_firstPieceDelay = 90; // Extra delay for first piece
@@ -286,6 +290,8 @@ function updateGameState() {
     m_score += m_pendingPoints;
     m_pendingPoints = 0;
     refreshScoreHUD();
+
+    saveSnapshotToHistory();
 
     // Draw the next piece, since it's the end of ARE (and that's how NES does it)
     m_canvas.drawCurrentPiece();
@@ -482,34 +488,7 @@ function movePieceRight() {
 function moveCurrentPieceDown() {
   if (m_currentPiece.shouldLock()) {
     // Lock in piece and re-render the board
-    const lockHeight = m_currentPiece.getHeightFromBottom();
-    m_currentPiece.lock();
-    m_inputManager.onPieceLock();
-    m_canvas.drawBoard();
-
-    // Refresh board-based stats
-    refreshStats();
-
-    // Get a new piece but --don't render it-- till after ARE
-    getNewPiece();
-
-    // Clear lines
-    m_linesPendingClear = getFullRows();
-    if (m_linesPendingClear.length > 0) {
-      m_lineClearFrames = LINE_CLEAR_DELAY; // Clear delay counts down from max val
-    }
-
-    // Add pushdown points
-    m_pendingPoints += CalculatePushdownPoints(
-      m_inputManager.getCellsSoftDropped()
-    );
-
-    // Get the ARE based on piece lock height
-    /* ARE (frame delay before next piece) is 10 frames for 0-2 height, then an additional
-      2 frames for each group of 4 above that.
-        E.g. 9 high would be: 10 + 2 + 2 = 14 frames */
-    m_ARE = 10 + Math.floor((lockHeight + 2) / 4) * 2;
-
+    lockPiece();
     return false; // Return false because the piece didn't shift down
   } else {
     // Move down as usual
@@ -517,6 +496,97 @@ function moveCurrentPieceDown() {
     m_currentPiece.moveDown();
     m_canvas.drawCurrentPiece();
     return true; // Return true because the piece moved down
+  }
+}
+
+function lockPiece() {
+  const lockHeight = m_currentPiece.getHeightFromBottom();
+  m_currentPiece.lock();
+  m_inputManager.onPieceLock();
+  m_canvas.drawBoard();
+
+  // Refresh board-based stats
+  refreshStats();
+
+  // Get a new piece but --don't render it-- till after ARE
+  getNewPiece();
+
+  // Clear lines
+  m_linesPendingClear = getFullRows();
+  if (m_linesPendingClear.length > 0) {
+    m_lineClearFrames = LINE_CLEAR_DELAY; // Clear delay counts down from max val
+  }
+
+  // Add pushdown points
+  m_pendingPoints += CalculatePushdownPoints(
+    m_inputManager.getCellsSoftDropped()
+  );
+
+  // Get the ARE based on piece lock height
+  /* ARE (frame delay before next piece) is 10 frames for 0-2 height, then an additional
+      2 frames for each group of 4 above that.
+        E.g. 9 high would be: 10 + 2 + 2 = 14 frames */
+  m_ARE = 10 + Math.floor((lockHeight + 2) / 4) * 2;
+}
+
+function saveSnapshotToHistory() {
+  m_historyManager.addSnapshotToHistory([
+    m_currentPiece.id,
+    m_nextPiece.id,
+    m_pieceSelector.getReadIndex(),
+    m_level,
+    m_lines,
+    m_nextTransitionLineCount,
+    m_score,
+    m_tetrisCount,
+    JSON.parse(JSON.stringify(m_board)),
+  ]);
+}
+
+function loadSnapshotFromHistory() {
+  const snapshotObj = m_historyManager.loadSnapshotFromHistory();
+  let tempBoard, currentPieceId, nextPieceId, pieceReadIndex;
+  if (snapshotObj !== null) {
+    [
+      currentPieceId,
+      nextPieceId,
+      pieceReadIndex,
+      m_level,
+      m_lines,
+      m_nextTransitionLineCount,
+      m_score,
+      m_tetrisCount,
+      tempBoard,
+    ] = snapshotObj;
+
+    // Load the board from snapshot in place
+    for (let r = 0; r < NUM_ROW; r++) {
+      for (let c = 0; c < NUM_COLUMN; c++) {
+        m_board[r][c] = tempBoard[r][c];
+      }
+    }
+    m_currentPiece = new Piece(PIECE_LOOKUP[currentPieceId], m_board);
+    m_nextPiece = new Piece(PIECE_LOOKUP[nextPieceId], m_board);
+    m_pieceSelector.setReadIndex(pieceReadIndex);
+    m_canvas.drawPieceStatusDisplay(m_pieceSelector.getStatusDisplay());
+
+    /* ---------- START GAME ----------- */
+    // Reset game values
+    resetImplementationVariables();
+
+    // Start the game in the first piece state
+    m_firstPieceDelay = 90; // Extra delay for first piece
+    m_gameState = GameState.FIRST_PIECE;
+
+    // Refresh UI
+    document.activeElement.blur();
+    m_canvas.drawBoard();
+    m_canvas.drawCurrentPiece();
+    m_canvas.drawNextBox(m_nextPiece);
+    refreshHeaderText();
+    refreshScoreHUD();
+    refreshStats();
+    refreshPreGame();
   }
 }
 
@@ -643,6 +713,16 @@ document.addEventListener("keydown", (e) => {
       }
       break;
 
+    case "v":
+      m_historyManager.rewindOnePiece();
+      loadSnapshotFromHistory();
+      break;
+
+    case "b":
+      m_historyManager.fastForwardOnePiece();
+      loadSnapshotFromHistory();
+      break;
+
     case "Enter":
       // Either starts, pauses, or continues after game over
       if (m_gameState == GameState.GAME_OVER) {
@@ -681,7 +761,7 @@ m_inputManager = new InputManager(
   getGameState,
   getARE
 );
-resetLocalVariables();
+resetImplementationVariables();
 document.getElementById("preset-standard").click();
 
 // Render after a small delay so the font loads

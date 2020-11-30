@@ -1,38 +1,62 @@
 import { PIECE_LIST, PIECE_LOOKUP } from "./tetrominoes.js";
 const GameSettings = require("./game_settings_manager");
 
-let m_pieceSequenceStr = "";
-let m_readIndex = 0;
-let m_isReadingFromSequence = false;
-
-export function PieceSelector() {}
+/**
+ * A class that handles the piece selection logic.
+ * Pregenerates a list of 2000 pieces at the start of the game, which can start out with
+ * a custon piece sequence if the user has opted to do that.
+ */
+export function PieceSelector() {
+  this.sequence = []; // Array of piece IDs
+  this.startOfRandomSequence = 0; // The first index that is randomly generated, i.e. not part of a custom inputted sequence
+  this.readIndex = 0;
+}
 
 /**
   Public functions
   */
 
-PieceSelector.prototype.startReadingPieceSequence = function () {
+PieceSelector.prototype.generatePieceSequence = function () {
   // Get piece sequence (with spaces trimmed)
-  m_pieceSequenceStr = GameSettings.getPieceSequence();
-  console.log("peice sequence:", m_pieceSequenceStr);
+  const pieceSequenceStr = GameSettings.getPieceSequence();
+  console.log("peice sequence:", pieceSequenceStr);
 
-  if (m_pieceSequenceStr.length > 0) {
-    m_isReadingFromSequence = true;
-    m_readIndex = 0;
-  } else {
-    m_isReadingFromSequence = false;
+  let writeIndex = 0;
+
+  // Copy the custom sequence into the main sequence
+  if (pieceSequenceStr.length > 0) {
+    for (let i = 0; i < pieceSequenceStr.length; i++) {
+      this.sequence[i] = pieceSequenceStr.charAt(i);
+      writeIndex++;
+    }
   }
+
+  // Fill the rest with a random sequence
+  while (writeIndex < 2000) {
+    const prevPieceId = writeIndex == 0 ? null : this.sequence[writeIndex - 1];
+    this.sequence[writeIndex] = getRandomPiece(prevPieceId);
+    writeIndex++;
+  }
+
+  console.log(this.sequence);
+
+  this.readIndex = 0;
+  this.startOfRandomSequence = pieceSequenceStr.length;
+};
+
+PieceSelector.prototype.getReadIndex = function () {
+  return this.readIndex;
+};
+
+PieceSelector.prototype.setReadIndex = function (value) {
+  this.readIndex = value;
 };
 
 // Get the next piece, whether that be specified or random
-PieceSelector.prototype.chooseNextPiece = function (currentPieceId) {
-  // If there is a next specified piece, select that
-  if (m_isReadingFromSequence) {
-    return this.getPresetPiece();
-  }
-  // Otherwise pick one randomly
-  m_isReadingFromSequence = false;
-  return this.getRandomPiece(currentPieceId);
+PieceSelector.prototype.getNextPiece = function () {
+  const nextPieceId = this.sequence[this.readIndex];
+  this.readIndex++;
+  return PIECE_LOOKUP[nextPieceId];
 };
 
 /**
@@ -40,8 +64,10 @@ PieceSelector.prototype.chooseNextPiece = function (currentPieceId) {
  * split over two lines.
  */
 PieceSelector.prototype.getStatusDisplay = function () {
-  if (m_isReadingFromSequence) {
-    return ["Piece ", m_readIndex + 1 + "/" + m_pieceSequenceStr.length];
+  console.log(this.readIndex, this.startOfRandomSequence);
+  if (this.readIndex < this.startOfRandomSequence) {
+    // The piece number equals the read index since the read index is always pointing to the piece *after* the one on screen
+    return ["Piece ", this.readIndex + "/" + this.startOfRandomSequence];
   }
   return ["Random", "Piece"];
 };
@@ -50,22 +76,8 @@ PieceSelector.prototype.getStatusDisplay = function () {
   "Private" functions - unused outside of this file
   */
 
-PieceSelector.prototype.getPresetPiece = function () {
-  const nextPieceId = m_pieceSequenceStr[m_readIndex];
-  const nextPieceData = PIECE_LOOKUP[nextPieceId];
-  m_readIndex += 1;
-
-  // Check if we've reached the end of the sequence
-  if (m_readIndex >= m_pieceSequenceStr.length) {
-    m_isReadingFromSequence = false;
-    m_readIndex = 0;
-  }
-
-  return nextPieceData;
-};
-
-// Get a random piece, following the original RNG of NES tetris
-PieceSelector.prototype.getRandomPiece = function (previousPieceId) {
+// Get the ID of a random piece, following the original RNG of NES tetris
+function getRandomPiece(previousPieceId) {
   // Roll once 0-7, where 7 is a dummy value
   let r = Math.floor(Math.random() * (PIECE_LIST.length + 1));
   const tempPieceId = r !== PIECE_LIST.length ? PIECE_LIST[r][2] : "";
@@ -78,5 +90,5 @@ PieceSelector.prototype.getRandomPiece = function (previousPieceId) {
     r = Math.floor(Math.random() * PIECE_LIST.length);
   }
   const nextPieceData = PIECE_LIST[r];
-  return nextPieceData;
-};
+  return nextPieceData[2]; // Return the string ID of the new piece
+}
