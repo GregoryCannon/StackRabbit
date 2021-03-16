@@ -334,10 +334,7 @@ function getValueOfPossibility(
       aiParams.SURFACE_MULTIPLIER *
       getValueOfBoardSurfaceWithNextBox(correctedSurface, nextPieceId);
   } else {
-    surfaceFactor =
-      aiParams.SURFACE_MULTIPLIER *
-      3 *
-      getValueOfBoardSurfaceNoNextBox(correctedSurface);
+    surfaceFactor = getValueOfBoardSurfaceNoNextBox(correctedSurface);
   }
   const tetrisReadyFactor =
     tetrisReady *
