@@ -1,12 +1,9 @@
 const fs = require("fs");
-const ranks_NoNextBox_WithBars = fs.readFileSync(
-  "docs/condensed_NoNextBox_WithBars.txt",
-  "utf8"
-);
-const ranks_NextBox_WithBars = fs.readFileSync(
-  "docs/condensed_NextBox_WithBars.txt",
-  "utf8"
-);
+const {
+  DIG_MODIFICATIONS,
+  NEAR_KILLSCREEN_MODIFICATIONS,
+  AI_MODE,
+} = require("./params");
 
 const ranks_NoNextBox_NoBars = fs.readFileSync(
   "docs/condensed_NoNextBox_NoBars.txt",
@@ -21,6 +18,16 @@ const utils = require("./utils");
 const SquareState = utils.SquareState;
 const NUM_ROW = utils.NUM_ROW;
 const NUM_COLUMN = utils.NUM_COLUMN;
+
+function getAiMode(board, lines) {
+  if (lines > 225) {
+    return AI_MODE.NEAR_KILLSCREEN;
+  }
+  if (hasHolesInRowRange(board, 0, NUM_ROW - 1)) {
+    return AI_MODE.DIG;
+  }
+  return AI_MODE.STANDARD;
+}
 
 /**
  * Converts a list of board heights into the index into the ranks array.
@@ -69,24 +76,14 @@ function lookUpRankInString(lookupStr, index) {
   return parseInt(rankStr, 36) / 10;
 }
 
-function getValueOfBoardSurfaceNoNextBox(surfaceArray, useBarsInStack) {
+function getValueOfBoardSurfaceNoNextBox(surfaceArray) {
   const index = surfaceHeightsToNoNBIndex(surfaceArray);
-  const lookupStr = useBarsInStack
-    ? ranks_NoNextBox_WithBars
-    : ranks_NoNextBox_NoBars;
-  return lookUpRankInString(lookupStr, index);
+  return lookUpRankInString(ranks_NoNextBox_NoBars, index);
 }
 
-function getValueOfBoardSurfaceWithNextBox(
-  surfaceArray,
-  nextPieceId,
-  useBarsInStack
-) {
+function getValueOfBoardSurfaceWithNextBox(surfaceArray, nextPieceId) {
   const index = surfaceHeightsToNBIndex(surfaceArray, nextPieceId);
-  const lookupStr = useBarsInStack
-    ? ranks_NextBox_WithBars
-    : ranks_NextBox_NoBars;
-  return lookUpRankInString(lookupStr, index);
+  return lookUpRankInString(ranks_NextBox_NoBars, index);
 }
 
 /**
@@ -104,6 +101,48 @@ function countEmptyBlocksBelowColumn9Height(surfaceArray) {
     }
   }
   return totalBlocks;
+}
+
+/** Calculates the number of lines that need to be cleared for all the holes to be resolved. */
+function countLinesNeededUntilClean(board) {
+  const linesNeededToClear = new Set();
+  let maxHeightNonCol10 = 0;
+
+  for (let col = 0; col < NUM_COLUMN; col++) {
+    // Go down to the top of the stack in that column
+    let row = 0;
+    while (row < NUM_ROW && board[row][col] == SquareState.EMPTY) {
+      row++;
+    }
+    // Update the highest height we've seen from cols 0-9
+    if (col < NUM_COLUMN - 1) {
+      maxHeightNonCol10 = Math.max(maxHeightNonCol10, NUM_ROW - 1 - row);
+    }
+    const tempSet = new Set();
+    while (row < NUM_ROW - 1) {
+      tempSet.add(row);
+      row++;
+      if (board[row][col] == 0) {
+        // If not on col 10, we found a hole. Add all the full rows we passed through to the set
+        // of lines needing to be cleared
+        for (const line of tempSet) {
+          linesNeededToClear.add(line);
+        }
+      }
+    }
+  }
+
+  // Any row that has col 10 filled above the rest of the stack will need to be cleared.
+  let foundPiece = false;
+  for (let row = 0; row < NUM_ROW - 1 - maxHeightNonCol10; row++) {
+    if (board[row][NUM_COLUMN - 1] == SquareState.FULL) {
+      foundPiece = true;
+    }
+    if (foundPiece) {
+      linesNeededToClear.add(row);
+    }
+  }
+  return linesNeededToClear.size;
 }
 
 function getNumberOfBlocksInColumn10(board) {
@@ -209,10 +248,20 @@ function getLineClearValue(numLinesCleared, aiParams) {
 function getValueOfPossibilityNoNextBox(
   possibility,
   level,
+  lines,
+  currentMode,
   shouldLog,
   aiParams
 ) {
-  return getValueOfPossibility(possibility, null, level, shouldLog, aiParams);
+  return getValueOfPossibility(
+    possibility,
+    null,
+    level,
+    lines,
+    currentMode,
+    shouldLog,
+    aiParams
+  );
 }
 
 /**
@@ -223,6 +272,8 @@ function getValueOfPossibility(
   possibility,
   nextPieceId,
   level,
+  lines,
+  currentMode,
   shouldLog,
   aiParams
 ) {
@@ -234,6 +285,25 @@ function getValueOfPossibility(
     numLinesCleared,
     trialBoard,
   ] = possibility;
+
+  if (!aiParams) {
+    console.log("RED ALERT", level, lines, currentMode, shouldLog, aiParams);
+  }
+
+  // Modify the AI params based on the AI mode
+  if (currentMode === AI_MODE.DIG) {
+    // Modify some of the evaluation weights based on the fact that we're digging
+    aiParams = JSON.parse(JSON.stringify(aiParams));
+    for (const key in DIG_MODIFICATIONS) {
+      aiParams[key] = DIG_MODIFICATIONS[key];
+    }
+  } else if (currentMode === AI_MODE.NEAR_KILLSCREEN) {
+    // Modify some of the evaluation weights based on the fact that we're near killscreen
+    aiParams = JSON.parse(JSON.stringify(aiParams));
+    for (const key in NEAR_KILLSCREEN_MODIFICATIONS) {
+      aiParams[key] = NEAR_KILLSCREEN_MODIFICATIONS[key];
+    }
+  }
 
   // Preliminary calculations
   const [
@@ -256,26 +326,18 @@ function getValueOfPossibility(
   );
   const tetrisReady = isTetrisReadyRightWell(trialBoard);
   const notBuildingTowardsTetris = isNotBuildingTowardTetris(trialBoard);
-  // Calculate if upcoming bars should be used in stack vs. thrown down the well
-  // If not "building toward tetris", that mean's there's a low down hole, so you
-  // put the bar on column 10 and play one off the bottom.
-  const useBarsInStack = !tetrisReady && !notBuildingTowardsTetris;
 
   let extremeGapFactor = totalHeightCorrected * aiParams.EXTREME_GAP_PENALTY;
   let surfaceFactor;
   if (nextPieceId !== null) {
     surfaceFactor =
       aiParams.SURFACE_MULTIPLIER *
-      getValueOfBoardSurfaceWithNextBox(
-        correctedSurface,
-        nextPieceId,
-        useBarsInStack
-      );
+      getValueOfBoardSurfaceWithNextBox(correctedSurface, nextPieceId);
   } else {
-    surfaceFactor = getValueOfBoardSurfaceNoNextBox(
-      correctedSurface,
-      useBarsInStack
-    );
+    surfaceFactor =
+      aiParams.SURFACE_MULTIPLIER *
+      3 *
+      getValueOfBoardSurfaceNoNextBox(correctedSurface);
   }
   const tetrisReadyFactor =
     tetrisReady *
@@ -286,6 +348,8 @@ function getValueOfPossibility(
     ? aiParams.NOT_BUILDING_TOWARD_TETRIS_PENALTY
     : 0;
   const holeFactor = numHoles * aiParams.HOLE_PENALTY;
+  const holeWeightFactor =
+    countLinesNeededUntilClean(trialBoard) * aiParams.HOLE_WEIGHT_PENALTY;
   const lineClearFactor = getLineClearValue(numLinesCleared, aiParams);
   const maxHeightFactor =
     aiParams.MAX_HEIGHT_MULTIPLIER *
@@ -309,6 +373,7 @@ function getValueOfPossibility(
     surfaceFactor +
     extremeGapFactor +
     holeFactor +
+    holeWeightFactor +
     lineClearFactor +
     maxHeightFactor +
     avgHeightFactor +
@@ -318,12 +383,14 @@ function getValueOfPossibility(
     highLeftFactor +
     notBuildingTowardsTetrisFactor;
 
+  const explanation = `Surf: ${surfaceFactor}, Hole: ${holeFactor}, HoleWeight: ${holeWeightFactor}, ExtremeGap: ${extremeGapFactor}, LineClear: ${lineClearFactor}, MaxHeight: ${maxHeightFactor}, AvgHeight: ${avgHeightFactor}, Col10: ${col10Factor} Slope: ${slopingFactor} HighLeft: ${highLeftFactor}, TetrisReady: ${tetrisReadyFactor} NotBldgTwdTetris: ${notBuildingTowardsTetrisFactor}\nTotal: ${totalValue}`;
   if (shouldLog) {
     console.log(
-      `---- Evaluating possiblity: ${possibility[0]} ${possibility[1]}\nSurf: ${surfaceFactor}, Hole: ${holeFactor}, ExtremeGap: ${extremeGapFactor}, LineClear: ${lineClearFactor}, MaxHeight: ${maxHeightFactor}, AvgHeight: ${avgHeightFactor}, Col10: ${col10Factor} Slope: ${slopingFactor} HighLeft: ${highLeftFactor}, TetrisReady: ${tetrisReadyFactor} NotBldgTwdTetris: ${notBuildingTowardsTetrisFactor}\nTotal: ${totalValue}`
+      `---- Evaluating possiblity: ${possibility[0]} ${possibility[1]}\n`,
+      explanation
     );
   }
-  return totalValue;
+  return [totalValue, explanation];
 }
 
 /**
@@ -334,18 +401,23 @@ function pickBestNMoves(
   possibilityList,
   nextPieceId,
   level,
+  lines,
+  currentMode,
   numMovesToConsider,
   aiParams
 ) {
   for (const possibility of possibilityList) {
-    const value = getValueOfPossibility(
+    const [value, explanation] = getValueOfPossibility(
       possibility,
       nextPieceId,
       level,
+      lines,
+      currentMode,
       /* shouldLog= */ false,
       aiParams
     );
     possibility.push(value);
+    possibility.push(explanation);
   }
   // Sort by value
   possibilityList.sort((a, b) => b[6] - a[6]);
@@ -357,19 +429,29 @@ function pickBestNMoves(
  * Iterates over the list of possiblities and return the one with the highest value.
  * @param {Array<possibility obj>} possibilityList
  */
-function pickBestMoveNoNextBox(possibilityList, level, shouldLog, aiParams) {
+function pickBestMoveNoNextBox(
+  possibilityList,
+  level,
+  lines,
+  currentMode,
+  shouldLog,
+  aiParams
+) {
   let bestMove = null;
   let bestValue = -999;
   for (const possibility of possibilityList) {
     // Get the total value of the proposed placement + the next placement afterwards
-    const value = getValueOfPossibilityNoNextBox(
+    const [value, explanation] = getValueOfPossibilityNoNextBox(
       possibility,
       level,
+      lines,
+      currentMode,
       shouldLog,
       aiParams
     );
     if (value > bestValue) {
       possibility.push(value);
+      possibility.push(explanation);
       bestValue = value;
       bestMove = possibility;
     }
@@ -381,4 +463,5 @@ module.exports = {
   pickBestNMoves,
   pickBestMoveNoNextBox,
   getLineClearValue,
+  getAiMode,
 };

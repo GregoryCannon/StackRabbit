@@ -48,6 +48,7 @@ function simulateGame(startingLevel, aiParams, presetPieceSequence, shouldLog) {
       currentPieceId,
       nextPieceId,
       level,
+      lines,
       /* shouldLog= */ false,
       aiParams
     );

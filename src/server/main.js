@@ -1,11 +1,13 @@
 const evaluator = require("./evaluator");
 const BoardHelper = require("./board_helper");
+const { AI_MODE } = require("./params");
 
 function getMove(
   startingBoard,
   currentPieceId,
   nextPieceId,
   level,
+  lines,
   shouldLog,
   aiParams
 ) {
@@ -15,13 +17,17 @@ function getMove(
     level,
     /* shouldLog= */ false && shouldLog
   );
+  // const aiMode = evaluator.getAiMode(startingBoard, lines);
+  const aiMode = AI_MODE.STANDARD;
 
   // Get the top contenders, sorted best -> worst
-  const NUM_TO_CONSIDER = 20;
+  const NUM_TO_CONSIDER = 5;
   const topN = evaluator.pickBestNMoves(
     possibilityList,
     nextPieceId,
     level,
+    lines,
+    aiMode,
     NUM_TO_CONSIDER,
     aiParams
   );
@@ -45,6 +51,8 @@ function getMove(
     const innerBestMove = evaluator.pickBestMoveNoNextBox(
       innerPossibilityList,
       level,
+      lines,
+      aiMode,
       /* shouldLog= */ false && shouldLog,
       aiParams
     );
@@ -64,6 +72,8 @@ function getMove(
       console.log(
         `Surface: ${innerBestMove[2]}, inner value: ${innerBestMove[6]}, original partial value: ${originalMovePartialValue}, total value: ${totalValue}`
       );
+      console.log(innerBestMove[7]); // Log explanation
+      console.log("---------------------------------------------");
     }
 
     if (totalValue > bestValueAfterNextPiece) {
@@ -82,4 +92,4 @@ function getMove(
   return bestPossibilityAfterNextPiece;
 }
 
-module.exports = { getMove, DEFAULT_PARAMS, AGGRO_PARAMS };
+module.exports = { getMove };

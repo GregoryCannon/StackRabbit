@@ -15,13 +15,14 @@ AIPlayer.prototype.placeCurrentPiece = async function (
   piece,
   nextPiece,
   board,
-  level
+  level,
+  lines
 ) {
   const startTime = performance.now();
   const result = await fetch(
     `http://127.0.0.1:3000/${JSON.stringify(board)}/${piece.id}/${
       nextPiece.id
-    }/${level}`
+    }/${level}/${lines}`
   );
   const endTime = performance.now();
   this.totalApiCalls++;

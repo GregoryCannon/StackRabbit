@@ -289,7 +289,8 @@ function updateGameState() {
         m_currentPiece,
         m_nextPiece,
         m_board,
-        m_level
+        m_level,
+        m_lines
       );
     }
   }
@@ -328,7 +329,8 @@ function updateGameState() {
           m_currentPiece,
           m_nextPiece,
           m_board,
-          m_level
+          m_level,
+          m_lines
         );
       }
     }

@@ -3,6 +3,7 @@ const hostname = "127.0.0.1";
 const port = 3000;
 
 const mainApp = require("./main");
+const params = require("./params");
 const evolution = require("./evolution");
 
 /**
@@ -19,6 +20,7 @@ const server = http.createServer((req, res) => {
     currentPieceStr,
     nextPieceStr,
     level,
+    lines,
   ] = req.url.split("/");
   // Check for bad inputs
   if (!["I", "O", "L", "J", "T", "S", "Z"].includes(currentPieceStr)) {
@@ -33,8 +35,9 @@ const server = http.createServer((req, res) => {
     currentPieceStr,
     nextPieceStr,
     level,
+    lines,
     /* shouldLog= */ true,
-    mainApp.AGGRO_PARAMS
+    params.getParams()
   );
 
   res.end("" + bestMove);
