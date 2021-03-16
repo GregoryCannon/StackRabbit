@@ -68,6 +68,11 @@ InputManager.prototype.resetLocalVariables = function () {
 };
 
 InputManager.prototype.handleInputsThisFrame = function () {
+  // If AI is playing, do nothing
+  if (GameSettings.isAIPlaying()) {
+    return;
+  }
+
   // If holding multiple keys, do nothing
   const dpadDirectionsHeld = this.downHeld + this.leftHeld + this.rightHeld;
   if (dpadDirectionsHeld > 1) {
@@ -111,6 +116,11 @@ InputManager.prototype.handleInputsThisFrame = function () {
 InputManager.prototype.keyDownListener = function (event) {
   // Override the browser's built-in key repeating
   if (event.repeat) {
+    return;
+  }
+
+  // If AI is playing, do nothing
+  if (GameSettings.isAIPlaying()) {
     return;
   }
 

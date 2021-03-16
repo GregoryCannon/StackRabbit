@@ -18,6 +18,10 @@ export function getStartingLevel() {
 
 /* -------- GAMEPLAY --------- */
 
+export function isAIPlaying() {
+  return Ui.getAIPlayerEnabled();
+}
+
 export function shouldShowDiggingHints() {
   return Ui.getDiggingHintsEnabled();
 }

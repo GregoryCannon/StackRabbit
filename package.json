@@ -19,6 +19,8 @@
     "webpack-dev-server": "^3.11.0"
   },
   "dependencies": {
+    "fs": "0.0.1-security",
+    "node-fetch": "^2.6.1",
     "prettier": "^2.0.5"
   }
 }

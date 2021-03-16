@@ -150,11 +150,13 @@ Canvas.prototype.drawNextBox = function (nextPiece) {
 };
 
 Canvas.prototype.drawScoreDisplay = function (score) {
-  const width = NEXT_BOX_WIDTH;
-  const startX = BOARD_WIDTH + SQUARE_SIZE;
+  const pastMax = score >= 1000000;
+
+  const width = SQUARE_SIZE * (pastMax ? 6 : 5);
+  const startX = BOARD_WIDTH + SQUARE_SIZE * (pastMax ? 0.5 : 1);
   const startY = 0.5 * SQUARE_SIZE;
 
-  const formattedScore = ("0".repeat(6) + score).slice(-6);
+  const formattedScore = ("0".repeat(7) + score).slice(pastMax ? -7 : -6);
   this.drawMultiLineText(
     ["SCORE", formattedScore],
     startX,

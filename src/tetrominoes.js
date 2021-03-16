@@ -132,7 +132,7 @@ const PIECE_Z = [
 // The piece list, with colors and letter identifiers
 
 // [Definition, Color Set, Corresponding Letter]
-export const PIECE_LOOKUP = {
+const PIECE_LOOKUP = {
   Z: [PIECE_Z, 2, "Z"],
   S: [PIECE_S, 3, "S"],
   T: [PIECE_T, 1, "T"],
@@ -142,4 +142,9 @@ export const PIECE_LOOKUP = {
   J: [PIECE_J, 3, "J"],
 };
 
-export const PIECE_LIST = Object.values(PIECE_LOOKUP);
+const PIECE_LIST = Object.values(PIECE_LOOKUP);
+
+module.exports = {
+  PIECE_LIST,
+  PIECE_LOOKUP,
+};

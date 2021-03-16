@@ -27,6 +27,10 @@ Piece.prototype.equals = function (otherPiece) {
   return this.id === otherPiece.id;
 };
 
+Piece.prototype.getX = function () {
+  return this.x;
+};
+
 // Get the height of the lowest row that the piece occupies
 Piece.prototype.getHeightFromBottom = function () {
   let maxY = 0;
@@ -126,7 +130,7 @@ Piece.prototype.collision = function (x, y, piece) {
       if (newX < 0 || newX >= NUM_COLUMN || newY >= NUM_ROW) {
         return true;
       }
-      // skip newY < 0; board[-1] will crush our game
+      // skip newY < 0; board[-1] will crash
       if (newY < 0) {
         continue;
       }

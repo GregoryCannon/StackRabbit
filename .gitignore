@@ -1,3 +1,6 @@
+# Raw files
+raw_data/
+
 # Logs
 logs
 *.log

@@ -19,6 +19,7 @@ import { BoardGenerator } from "./board_generator.js";
 import { HistoryManager } from "./history_manager.js";
 import "./ui_manager";
 import {
+  AI_PLAYER_PRESET,
   CUSTOM_SEQUENCE_PRESET,
   DIG_PRACTICE_PRESET,
   DROUGHT_PRESET,
@@ -30,6 +31,7 @@ import {
   STANDARD_TAPPER_PRESET,
 } from "./game_settings_presets.js";
 import { PIECE_LOOKUP } from "./tetrominoes.js";
+import { AIPlayer } from "./ai_player.js";
 const GameSettings = require("./game_settings_manager");
 const GameSettingsUi = require("./game_settings_ui_manager");
 
@@ -56,6 +58,7 @@ let m_boardGenerator = new BoardGenerator(m_board);
 let m_pieceSelector = new PieceSelector();
 let m_boardLoader = new BoardLoader(m_board, m_canvas);
 let m_historyManager = new HistoryManager();
+let m_aiPlayer = null; // Instantiated if/when the setting is enabled
 
 // State relevant to game itself
 let m_currentPiece;
@@ -281,6 +284,14 @@ function updateGameState() {
   // FIRST PIECE -> RUNNING
   if (m_gameState == GameState.FIRST_PIECE && m_firstPieceDelay == 0) {
     m_gameState = GameState.RUNNING;
+    if (GameSettings.isAIPlaying()) {
+      m_aiPlayer.placeCurrentPiece(
+        m_currentPiece,
+        m_nextPiece,
+        m_board,
+        m_level
+      );
+    }
   }
   // LINE CLEAR -> ARE
   else if (m_gameState == GameState.LINE_CLEAR && m_lineClearFrames == 0) {
@@ -305,13 +316,21 @@ function updateGameState() {
 
       // debugging
       console.log(
-        "Average:",
+        "Average frame calculation time:",
         (m_totalMsElapsed / m_numFrames).toFixed(3),
         "Max:",
         m_maxMsElapsed.toFixed(3)
       );
     } else {
       m_gameState = GameState.RUNNING;
+      if (GameSettings.isAIPlaying()) {
+        m_aiPlayer.placeCurrentPiece(
+          m_currentPiece,
+          m_nextPiece,
+          m_board,
+          m_level
+        );
+      }
     }
   } else if (m_gameState == GameState.RUNNING) {
     // RUNNING -> LINE CLEAR
@@ -669,6 +688,7 @@ const presetsMap = {
   "preset-slow-killscreen": SLOW_KILLSCREEN_PRESET,
   "preset-slow-19": SLOW_19_PRESET,
   "preset-custom-sequence": CUSTOM_SEQUENCE_PRESET,
+  "preset-ai-player": AI_PLAYER_PRESET,
 };
 
 function deselectAllPresets() {
@@ -702,6 +722,18 @@ document.getElementById("preset-edit-board").addEventListener("click", (e) => {
   refreshPreGame();
   refreshHeaderText();
 });
+document
+  .getElementById("preset-ai-player")
+  .addEventListener("click", async (e) => {
+    if (m_aiPlayer == null) {
+      m_aiPlayer = new AIPlayer(
+        movePieceLeft,
+        movePieceRight,
+        rotatePieceRight
+      );
+      console.log("Loaded AI player!");
+    }
+  });
 
 document
   .getElementById("start-button")
