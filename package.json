@@ -7,6 +7,7 @@
   "scripts": {
     "deploy": "npm run make && gh-pages -d docs",
     "start": "prettier src/*.js --write && webpack --progress --mode=development && webpack-dev-server",
+    "start-server": "node src/server/app.js",
     "make": "prettier src/*.js --write && webpack --progress --mode=production",
     "format": "prettier --write \"src/**/*.+(js|jsx|json|css|md)\""
   },

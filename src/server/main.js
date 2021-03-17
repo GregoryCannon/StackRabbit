@@ -21,7 +21,7 @@ function getMove(
   const aiMode = AI_MODE.STANDARD;
 
   // Get the top contenders, sorted best -> worst
-  const NUM_TO_CONSIDER = 5;
+  const NUM_TO_CONSIDER = 20;
   const topN = evaluator.pickBestNMoves(
     possibilityList,
     nextPieceId,
