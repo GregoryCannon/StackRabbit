@@ -216,9 +216,9 @@ function getParams() {
 }
 
 module.exports = {
-  DEFAULT_PARAMS,
   getParams,
-  DIG_MODIFICATIONS,
+  DEFAULT_PARAMS,
   AI_MODE,
+  DIG_MODIFICATIONS,
   NEAR_KILLSCREEN_MODIFICATIONS,
 };
