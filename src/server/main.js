@@ -17,8 +17,8 @@ function getMove(
     level,
     /* shouldLog= */ false && shouldLog
   );
-  // const aiMode = evaluator.getAiMode(startingBoard, lines);
-  const aiMode = AI_MODE.STANDARD;
+  const aiMode = evaluator.getAiMode(startingBoard, lines);
+  // const aiMode = AI_MODE.STANDARD;
 
   // Get the top contenders, sorted best -> worst
   const NUM_TO_CONSIDER = 20;
