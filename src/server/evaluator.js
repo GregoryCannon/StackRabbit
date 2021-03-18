@@ -1,9 +1,5 @@
 const fs = require("fs");
-const {
-  DIG_MODIFICATIONS,
-  NEAR_KILLSCREEN_MODIFICATIONS,
-  AI_MODE,
-} = require("./params");
+const { AI_MODE } = require("./params");
 
 const ranks_NoNextBox_NoBars = fs.readFileSync(
   "docs/condensed_NoNextBox_NoBars.txt",
@@ -290,21 +286,6 @@ function getValueOfPossibility(
     console.log("RED ALERT", level, lines, currentMode, shouldLog, aiParams);
   }
 
-  // Modify the AI params based on the AI mode
-  if (currentMode === AI_MODE.DIG) {
-    // Modify some of the evaluation weights based on the fact that we're digging
-    aiParams = JSON.parse(JSON.stringify(aiParams));
-    for (const key in DIG_MODIFICATIONS) {
-      aiParams[key] = DIG_MODIFICATIONS[key];
-    }
-  } else if (currentMode === AI_MODE.NEAR_KILLSCREEN) {
-    // Modify some of the evaluation weights based on the fact that we're near killscreen
-    aiParams = JSON.parse(JSON.stringify(aiParams));
-    for (const key in NEAR_KILLSCREEN_MODIFICATIONS) {
-      aiParams[key] = NEAR_KILLSCREEN_MODIFICATIONS[key];
-    }
-  }
-
   // Preliminary calculations
   const [
     correctedSurface,
@@ -380,7 +361,7 @@ function getValueOfPossibility(
     highLeftFactor +
     notBuildingTowardsTetrisFactor;
 
-  const explanation = `Surf: ${surfaceFactor}, Hole: ${holeFactor}, HoleWeight: ${holeWeightFactor}, ExtremeGap: ${extremeGapFactor}, LineClear: ${lineClearFactor}, MaxHeight: ${maxHeightFactor}, AvgHeight: ${avgHeightFactor}, Col10: ${col10Factor} Slope: ${slopingFactor} HighLeft: ${highLeftFactor}, TetrisReady: ${tetrisReadyFactor} NotBldgTwdTetris: ${notBuildingTowardsTetrisFactor}\nTotal: ${totalValue}`;
+  const explanation = `Surf: ${surfaceFactor}, Hole: ${holeFactor}, HoleWeight: ${holeWeightFactor}, ExtremeGap: ${extremeGapFactor}, LineClear: ${lineClearFactor}, MaxHeight: ${maxHeightFactor}, AvgHeight: ${avgHeightFactor}, Col10: ${col10Factor} Slope: ${slopingFactor} HighLeft: ${highLeftFactor}, TetrisReady: ${tetrisReadyFactor} NotBldgTwdTetris: ${notBuildingTowardsTetrisFactor}, Subtotal: ${totalValue}`;
   if (shouldLog) {
     console.log(
       `---- Evaluating possiblity: ${possibility[0]} ${possibility[1]}\n`,

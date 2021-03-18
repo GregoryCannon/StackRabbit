@@ -1,6 +1,28 @@
 const evaluator = require("./evaluator");
 const BoardHelper = require("./board_helper");
-const { AI_MODE } = require("./params");
+const {
+  AI_MODE,
+  DIG_MODIFICATIONS,
+  NEAR_KILLSCREEN_MODIFICATIONS,
+} = require("./params");
+
+function modifyParamsForAiMode(aiParams, aiMode) {
+  // Modify the AI params based on the AI mode
+  if (aiMode === AI_MODE.DIG) {
+    // Modify some of the evaluation weights based on the fact that we're digging
+    aiParams = JSON.parse(JSON.stringify(aiParams));
+    for (const key in DIG_MODIFICATIONS) {
+      aiParams[key] = DIG_MODIFICATIONS[key];
+    }
+  } else if (aiMode === AI_MODE.NEAR_KILLSCREEN) {
+    // Modify some of the evaluation weights based on the fact that we're near killscreen
+    aiParams = JSON.parse(JSON.stringify(aiParams));
+    for (const key in NEAR_KILLSCREEN_MODIFICATIONS) {
+      aiParams[key] = NEAR_KILLSCREEN_MODIFICATIONS[key];
+    }
+  }
+  return aiParams;
+}
 
 function getMove(
   startingBoard,
@@ -18,7 +40,7 @@ function getMove(
     /* shouldLog= */ false && shouldLog
   );
   const aiMode = evaluator.getAiMode(startingBoard, lines);
-  // const aiMode = AI_MODE.STANDARD;
+  aiParams = modifyParamsForAiMode(aiParams, aiMode);
 
   // Get the top contenders, sorted best -> worst
   const NUM_TO_CONSIDER = 20;
@@ -69,10 +91,10 @@ function getMove(
       console.log(
         `\nCurrent move: ${possibility[0]}, ${possibility[1]}. Next move: ${innerBestMove[0]}, ${innerBestMove[1]}.`
       );
+      console.log("Final state eval:", innerBestMove[7]); // Log inner explanation
       console.log(
-        `Surface: ${innerBestMove[2]}, inner value: ${innerBestMove[6]}, original partial value: ${originalMovePartialValue}, total value: ${totalValue}`
+        `\nSurface: ${innerBestMove[2]}, inner value: ${innerBestMove[6]}, original partial value: ${originalMovePartialValue}, \nFINAL TOTAL: ${totalValue}`
       );
-      console.log(innerBestMove[7]); // Log explanation
       console.log("---------------------------------------------");
     }
 

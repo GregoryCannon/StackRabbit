@@ -115,4 +115,3 @@ function gridSearch() {
 
 // gradientDescent();
 // gridSearch();
-// console.log(liteGameSimulator.simulateManyGames(100, 18, getParams()));

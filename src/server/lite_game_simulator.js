@@ -91,7 +91,7 @@ function simulateGame(startingLevel, aiParams, presetPieceSequence, shouldLog) {
     );
     utils.logBoard(board);
   }
-  return [score, lines, level];
+  return [score, lines, level, pieceSequence];
 }
 
 /**
@@ -164,7 +164,17 @@ function regressionTest() {
   }
 }
 
+function runExperiment(numTrials) {
+  const resultList = simulateManyGames(numTrials, 18, getParams());
+  const only1_3s = resultList.filter((x) => x[0] > 1300000);
+  console.log(resultList);
+  console.log("1.3 count:", only1_3s.length);
+  console.log("\n1.3s:", only1_3s);
+  console.log("\nScores:\n" + resultList.map((x) => x[0]).join("\n"));
+}
+
 // regressionTest();
+runExperiment(300);
 
 module.exports = {
   simulateManyGames,
