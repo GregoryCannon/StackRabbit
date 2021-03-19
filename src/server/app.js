@@ -26,10 +26,15 @@ const server = http.createServer((req, res) => {
   if (!["I", "O", "L", "J", "T", "S", "Z"].includes(currentPieceStr)) {
     return res.end("bad next piece:" + currentPieceStr);
   }
+  console.log(req.url);
+
+  // Decode the board from the URL
+  boardSerialized = boardSerialized.replace(/2|3/g, "1"); // Cleanse color data (1/2/3) to just 1s
+  console.log(boardSerialized.match(/.{1,10}/g))
+  const startingBoard = boardSerialized.match(/.{1,10}/g).map(rowSerialized => rowSerialized.split(""));
+  console.log(startingBoard);
 
   // Get the list of possible moves
-  const startingBoard = JSON.parse(boardSerialized.replace(/2|3/g, "1")); // Cleanse color data (1/2/3) to just 1s
-
   const bestMove = mainApp.getMove(
     startingBoard,
     currentPieceStr,
@@ -39,8 +44,11 @@ const server = http.createServer((req, res) => {
     /* shouldLog= */ true,
     params.getParams()
   );
+  if (!bestMove){
+    return res.end("No legal moves");
+  }
 
-  res.end("" + bestMove);
+  res.end(bestMove[0] + "," + bestMove[1]);
 });
 
 server.listen(port, hostname, () => {

@@ -1,3 +1,4 @@
+local http = require("socket.http")
 
 -- Convenience functions to translate internal Piece IDs to actual piece types
 --T: 2 J: 7 Z: 9 O: 10 S: 11 L: 15 I: 18
@@ -23,10 +24,10 @@ movieName = "TestMovie"
 gameState = 0
 playstate = 0
 
-
-index = 1
+maxDas = 5
+framesOfDasLeft = 0
+pendingInputs = { left=0, right=0, A=0, B=0 }
 gameOver = false
-sequence = {}
 pcur = 0
 pnext = 0
 
@@ -47,6 +48,81 @@ function getBoard()
   return levelMap
 end
 
+------------------- Web Request Functions ----------------------
+
+function makeRequestToServer()
+  -- Encode the board. The chars '[' and ']' are replaced with 'u' and 'v', since Lua bungles the string encoding (reeee)
+  local board = getBoard()
+  local requestStr = "http://localhost:3000/"
+  for _, row in ipairs(board) do
+    for _, value in ipairs(row) do
+      if value == 239 then
+        requestStr = requestStr .. "0"
+      else
+        requestStr = requestStr .. "1"
+      end
+    end
+  end
+
+  -- Helper function to compile the body of the web response
+  local data = ""
+  local function collect(chunk)
+    if chunk ~= nil then
+      data = data .. chunk
+    end
+    return true
+  end
+
+  -- Make an HTTP Query
+  requestStr = requestStr .. "/" .. orientToPiece[pcur] .. "/" .. orientToPiece[pnext] .. "/18/0"
+  local ok, statusCode, headers, statusText = http.request {
+    method = "GET",
+    url = requestStr,
+    sink = collect
+  }
+  print(data)
+  return data
+end
+
+function strsplit (inputstr, sep)
+  if sep == nil then
+          sep = "%s"
+  end
+  local t={}
+  for str in string.gmatch(inputstr, "([^"..sep.."]+)") do
+          table.insert(t, str)
+  end
+  return t
+end
+
+function calculateInputs(result)
+  -- Parse the shifts and rotations from the API result
+  local split = strsplit(result, ",")
+  local numShifts = tonumber(split[2])
+  local numRightRotations = tonumber(split[1])
+
+  print(numShifts)
+  print(numRightRotations)
+
+  pendingInputs = { left = 0, right = 0, A = 0, B = 0 }
+  -- Shifts
+  if numShifts < 0 then
+    pendingInputs.left = -1 * numShifts
+  elseif numShifts > 0 then
+    pendingInputs.right = numShifts
+  end
+
+  -- Rotations
+  if numRightRotations == 3 then
+    pendingInputs.B = 1
+  else
+    pendingInputs.A = numRightRotations
+  end
+
+  print(pendingInputs)
+end
+
+
 --Main game loop.
 while true do
   --Game starts
@@ -64,7 +140,7 @@ while true do
   --Game ends, clean up data
   if(gameState == 4 and memory.readbyte(0x00C0) == 3) then
   gameOver = false
-  index = 1
+  framesOfDasLeft = 0
   if movie.active() then
       movie.stop()
       end
@@ -95,19 +171,51 @@ while true do
           -- local bestPlace = findMoves(orientToNum[pcur], orientToNum[pnext])
           -- Returns extra stuff here
           -- sequence, finalX, finalId = moveToSequence(placements, orientToNum[pcur])
-          
+          local result = makeRequestToServer()
+          if result ~= "No legal moves" then
+            calculateInputs(result)
+          end
         end
       end
 
       -- Execute input sequence
       if not gameOver then
-        -- mash(index, sequence)
-        index = index + 1
-        if (orientToPiece[pcur] == "I" or orientToPiece[pcur] == "O") then
-          joypad.set(1, {A=true,B=false,left=false,right=true,up=false,down=false,select=false,start=false})
+        local inputsThisFrame = {A=false, B=false, left=false, right=false, up=false, down=false, select=false, start=false}
+        if framesOfDasLeft == 0 then
+          -- Execute inputs on this frame
+          print("pending inputs")
+          print(pendingInputs)
+          if pendingInputs.A > 0 then
+            inputsThisFrame.A = true
+            pendingInputs.A = pendingInputs.A - 1 -- (Imagine having a decrement operator in your language)
+          end
+          if pendingInputs.B > 0 then
+            inputsThisFrame.B = true
+            pendingInputs.B = pendingInputs.B - 1
+          end
+          if pendingInputs.left > 0 then
+            inputsThisFrame.left = true
+            pendingInputs.left = pendingInputs.left - 1
+          end
+          if pendingInputs.right > 0 then
+            inputsThisFrame.right = true
+            pendingInputs.right = pendingInputs.right - 1
+          end
+
+          -- Reset das frame count to max
+          framesOfDasLeft = maxDas
         else
-          joypad.set(1, {A=false,B=false,left=true,right=false,up=false,down=false,select=false,start=false})
+          framesOfDasLeft = framesOfDasLeft - 1
         end
+
+        -- Send our computed inputs to the controller
+        joypad.set(1, inputsThisFrame)
+
+        -- if (orientToPiece[pcur] == "I" or orientToPiece[pcur] == "O") then
+        --   joypad.set(1, {A=true,B=false,left=false,right=true,up=false,down=false,select=false,start=false})
+        -- else
+        --   joypad.set(1, {A=false,B=false,left=true,right=false,up=false,down=false,select=false,start=false})
+        -- end
       end
 
     -- Do stuff right when the piece locks. If you want to check that the piece went to the correct spot/send an API request early here is probably good.
@@ -119,7 +227,7 @@ while true do
     
     -- Resets the index for the next piece. Disables user input when the game is not over.
     elseif not gameOver or recording then
-      index = 1
+      pendingInputs = { left=0, right=0, A=0, B=0 }
       joypad.set(1, {A=false,B=false,left=false,right=false,up=false,down=false,select=false,start=false})
     end
   end

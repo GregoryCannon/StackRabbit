@@ -104,7 +104,7 @@ function getMove(
     }
   }
 
-  if (shouldLog) {
+  if (shouldLog && bestPossibilityAfterNextPiece) {
     console.log(
       `\nSelected: ${bestPossibilityAfterNextPiece[0]}, ${bestPossibilityAfterNextPiece[1]}`
     );
