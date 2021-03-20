@@ -16,15 +16,16 @@ getId = {
 }
 
 -- Where to put the fm2 files. Replace with an absolute path. to format movieName go to initSeedData
-recordGames = false
+recordGames = true
 moviePath = "C:\\Users\\Greg\\Desktop\\Ai"
 movieName = "TestMovie"
 
 -- Global state
 gameState = 0
 playstate = 0
+numLines = 0
 
-maxDas = 5
+maxDas = 3 -- 15 Hz tapping
 framesOfDasLeft = 0
 pendingInputs = { left=0, right=0, A=0, B=0 }
 gameOver = false
@@ -74,7 +75,14 @@ function makeRequestToServer()
   end
 
   -- Make an HTTP Query
-  requestStr = requestStr .. "/" .. orientToPiece[pcur] .. "/" .. orientToPiece[pnext] .. "/18/0"
+  local level = 18
+  if numLines >= 230 then 
+    level = 29 
+  elseif numLines >= 130 then 
+    level = 19
+  end
+
+  requestStr = requestStr .. "/" .. orientToPiece[pcur] .. "/" .. orientToPiece[pnext] .. "/" .. level .. "/" .. numLines
   local ok, statusCode, headers, statusText = http.request {
     method = "GET",
     url = requestStr,
@@ -118,8 +126,6 @@ function calculateInputs(result)
   else
     pendingInputs.A = numRightRotations
   end
-
-  print(pendingInputs)
 end
 
 
@@ -159,7 +165,7 @@ while true do
       -- First active frame for piece. This is where board state/input sequence is calculated
       if(playstate ~= 1 or backtrack) then
           -- Check for killscreen (for my thing it would use this to top out immediately)
-        local numLines = toDec(memory.readbyte(0x0051)) * 100 + toDec(memory.readbyte(0x0050))
+        numLines = toDec(memory.readbyte(0x0051)) * 100 + toDec(memory.readbyte(0x0050))
         if numLines > 229 then
           gameOver = true
         end
