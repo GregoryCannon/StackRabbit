@@ -190,7 +190,7 @@ const v5_aggro = {
 };
 
 function getParams() {
-  return v5_aggro;
+  return v5_resultParams;
 }
 
 module.exports = {

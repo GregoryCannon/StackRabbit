@@ -174,7 +174,7 @@ function runExperiment(numTrials) {
 }
 
 // regressionTest();
-runExperiment(300);
+// runExperiment(300);
 
 module.exports = {
   simulateManyGames,
