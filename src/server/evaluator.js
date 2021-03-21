@@ -5,14 +5,8 @@ const ranks_NoNextBox_NoBars = fs.readFileSync(
   "docs/condensed_NoNextBox_NoBars.txt",
   "utf8"
 );
-const ranks_NextBox_NoBars_1 = fs.readFileSync(
-  "2byte_NextBox_1.txt",
-  "utf8"
-);
-const ranks_NextBox_NoBars_2 = fs.readFileSync(
-  "2byte_NextBox_2.txt",
-  "utf8"
-);
+const ranks_NextBox_NoBars_1 = fs.readFileSync("2byte_NextBox_1.txt", "utf8");
+const ranks_NextBox_NoBars_2 = fs.readFileSync("2byte_NextBox_2.txt", "utf8");
 const CUTOFF = 200000000;
 
 const utils = require("./utils");
@@ -84,10 +78,10 @@ function getValueOfBoardSurfaceNoNextBox(surfaceArray) {
 
 function getValueOfBoardSurfaceWithNextBox(surfaceArray, nextPieceId) {
   const index = surfaceHeightsToNBIndex(surfaceArray, nextPieceId);
-  if (index > CUTOFF){
+  if (index < CUTOFF) {
     return lookUpRankInString(ranks_NextBox_NoBars_1, index);
   }
-  return lookUpRankInString(ranks_NextBox_NoBars_2, index - CUTOFF)
+  return lookUpRankInString(ranks_NextBox_NoBars_2, index - CUTOFF);
 }
 
 /**
