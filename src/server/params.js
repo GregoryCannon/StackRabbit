@@ -4,6 +4,8 @@ const AI_MODE = Object.freeze({
   NEAR_KILLSCREEN: "near_killscreen",
 });
 
+const NUM_TO_CONSIDER = 20;
+
 const DIG_MODIFICATIONS = {
   BURN_PENALTY: 0,
   COL_10_PENALTY: 0,
@@ -196,6 +198,7 @@ function getParams() {
 module.exports = {
   getParams,
   DEFAULT_PARAMS,
+  NUM_TO_CONSIDER,
   AI_MODE,
   DIG_MODIFICATIONS,
   NEAR_KILLSCREEN_MODIFICATIONS,

@@ -2,6 +2,7 @@ const evaluator = require("./evaluator");
 const BoardHelper = require("./board_helper");
 const {
   AI_MODE,
+  NUM_TO_CONSIDER,
   DIG_MODIFICATIONS,
   NEAR_KILLSCREEN_MODIFICATIONS,
 } = require("./params");
@@ -43,7 +44,6 @@ function getMove(
   aiParams = modifyParamsForAiMode(aiParams, aiMode);
 
   // Get the top contenders, sorted best -> worst
-  const NUM_TO_CONSIDER = 20;
   const topN = evaluator.pickBestNMoves(
     possibilityList,
     nextPieceId,
@@ -109,6 +109,8 @@ function getMove(
       `\nSelected: ${bestPossibilityAfterNextPiece[0]}, ${bestPossibilityAfterNextPiece[1]}`
     );
   }
+
+  console.log("# Candidates:", topN.length);
 
   // Send back the highest value move after the next piece is placed
   return bestPossibilityAfterNextPiece;
