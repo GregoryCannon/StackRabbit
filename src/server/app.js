@@ -6,6 +6,9 @@ const mainApp = require("./main");
 const params = require("./params");
 const evolution = require("./evolution");
 
+let asyncCallInProgress = false;
+let asyncResult = null;
+
 /**
  * Parses and validates the inputs
  * @returns {Object} an object with all the parsed arguments
@@ -20,23 +23,57 @@ function parseArguments(requestArgs) {
   if (!["I", "O", "L", "J", "T", "S", "Z"].includes(currentPieceStr)) {
     throw new Error("Unknown current piece:" + currentPieceStr);
   }
-  if (!["I", "O", "L", "J", "T", "S", "Z"].includes(nextPieceStr)) {
-    nextPieceStr = "";
+  if (!["I", "O", "L", "J", "T", "S", "Z", "NULL"].includes(nextPieceStr)) {
+    throw new Error("Unknown next piece: '" + nextPieceStr + "'");
+  }
+  if (level < 0) {
+    throw new Error("Illegal level:", level);
+  }
+  if (lines === undefined || lines < 0) {
+    throw new Error("Illegal line count:", lines);
+  }
+  if (level < 18 || level > 30) {
+    console.log("WARNING - Unusual level:", level);
   }
 
   // Decode the board
   const startingBoard = boardStr
     .match(/.{1,10}/g) // Select groups of 10 characters
-    .map((rowSerialized) => rowSerialized.split("").map(x => parseInt(x)));
+    .map((rowSerialized) => rowSerialized.split("").map((x) => parseInt(x)));
 
   return { startingBoard, currentPieceStr, nextPieceStr, level, lines };
+}
+
+/**
+ * Asynchronously chooses the best placement, with next box and 1-depth search.
+ * Doesn't block the thread while computing, and returns the API response that should be sent in the meantime.
+ * @param {function} callbackFunction called on completion
+ * @returns {string} the *initial* API response - i.e. whether the request was accepted and started
+ */
+function handleRequestAsyncWithNextBox(requestArgs) {
+  if (asyncCallInProgress) {
+    return ["Error - already handling an async call", 500];
+  }
+
+  // Async wrapper around the synchronous handler
+  async function processRequest(requestArgs) {
+    // Wait 1ms to ensure that this is called async
+    await new Promise((resolve) => setTimeout(resolve, 1));
+    asyncResult = handleRequestSyncWithNextBox(requestArgs);
+    asyncCallInProgress = false;
+  }
+
+  asyncCallInProgress = true;
+  asyncResult = null;
+  processRequest(requestArgs);
+  return ["Request accepted.", 200];
 }
 
 /**
  * Synchronously choose the best placement, with no next box and no search.
  * @returns {string} the API response
  */
-function handleRequestSyncWithNoNextBox(requestArgs) {
+function handleRequestSyncNoNextBox(requestArgs) {
   let { startingBoard, currentPieceStr, level, lines } = parseArguments(
     requestArgs
   );
@@ -98,19 +135,31 @@ const server = http.createServer((req, res) => {
 
   console.log("\n-------------------------\n" + req.url);
 
-  let response;
+  let response,
+    responseCode = 200;
   const [_, requestType, ...requestArgs] = req.url.split("/");
   const startTimeMs = Date.now(); // Save the start time for performance tracking
 
-  // Route the request to a handler function in this class
+  // Route the request
   if (requestType === "ping") {
     response = "pong";
+  } else if (requestType === "async-result") {
+    // If a previous async request has now completed, send that.
+    if (asyncResult !== null) {
+      response = asyncResult;
+    } else if (asyncCallInProgress) {
+      responseCode = 504; // Gateway timeout
+      response = "Still calculating...";
+    } else {
+      responseCode = 404; // Not found
+      response = "No previous async request has been made";
+    }
   } else if (requestType === "async-nb") {
-    // Incomplete
+    [response, responseCode] = handleRequestAsyncWithNextBox(requestArgs);
   } else if (requestType === "sync-nb") {
     response = handleRequestSyncWithNextBox(requestArgs);
   } else if (requestType === "sync-nnb") {
-    response = handleRequestSyncWithNoNextBox(requestArgs);
+    response = handleRequestSyncNoNextBox(requestArgs);
   } else {
     response =
       "Please specify the request type, e.g. 'sync-nnb' or 'async-nb'. Received: " +
