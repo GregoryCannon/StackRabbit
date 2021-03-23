@@ -16,8 +16,18 @@ getId = {
   {18, 17}
 }
 
+-- Reset all variables whose values are tied to one piece
+function resetPieceScopedVars()
+  adjustmentApiResult = nil
+  framesUntilAdjustment = maxFramesUntilAdjustment
+  framesUntilNextShift = 0
+  pendingInputs = { left=0, right=0, A=0, B=0 }
+  shiftsExecuted = 0
+  rotationsExecuted = 0
+end
+
 -- Where to put the fm2 files. Replace with an absolute path. to format movieName go to initSeedData
-recordGames = false
+recordGames = true
 moviePath = "C:\\Users\\Greg\\Desktop\\AI"
 movieName = "TestMovie3"
 
@@ -26,9 +36,9 @@ gameState = 0
 playstate = 0
 numLines = 0
 
-maxDas = 3 -- 15 Hz tapping
-framesUntilNextShift = 0
-pendingInputs = { left=0, right=0, A=0, B=0 }
+maxDas = 3 -- the ARR minus 1
+maxFramesUntilAdjustment = 12
+waitingOnAsyncRequest = false
 gameOver = false
 pcur = 0
 pnext = 0
@@ -50,7 +60,9 @@ function getBoard()
   return levelMap
 end
 
-------------------- Web Request Functions ----------------------
+--[[------------------------------------ 
+----------- HTTP Requests -------------- 
+------------------------------------]]--
 
 function getEncodedBoard()
   local board = getBoard()
@@ -70,10 +82,11 @@ end
 -- Make a request that will kick off a longer calculation. Subsequent frames will call checkForAsyncResult() to get the result.
 function requestPlacementAsync()
   -- Format URL arguments
-  local requestStr = "http://localhost:3000/async-nb" .. getEncodedBoard()
+  local requestStr = "http://localhost:3000/async-nb/" .. getEncodedBoard()
   requestStr = requestStr .. "/" .. orientToPiece[pcur] .. "/" .. orientToPiece[pnext] 
   requestStr = requestStr .. "/" .. level .. "/" .. numLines
 
+  waitingOnAsyncRequest = true
   return makeHttpRequest(requestStr).data
 end
 
@@ -82,7 +95,8 @@ function checkForAsyncResult()
 
   -- Only use the response if the server indicated that it sent the async result
   if response.code == 200 then
-    calculateInputs(response.data)
+    adjustmentApiResult = response.data
+    waitingOnAsyncRequest = false
   end
 end
 
@@ -109,8 +123,6 @@ function makeHttpRequest(requestUrl)
     url = requestUrl,
     sink = collect
   }
-  print("HTTP response:")
-  print(data)
   return {data=data, code=statusCode}
 end
 
@@ -125,16 +137,20 @@ function strsplit (inputstr, sep)
   return t
 end
 
-------------------- Handling inputs ----------------------
+--[[------------------------------------ 
+---------- Handling Input -------------- 
+------------------------------------]]--
 
-function calculateInputs(result)
+function calculateInputs(apiResult)
+  if apiResult == "No legal moves" then
+    return
+  end
+
   -- Parse the shifts and rotations from the API result
-  local split = strsplit(result, ",")
-  local numShifts = tonumber(split[2])
-  local numRightRotations = tonumber(split[1])
-
-  print(numShifts)
-  print(numRightRotations)
+  local split = strsplit(apiResult, ",")
+  -- Offset by the amount of any existing inputs
+  local numShifts = tonumber(split[2]) - shiftsExecuted
+  local numRightRotations = (tonumber(split[1]) - rotationsExecuted) % 4
 
   pendingInputs = { left = 0, right = 0, A = 0, B = 0 }
   -- Shifts
@@ -154,24 +170,37 @@ end
 
 function executeInputs()
   if not gameOver then
+    -- Either perform adjustment or decrement the adjustment countdown
+    if framesUntilAdjustment == 0 then
+      calculateInputs(adjustmentApiResult)
+      framesUntilAdjustment = -1
+    elseif framesUntilAdjustment > 0 then
+      framesUntilAdjustment = framesUntilAdjustment - 1
+    end
+
     local inputsThisFrame = {A=false, B=false, left=false, right=false, up=false, down=false, select=false, start=false}
+    local stuckAgainstWall = shiftsExecuted == -5 or shiftsExecuted == 4
     if framesUntilNextShift == 0 then
       -- Execute inputs on this frame
-      if pendingInputs.A > 0 then
+      if pendingInputs.A > 0 and not stuckAgainstWall then
         inputsThisFrame.A = true
         pendingInputs.A = pendingInputs.A - 1 -- (Imagine having a decrement operator in your language)
+        rotationsExecuted = (rotationsExecuted + 1) % 4
       end
-      if pendingInputs.B > 0 then
+      if pendingInputs.B > 0 and not stuckAgainstWall then
         inputsThisFrame.B = true
         pendingInputs.B = pendingInputs.B - 1
+        rotationsExecuted = (rotationsExecuted - 1) % 4
       end
       if pendingInputs.left > 0 then
         inputsThisFrame.left = true
         pendingInputs.left = pendingInputs.left - 1
+        shiftsExecuted = shiftsExecuted - 1
       end
       if pendingInputs.right > 0 then
         inputsThisFrame.right = true
         pendingInputs.right = pendingInputs.right - 1
+        shiftsExecuted = shiftsExecuted + 1
       end
 
       -- Reset das frame count to max
@@ -185,26 +214,9 @@ function executeInputs()
   end
 end
 
-
--------------- Main game loop ------------
-
-
-function onFirstFrameOfNewPiece()
-  -- Read values from memory
-  pcur = memory.readbyte(0x0042) -- Stores current/next pieces before they even appear onscreen
-  pnext = memory.readbyte(0x0019)
-  numLines = toDec(memory.readbyte(0x0051)) * 100 + toDec(memory.readbyte(0x0050))
-  level = memory.readbyte(0x0044)
-  print("level " .. level)
-
-  -- Make a synchronous request to the server for the inital placement
-  if not gameOver then
-    local result = requestPlacementSyncNoNextBox()
-    if result ~= "No legal moves" then
-      calculateInputs(result)
-    end
-  end
-end
+--[[------------------------------------ 
+------- Performance Monitoring  -------- 
+------------------------------------]]--
 
 -- Monitors the number of frames run per real clock second
 function getMs()
@@ -221,6 +233,28 @@ function trackAndLogFps()
   if msElapsed > (secsElapsed + 1) * 1000 then
     secsElapsed = secsElapsed + 1
     print("Average FPS:" .. framesElapsed / secsElapsed)
+  end
+end
+
+
+--[[------------------------------------ 
+---------- Main Game Loop  ------------- 
+------------------------------------]]--
+
+
+function onFirstFrameOfNewPiece()
+  -- Read values from memory
+  pcur = memory.readbyte(0x0042) -- Stores current/next pieces before they even appear onscreen
+  pnext = memory.readbyte(0x0019)
+  numLines = toDec(memory.readbyte(0x0051)) * 100 + toDec(memory.readbyte(0x0050))
+  level = memory.readbyte(0x0044)
+  
+  resetPieceScopedVars()
+  
+  if not gameOver then
+    -- Make a synchronous request to the server for the inital placement
+    local apiResult = requestPlacementSyncNoNextBox()
+    calculateInputs(apiResult)
   end
 end
 
@@ -256,9 +290,17 @@ function beforeEachFrame()
 
   if(gameState == 4) then
     if(memory.readbyte(0x0048) == 1) then
-      -- First active frame for piece. This is where board state/input sequence is calculated
       if(playstate ~= 1 or backtrack) then
+        -- First active frame for piece. This is where board state/input sequence is calculated
         onFirstFrameOfNewPiece()
+      else
+        -- Subsequent frames where the piece is active
+        if waitingOnAsyncRequest then
+          checkForAsyncResult()
+        elseif adjustmentApiResult == nil and not waitingOnAsyncRequest then
+          requestPlacementAsync()
+          waitingOnAsyncRequest = true
+        end
       end
 
       -- Execute input sequence
