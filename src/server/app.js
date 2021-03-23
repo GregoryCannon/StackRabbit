@@ -14,6 +14,8 @@ const server = http.createServer((req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Content-Type", "text/plain");
 
+  const startTime = Date.now();
+
   let [
     _,
     boardSerialized,
@@ -30,21 +32,26 @@ const server = http.createServer((req, res) => {
 
   // Decode the board from the URL
   boardSerialized = boardSerialized.replace(/2|3/g, "1"); // Cleanse color data (1/2/3) to just 1s
-  console.log(boardSerialized.match(/.{1,10}/g))
-  const startingBoard = boardSerialized.match(/.{1,10}/g).map(rowSerialized => rowSerialized.split(""));
-  console.log(startingBoard);
+  // console.log(boardSerialized.match(/.{1,10}/g).join("\n"));
+  const startingBoard = boardSerialized
+    .match(/.{1,10}/g)
+    .map((rowSerialized) => rowSerialized.split(""));
 
-  // Get the list of possible moves
+  // Get the best move
   const bestMove = mainApp.getMove(
     startingBoard,
     currentPieceStr,
     nextPieceStr,
     level,
     lines,
-    /* shouldLog= */ true,
+    /* shouldLog= */ false,
     params.getParams()
   );
-  if (!bestMove){
+
+  const msElapsed = Date.now() - startTime;
+  console.log("Best move:", bestMove.slice(0,2))
+  console.log("Calculation time (ms):", msElapsed)
+  if (!bestMove) {
     return res.end("No legal moves");
   }
 

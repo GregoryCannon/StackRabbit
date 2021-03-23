@@ -34,6 +34,7 @@ function getMove(
   shouldLog,
   aiParams
 ) {
+  const startTime = Date.now();
   const possibilityList = BoardHelper.getPossibleMoves(
     startingBoard,
     currentPieceId,
@@ -42,6 +43,9 @@ function getMove(
   );
   const aiMode = evaluator.getAiMode(startingBoard, lines);
   aiParams = modifyParamsForAiMode(aiParams, aiMode);
+
+  const time2 = Date.now()
+  console.log("Elapsed to get possible moves:", time2 - startTime);
 
   // Get the top contenders, sorted best -> worst
   const topN = evaluator.pickBestNMoves(
@@ -54,6 +58,9 @@ function getMove(
     aiParams
   );
 
+  const time3 = Date.now()
+  console.log("Elapsed to get N most promising moves:", time3 - time2);
+
   if (shouldLog) {
     console.log("\n\n---------");
   }
@@ -61,7 +68,10 @@ function getMove(
   // For each contender, place the next piece and maximize the resulting value
   let bestPossibilityAfterNextPiece = null;
   let bestValueAfterNextPiece = -999;
+  let bestIndex = 0;
+  let i = 0;
   for (const possibility of topN) {
+    i++;
     // Place the next piece in each possibility
     const trialBoard = possibility[5];
     const innerPossibilityList = BoardHelper.getPossibleMoves(
@@ -101,7 +111,10 @@ function getMove(
     if (totalValue > bestValueAfterNextPiece) {
       bestValueAfterNextPiece = totalValue;
       bestPossibilityAfterNextPiece = possibility;
+      bestIndex = i;
     }
+
+    console.log("Elapsed from start of move eval to last move:", Date.now() - time2);
   }
 
   if (shouldLog && bestPossibilityAfterNextPiece) {
@@ -110,7 +123,7 @@ function getMove(
     );
   }
 
-  console.log("# Candidates:", topN.length);
+  console.log("# Candidates:", topN.length, "Selected:", bestIndex);
 
   // Send back the highest value move after the next piece is placed
   return bestPossibilityAfterNextPiece;
