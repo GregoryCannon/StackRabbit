@@ -18,7 +18,10 @@ function getAiMode(board, lines) {
   if (lines > 225) {
     return AI_MODE.NEAR_KILLSCREEN;
   }
-  if (countHolesInRowRange(board, 0, NUM_ROW - 1, /* countCol10Holes= */ false) > 0) {
+  if (
+    countHolesInRowRange(board, 0, NUM_ROW - 1, /* countCol10Holes= */ false) >
+    0
+  ) {
     return AI_MODE.DIG_WITH_HOLES;
   }
   if (hasNonRightWell(board)) {
@@ -88,13 +91,13 @@ function getValueOfBoardSurfaceWithNextBox(surfaceArray, nextPieceId) {
 }
 
 /** Checks if a board has a well that's not on the right. */
-function hasNonRightWell(board){
+function hasNonRightWell(board) {
   let row = NUM_ROW - 1;
-  while (row >= 0 && board[row][NUM_COLUMN - 1] == SquareState.FULL){
+  while (row >= 0 && board[row][NUM_COLUMN - 1] == SquareState.FULL) {
     // If col 10 is full and there are any empty cells on other cols, this is true
-    for (let col = 0; col < NUM_COLUMN - 1; col++){
-      if (board[row][col] == SquareState.EMPTY){
-        return true
+    for (let col = 0; col < NUM_COLUMN - 1; col++) {
+      if (board[row][col] == SquareState.EMPTY) {
+        return true;
       }
     }
     row--;
@@ -199,7 +202,7 @@ function getHighLeftFactor(board, surfaceArray, scareHeight) {
 function countHolesInRowRange(board, startRow, endRow, countCol10Holes) {
   let count = 0;
 
-  const colBound = (countCol10Holes ? NUM_COLUMN : NUM_COLUMN - 1);
+  const colBound = countCol10Holes ? NUM_COLUMN : NUM_COLUMN - 1;
   for (let col = 0; col < colBound; col++) {
     // Navigate past the empty space above each column
     let row = 0;
@@ -231,7 +234,14 @@ function isNotBuildingTowardTetris(board) {
   }
 
   // If there are any holes in the zone where you'd take the tetris, you're not building towards a tetris.
-  return countHolesInRowRange(board, row - 4, row - 1, /* countCol10Holes= */ false) > 0;
+  return (
+    countHolesInRowRange(
+      board,
+      row - 4,
+      row - 1,
+      /* countCol10Holes= */ false
+    ) > 0
+  );
 }
 
 function isTetrisReadyRightWell(board) {
@@ -296,14 +306,7 @@ function getValueOfPossibility(
   shouldLog,
   aiParams
 ) {
-  const [
-    _,
-    __,
-    surfaceArray,
-    ___,
-    numLinesCleared,
-    trialBoard,
-  ] = possibility;
+  const [_, __, surfaceArray, ___, numLinesCleared, trialBoard] = possibility;
 
   if (!aiParams) {
     console.log("RED ALERT", level, lines, aiMode, shouldLog, aiParams);
@@ -330,7 +333,12 @@ function getValueOfPossibility(
   );
   const tetrisReady = isTetrisReadyRightWell(trialBoard);
   const notBuildingTowardsTetris = isNotBuildingTowardTetris(trialBoard);
-  const numHoles = countHolesInRowRange(trialBoard, 0, NUM_ROW - 1, /* countCol10Holes= */ aiMode === AI_MODE.DIG_WITH_HOLES)
+  const numHoles = countHolesInRowRange(
+    trialBoard,
+    0,
+    NUM_ROW - 1,
+    /* countCol10Holes= */ aiMode === AI_MODE.DIG_WITH_HOLES
+  );
 
   let extremeGapFactor = totalHeightCorrected * aiParams.EXTREME_GAP_PENALTY;
   let surfaceFactor;

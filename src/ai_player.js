@@ -24,7 +24,7 @@ AIPlayer.prototype.placeCurrentPiece = async function (
     .map((row) => row.join(""))
     .join("")
     .replace(/2|3/g, "1");
-    console.log(board);
+  console.log(board);
   const result = await fetch(
     `http://127.0.0.1:3000/sync-nb/${encodedBoard}/${piece.id}/${nextPiece.id}/${level}/${lines}`
   );
