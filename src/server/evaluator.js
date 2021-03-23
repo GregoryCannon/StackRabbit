@@ -337,7 +337,7 @@ function getValueOfPossibility(
     trialBoard,
     0,
     NUM_ROW - 1,
-    /* countCol10Holes= */ aiMode === AI_MODE.DIG_WITH_HOLES
+    /* countCol10Holes= */ false
   );
 
   let extremeGapFactor = totalHeightCorrected * aiParams.EXTREME_GAP_PENALTY;
