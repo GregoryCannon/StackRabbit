@@ -1,4 +1,5 @@
 local http = require("socket.http")
+require "socket"
 
 -- Convenience functions to translate internal Piece IDs to actual piece types
 --T: 2 J: 7 Z: 9 O: 10 S: 11 L: 15 I: 18
@@ -16,7 +17,7 @@ getId = {
 }
 
 -- Where to put the fm2 files. Replace with an absolute path. to format movieName go to initSeedData
-recordGames = true
+recordGames = false
 moviePath = "C:\\Users\\Greg\\Desktop\\AI"
 movieName = "TestMovie3"
 
@@ -26,7 +27,7 @@ playstate = 0
 numLines = 0
 
 maxDas = 3 -- 15 Hz tapping
-framesOfDasLeft = 0
+framesUntilNextShift = 0
 pendingInputs = { left=0, right=0, A=0, B=0 }
 gameOver = false
 pcur = 0
@@ -34,7 +35,7 @@ pnext = 0
 
 -- Helper function because BCD is annoying
 function toDec(a)
-    return 10 * (a - (a % 16)) / 16 + (a % 16);
+    return 10 * (a - (a % 16)) / 16 + (a % 16)
 end
 
  -- This is where the board memory is accessed. Unfortunately lua is dumb so this table is 1 indexed (but stuff kept in memory is still 0 indexed :/)
@@ -51,20 +52,49 @@ end
 
 ------------------- Web Request Functions ----------------------
 
-function makeRequestToServer()
-  -- Encode the board. The chars '[' and ']' are replaced with 'u' and 'v', since Lua bungles the string encoding (reeee)
+function getEncodedBoard()
   local board = getBoard()
-  local requestStr = "http://localhost:3000/"
+  local encodedStr = ""
   for _, row in ipairs(board) do
     for _, value in ipairs(row) do
       if value == 239 then
-        requestStr = requestStr .. "0"
+        encodedStr = encodedStr .. "0"
       else
-        requestStr = requestStr .. "1"
+        encodedStr = encodedStr .. "1"
       end
     end
   end
+  return encodedStr
+end
 
+-- Make a request that will kick off a longer calculation. Subsequent frames will call checkForAsyncResult() to get the result.
+function requestPlacementAsync()
+  -- Format URL arguments
+  local requestStr = "http://localhost:3000/async-nb" .. getEncodedBoard()
+  requestStr = requestStr .. "/" .. orientToPiece[pcur] .. "/" .. orientToPiece[pnext] 
+  requestStr = requestStr .. "/" .. level .. "/" .. numLines
+
+  return makeHttpRequest(requestStr).data
+end
+
+function checkForAsyncResult()
+  local response = makeHttpRequest("http://localhost:3000/async-result")
+
+  -- Only use the response if the server indicated that it sent the async result
+  if response.code == 200 then
+    calculateInputs(response.data)
+  end
+end
+
+function requestPlacementSyncNoNextBox()
+  -- Format URL arguments
+  local requestStr = "http://localhost:3000/sync-nnb/" .. getEncodedBoard()
+  local requestStr = requestStr .. "/" .. orientToPiece[pcur] .. "/null/" .. level .. "/" .. numLines
+
+  return makeHttpRequest(requestStr).data
+end
+
+function makeHttpRequest(requestUrl)
   -- Helper function to compile the body of the web response
   local data = ""
   local function collect(chunk)
@@ -74,22 +104,14 @@ function makeRequestToServer()
     return true
   end
 
-  -- Make an HTTP Query
-  local level = 18
-  if numLines >= 230 then 
-    level = 29 
-  elseif numLines >= 130 then 
-    level = 19
-  end
-
-  requestStr = requestStr .. "/" .. orientToPiece[pcur] .. "/" .. orientToPiece[pnext] .. "/" .. level .. "/" .. numLines
   local ok, statusCode, headers, statusText = http.request {
     method = "GET",
-    url = requestStr,
+    url = requestUrl,
     sink = collect
   }
+  print("HTTP response:")
   print(data)
-  return data
+  return {data=data, code=statusCode}
 end
 
 function strsplit (inputstr, sep)
@@ -102,6 +124,8 @@ function strsplit (inputstr, sep)
   end
   return t
 end
+
+------------------- Handling inputs ----------------------
 
 function calculateInputs(result)
   -- Parse the shifts and rotations from the API result
@@ -128,9 +152,79 @@ function calculateInputs(result)
   end
 end
 
+function executeInputs()
+  if not gameOver then
+    local inputsThisFrame = {A=false, B=false, left=false, right=false, up=false, down=false, select=false, start=false}
+    if framesUntilNextShift == 0 then
+      -- Execute inputs on this frame
+      if pendingInputs.A > 0 then
+        inputsThisFrame.A = true
+        pendingInputs.A = pendingInputs.A - 1 -- (Imagine having a decrement operator in your language)
+      end
+      if pendingInputs.B > 0 then
+        inputsThisFrame.B = true
+        pendingInputs.B = pendingInputs.B - 1
+      end
+      if pendingInputs.left > 0 then
+        inputsThisFrame.left = true
+        pendingInputs.left = pendingInputs.left - 1
+      end
+      if pendingInputs.right > 0 then
+        inputsThisFrame.right = true
+        pendingInputs.right = pendingInputs.right - 1
+      end
 
---Main game loop.
-while true do
+      -- Reset das frame count to max
+      framesUntilNextShift = maxDas
+    else
+      framesUntilNextShift = framesUntilNextShift - 1
+    end
+
+    -- Send our computed inputs to the controller
+    joypad.set(1, inputsThisFrame)
+  end
+end
+
+
+-------------- Main game loop ------------
+
+
+function onFirstFrameOfNewPiece()
+  -- Read values from memory
+  pcur = memory.readbyte(0x0042) -- Stores current/next pieces before they even appear onscreen
+  pnext = memory.readbyte(0x0019)
+  numLines = toDec(memory.readbyte(0x0051)) * 100 + toDec(memory.readbyte(0x0050))
+  level = memory.readbyte(0x0044)
+  print("level " .. level)
+
+  -- Make a synchronous request to the server for the inital placement
+  if not gameOver then
+    local result = requestPlacementSyncNoNextBox()
+    if result ~= "No legal moves" then
+      calculateInputs(result)
+    end
+  end
+end
+
+-- Monitors the number of frames run per real clock second
+function getMs()
+  return socket.gettime()*1000
+end
+
+framesElapsed = 0
+secsElapsed = 0
+startTime = getMs()
+
+function trackAndLogFps()
+  framesElapsed = framesElapsed + 1
+  local msElapsed = getMs() - startTime
+  if msElapsed > (secsElapsed + 1) * 1000 then
+    secsElapsed = secsElapsed + 1
+    print("Average FPS:" .. framesElapsed / secsElapsed)
+  end
+end
+
+function beforeEachFrame()
   --Game starts
   if(gameState == 3 and memory.readbyte(0x00C0) == 4) then
     if(recordGames) then
@@ -146,7 +240,7 @@ while true do
   --Game ends, clean up data
   if(gameState == 4 and memory.readbyte(0x00C0) == 3) then
   gameOver = false
-  framesOfDasLeft = 0
+  framesUntilNextShift = 0
   if movie.active() then
       movie.stop()
       end
@@ -164,63 +258,11 @@ while true do
     if(memory.readbyte(0x0048) == 1) then
       -- First active frame for piece. This is where board state/input sequence is calculated
       if(playstate ~= 1 or backtrack) then
-          -- Check for killscreen (for my thing it would use this to top out immediately)
-        numLines = toDec(memory.readbyte(0x0051)) * 100 + toDec(memory.readbyte(0x0050))
-        -- if numLines > 229 then
-        --   gameOver = true
-        -- end
-        -- Gets current/next pieces before they even appear onscreen
-        pcur = memory.readbyte(0x0042)
-        pnext = memory.readbyte(0x0019)
-
-        if not gameOver then
-          -- local bestPlace = findMoves(orientToNum[pcur], orientToNum[pnext])
-          -- Returns extra stuff here
-          -- sequence, finalX, finalId = moveToSequence(placements, orientToNum[pcur])
-          local result = makeRequestToServer()
-          if result ~= "No legal moves" then
-            calculateInputs(result)
-          end
-        end
+        onFirstFrameOfNewPiece()
       end
 
       -- Execute input sequence
-      if not gameOver then
-        local inputsThisFrame = {A=false, B=false, left=false, right=false, up=false, down=false, select=false, start=false}
-        if framesOfDasLeft == 0 then
-          -- Execute inputs on this frame
-          if pendingInputs.A > 0 then
-            inputsThisFrame.A = true
-            pendingInputs.A = pendingInputs.A - 1 -- (Imagine having a decrement operator in your language)
-          end
-          if pendingInputs.B > 0 then
-            inputsThisFrame.B = true
-            pendingInputs.B = pendingInputs.B - 1
-          end
-          if pendingInputs.left > 0 then
-            inputsThisFrame.left = true
-            pendingInputs.left = pendingInputs.left - 1
-          end
-          if pendingInputs.right > 0 then
-            inputsThisFrame.right = true
-            pendingInputs.right = pendingInputs.right - 1
-          end
-
-          -- Reset das frame count to max
-          framesOfDasLeft = maxDas
-        else
-          framesOfDasLeft = framesOfDasLeft - 1
-        end
-
-        -- Send our computed inputs to the controller
-        joypad.set(1, inputsThisFrame)
-
-        -- if (orientToPiece[pcur] == "I" or orientToPiece[pcur] == "O") then
-        --   joypad.set(1, {A=true,B=false,left=false,right=true,up=false,down=false,select=false,start=false})
-        -- else
-        --   joypad.set(1, {A=false,B=false,left=true,right=false,up=false,down=false,select=false,start=false})
-        -- end
-      end
+      executeInputs()
 
     -- Do stuff right when the piece locks. If you want to check that the piece went to the correct spot/send an API request early here is probably good.
     elseif(memory.readbyte(0x0048) == 2 and playstate == 1) then     
@@ -237,5 +279,7 @@ while true do
   end
 
   playstate = memory.readbyte(0x0048)
-  emu.frameadvance()
+  trackAndLogFps()
 end
+
+emu.registerbefore(beforeEachFrame)
