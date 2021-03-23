@@ -27,7 +27,7 @@ function parseArguments(requestArgs) {
   // Decode the board
   const startingBoard = boardStr
     .match(/.{1,10}/g) // Select groups of 10 characters
-    .map((rowSerialized) => rowSerialized.split(""));
+    .map((rowSerialized) => rowSerialized.split("").map(x => parseInt(x)));
 
   return { startingBoard, currentPieceStr, nextPieceStr, level, lines };
 }
@@ -37,12 +37,9 @@ function parseArguments(requestArgs) {
  * @returns {string} the API response
  */
 function handleRequestSyncWithNoNextBox(requestArgs) {
-  let {
-    startingBoard,
-    currentPieceStr,
-    level,
-    lines,
-  } = parseArguments(requestArgs);
+  let { startingBoard, currentPieceStr, level, lines } = parseArguments(
+    requestArgs
+  );
 
   // Get the best move
   const bestMove = mainApp.getBestMoveNoSearch(
@@ -116,7 +113,8 @@ const server = http.createServer((req, res) => {
     response = handleRequestSyncWithNoNextBox(requestArgs);
   } else {
     response =
-      "Please specify the request type, e.g. 'sync-nnb' or 'async-nb'. Received: " + requestType;
+      "Please specify the request type, e.g. 'sync-nnb' or 'async-nb'. Received: " +
+      requestType;
   }
 
   console.log("\tElapsed for full request (ms):", Date.now() - startTimeMs);

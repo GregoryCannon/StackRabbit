@@ -134,7 +134,7 @@ function getBestMoveWithSearch(
       console.log(
         `\nCurrent move: ${possibility[0]}, ${possibility[1]}. Next move: ${innerBestMove[0]}, ${innerBestMove[1]}.`
       );
-      console.log("Final state eval:", innerBestMove[7]); // Log inner explanation
+      console.log("Final state eval:", innerBestMove[7], "mode:", aiMode); // Log inner explanation
       console.log(
         `\nSurface: ${innerBestMove[2]}, inner value: ${innerBestMove[6]}, original partial value: ${originalMovePartialValue}, \nFINAL TOTAL: ${totalValue}`
       );

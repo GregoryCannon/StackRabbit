@@ -15,12 +15,19 @@ const NUM_ROW = utils.NUM_ROW;
 const NUM_COLUMN = utils.NUM_COLUMN;
 
 function getAiMode(board, lines) {
+  console.log("---a");
   if (lines > 225) {
     return AI_MODE.NEAR_KILLSCREEN;
   }
-  if (hasHolesInRowRange(board, 0, NUM_ROW - 1)) {
-    return AI_MODE.DIG;
+  console.log("---b");
+  if (countHolesInRowRange(board, 0, NUM_ROW - 1, /* countCol10Holes= */ false) > 0) {
+    return AI_MODE.DIG_WITH_HOLES;
   }
+  console.log("---c");
+  if (hasNonRightWell(board)) {
+    return AI_MODE.DIG_NON_RIGHT_WELL;
+  }
+  console.log("---d");
   return AI_MODE.STANDARD;
 }
 
@@ -84,6 +91,21 @@ function getValueOfBoardSurfaceWithNextBox(surfaceArray, nextPieceId) {
   return lookUpRankInString(ranks_NextBox_NoBars_2, index - CUTOFF);
 }
 
+/** Checks if a board has a well that's not on the right. */
+function hasNonRightWell(board){
+  let row = NUM_ROW - 1;
+  while (row >= 0 && board[row][NUM_COLUMN - 1] == SquareState.FULL){
+    // If col 10 is full and there are any empty cells on other cols, this is true
+    for (let col = 0; col < NUM_COLUMN - 1; col++){
+      if (board[row][col] == SquareState.EMPTY){
+        return true
+      }
+    }
+    row--;
+  }
+  return false;
+}
+
 /**
  * Calculates the number of un-filled cells there are below the column 9 height.
  * These cells indicate cells that would need to be filled in before burning is possible.
@@ -120,7 +142,7 @@ function countLinesNeededUntilClean(board) {
     while (row < NUM_ROW - 1) {
       tempSet.add(row);
       row++;
-      if (board[row][col] == 0) {
+      if (board[row][col] === SquareState.EMPTY) {
         // If not on col 10, we found a hole. Add all the full rows we passed through to the set
         // of lines needing to be cleared
         for (const line of tempSet) {
@@ -178,23 +200,27 @@ function getHighLeftFactor(board, surfaceArray, scareHeight) {
  * @param {number} startRow - inclusive
  * @param {number} endRow - inclusive
  */
-function hasHolesInRowRange(board, startRow, endRow) {
-  for (let col = 0; col < NUM_COLUMN - 1; col++) {
+function countHolesInRowRange(board, startRow, endRow, countCol10Holes) {
+  let count = 0;
+
+  const colBound = (countCol10Holes ? NUM_COLUMN : NUM_COLUMN - 1);
+  for (let col = 0; col < colBound; col++) {
     // Navigate past the empty space above each column
     let row = 0;
-    while (row < NUM_ROW && board[row][col] == 0) {
+    while (row < NUM_ROW && board[row][col] === SquareState.EMPTY) {
       row++;
     }
 
     // Now that we're in the stack, if there are empty cells, they're holes
     while (row < endRow) {
       row++;
-      if (row >= startRow && board[row][col] == 0) {
-        return true;
+      if (row >= startRow && board[row][col] === SquareState.EMPTY) {
+        count += 1;
+        console.log(`Found hole at ${row}, ${col}`);
       }
     }
   }
-  return false;
+  return count;
 }
 
 /**
@@ -210,7 +236,7 @@ function isNotBuildingTowardTetris(board) {
   }
 
   // If there are any holes in the zone where you'd take the tetris, you're not building towards a tetris.
-  return hasHolesInRowRange(board, row - 4, row - 1);
+  return countHolesInRowRange(board, row - 4, row - 1, /* countCol10Holes= */ false) > 0;
 }
 
 function isTetrisReadyRightWell(board) {
@@ -247,7 +273,7 @@ function getValueOfPossibilityNoNextBox(
   possibility,
   level,
   lines,
-  currentMode,
+  aiMode,
   shouldLog,
   aiParams
 ) {
@@ -256,7 +282,7 @@ function getValueOfPossibilityNoNextBox(
     null,
     level,
     lines,
-    currentMode,
+    aiMode,
     shouldLog,
     aiParams
   );
@@ -271,7 +297,7 @@ function getValueOfPossibility(
   nextPieceId,
   level,
   lines,
-  currentMode,
+  aiMode,
   shouldLog,
   aiParams
 ) {
@@ -279,13 +305,13 @@ function getValueOfPossibility(
     _,
     __,
     surfaceArray,
-    numHoles,
+    ___,
     numLinesCleared,
     trialBoard,
   ] = possibility;
 
   if (!aiParams) {
-    console.log("RED ALERT", level, lines, currentMode, shouldLog, aiParams);
+    console.log("RED ALERT", level, lines, aiMode, shouldLog, aiParams);
   }
 
   // Preliminary calculations
@@ -309,6 +335,7 @@ function getValueOfPossibility(
   );
   const tetrisReady = isTetrisReadyRightWell(trialBoard);
   const notBuildingTowardsTetris = isNotBuildingTowardTetris(trialBoard);
+  const numHoles = countHolesInRowRange(trialBoard, 0, NUM_ROW - 1, /* countCol10Holes= */ aiMode === AI_MODE.DIG_WITH_HOLES)
 
   let extremeGapFactor = totalHeightCorrected * aiParams.EXTREME_GAP_PENALTY;
   let surfaceFactor;
@@ -366,7 +393,7 @@ function getValueOfPossibility(
   const explanation = `Surf: ${surfaceFactor}, Hole: ${holeFactor}, HoleWeight: ${holeWeightFactor}, ExtremeGap: ${extremeGapFactor}, LineClear: ${lineClearFactor}, MaxHeight: ${maxHeightFactor}, AvgHeight: ${avgHeightFactor}, Col10: ${col10Factor} Slope: ${slopingFactor} HighLeft: ${highLeftFactor}, TetrisReady: ${tetrisReadyFactor} NotBldgTwdTetris: ${notBuildingTowardsTetrisFactor}, Subtotal: ${totalValue}`;
   if (shouldLog) {
     console.log(
-      `---- Evaluating possiblity: ${possibility[0]} ${possibility[1]}\n`,
+      `---- Evaluated possiblity: ${possibility[0]} ${possibility[1]}, mode: ${aiMode}\n`,
       explanation
     );
   }
@@ -382,7 +409,7 @@ function pickBestNMoves(
   nextPieceId,
   level,
   lines,
-  currentMode,
+  aiMode,
   numMovesToConsider,
   aiParams
 ) {
@@ -392,7 +419,7 @@ function pickBestNMoves(
       nextPieceId,
       level,
       lines,
-      currentMode,
+      aiMode,
       /* shouldLog= */ false,
       aiParams
     );
@@ -413,7 +440,7 @@ function pickBestMoveNoNextBox(
   possibilityList,
   level,
   lines,
-  currentMode,
+  aiMode,
   shouldLog,
   aiParams
 ) {
@@ -425,7 +452,7 @@ function pickBestMoveNoNextBox(
       possibility,
       level,
       lines,
-      currentMode,
+      aiMode,
       shouldLog,
       aiParams
     );
