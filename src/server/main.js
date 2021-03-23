@@ -40,34 +40,35 @@ function getMostPromisingMoves(
   return { topN, aiMode, aiParams };
 }
 
-function getBestMoveNoNextBox(
-  startingBoard,
-  currentPieceId,
-  level,
-  lines,
-  shouldLog,
-  aiParams
-) {
-  const { topN, aiMode, aiParams } = getMostPromisingMoves(
-    startingBoard,
-    currentPieceId,
-    null,
-    level,
-    lines,
-    shouldLog,
-    aiParams
-  );
-  return topN ? topN[0] : null;
-}
-
-function getBestMoveWithNextMoveSearch(
+function getBestMoveNoSearch(
   startingBoard,
   currentPieceId,
   nextPieceId,
   level,
   lines,
   shouldLog,
-  aiParams
+  initialAiParams
+) {
+  let { topN } = getMostPromisingMoves(
+    startingBoard,
+    currentPieceId,
+    nextPieceId,
+    level,
+    lines,
+    shouldLog,
+    initialAiParams
+  );
+  return topN ? topN[0] : null;
+}
+
+function getBestMoveWithSearch(
+  startingBoard,
+  currentPieceId,
+  nextPieceId,
+  level,
+  lines,
+  shouldLog,
+  initialAiParams
 ) {
   const startTime = Date.now();
 
@@ -78,7 +79,7 @@ function getBestMoveWithNextMoveSearch(
     level,
     lines,
     shouldLog,
-    aiParams
+    initialAiParams
   );
 
   const time2 = Date.now();
@@ -158,4 +159,4 @@ function getBestMoveWithNextMoveSearch(
   return bestPossibilityAfterNextPiece;
 }
 
-module.exports = { getBestMoveWithNextMoveSearch, getBestMoveNoNextBox };
+module.exports = { getBestMoveWithSearch, getBestMoveNoSearch };
