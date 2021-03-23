@@ -15,19 +15,15 @@ const NUM_ROW = utils.NUM_ROW;
 const NUM_COLUMN = utils.NUM_COLUMN;
 
 function getAiMode(board, lines) {
-  console.log("---a");
   if (lines > 225) {
     return AI_MODE.NEAR_KILLSCREEN;
   }
-  console.log("---b");
   if (countHolesInRowRange(board, 0, NUM_ROW - 1, /* countCol10Holes= */ false) > 0) {
     return AI_MODE.DIG_WITH_HOLES;
   }
-  console.log("---c");
   if (hasNonRightWell(board)) {
     return AI_MODE.DIG_NON_RIGHT_WELL;
   }
-  console.log("---d");
   return AI_MODE.STANDARD;
 }
 
@@ -168,7 +164,7 @@ function countLinesNeededUntilClean(board) {
 function getNumberOfBlocksInColumn10(board) {
   let count = 0;
   for (let row = 0; row < utils.NUM_ROW; row++) {
-    if (board[row][9] == SquareState.FULL) {
+    if (board[row][NUM_COLUMN - 1] == SquareState.FULL) {
       const height = 20 - row;
       count += 1 + height / 6; // Count extra for high up blocks
     }
@@ -216,7 +212,6 @@ function countHolesInRowRange(board, startRow, endRow, countCol10Holes) {
       row++;
       if (row >= startRow && board[row][col] === SquareState.EMPTY) {
         count += 1;
-        console.log(`Found hole at ${row}, ${col}`);
       }
     }
   }
