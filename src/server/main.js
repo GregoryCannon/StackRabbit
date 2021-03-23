@@ -1,31 +1,12 @@
 const evaluator = require("./evaluator");
 const BoardHelper = require("./board_helper");
-const {
-  AI_MODE,
-  NUM_TO_CONSIDER,
-  DIG_MODIFICATIONS,
-  NEAR_KILLSCREEN_MODIFICATIONS,
-} = require("./params");
+const { NUM_TO_CONSIDER, modifyParamsForAiMode } = require("./params");
 
-function modifyParamsForAiMode(aiParams, aiMode) {
-  // Modify the AI params based on the AI mode
-  if (aiMode === AI_MODE.DIG) {
-    // Modify some of the evaluation weights based on the fact that we're digging
-    aiParams = JSON.parse(JSON.stringify(aiParams));
-    for (const key in DIG_MODIFICATIONS) {
-      aiParams[key] = DIG_MODIFICATIONS[key];
-    }
-  } else if (aiMode === AI_MODE.NEAR_KILLSCREEN) {
-    // Modify some of the evaluation weights based on the fact that we're near killscreen
-    aiParams = JSON.parse(JSON.stringify(aiParams));
-    for (const key in NEAR_KILLSCREEN_MODIFICATIONS) {
-      aiParams[key] = NEAR_KILLSCREEN_MODIFICATIONS[key];
-    }
-  }
-  return aiParams;
-}
-
-function getMove(
+/**
+ * Finds the N highest valued moves, without doing any search into placements of the next piece.
+ * Can be called with or without a next piece, and will function accordingly.
+ */
+function getMostPromisingMoves(
   startingBoard,
   currentPieceId,
   nextPieceId,
@@ -34,18 +15,17 @@ function getMove(
   shouldLog,
   aiParams
 ) {
-  const startTime = Date.now();
+  // Get the possible moves
   const possibilityList = BoardHelper.getPossibleMoves(
     startingBoard,
     currentPieceId,
     level,
     /* shouldLog= */ false && shouldLog
   );
+
+  // Get the AI mode (e.g. digging, scoring)
   const aiMode = evaluator.getAiMode(startingBoard, lines);
   aiParams = modifyParamsForAiMode(aiParams, aiMode);
-
-  const time2 = Date.now();
-  console.log("\tElapsed to get possible moves:", time2 - startTime);
 
   // Get the top contenders, sorted best -> worst
   const topN = evaluator.pickBestNMoves(
@@ -57,10 +37,52 @@ function getMove(
     NUM_TO_CONSIDER,
     aiParams
   );
+  return { topN, aiMode, aiParams };
+}
 
-  const time3 = Date.now();
-  console.log("\tElapsed to get N most promising moves:", time3 - time2);
+function getBestMoveNoNextBox(
+  startingBoard,
+  currentPieceId,
+  level,
+  lines,
+  shouldLog,
+  aiParams
+) {
+  const { topN, aiMode, aiParams } = getMostPromisingMoves(
+    startingBoard,
+    currentPieceId,
+    null,
+    level,
+    lines,
+    shouldLog,
+    aiParams
+  );
+  return topN ? topN[0] : null;
+}
 
+function getBestMoveWithNextMoveSearch(
+  startingBoard,
+  currentPieceId,
+  nextPieceId,
+  level,
+  lines,
+  shouldLog,
+  aiParams
+) {
+  const startTime = Date.now();
+
+  const { topN, aiMode, aiParams } = getMostPromisingMoves(
+    startingBoard,
+    currentPieceId,
+    nextPieceId,
+    level,
+    lines,
+    shouldLog,
+    aiParams
+  );
+
+  const time2 = Date.now();
+  console.log("\tElapsed to get N most promising moves:", time2 - startTime);
   if (shouldLog) {
     console.log("\n\n---------");
   }
@@ -120,7 +142,7 @@ function getMove(
   }
 
   // Log performance info
-  const msElapsedMoves = Date.now() - time3;
+  const msElapsedMoves = Date.now() - time2;
   console.log("\tElapsed per possibility:", msElapsedMoves / topN.length);
   console.log("\tElapsed on all moves:", msElapsedMoves);
 
@@ -136,4 +158,4 @@ function getMove(
   return bestPossibilityAfterNextPiece;
 }
 
-module.exports = { getMove };
+module.exports = { getBestMoveWithNextMoveSearch, getBestMoveNoNextBox };

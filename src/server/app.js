@@ -7,25 +7,75 @@ const params = require("./params");
 const evolution = require("./evolution");
 
 /**
- * Synchronously choose the best placement for a scenario, with the next piece known.
+ * Parses and validates the inputs
+ * @returns {Object} an object with all the parsed arguments
  */
-function handleRequestSyncWithNextBox(requestArgs) {
-  console.log("Starting handler: Sync with args");
-
+function parseArguments(requestArgs) {
   // Parse and validate inputs
   let [boardStr, currentPieceStr, nextPieceStr, level, lines] = requestArgs;
+
+  // Validate pieces
   currentPieceStr = currentPieceStr.toUpperCase();
+  nextPieceStr = nextPieceStr.toUpperCase();
   if (!["I", "O", "L", "J", "T", "S", "Z"].includes(currentPieceStr)) {
-    return "bad next piece:" + currentPieceStr;
+    throw new Error("Unknown current piece:" + currentPieceStr);
+  }
+  if (!["I", "O", "L", "J", "T", "S", "Z"].includes(nextPieceStr)) {
+    nextPieceStr = "";
   }
 
-  // Decode the board from the URL
+  // Decode the board
   const startingBoard = boardStr
-    .match(/.{1,10}/g)  // Select groups of 10 characters
+    .match(/.{1,10}/g) // Select groups of 10 characters
     .map((rowSerialized) => rowSerialized.split(""));
 
+  return { startingBoard, currentPieceStr, nextPieceStr, level, lines };
+}
+
+/**
+ * Synchronously choose the best placement, with no next box and no search.
+ * @returns {string} the API response
+ */
+function handleRequestSyncWithNoNextBox(requestArgs) {
+  let {
+    startingBoard,
+    currentPieceStr,
+    level,
+    lines,
+  } = parseArguments(requestArgs);
+
   // Get the best move
-  const bestMove = mainApp.getMove(
+  const bestMove = mainApp.getBestMoveNoSearch(
+    startingBoard,
+    currentPieceStr,
+    null,
+    level,
+    lines,
+    /* shouldLog= */ false,
+    params.getParams()
+  );
+
+  if (!bestMove) {
+    return "No legal moves";
+  }
+  return bestMove[0] + "," + bestMove[1];
+}
+
+/**
+ * Synchronously choose the best placement, with next piece & 1-depth search.
+ * @returns {string} the API response
+ */
+function handleRequestSyncWithNextBox(requestArgs) {
+  let {
+    startingBoard,
+    currentPieceStr,
+    nextPieceStr,
+    level,
+    lines,
+  } = parseArguments(requestArgs);
+
+  // Get the best move
+  const bestMove = mainApp.getBestMoveWithSearch(
     startingBoard,
     currentPieceStr,
     nextPieceStr,
@@ -58,13 +108,15 @@ const server = http.createServer((req, res) => {
   // Route the request to a handler function in this class
   if (requestType === "ping") {
     response = "pong";
-  } else if (requestType === "async") {
+  } else if (requestType === "async-nb") {
     // Incomplete
-  } else if (requestType === "sync") {
+  } else if (requestType === "sync-nb") {
     response = handleRequestSyncWithNextBox(requestArgs);
+  } else if (requestType === "sync-nnb") {
+    response = handleRequestSyncWithNoNextBox(requestArgs);
   } else {
     response =
-      "Please specify if the request is sync or async, e.g. /sync/00000...000/T/J/18/0";
+      "Please specify the request type, e.g. 'sync-nnb' or 'async-nb'. Received: " + requestType;
   }
 
   console.log("\tElapsed for full request (ms):", Date.now() - startTimeMs);
