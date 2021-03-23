@@ -44,8 +44,8 @@ function getMove(
   const aiMode = evaluator.getAiMode(startingBoard, lines);
   aiParams = modifyParamsForAiMode(aiParams, aiMode);
 
-  const time2 = Date.now()
-  console.log("Elapsed to get possible moves:", time2 - startTime);
+  const time2 = Date.now();
+  console.log("\tElapsed to get possible moves:", time2 - startTime);
 
   // Get the top contenders, sorted best -> worst
   const topN = evaluator.pickBestNMoves(
@@ -58,8 +58,8 @@ function getMove(
     aiParams
   );
 
-  const time3 = Date.now()
-  console.log("Elapsed to get N most promising moves:", time3 - time2);
+  const time3 = Date.now();
+  console.log("\tElapsed to get N most promising moves:", time3 - time2);
 
   if (shouldLog) {
     console.log("\n\n---------");
@@ -68,7 +68,7 @@ function getMove(
   // For each contender, place the next piece and maximize the resulting value
   let bestPossibilityAfterNextPiece = null;
   let bestValueAfterNextPiece = -999;
-  let bestIndex = 0;
+  let bestIndex = 0; // The rank of the best placement (in terms of the original 'promising-ness' sort)
   let i = 0;
   for (const possibility of topN) {
     i++;
@@ -88,6 +88,8 @@ function getMove(
       /* shouldLog= */ false && shouldLog,
       aiParams
     );
+
+    // Get a total score for this possibility (including line clears from the outer placement)
     if (innerBestMove == null) {
       continue;
     }
@@ -97,6 +99,14 @@ function getMove(
     );
     const totalValue = innerBestMove[6] + originalMovePartialValue;
 
+    // If new best, update local vars
+    if (totalValue > bestValueAfterNextPiece) {
+      bestValueAfterNextPiece = totalValue;
+      bestPossibilityAfterNextPiece = possibility;
+      bestIndex = i;
+    }
+
+    // Log details about the top-level possibility
     if (shouldLog) {
       console.log(
         `\nCurrent move: ${possibility[0]}, ${possibility[1]}. Next move: ${innerBestMove[0]}, ${innerBestMove[1]}.`
@@ -107,15 +117,12 @@ function getMove(
       );
       console.log("---------------------------------------------");
     }
-
-    if (totalValue > bestValueAfterNextPiece) {
-      bestValueAfterNextPiece = totalValue;
-      bestPossibilityAfterNextPiece = possibility;
-      bestIndex = i;
-    }
-
-    console.log("Elapsed from start of move eval to last move:", Date.now() - time2);
   }
+
+  // Log performance info
+  const msElapsedMoves = Date.now() - time3;
+  console.log("\tElapsed per possibility:", msElapsedMoves / topN.length);
+  console.log("\tElapsed on all moves:", msElapsedMoves);
 
   if (shouldLog && bestPossibilityAfterNextPiece) {
     console.log(

@@ -7,34 +7,21 @@ const params = require("./params");
 const evolution = require("./evolution");
 
 /**
- * Create HTTP server for the frontend to request
+ * Synchronously choose the best placement for a scenario, with the next piece known.
  */
-const server = http.createServer((req, res) => {
-  res.statusCode = 200;
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Content-Type", "text/plain");
+function handleRequestSyncWithNextBox(requestArgs) {
+  console.log("Starting handler: Sync with args");
 
-  const startTime = Date.now();
-
-  let [
-    _,
-    boardSerialized,
-    currentPieceStr,
-    nextPieceStr,
-    level,
-    lines,
-  ] = req.url.split("/");
-  // Check for bad inputs
+  // Parse and validate inputs
+  let [boardStr, currentPieceStr, nextPieceStr, level, lines] = requestArgs;
+  currentPieceStr = currentPieceStr.toUpperCase();
   if (!["I", "O", "L", "J", "T", "S", "Z"].includes(currentPieceStr)) {
-    return res.end("bad next piece:" + currentPieceStr);
+    return "bad next piece:" + currentPieceStr;
   }
-  console.log(req.url);
 
   // Decode the board from the URL
-  boardSerialized = boardSerialized.replace(/2|3/g, "1"); // Cleanse color data (1/2/3) to just 1s
-  // console.log(boardSerialized.match(/.{1,10}/g).join("\n"));
-  const startingBoard = boardSerialized
-    .match(/.{1,10}/g)
+  const startingBoard = boardStr
+    .match(/.{1,10}/g)  // Select groups of 10 characters
     .map((rowSerialized) => rowSerialized.split(""));
 
   // Get the best move
@@ -48,14 +35,41 @@ const server = http.createServer((req, res) => {
     params.getParams()
   );
 
-  const msElapsed = Date.now() - startTime;
-  console.log("Best move:", bestMove.slice(0,2))
-  console.log("Calculation time (ms):", msElapsed)
   if (!bestMove) {
-    return res.end("No legal moves");
+    return "No legal moves";
+  }
+  return bestMove[0] + "," + bestMove[1];
+}
+
+/**
+ * Create HTTP server for the frontend to request
+ */
+const server = http.createServer((req, res) => {
+  res.statusCode = 200;
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Content-Type", "text/plain");
+
+  console.log("\n-------------------------\n" + req.url);
+
+  let response;
+  const [_, requestType, ...requestArgs] = req.url.split("/");
+  const startTimeMs = Date.now(); // Save the start time for performance tracking
+
+  // Route the request to a handler function in this class
+  if (requestType === "ping") {
+    response = "pong";
+  } else if (requestType === "async") {
+    // Incomplete
+  } else if (requestType === "sync") {
+    response = handleRequestSyncWithNextBox(requestArgs);
+  } else {
+    response =
+      "Please specify if the request is sync or async, e.g. /sync/00000...000/T/J/18/0";
   }
 
-  res.end(bestMove[0] + "," + bestMove[1]);
+  console.log("\tElapsed for full request (ms):", Date.now() - startTimeMs);
+  console.log("Sending response:", response);
+  res.end(response);
 });
 
 server.listen(port, hostname, () => {

@@ -19,10 +19,13 @@ AIPlayer.prototype.placeCurrentPiece = async function (
   lines
 ) {
   const startTime = performance.now();
+  // Convert to 1D string of 0s and 1s
+  const encodedBoard = board
+    .map((row) => row.join(""))
+    .join("")
+    .replace(/2|3/g, "1");
   const result = await fetch(
-    `http://127.0.0.1:3000/${JSON.stringify(board)}/${piece.id}/${
-      nextPiece.id
-    }/${level}/${lines}`
+    `http://127.0.0.1:3000/sync/${encodedBoard}/${piece.id}/${nextPiece.id}/${level}/${lines}`
   );
   const endTime = performance.now();
   this.totalApiCalls++;
@@ -39,7 +42,7 @@ AIPlayer.prototype.placeCurrentPiece = async function (
   const bestRotationIndex = parseInt(resultArray[0]);
   const bestXOffset = parseInt(resultArray[1]);
 
-  console.log("best:", bestRotationIndex, bestXOffset, resultArray[2]);
+  console.log("best:", bestRotationIndex, bestXOffset);
 
   // Rotate the piece
   for (let i = 0; i < bestRotationIndex; i++) {
@@ -47,7 +50,7 @@ AIPlayer.prototype.placeCurrentPiece = async function (
   }
 
   // Shift the piece, with intermittent sleeps to slow it down.
-  // Note that the piece range it is allowed to go for is hardcoded in hang_checker.js, so its actual DAS speed is irrelevant
+  // Note that the piece range it's allowed to attempt is hardcoded in hang_checker.js, so its actual DAS speed is irrelevant
   const targetX = 3 + bestXOffset;
   const sleepDelay = level >= 29 ? 20 : 70;
   if (targetX > piece.getX()) {
