@@ -17,8 +17,8 @@ getId = {
 
 -- Where to put the fm2 files. Replace with an absolute path. to format movieName go to initSeedData
 recordGames = true
-moviePath = "C:\\Users\\Greg\\Desktop\\Ai"
-movieName = "TestMovie"
+moviePath = "C:\\Users\\Greg\\Desktop\\AI"
+movieName = "TestMovie3"
 
 -- Global state
 gameState = 0
@@ -166,9 +166,9 @@ while true do
       if(playstate ~= 1 or backtrack) then
           -- Check for killscreen (for my thing it would use this to top out immediately)
         numLines = toDec(memory.readbyte(0x0051)) * 100 + toDec(memory.readbyte(0x0050))
-        if numLines > 229 then
-          gameOver = true
-        end
+        -- if numLines > 229 then
+        --   gameOver = true
+        -- end
         -- Gets current/next pieces before they even appear onscreen
         pcur = memory.readbyte(0x0042)
         pnext = memory.readbyte(0x0019)
@@ -189,8 +189,6 @@ while true do
         local inputsThisFrame = {A=false, B=false, left=false, right=false, up=false, down=false, select=false, start=false}
         if framesOfDasLeft == 0 then
           -- Execute inputs on this frame
-          print("pending inputs")
-          print(pendingInputs)
           if pendingInputs.A > 0 then
             inputsThisFrame.A = true
             pendingInputs.A = pendingInputs.A - 1 -- (Imagine having a decrement operator in your language)
