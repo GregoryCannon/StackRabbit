@@ -1,6 +1,7 @@
 const AI_MODE = Object.freeze({
   STANDARD: "standard",
-  DIG: "dig",
+  DIG_WITH_HOLES: "dig_with_holes", // When digging and there are holes left
+  DIG_NON_RIGHT_WELL: "dig_non_right_well", // When digging and the only thing left is getting back to right well
   NEAR_KILLSCREEN: "near_killscreen",
 });
 
@@ -11,24 +12,28 @@ const NUM_TO_CONSIDER = 20;
 ---------------------------------*/
 
 function modifyParamsForAiMode(aiParams, aiMode) {
-  // Modify the AI params based on the AI mode
-  if (aiMode === AI_MODE.DIG) {
-    // Modify some of the evaluation weights based on the fact that we're digging
+  // Query for the object that lists all the modifications
+  const modObject =
+    aiMode === AI_MODE.DIG_WITH_HOLES
+      ? DIG_WITH_HOLES_MODIFICATIONS
+      : aiMode === AI_MODE.DIG_NON_RIGHT_WELL
+      ? DIG_NON_RIGHT_WELL_MODIFICATIONS
+      : aiMode === AI_MODE.NEAR_KILLSCREEN
+      ? NEAR_KILLSCREEN_MODIFICATIONS
+      : null;
+
+  // Apply modifications
+  if (modObject !== null) {
     aiParams = JSON.parse(JSON.stringify(aiParams));
-    for (const key in DIG_MODIFICATIONS) {
-      aiParams[key] = DIG_MODIFICATIONS[key];
-    }
-  } else if (aiMode === AI_MODE.NEAR_KILLSCREEN) {
-    // Modify some of the evaluation weights based on the fact that we're near killscreen
-    aiParams = JSON.parse(JSON.stringify(aiParams));
-    for (const key in NEAR_KILLSCREEN_MODIFICATIONS) {
-      aiParams[key] = NEAR_KILLSCREEN_MODIFICATIONS[key];
+    for (const key in modObject) {
+      aiParams[key] = modObject[key];
     }
   }
+
   return aiParams;
 }
 
-const DIG_MODIFICATIONS = {
+const DIG_WITH_HOLES_MODIFICATIONS = {
   BURN_PENALTY: 0,
   COL_10_PENALTY: 0,
   HOLE_WEIGHT_PENALTY: -3,
@@ -38,8 +43,16 @@ const DIG_MODIFICATIONS = {
   SLOPE_PENALTY_MULTIPLIER: 0,
 };
 
+const DIG_NON_RIGHT_WELL_MODIFICATIONS = {
+  BURN_PENALTY: 0,
+  HIGH_LEFT_MULTIPLIER: 0,
+  SLOPE_PENALTY_MULTIPLIER: 0,
+  COL_10_PENALTY: -6
+};
+
 const NEAR_KILLSCREEN_MODIFICATIONS = {
   BURN_PENALTY: -20,
+  TETRIS_READY_BONUS: 10
 };
 
 // Parameters to tweak
@@ -139,7 +152,7 @@ const v5_aggro = {
   AVG_HEIGHT_EXPONENT: 1.1556000000000004,
   AVG_HEIGHT_MULTIPLIER: -10.50624,
   BURN_PENALTY: -15, // changed
-  COL_10_PENALTY: -4.3, // changed
+  COL_10_PENALTY: -4.319999999999999,
   EXTREME_GAP_PENALTY: -1.6416000000000004,
   HIGH_LEFT_MULTIPLIER: 1.7280000000000004,
   HOLE_PENALTY: -19.8,
@@ -154,7 +167,7 @@ const v5_aggro = {
   SURFACE_MULTIPLIER: 0.2739200000000001,
   TETRIS_BONUS: 28.248,
   TETRIS_READY_BONUS: 5.909760000000001, // changed
-  TETRIS_READY_BONUS_BAR_NEXT: 15.36,
+  TETRIS_READY_BONUS_BAR_NEXT: 14.36, // changed
 };
 
 function getParams() {
