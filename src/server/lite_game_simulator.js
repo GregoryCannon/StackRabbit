@@ -44,7 +44,7 @@ function simulateGame(startingLevel, aiParams, presetPieceSequence, shouldLog) {
     const nextPieceId = pieceSequence[pieceIndex + 1];
 
     // Place one piece
-    const bestMove = mainApp.getMove(
+    const bestMove = mainApp.getBestMoveWithSearch(
       board,
       currentPieceId,
       nextPieceId,
@@ -91,7 +91,7 @@ function simulateGame(startingLevel, aiParams, presetPieceSequence, shouldLog) {
     );
     utils.logBoard(board);
   }
-  return [score, lines, level, pieceSequence];
+  return [score, lines, level];
 }
 
 /**
@@ -174,7 +174,7 @@ function runExperiment(numTrials) {
 }
 
 // regressionTest();
-// runExperiment(300);
+// runExperiment(100);
 
 module.exports = {
   simulateManyGames,
