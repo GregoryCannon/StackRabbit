@@ -15,7 +15,21 @@ let asyncResult = null;
  */
 function parseArguments(requestArgs) {
   // Parse and validate inputs
-  let [boardStr, currentPieceStr, nextPieceStr, level, lines] = requestArgs;
+  let [
+    boardStr,
+    currentPieceStr,
+    nextPieceStr,
+    level,
+    lines,
+    existingXOffset,
+    existingYOffset,
+    firstShiftDelay,
+  ] = requestArgs;
+  level = parseInt(level);
+  lines = parseInt(lines);
+  existingXOffset = parseInt(existingXOffset) || 0;
+  existingYOffset = parseInt(existingYOffset) || 0;
+  firstShiftDelay = parseInt(firstShiftDelay) || 0;
 
   // Validate pieces
   currentPieceStr = currentPieceStr.toUpperCase();
@@ -41,7 +55,16 @@ function parseArguments(requestArgs) {
     .match(/.{1,10}/g) // Select groups of 10 characters
     .map((rowSerialized) => rowSerialized.split("").map((x) => parseInt(x)));
 
-  return { startingBoard, currentPieceStr, nextPieceStr, level, lines };
+  return {
+    startingBoard,
+    currentPieceStr,
+    nextPieceStr,
+    level,
+    lines,
+    existingXOffset,
+    existingYOffset,
+    firstShiftDelay,
+  };
 }
 
 /**
@@ -74,9 +97,15 @@ function handleRequestAsyncWithNextBox(requestArgs) {
  * @returns {string} the API response
  */
 function handleRequestSyncNoNextBox(requestArgs) {
-  let { startingBoard, currentPieceStr, level, lines } = parseArguments(
-    requestArgs
-  );
+  let {
+    startingBoard,
+    currentPieceStr,
+    level,
+    lines,
+    existingXOffset,
+    existingYOffset,
+    firstShiftDelay,
+  } = parseArguments(requestArgs);
 
   // Get the best move
   const bestMove = mainApp.getBestMoveNoSearch(
@@ -85,6 +114,9 @@ function handleRequestSyncNoNextBox(requestArgs) {
     null,
     level,
     lines,
+    existingXOffset,
+    existingYOffset,
+    firstShiftDelay,
     /* shouldLog= */ false,
     params.getParams()
   );
@@ -106,6 +138,9 @@ function handleRequestSyncWithNextBox(requestArgs) {
     nextPieceStr,
     level,
     lines,
+    existingXOffset,
+    existingYOffset,
+    firstShiftDelay,
   } = parseArguments(requestArgs);
 
   // Get the best move
@@ -115,6 +150,9 @@ function handleRequestSyncWithNextBox(requestArgs) {
     nextPieceStr,
     level,
     lines,
+    existingXOffset,
+    existingYOffset,
+    firstShiftDelay,
     /* shouldLog= */ false,
     params.getParams()
   );

@@ -12,6 +12,9 @@ function getMostPromisingMoves(
   nextPieceId,
   level,
   lines,
+  existingXOffset,
+  existingYOffset,
+  firstShiftDelay,
   shouldLog,
   aiParams
 ) {
@@ -20,6 +23,9 @@ function getMostPromisingMoves(
     startingBoard,
     currentPieceId,
     level,
+    existingXOffset,
+    existingYOffset,
+    firstShiftDelay,
     /* shouldLog= */ false && shouldLog
   );
 
@@ -46,6 +52,9 @@ function getBestMoveNoSearch(
   nextPieceId,
   level,
   lines,
+  existingXOffset,
+  existingYOffset,
+  firstShiftDelay,
   shouldLog,
   initialAiParams
 ) {
@@ -55,6 +64,9 @@ function getBestMoveNoSearch(
     nextPieceId,
     level,
     lines,
+    existingXOffset,
+    existingYOffset,
+    firstShiftDelay,
     shouldLog,
     initialAiParams
   );
@@ -67,6 +79,9 @@ function getBestMoveWithSearch(
   nextPieceId,
   level,
   lines,
+  existingXOffset,
+  existingYOffset,
+  firstShiftDelay,
   shouldLog,
   initialAiParams
 ) {
@@ -78,13 +93,16 @@ function getBestMoveWithSearch(
     nextPieceId,
     level,
     lines,
+    existingXOffset,
+    existingYOffset,
+    firstShiftDelay,
     shouldLog,
     initialAiParams
   );
 
   const time2 = Date.now();
-  console.log("\tElapsed to get N most promising moves:", time2 - startTime);
   if (shouldLog) {
+    console.log("\tElapsed to get N most promising moves:", time2 - startTime);
     console.log("\n\n---------");
   }
 
@@ -101,6 +119,9 @@ function getBestMoveWithSearch(
       trialBoard,
       nextPieceId,
       level,
+      /* existingXOffset= */ 0,
+      /* existingYOffset= */ 0,
+      /* firstShiftDelay= */ 0,
       /* shouldLog= */ false && shouldLog
     );
     const innerBestMove = evaluator.pickBestMoveNoNextBox(
@@ -142,18 +163,19 @@ function getBestMoveWithSearch(
     }
   }
 
-  // Log performance info
-  const msElapsedMoves = Date.now() - time2;
-  console.log("\tElapsed per possibility:", msElapsedMoves / topN.length);
-  console.log("\tElapsed on all moves:", msElapsedMoves);
+  if (shouldLog) {
+    // Log performance info
+    const msElapsedMoves = Date.now() - time2;
+    console.log("\tElapsed per possibility:", msElapsedMoves / topN.length);
+    console.log("\tElapsed on all moves:", msElapsedMoves);
+  }
 
   if (shouldLog && bestPossibilityAfterNextPiece) {
     console.log(
       `\nSelected: ${bestPossibilityAfterNextPiece[0]}, ${bestPossibilityAfterNextPiece[1]}`
     );
+    console.log("# Candidates:", topN.length, "Selected rank:", bestIndex);
   }
-
-  console.log("# Candidates:", topN.length, "Selected:", bestIndex);
 
   // Send back the highest value move after the next piece is placed
   return bestPossibilityAfterNextPiece;

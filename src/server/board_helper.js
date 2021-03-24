@@ -97,11 +97,26 @@ function getBoardWithAddedPiece(board, currentRotationPiece, x, y) {
  * placing it in each possible rotation and each possible starting column, and then
  * dropping it into the stack and letting the result play out.
  */
-function getPossibleMoves(startingBoard, currentPieceId, level, shouldLog) {
+function getPossibleMoves(
+  startingBoard,
+  currentPieceId,
+  level,
+  existingXOffset,
+  existingYOffset,
+  firstShiftDelay,
+  shouldLog
+) {
   const rotationsList = PIECE_LOOKUP[currentPieceId][0];
-  const { rangesLeft, rangesRight } = getPieceRanges(currentPieceId, startingBoard, level);
-  const STARTING_X = 3;
-  const STARTING_Y = currentPieceId == "I" ? -2 : -1;
+  const STARTING_X = 3 + existingXOffset;
+  const STARTING_Y = (currentPieceId == "I" ? -2 : -1) + existingYOffset;
+  const { rangesLeft, rangesRight } = getPieceRanges(
+    currentPieceId,
+    startingBoard,
+    level,
+    STARTING_X,
+    STARTING_Y,
+    firstShiftDelay
+  );
 
   const possibilityList = []; // list of [rotationId, xOffset, columnHeightsStr]
   for (
@@ -110,7 +125,11 @@ function getPossibleMoves(startingBoard, currentPieceId, level, shouldLog) {
     rotationIndex++
   ) {
     const currentRotationPiece = rotationsList[rotationIndex];
-    for (let xOffset = rangesLeft[rotationIndex]; xOffset <= rangesRight[rotationIndex]; xOffset++) {
+    for (
+      let xOffset = rangesLeft[rotationIndex];
+      xOffset <= rangesRight[rotationIndex];
+      xOffset++
+    ) {
       const x = STARTING_X + xOffset;
       let y = STARTING_Y;
 
@@ -163,7 +182,20 @@ function getPossibleMoves(startingBoard, currentPieceId, level, shouldLog) {
   return possibilityList;
 }
 
-function repeatedlyShift(offsetX, board, initialX, initialY, maxGravity, maxArr, rotationsList) {
+/**
+ * Helper function for getPieceRanges that shifts a hypothetical piece as many times as it can in
+ * each direction, before it hits the stack or the edge of the screen.
+ */
+function repeatedlyShift(
+  offsetX,
+  board,
+  initialX,
+  initialY,
+  firstShiftDelay,
+  maxGravity,
+  maxArr,
+  rotationsList
+) {
   const ranges = [];
 
   for (
@@ -178,7 +210,7 @@ function repeatedlyShift(offsetX, board, initialX, initialY, maxGravity, maxArr,
     let x = initialX;
     let y = initialY;
     let gravityCounter = maxGravity;
-    let arrCounter = 0;
+    let arrCounter = firstShiftDelay;
     while (true) {
       // Run a simulated 'frame' of gravity, shifting, and collision checking
       if (arrCounter == 0) {
@@ -211,21 +243,48 @@ function repeatedlyShift(offsetX, board, initialX, initialY, maxGravity, maxArr,
   return ranges;
 }
 
-function getPieceRanges(pieceId, board, level) {
-  utils.logBoard(board);
-  const initialX = 3;
-  const initialY = pieceId === "I" ? -2 : -1;
+/**
+ * Calculates how far in each direction a hypothetical piece can be tapped (for each rotation), given the AI's tap speed and
+ * the piece's current position.
+ */
+function getPieceRanges(
+  pieceId,
+  board,
+  level,
+  initialX,
+  initialY,
+  firstShiftDelay
+) {
   const maxGravity = utils.GetGravity(level) - 1; // 0-indexed, executes on the 0 frame. e.g. 2... 1... 0(shift).. 2... 1... 0(shift)
   const maxArr = AI_TAP_ARR - 1;
   const rotationsList = PIECE_LOOKUP[pieceId][0];
 
   // Piece ranges, indexed by rotation index
-  const rangesLeft = repeatedlyShift(-1, board, initialX, initialY, maxGravity, maxArr, rotationsList);
-  const rangesRight = repeatedlyShift(1, board, initialX, initialY, maxGravity, maxArr, rotationsList);
+  const rangesLeft = repeatedlyShift(
+    -1,
+    board,
+    initialX,
+    initialY,
+    firstShiftDelay,
+    maxGravity,
+    maxArr,
+    rotationsList
+  );
+  const rangesRight = repeatedlyShift(
+    1,
+    board,
+    initialX,
+    initialY,
+    firstShiftDelay,
+    maxGravity,
+    maxArr,
+    rotationsList
+  );
   return { rangesLeft, rangesRight };
 }
 
-function getBoardAtHeight(height) {
+/** Helper method for testing. */
+function getTestBoardWithHeight(height) {
   const board = [];
   for (let i = 0; i < NUM_ROW; i++) {
     board.push(
@@ -236,6 +295,8 @@ function getBoardAtHeight(height) {
   }
   return board;
 }
+
+// getPossibleMoves(getTestBoardWithHeight(8), "I", 19, 0, 6, true);
 
 module.exports = {
   getPossibleMoves,
