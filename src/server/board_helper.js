@@ -1,9 +1,9 @@
 const PIECE_LOOKUP = require("../tetrominoes").PIECE_LOOKUP;
 const utils = require("./utils");
-const hangChecker = require("./hang_checker");
 const NUM_COLUMN = utils.NUM_COLUMN;
 const NUM_ROW = utils.NUM_ROW;
 const SquareState = utils.SquareState;
+const AI_TAP_ARR = utils.AI_TAP_ARR;
 
 // Collision function
 function pieceCollision(board, x, y, piece) {
@@ -99,7 +99,7 @@ function getBoardWithAddedPiece(board, currentRotationPiece, x, y) {
  */
 function getPossibleMoves(startingBoard, currentPieceId, level, shouldLog) {
   const rotationsList = PIECE_LOOKUP[currentPieceId][0];
-
+  const { rangesLeft, rangesRight } = getPieceRanges(currentPieceId, startingBoard, level);
   const STARTING_X = 3;
   const STARTING_Y = currentPieceId == "I" ? -2 : -1;
 
@@ -110,7 +110,7 @@ function getPossibleMoves(startingBoard, currentPieceId, level, shouldLog) {
     rotationIndex++
   ) {
     const currentRotationPiece = rotationsList[rotationIndex];
-    for (const xOffset of [-5, -4, -3, -2, -1, 0, 1, 2, 3, 4]) {
+    for (let xOffset = rangesLeft[rotationIndex]; xOffset <= rangesRight[rotationIndex]; xOffset++) {
       const x = STARTING_X + xOffset;
       let y = STARTING_Y;
 
@@ -127,22 +127,6 @@ function getPossibleMoves(startingBoard, currentPieceId, level, shouldLog) {
       // Move the piece down until it hits the stack
       while (!pieceCollision(startingBoard, x, y + 1, currentRotationPiece)) {
         y++;
-      }
-
-      // If this placement is out of range, ignore.
-      if (
-        !hangChecker.canMakePlacement(
-          currentPieceId,
-          rotationIndex,
-          currentRotationPiece,
-          xOffset,
-          y,
-          startingBoard,
-          level,
-          shouldLog
-        )
-      ) {
-        continue;
       }
 
       // Make a new board with that piece locked in
@@ -179,6 +163,114 @@ function getPossibleMoves(startingBoard, currentPieceId, level, shouldLog) {
   return possibilityList;
 }
 
+function repeatedlyShift(offsetX, board, initialX, initialY, maxGravity, maxArr, rotationsList) {
+  const ranges = [];
+
+  for (
+    let rotationIndex = 0;
+    rotationIndex < rotationsList.length;
+    rotationIndex++
+  ) {
+    const currentRotationPiece = rotationsList[rotationIndex];
+
+    // Search left/right based on offset X
+    let rangeCurrent = 0;
+    let x = initialX;
+    let y = initialY;
+    let gravityCounter = maxGravity;
+    let arrCounter = 0;
+    while (true) {
+      // run a 'frame' of gravity, shifting, and collision checking
+      console.log("New frame");
+      if (arrCounter == 0) {
+        if (pieceCollision(board, x + offsetX, y, currentRotationPiece)) {
+          console.log(`Breaking due to collision at ${x - 1}, ${y}`);
+          break; // We're done, can't go any further left
+        }
+        x += offsetX;
+        rangeCurrent += offsetX;
+        console.log("shift left:", rangeCurrent);
+        arrCounter = maxArr;
+      } else {
+        arrCounter--;
+      }
+
+      if (gravityCounter == 0) {
+        if (pieceCollision(board, x, y + 1, currentRotationPiece)) {
+          // Piece would lock in
+          console.log(`Piece locking at: ${x},${y + 1}`);
+          break;
+        }
+        y++;
+        console.log("shift down:", y);
+        gravityCounter = maxGravity;
+      } else {
+        gravityCounter--;
+      }
+    }
+    console.log("New range:", rangeCurrent);
+    utils.logBoard(
+      getBoardWithAddedPiece(board, currentRotationPiece, x, y)[0]
+    );
+    ranges.push(rangeCurrent);
+  }
+  return ranges;
+}
+
+function getPieceRanges(pieceId, board, level) {
+  utils.logBoard(board);
+  const initialX = 3;
+  const initialY = pieceId === "I" ? -2 : -1;
+  const maxGravity = utils.GetGravity(level) - 1; // 0-indexed, executes on the 0 frame. e.g. 2... 1... 0(shift).. 2... 1... 0(shift)
+  const maxArr = AI_TAP_ARR - 1;
+  const rotationsList = PIECE_LOOKUP[pieceId][0];
+
+  // Piece ranges, indexed by rotation index
+  const rangesLeft = repeatedlyShift(-1, board, initialX, initialY, maxGravity, maxArr, rotationsList);
+  const rangesRight = repeatedlyShift(1, board, initialX, initialY, maxGravity, maxArr, rotationsList);
+  return { rangesLeft, rangesRight };
+}
+
+const TEST_BOARD = [
+  [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  [0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+  [0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+  [0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+  [0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+  [0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+  [0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+  [1, 1, 1, 1, 1, 1, 1, 1, 1, 0],
+  [1, 1, 1, 1, 1, 1, 1, 1, 1, 0],
+  [1, 1, 1, 1, 1, 1, 1, 1, 1, 0],
+  [1, 1, 1, 1, 1, 1, 1, 1, 1, 0],
+  [1, 1, 1, 1, 1, 1, 1, 1, 1, 0],
+  [1, 1, 1, 1, 1, 1, 1, 1, 1, 0],
+  [1, 1, 1, 1, 1, 1, 1, 1, 1, 0],
+  [1, 1, 1, 1, 1, 1, 1, 1, 1, 0],
+];
+
+// console.log("Piece ranges:", getPieceRanges("O", getBoardAtHeight(11), 19));
+// console.log("Piece ranges:", getPieceRanges("O", TEST_BOARD, 19));
+
+function getBoardAtHeight(height) {
+  const board = [];
+  for (let i = 0; i < NUM_ROW; i++) {
+    board.push(
+      i < NUM_ROW - height
+        ? [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        : [1, 1, 1, 1, 1, 1, 1, 1, 1, 0]
+    );
+  }
+  return board;
+}
+
 module.exports = {
-  getPossibleMoves: getPossibleMoves,
+  getPossibleMoves,
+  getBoardWithAddedPiece,
+  pieceCollision,
 };

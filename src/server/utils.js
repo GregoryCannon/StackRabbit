@@ -1,9 +1,43 @@
 const NUM_ROW = 20;
 const NUM_COLUMN = 10;
+const AI_TAP_ARR = 5; // 12.5 Hz tapping
 const SquareState = Object.freeze({
   EMPTY: 0,
   FULL: 1,
 });
+
+function GetGravity(level) {
+  const GRAVITY = {
+    0: 48,
+    1: 43,
+    2: 38,
+    3: 33,
+    4: 28,
+    5: 23,
+    6: 18,
+    7: 13,
+    8: 8,
+    9: 6,
+    10: 5,
+    11: 5,
+    12: 5,
+    13: 4,
+    14: 4,
+    15: 4,
+    16: 3,
+    17: 3,
+    18: 3,
+    19: 2,
+    29: 1,
+  };
+  if (level <= 18) {
+    return GRAVITY[level];
+  } else if (level < 29) {
+    return 2;
+  } else {
+    return 1;
+  }
+}
 
 function _getSurfaceArrayAndHoleCount(board) {
   const heights = [];
@@ -100,7 +134,9 @@ function logBoard(board) {
 module.exports = {
   NUM_ROW,
   NUM_COLUMN,
+  AI_TAP_ARR,
   SquareState,
+  GetGravity,
   getSurfaceArray,
   getHoleCount: getHoleCount,
   hasValidHeightDifferences: hasInvalidHeightDifferences,
