@@ -36,7 +36,7 @@ gameState = 0
 playstate = 0
 numLines = 0
 
-maxDas = 3 -- the ARR minus 1
+numFramesBetweenShifts = 4 -- the ARR minus 1
 maxFramesUntilAdjustment = 12
 waitingOnAsyncRequest = false
 gameOver = false
@@ -79,12 +79,52 @@ function getEncodedBoard()
   return encodedStr
 end
 
+function getGravity(level)
+  if level <= 8 then
+    return 8 -- We don't really care about hyper-optimizing low levels
+  elseif level == 9 then
+    return 6
+  elseif level <= 12 then
+    return 5
+  elseif level <= 15 then
+    return 4
+  elseif level <= 18 then
+    return 3
+  elseif level <= 28 then
+    return 2
+  else
+    return 1
+  end
+end
+
+-- Based on the current placement, predict exactly where the piece will be when it's time to adjust it
+function predictPieceOffsetAtAdjustmentTime()
+  local ARR = numFramesBetweenShifts + 1
+  local framesElapsed = maxFramesUntilAdjustment
+
+  local numInputStepsCompleted = math.ceil(framesElapsed / ARR)
+  local numGravityStepsCompleted = math.floor(framesElapsed / getGravity(level))
+
+  offsetXAtAdjustmentTime = 0
+  offsetYAtAdjustmentTime = numGravityStepsCompleted
+  arrCounterAdjustmentTime = numInputStepsCompleted * ARR - framesElapsed
+
+  if pendingInputs.left > 0 then
+    offsetXAtAdjustmentTime = -1 * math.min(numInputStepsCompleted, pendingInputs.left)
+  elseif pendingInputs.right > 0 then
+    offsetXAtAdjustmentTime = math.min(numInputStepsCompleted, pendingInputs.right)
+  end
+end
+
+
+
 -- Make a request that will kick off a longer calculation. Subsequent frames will call checkForAsyncResult() to get the result.
 function requestPlacementAsync()
   -- Format URL arguments
   local requestStr = "http://localhost:3000/async-nb/" .. getEncodedBoard()
   requestStr = requestStr .. "/" .. orientToPiece[pcur] .. "/" .. orientToPiece[pnext] 
   requestStr = requestStr .. "/" .. level .. "/" .. numLines
+  requestStr = requestStr .. "/" .. offsetXAtAdjustmentTime .. "/" .. offsetYAtAdjustmentTime .. "/" .. arrCounterAdjustmentTime
 
   waitingOnAsyncRequest = true
   return makeHttpRequest(requestStr).data
@@ -96,6 +136,7 @@ function checkForAsyncResult()
   -- Only use the response if the server indicated that it sent the async result
   if response.code == 200 then
     adjustmentApiResult = response.data
+    print("Adjustment: " .. adjustmentApiResult)
     waitingOnAsyncRequest = false
   end
 end
@@ -103,7 +144,7 @@ end
 function requestPlacementSyncNoNextBox()
   -- Format URL arguments
   local requestStr = "http://localhost:3000/sync-nnb/" .. getEncodedBoard()
-  local requestStr = requestStr .. "/" .. orientToPiece[pcur] .. "/null/" .. level .. "/" .. numLines
+  local requestStr = requestStr .. "/" .. orientToPiece[pcur] .. "/null/" .. level .. "/" .. numLines .. "/0/0"
 
   return makeHttpRequest(requestStr).data
 end
@@ -149,7 +190,7 @@ function calculateInputs(apiResult)
   -- Parse the shifts and rotations from the API result
   local split = strsplit(apiResult, ",")
   -- Offset by the amount of any existing inputs
-  local numShifts = tonumber(split[2]) - shiftsExecuted
+  local numShifts = tonumber(split[2])
   local numRightRotations = (tonumber(split[1]) - rotationsExecuted) % 4
 
   pendingInputs = { left = 0, right = 0, A = 0, B = 0 }
@@ -166,12 +207,17 @@ function calculateInputs(apiResult)
   else
     pendingInputs.A = numRightRotations
   end
+
+  print(pendingInputs)
 end
 
 function executeInputs()
   if not gameOver then
     -- Either perform adjustment or decrement the adjustment countdown
-    if framesUntilAdjustment == 0 then
+    if framesUntilAdjustment == 0 and adjustmentApiResult ~= nil then
+      if shiftsExecuted ~= offsetXAtAdjustmentTime then
+        print("Actual X offset: " .. shiftsExecuted .. " predicted: " .. offsetXAtAdjustmentTime .. " Diff: " .. offsetXAtAdjustmentTime - shiftsExecuted)
+      end
       calculateInputs(adjustmentApiResult)
       framesUntilAdjustment = -1
     elseif framesUntilAdjustment > 0 then
@@ -186,27 +232,32 @@ function executeInputs()
         inputsThisFrame.A = true
         pendingInputs.A = pendingInputs.A - 1 -- (Imagine having a decrement operator in your language)
         rotationsExecuted = (rotationsExecuted + 1) % 4
-      end
-      if pendingInputs.B > 0 and not stuckAgainstWall then
+        framesUntilNextShift = numFramesBetweenShifts
+      elseif pendingInputs.B > 0 and not stuckAgainstWall then
         inputsThisFrame.B = true
         pendingInputs.B = pendingInputs.B - 1
         rotationsExecuted = (rotationsExecuted - 1) % 4
+        framesUntilNextShift = numFramesBetweenShifts
       end
       if pendingInputs.left > 0 then
         inputsThisFrame.left = true
         pendingInputs.left = pendingInputs.left - 1
         shiftsExecuted = shiftsExecuted - 1
-      end
-      if pendingInputs.right > 0 then
+        framesUntilNextShift = numFramesBetweenShifts
+      elseif pendingInputs.right > 0 then
         inputsThisFrame.right = true
         pendingInputs.right = pendingInputs.right - 1
         shiftsExecuted = shiftsExecuted + 1
+        framesUntilNextShift = numFramesBetweenShifts
       end
-
-      -- Reset das frame count to max
-      framesUntilNextShift = maxDas
     else
       framesUntilNextShift = framesUntilNextShift - 1
+    end
+
+    if inputsThisFrame.left or inputsThisFrame.right then
+      print("SHIFT" .. emu.framecount())
+    else
+      print("nextShift: " .. framesUntilNextShift)
     end
 
     -- Send our computed inputs to the controller
@@ -232,7 +283,9 @@ function trackAndLogFps()
   local msElapsed = getMs() - startTime
   if msElapsed > (secsElapsed + 1) * 1000 then
     secsElapsed = secsElapsed + 1
-    print("Average FPS:" .. framesElapsed / secsElapsed)
+    if secsElapsed % 30 == 0 then
+      print("Average FPS:" .. framesElapsed / secsElapsed)
+    end
   end
 end
 
@@ -241,6 +294,39 @@ end
 ---------- Main Game Loop  ------------- 
 ------------------------------------]]--
 
+function runGameFrame()
+  if(memory.readbyte(0x0048) == 1) then
+    if(playstate ~= 1 or backtrack) then
+      -- First active frame for piece. This is where board state/input sequence is calculated
+      onFirstFrameOfNewPiece()
+
+      -- Initiate a request for good adjustments
+      predictPieceOffsetAtAdjustmentTime()
+      requestPlacementAsync()
+      waitingOnAsyncRequest = true
+    else
+      -- Subsequent frames where the piece is active
+      if waitingOnAsyncRequest then
+        checkForAsyncResult()
+      end
+    end
+
+    -- Execute input sequence
+    executeInputs()
+
+  -- Do stuff right when the piece locks. If you want to check that the piece went to the correct spot/send an API request early here is probably good.
+  elseif(memory.readbyte(0x0048) == 2 and playstate == 1) then     
+    print("pieceLock" .. emu.framecount())
+  -- Detects when the game is over.
+  elseif memory.readbyte(0x0048) == 10 then
+      gameOver = true
+
+  -- Resets the index for the next piece. Disables user input when the game is not over.
+  elseif not gameOver or recording then
+    pendingInputs = { left=0, right=0, A=0, B=0 }
+    joypad.set(1, {A=false,B=false,left=false,right=false,up=false,down=false,select=false,start=false})
+  end
+end
 
 function onFirstFrameOfNewPiece()
   -- Read values from memory
@@ -249,14 +335,26 @@ function onFirstFrameOfNewPiece()
   numLines = toDec(memory.readbyte(0x0051)) * 100 + toDec(memory.readbyte(0x0050))
   level = memory.readbyte(0x0044)
   
+  print("------" .. orientToPiece[pcur] .. "------")
+
   resetPieceScopedVars()
   
   if not gameOver then
     -- Make a synchronous request to the server for the inital placement
     local apiResult = requestPlacementSyncNoNextBox()
+    if apiResult == "" then
+      print("ERROR - backend not connected!")
+    end
+    print("Initial placement: " .. apiResult)
     calculateInputs(apiResult)
   end
 end
+
+
+--[[-------------------------------------------------------- 
+---------- Non-Gameplay Per-Frame Calculations ------------- 
+--------------------------------------------------------]]--
+
 
 function beforeEachFrame()
   --Game starts
@@ -289,35 +387,7 @@ function beforeEachFrame()
   end
 
   if(gameState == 4) then
-    if(memory.readbyte(0x0048) == 1) then
-      if(playstate ~= 1 or backtrack) then
-        -- First active frame for piece. This is where board state/input sequence is calculated
-        onFirstFrameOfNewPiece()
-      else
-        -- Subsequent frames where the piece is active
-        if waitingOnAsyncRequest then
-          checkForAsyncResult()
-        elseif adjustmentApiResult == nil and not waitingOnAsyncRequest then
-          requestPlacementAsync()
-          waitingOnAsyncRequest = true
-        end
-      end
-
-      -- Execute input sequence
-      executeInputs()
-
-    -- Do stuff right when the piece locks. If you want to check that the piece went to the correct spot/send an API request early here is probably good.
-    elseif(memory.readbyte(0x0048) == 2 and playstate == 1) then     
-    
-    -- Detects when the game is over.
-    elseif memory.readbyte(0x0048) == 10 then
-        gameOver = true
-    
-    -- Resets the index for the next piece. Disables user input when the game is not over.
-    elseif not gameOver or recording then
-      pendingInputs = { left=0, right=0, A=0, B=0 }
-      joypad.set(1, {A=false,B=false,left=false,right=false,up=false,down=false,select=false,start=false})
-    end
+    runGameFrame()
   end
 
   playstate = memory.readbyte(0x0048)
