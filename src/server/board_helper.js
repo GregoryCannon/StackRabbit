@@ -180,16 +180,13 @@ function repeatedlyShift(offsetX, board, initialX, initialY, maxGravity, maxArr,
     let gravityCounter = maxGravity;
     let arrCounter = 0;
     while (true) {
-      // run a 'frame' of gravity, shifting, and collision checking
-      console.log("New frame");
+      // Run a simulated 'frame' of gravity, shifting, and collision checking
       if (arrCounter == 0) {
         if (pieceCollision(board, x + offsetX, y, currentRotationPiece)) {
-          console.log(`Breaking due to collision at ${x - 1}, ${y}`);
           break; // We're done, can't go any further left
         }
         x += offsetX;
         rangeCurrent += offsetX;
-        console.log("shift left:", rangeCurrent);
         arrCounter = maxArr;
       } else {
         arrCounter--;
@@ -198,20 +195,17 @@ function repeatedlyShift(offsetX, board, initialX, initialY, maxGravity, maxArr,
       if (gravityCounter == 0) {
         if (pieceCollision(board, x, y + 1, currentRotationPiece)) {
           // Piece would lock in
-          console.log(`Piece locking at: ${x},${y + 1}`);
           break;
         }
         y++;
-        console.log("shift down:", y);
         gravityCounter = maxGravity;
       } else {
         gravityCounter--;
       }
     }
-    console.log("New range:", rangeCurrent);
-    utils.logBoard(
-      getBoardWithAddedPiece(board, currentRotationPiece, x, y)[0]
-    );
+    // utils.logBoard(
+    //   getBoardWithAddedPiece(board, currentRotationPiece, x, y)[0]
+    // );
     ranges.push(rangeCurrent);
   }
   return ranges;
@@ -230,32 +224,6 @@ function getPieceRanges(pieceId, board, level) {
   const rangesRight = repeatedlyShift(1, board, initialX, initialY, maxGravity, maxArr, rotationsList);
   return { rangesLeft, rangesRight };
 }
-
-const TEST_BOARD = [
-  [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-  [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-  [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-  [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-  [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-  [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-  [0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
-  [0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
-  [0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
-  [0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
-  [0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
-  [0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
-  [1, 1, 1, 1, 1, 1, 1, 1, 1, 0],
-  [1, 1, 1, 1, 1, 1, 1, 1, 1, 0],
-  [1, 1, 1, 1, 1, 1, 1, 1, 1, 0],
-  [1, 1, 1, 1, 1, 1, 1, 1, 1, 0],
-  [1, 1, 1, 1, 1, 1, 1, 1, 1, 0],
-  [1, 1, 1, 1, 1, 1, 1, 1, 1, 0],
-  [1, 1, 1, 1, 1, 1, 1, 1, 1, 0],
-  [1, 1, 1, 1, 1, 1, 1, 1, 1, 0],
-];
-
-// console.log("Piece ranges:", getPieceRanges("O", getBoardAtHeight(11), 19));
-// console.log("Piece ranges:", getPieceRanges("O", TEST_BOARD, 19));
 
 function getBoardAtHeight(height) {
   const board = [];
