@@ -186,7 +186,7 @@ function getPossibleMoves(
  * Helper function for getPieceRanges that shifts a hypothetical piece as many times as it can in
  * each direction, before it hits the stack or the edge of the screen.
  */
-function repeatedlyShift(
+function repeatedlyShiftPiece(
   offsetX,
   board,
   initialX,
@@ -194,53 +194,40 @@ function repeatedlyShift(
   firstShiftDelay,
   maxGravity,
   maxArr,
-  rotationsList
+  currentRotationPiece
 ) {
-  const ranges = [];
+  // Search left/right based on offset X
+  let rangeCurrent = 0;
+  let x = initialX;
+  let y = initialY;
+  let gravityCounter = maxGravity;
+  let arrCounter = firstShiftDelay;
 
-  for (
-    let rotationIndex = 0;
-    rotationIndex < rotationsList.length;
-    rotationIndex++
-  ) {
-    const currentRotationPiece = rotationsList[rotationIndex];
-
-    // Search left/right based on offset X
-    let rangeCurrent = 0;
-    let x = initialX;
-    let y = initialY;
-    let gravityCounter = maxGravity;
-    let arrCounter = firstShiftDelay;
-    while (true) {
-      // Run a simulated 'frame' of gravity, shifting, and collision checking
-      if (arrCounter == 0) {
-        if (pieceCollision(board, x + offsetX, y, currentRotationPiece)) {
-          break; // We're done, can't go any further left
-        }
-        x += offsetX;
-        rangeCurrent += offsetX;
-        arrCounter = maxArr;
-      } else {
-        arrCounter--;
+  while (true) {
+    // Run a simulated 'frame' of gravity, shifting, and collision checking
+    if (gravityCounter == 0) {
+      if (pieceCollision(board, x, y + 1, currentRotationPiece)) {
+        // Piece would lock in
+        break;
       }
-
-      if (gravityCounter == 0) {
-        if (pieceCollision(board, x, y + 1, currentRotationPiece)) {
-          // Piece would lock in
-          break;
-        }
-        y++;
-        gravityCounter = maxGravity;
-      } else {
-        gravityCounter--;
-      }
+      y++;
+      gravityCounter = maxGravity;
+    } else {
+      gravityCounter--;
     }
-    // utils.logBoard(
-    //   getBoardWithAddedPiece(board, currentRotationPiece, x, y)[0]
-    // );
-    ranges.push(rangeCurrent);
+
+    if (arrCounter == 0) {
+      if (pieceCollision(board, x + offsetX, y, currentRotationPiece)) {
+        break; // We're done, can't go any further left
+      }
+      x += offsetX;
+      rangeCurrent += offsetX;
+      arrCounter = maxArr;
+    } else {
+      arrCounter--;
+    }
   }
-  return ranges;
+  return rangeCurrent;
 }
 
 /**
@@ -260,27 +247,74 @@ function getPieceRanges(
   const rotationsList = PIECE_LOOKUP[pieceId][0];
 
   // Piece ranges, indexed by rotation index
-  const rangesLeft = repeatedlyShift(
-    -1,
-    board,
-    initialX,
-    initialY,
-    firstShiftDelay,
-    maxGravity,
-    maxArr,
-    rotationsList
-  );
-  const rangesRight = repeatedlyShift(
-    1,
-    board,
-    initialX,
-    initialY,
-    firstShiftDelay,
-    maxGravity,
-    maxArr,
-    rotationsList
-  );
+  const rangesLeft = [];
+  for (const currentRotationPiece of rotationsList) {
+    rangesLeft.push(
+      repeatedlyShiftPiece(
+        -1,
+        board,
+        initialX,
+        initialY,
+        firstShiftDelay,
+        maxGravity,
+        maxArr,
+        currentRotationPiece
+      )
+    );
+  }
+  const rangesRight = [];
+  for (const currentRotationPiece of rotationsList) {
+    rangesRight.push(
+      repeatedlyShiftPiece(
+        1,
+        board,
+        initialX,
+        initialY,
+        firstShiftDelay,
+        maxGravity,
+        maxArr,
+        currentRotationPiece
+      )
+    );
+  }
   return { rangesLeft, rangesRight };
+}
+
+function getBoardHeightAtColumn(board, col) {
+  let row = 0;
+  while (row < NUM_ROW && board[row][col] == 0) {
+    row++;
+  }
+  return 20 - row;
+}
+
+function boardHasInaccessibileLeft(board, level) {
+  // If left is built out, we're fine
+  if (getBoardHeightAtColumn(board, 0) > getBoardHeightAtColumn(board, 1)) {
+    return false;
+  }
+
+  const maxGravity = utils.GetGravity(level) - 1; // 0-indexed, executes on the 0 frame. e.g. 2... 1... 0(shift).. 2... 1... 0(shift)
+  const maxArr = AI_TAP_ARR - 1;
+  const currentRotationPiece = PIECE_LOOKUP["I"][0][1];
+  const vertIPieceRangeLeft = repeatedlyShiftPiece(-1, board, 3, -2, 0, maxGravity, maxArr, currentRotationPiece)
+  
+  return vertIPieceRangeLeft !== -5;
+}
+
+function boardHasInaccessibileRight(board, level) {
+  // If left is built out, we're fine
+  if (getBoardHeightAtColumn(board, NUM_COLUMN-1) > getBoardHeightAtColumn(board, NUM_COLUMN - 2)) {
+    return false;
+  }
+
+  const maxGravity = utils.GetGravity(level) - 1; // 0-indexed, executes on the 0 frame. e.g. 2... 1... 0(shift).. 2... 1... 0(shift)
+  const maxArr = AI_TAP_ARR - 1;
+  const currentRotationPiece = PIECE_LOOKUP["I"][0][1];
+  const vertIPieceRangeRight = repeatedlyShiftPiece(1, board, 3, -2, 0, maxGravity, maxArr, currentRotationPiece)
+  
+  console.log(vertIPieceRangeRight);
+  return vertIPieceRangeRight !== 4;
 }
 
 /** Helper method for testing. */
@@ -297,6 +331,8 @@ function getTestBoardWithHeight(height) {
 }
 
 // getPossibleMoves(getTestBoardWithHeight(8), "I", 19, 0, 6, true);
+// console.log(boardHasInaccessibileLeft(getTestBoardWithHeight(9), 19));
+// console.log(boardHasInaccessibileRight(getTestBoardWithHeight(10), 19));
 
 module.exports = {
   getPossibleMoves,
