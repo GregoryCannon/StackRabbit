@@ -72,7 +72,7 @@ BoardGenerator.prototype.loadDigBoard = function () {
     }
 
     for (let i = 0; i < numHoles; i++) {
-      this.board[row][getRandomInt(0, NUM_COLUMN)] = SquareState.EMPTY;
+      this.board[row][getRandomInt(0, NUM_COLUMN - 1)] = SquareState.EMPTY;
     }
   }
 };
