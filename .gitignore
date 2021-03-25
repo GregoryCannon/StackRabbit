@@ -1,5 +1,9 @@
-# Raw files
+# Manually added
 raw_data/
+*.txt
+*.exe
+*.c
+.vscode/
 
 # Logs
 logs
