@@ -1,19 +1,12 @@
 local http = require("socket.http")
+local os = require("os")
 require "socket"
 
 -- Config constants
-FRAMES_BETWEEN_SHIFTS = 4 -- the ARR minus 1, e.g. 3 delay -> 15 Hz, 4 delay -> 12.5 Hz
+FRAMES_BETWEEN_SHIFTS = 3 -- the ARR minus 1, e.g. 3 delay -> 15 Hz, 4 delay -> 12.5 Hz
 REACTION_TIME_FRAMES = 12
-
--- Convenience functions to translate internal Piece IDs to actual piece types
---T: 2 J: 7 Z: 9 O: 10 S: 11 L: 15 I: 18
-orientToPiece = {[0]="none", [2]="T", [7]="J", [8]="Z", [10]="O", [11]="S", [14]="L", [18]="I"}
-orientToNum = {[0]="none", [2]=1, [7]=2, [8]=3, [10]=4, [11]=5, [14]=6, [18]=7}
-
--- Where to put the fm2 files. Replace with an absolute path. to format movieName go to initSeedData
-recordGames = true
-moviePath = "C:\\Users\\Greg\\Desktop\\AI"
-movieName = "TestMovie3"
+SHOULD_RECORD_GAMES = true
+MOVIE_PATH = "C:\\Users\\Greg\\Desktop\\VODs\\" -- Where to store the fm2 VODS (absolute path)
 
 -- Global state
 gameState = 0
@@ -37,6 +30,10 @@ end
 --[[--------------------------------------- 
 ------------ Helper Functions ------------- 
 ---------------------------------------]]--
+
+-- Translate internal Piece IDs to actual piece types (T: 2 J: 7 Z: 9 O: 10 S: 11 L: 15 I: 18)
+orientToPiece = {[0]="none", [2]="T", [7]="J", [8]="Z", [10]="O", [11]="S", [14]="L", [18]="I"}
+orientToNum = {[0]="none", [2]=1, [7]=2, [8]=3, [10]=4, [11]=5, [14]=6, [18]=7}
 
  -- This is where the board memory is accessed. Unfortunately lua is dumb so this table is 1 indexed (but stuff kept in memory is still 0 indexed :/)
 function getBoard()
@@ -321,7 +318,7 @@ function runGameFrame()
     end
 
     -- Execute input sequence
-    executeInputs()
+    -- executeInputs()
 
   -- Do stuff right when the piece locks. If you want to check that the piece went to the correct spot/send an API request early here is probably good.
   elseif(memory.readbyte(0x0048) == 2 and playstate == 1) then     
@@ -371,8 +368,12 @@ end
 function beforeEachFrame()
   --Game starts
   if(gameState == 3 and memory.readbyte(0x00C0) == 4) then
-    if(recordGames) then
-      movie.record(moviePath .. movieName .. ".fm2", 1, "gregcannon")
+    if(SHOULD_RECORD_GAMES) then
+      local dateStr = os.date("%m-%d %H %M")
+      print(dateStr)
+      movieName = "StackRabbit" .. dateStr
+      print(movieName)
+      movie.record(MOVIE_PATH .. movieName .. ".fm2", 1, "gregcannon")
     end
   end
 
@@ -388,7 +389,6 @@ function beforeEachFrame()
   if movie.active() then
       movie.stop()
       end
-  movieName = ""
   end
 
   --Update gameState
@@ -406,4 +406,4 @@ function beforeEachFrame()
   trackAndLogFps()
 end
 
-emu.registerbefore(beforeEachFrame)
+emu.registerafter(beforeEachFrame)
