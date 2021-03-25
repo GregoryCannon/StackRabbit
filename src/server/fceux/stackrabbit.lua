@@ -1,30 +1,14 @@
 local http = require("socket.http")
 require "socket"
 
+-- Config constants
+FRAMES_BETWEEN_SHIFTS = 4 -- the ARR minus 1, e.g. 3 delay -> 15 Hz, 4 delay -> 12.5 Hz
+REACTION_TIME_FRAMES = 12
+
 -- Convenience functions to translate internal Piece IDs to actual piece types
 --T: 2 J: 7 Z: 9 O: 10 S: 11 L: 15 I: 18
 orientToPiece = {[0]="none", [2]="T", [7]="J", [8]="Z", [10]="O", [11]="S", [14]="L", [18]="I"}
 orientToNum = {[0]="none", [2]=1, [7]=2, [8]=3, [10]=4, [11]=5, [14]=6, [18]=7}
--- Give piece type, then piece orient and get the internal piece id. Starts with the spawn orientation and goes ccw from there
-getId = {
-  {2, 1, 0, 3},
-  {7, 6, 5, 4},
-  {8, 9},
-  {10},
-  {11, 12},
-  {14, 13, 16, 15},
-  {18, 17}
-}
-
--- Reset all variables whose values are tied to one piece
-function resetPieceScopedVars()
-  adjustmentApiResult = nil
-  framesUntilAdjustment = maxFramesUntilAdjustment
-  framesUntilNextShift = 0
-  pendingInputs = { left=0, right=0, A=0, B=0 }
-  shiftsExecuted = 0
-  rotationsExecuted = 0
-end
 
 -- Where to put the fm2 files. Replace with an absolute path. to format movieName go to initSeedData
 recordGames = true
@@ -35,18 +19,24 @@ movieName = "TestMovie3"
 gameState = 0
 playstate = 0
 numLines = 0
-
-numFramesBetweenShifts = 4 -- the ARR minus 1
-maxFramesUntilAdjustment = 12
 waitingOnAsyncRequest = false
 gameOver = false
 pcur = 0
 pnext = 0
 
--- Helper function because BCD is annoying
-function toDec(a)
-    return 10 * (a - (a % 16)) / 16 + (a % 16)
+-- Reset all variables whose values are tied to one piece
+function resetPieceScopedVars()
+  adjustmentApiResult = nil
+  framesUntilAdjustment = REACTION_TIME_FRAMES
+  framesUntilNextShift = 0
+  pendingInputs = { left=0, right=0, A=0, B=0 }
+  shiftsExecuted = 0
+  rotationsExecuted = 0
 end
+
+--[[--------------------------------------- 
+------------ Helper Functions ------------- 
+---------------------------------------]]--
 
  -- This is where the board memory is accessed. Unfortunately lua is dumb so this table is 1 indexed (but stuff kept in memory is still 0 indexed :/)
 function getBoard()
@@ -59,10 +49,6 @@ function getBoard()
   end
   return levelMap
 end
-
---[[------------------------------------ 
------------ HTTP Requests -------------- 
-------------------------------------]]--
 
 function getEncodedBoard()
   local board = getBoard()
@@ -99,37 +85,50 @@ end
 
 -- Based on the current placement, predict exactly where the piece will be when it's time to adjust it
 function predictPieceOffsetAtAdjustmentTime()
-  local ARR = numFramesBetweenShifts + 1
-  local framesElapsed = maxFramesUntilAdjustment
+  local ARR = FRAMES_BETWEEN_SHIFTS + 1
+  local framesElapsed = REACTION_TIME_FRAMES
 
   local numInputStepsCompleted = math.ceil(framesElapsed / ARR)
   local numGravityStepsCompleted = math.floor(framesElapsed / getGravity(level))
 
-  offsetXAtAdjustmentTime = 0
   offsetYAtAdjustmentTime = numGravityStepsCompleted
   arrCounterAdjustmentTime = numInputStepsCompleted * ARR - framesElapsed
 
+  -- Calculate how many of the pending shifts it will have completed by that point
+  offsetXAtAdjustmentTime = 0
   if pendingInputs.left > 0 then
     offsetXAtAdjustmentTime = -1 * math.min(numInputStepsCompleted, pendingInputs.left)
   elseif pendingInputs.right > 0 then
     offsetXAtAdjustmentTime = math.min(numInputStepsCompleted, pendingInputs.right)
   end
+
+  -- Calculate how many of the pending rotations it will have completed by that point
+  rotationAtAdjustmentTime = 0
+  if pendingInputs.B == 1 and numInputStepsCompleted >= 1 then
+    rotationAtAdjustmentTime = 3
+  elseif pendingInputs.A > 0 then
+    rotationAtAdjustmentTime = math.min(numInputStepsCompleted, pendingInputs.A)
+  end
 end
 
 
+--[[------------------------------------ 
+----------- HTTP Requests -------------- 
+------------------------------------]]--
 
 -- Make a request that will kick off a longer calculation. Subsequent frames will call checkForAsyncResult() to get the result.
 function requestPlacementAsync()
   -- Format URL arguments
   local requestStr = "http://localhost:3000/async-nb/" .. getEncodedBoard()
-  requestStr = requestStr .. "/" .. orientToPiece[pcur] .. "/" .. orientToPiece[pnext] 
-  requestStr = requestStr .. "/" .. level .. "/" .. numLines
+  requestStr = requestStr .. "/" .. orientToPiece[pcur] .. "/" .. orientToPiece[pnext] .. "/" .. level .. "/" .. numLines
   requestStr = requestStr .. "/" .. offsetXAtAdjustmentTime .. "/" .. offsetYAtAdjustmentTime .. "/" .. arrCounterAdjustmentTime
+  requestStr = requestStr .. "/" .. rotationAtAdjustmentTime
 
   waitingOnAsyncRequest = true
   return makeHttpRequest(requestStr).data
 end
 
+-- Check if the async computation has finished, and if so make the adjustment based on it
 function checkForAsyncResult()
   local response = makeHttpRequest("http://localhost:3000/async-result")
 
@@ -141,6 +140,7 @@ function checkForAsyncResult()
   end
 end
 
+-- Synchronously get a placement from the server, with no next piece data
 function requestPlacementSyncNoNextBox()
   -- Format URL arguments
   local requestStr = "http://localhost:3000/sync-nnb/" .. getEncodedBoard()
@@ -148,6 +148,7 @@ function requestPlacementSyncNoNextBox()
 
   return makeHttpRequest(requestStr).data
 end
+
 
 function makeHttpRequest(requestUrl)
   -- Helper function to compile the body of the web response
@@ -167,7 +168,8 @@ function makeHttpRequest(requestUrl)
   return {data=data, code=statusCode}
 end
 
-function strsplit (inputstr, sep)
+-- Implementation of string split that I definitely didn't find on stack overflow
+function splitString (inputstr, sep)
   if sep == nil then
           sep = "%s"
   end
@@ -188,7 +190,7 @@ function calculateInputs(apiResult)
   end
 
   -- Parse the shifts and rotations from the API result
-  local split = strsplit(apiResult, ",")
+  local split = splitString(apiResult, ",")
   -- Offset by the amount of any existing inputs
   local numShifts = tonumber(split[2])
   local numRightRotations = (tonumber(split[1]) - rotationsExecuted) % 4
@@ -225,38 +227,45 @@ function executeInputs()
     end
 
     local inputsThisFrame = {A=false, B=false, left=false, right=false, up=false, down=false, select=false, start=false}
-    local stuckAgainstWall = shiftsExecuted == -5 or shiftsExecuted == 4
+    local stuckAgainstWall = shiftsExecuted == -5 or shiftsExecuted == 4 -- Can't rotate due to NES's lack of kick functionality
+
     if framesUntilNextShift == 0 then
-      -- Execute inputs on this frame
-      if pendingInputs.A > 0 and not stuckAgainstWall then
-        inputsThisFrame.A = true
-        pendingInputs.A = pendingInputs.A - 1 -- (Imagine having a decrement operator in your language)
-        rotationsExecuted = (rotationsExecuted + 1) % 4
-        framesUntilNextShift = numFramesBetweenShifts
-      elseif pendingInputs.B > 0 and not stuckAgainstWall then
-        inputsThisFrame.B = true
-        pendingInputs.B = pendingInputs.B - 1
-        rotationsExecuted = (rotationsExecuted - 1) % 4
-        framesUntilNextShift = numFramesBetweenShifts
+      local function execute(inputName)
+        inputsThisFrame[inputName] = true
+        pendingInputs[inputName] = pendingInputs[inputName] - 1  -- Imagine having a decrement operator in your language
+        -- Reset ARR counter
+        framesUntilNextShift = FRAMES_BETWEEN_SHIFTS
       end
+
+      -- Execute one rotation if any pending
+      if pendingInputs.A > 0 and not stuckAgainstWall then
+        execute("A")
+        rotationsExecuted = (rotationsExecuted + 1) % 4
+      elseif pendingInputs.B > 0 and not stuckAgainstWall then
+        execute("B")
+        rotationsExecuted = (rotationsExecuted - 1) % 4
+      end
+      -- Execute one shift if any pending
       if pendingInputs.left > 0 then
         inputsThisFrame.left = true
         pendingInputs.left = pendingInputs.left - 1
         shiftsExecuted = shiftsExecuted - 1
-        framesUntilNextShift = numFramesBetweenShifts
+        framesUntilNextShift = FRAMES_BETWEEN_SHIFTS
       elseif pendingInputs.right > 0 then
         inputsThisFrame.right = true
         pendingInputs.right = pendingInputs.right - 1
         shiftsExecuted = shiftsExecuted + 1
-        framesUntilNextShift = numFramesBetweenShifts
+        framesUntilNextShift = FRAMES_BETWEEN_SHIFTS
       end
     else
+      -- Not ready yet, decrement counter
       framesUntilNextShift = framesUntilNextShift - 1
     end
 
+    -- Debug logs
     if inputsThisFrame.left or inputsThisFrame.right then
       print("SHIFT" .. emu.framecount())
-    else
+    elseif pendingInputs.left > 0 or pendingInputs.right > 0 then
       print("nextShift: " .. framesUntilNextShift)
     end
 
@@ -330,9 +339,12 @@ end
 
 function onFirstFrameOfNewPiece()
   -- Read values from memory
+  local function bcdToDecimal(a)
+    return 10 * (a - (a % 16)) / 16 + (a % 16)
+  end
   pcur = memory.readbyte(0x0042) -- Stores current/next pieces before they even appear onscreen
   pnext = memory.readbyte(0x0019)
-  numLines = toDec(memory.readbyte(0x0051)) * 100 + toDec(memory.readbyte(0x0050))
+  numLines = bcdToDecimal(memory.readbyte(0x0051)) * 100 + bcdToDecimal(memory.readbyte(0x0050))
   level = memory.readbyte(0x0044)
   
   print("------" .. orientToPiece[pcur] .. "------")
