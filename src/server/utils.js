@@ -1,6 +1,6 @@
 const NUM_ROW = 20;
 const NUM_COLUMN = 10;
-const AI_TAP_ARR = 5; // 12.5 Hz tapping
+const AI_TAP_ARR = 4; // 12.5 Hz tapping
 const SquareState = Object.freeze({
   EMPTY: 0,
   FULL: 1,
@@ -120,6 +120,17 @@ function getAverageColumnHeight(board) {
   return totalHeight / 8;
 }
 
+/** Checks if clearing a certain number of lines will increase the level, and if so what that level is. */
+function getLevelAfterLineClears(level, lines, numLinesCleared) {
+  if (level === 18 && lines + numLinesCleared >= 130) {
+    return 19;
+  }
+  if (level === 28 && lines + numLinesCleared > 230) {
+    return 29;
+  }
+  return level;
+}
+
 function logBoard(board) {
   console.log(" -- Board start -- ");
   for (let r = 0; r < NUM_ROW; r++) {
@@ -144,4 +155,5 @@ module.exports = {
   getAverageColumnHeight,
   logBoard,
   correctSurfaceForExtremeGaps,
+  getLevelAfterLineClears,
 };

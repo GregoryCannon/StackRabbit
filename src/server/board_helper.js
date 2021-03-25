@@ -205,17 +205,6 @@ function repeatedlyShiftPiece(
 
   while (true) {
     // Run a simulated 'frame' of gravity, shifting, and collision checking
-    if (gravityCounter == 0) {
-      if (pieceCollision(board, x, y + 1, currentRotationPiece)) {
-        // Piece would lock in
-        break;
-      }
-      y++;
-      gravityCounter = maxGravity;
-    } else {
-      gravityCounter--;
-    }
-
     if (arrCounter == 0) {
       if (pieceCollision(board, x + offsetX, y, currentRotationPiece)) {
         break; // We're done, can't go any further left
@@ -225,6 +214,17 @@ function repeatedlyShiftPiece(
       arrCounter = maxArr;
     } else {
       arrCounter--;
+    }
+
+    if (gravityCounter == 0) {
+      if (pieceCollision(board, x, y + 1, currentRotationPiece)) {
+        // Piece would lock in
+        break;
+      }
+      y++;
+      gravityCounter = maxGravity;
+    } else {
+      gravityCounter--;
     }
   }
   return rangeCurrent;
@@ -297,23 +297,43 @@ function boardHasInaccessibileLeft(board, level) {
   const maxGravity = utils.GetGravity(level) - 1; // 0-indexed, executes on the 0 frame. e.g. 2... 1... 0(shift).. 2... 1... 0(shift)
   const maxArr = AI_TAP_ARR - 1;
   const currentRotationPiece = PIECE_LOOKUP["I"][0][1];
-  const vertIPieceRangeLeft = repeatedlyShiftPiece(-1, board, 3, -2, 0, maxGravity, maxArr, currentRotationPiece)
-  
+  const vertIPieceRangeLeft = repeatedlyShiftPiece(
+    -1,
+    board,
+    3,
+    -2,
+    0,
+    maxGravity,
+    maxArr,
+    currentRotationPiece
+  );
+
   return vertIPieceRangeLeft !== -5;
 }
 
 function boardHasInaccessibileRight(board, level) {
   // If left is built out, we're fine
-  if (getBoardHeightAtColumn(board, NUM_COLUMN-1) > getBoardHeightAtColumn(board, NUM_COLUMN - 2)) {
+  if (
+    getBoardHeightAtColumn(board, NUM_COLUMN - 1) >
+    getBoardHeightAtColumn(board, NUM_COLUMN - 2)
+  ) {
     return false;
   }
 
   const maxGravity = utils.GetGravity(level) - 1; // 0-indexed, executes on the 0 frame. e.g. 2... 1... 0(shift).. 2... 1... 0(shift)
   const maxArr = AI_TAP_ARR - 1;
   const currentRotationPiece = PIECE_LOOKUP["I"][0][1];
-  const vertIPieceRangeRight = repeatedlyShiftPiece(1, board, 3, -2, 0, maxGravity, maxArr, currentRotationPiece)
-  
-  console.log(vertIPieceRangeRight);
+  const vertIPieceRangeRight = repeatedlyShiftPiece(
+    1,
+    board,
+    3,
+    -2,
+    0,
+    maxGravity,
+    maxArr,
+    currentRotationPiece
+  );
+
   return vertIPieceRangeRight !== 4;
 }
 
@@ -338,4 +358,6 @@ module.exports = {
   getPossibleMoves,
   getBoardWithAddedPiece,
   pieceCollision,
+  boardHasInaccessibileLeft,
+  boardHasInaccessibileRight,
 };

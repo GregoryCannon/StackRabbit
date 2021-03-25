@@ -145,6 +145,8 @@ const v5_resultParams = {
   TETRIS_BONUS: 28.248,
   TETRIS_READY_BONUS: 5.909760000000001,
   TETRIS_READY_BONUS_BAR_NEXT: 15.36,
+  INACCESSIBLE_LEFT_PENALTY: -20, // Added manually since didn't exist at time of training
+  INACCESSIBLE_RIGHT_PENALTY: -200, // Added manually since didn't exist at time of training
 };
 
 // Manually tuned from v5_resultParams
@@ -168,10 +170,12 @@ const v5_aggro = {
   TETRIS_BONUS: 28.248,
   TETRIS_READY_BONUS: 5.909760000000001,
   TETRIS_READY_BONUS_BAR_NEXT: 14.36, // changed
+  INACCESSIBLE_LEFT_PENALTY: -20,
+  INACCESSIBLE_RIGHT_PENALTY: -200,
 };
 
 function getParams() {
-  return v5_resultParams;
+  return v5_aggro;
 }
 
 module.exports = {

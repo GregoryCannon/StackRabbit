@@ -114,9 +114,10 @@ function getBestMoveWithSearch(
   for (const possibility of topN) {
     i++;
     // Place the next piece in each possibility
-    const trialBoard = possibility[5];
+    const boardAfterOuterMove = possibility[5];
+    const linesClearedOuterMove = possibility[4];
     const innerPossibilityList = BoardHelper.getPossibleMoves(
-      trialBoard,
+      boardAfterOuterMove,
       nextPieceId,
       level,
       /* existingXOffset= */ 0,
@@ -138,7 +139,7 @@ function getBestMoveWithSearch(
       continue;
     }
     const originalMovePartialValue = evaluator.getLineClearValue(
-      possibility[4],
+      linesClearedOuterMove,
       aiParams
     );
     const totalValue = innerBestMove[6] + originalMovePartialValue;

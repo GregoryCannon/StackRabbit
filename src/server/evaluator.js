@@ -1,5 +1,6 @@
 const fs = require("fs");
 const { AI_MODE } = require("./params");
+const boardHelper = require("./board_helper");
 
 const ranks_NoNextBox_NoBars = fs.readFileSync(
   "docs/condensed_NoNextBox_NoBars.txt",
@@ -306,7 +307,7 @@ function getValueOfPossibility(
   shouldLog,
   aiParams
 ) {
-  const [_, __, surfaceArray, ___, numLinesCleared, trialBoard] = possibility;
+  const [_, __, surfaceArray, ___, numLinesCleared, boardAfter] = possibility;
 
   if (!aiParams) {
     console.log("RED ALERT", level, lines, aiMode, shouldLog, aiParams);
@@ -325,19 +326,32 @@ function getValueOfPossibility(
       : aiParams.SCARE_HEIGHT_18;
   const maxHeightAboveScareLine = Math.max(
     0,
-    utils.getMaxColumnHeight(trialBoard) - scareHeight
+    utils.getMaxColumnHeight(boardAfter) - scareHeight
   );
   const avgHeightAboveScareLine = Math.max(
     0,
-    utils.getAverageColumnHeight(trialBoard) - scareHeight
+    utils.getAverageColumnHeight(boardAfter) - scareHeight
   );
-  const tetrisReady = isTetrisReadyRightWell(trialBoard);
-  const notBuildingTowardsTetris = isNotBuildingTowardTetris(trialBoard);
+  const tetrisReady = isTetrisReadyRightWell(boardAfter);
+  const notBuildingTowardsTetris = isNotBuildingTowardTetris(boardAfter);
   const numHoles = countHolesInRowRange(
-    trialBoard,
+    boardAfter,
     0,
     NUM_ROW - 1,
-    /* countCol10Holes= */ false
+    /* countCol10Holes= */ aiMode === AI_MODE.DIG_WITH_HOLES
+  );
+  const levelAfterPlacement = utils.getLevelAfterLineClears(
+    level,
+    lines,
+    numLinesCleared
+  );
+  const leftIsInaccessible = boardHelper.boardHasInaccessibileLeft(
+    boardAfter,
+    levelAfterPlacement
+  );
+  const rightIsInaccessible = boardHelper.boardHasInaccessibileRight(
+    boardAfter,
+    levelAfterPlacement
   );
 
   let extremeGapFactor = totalHeightCorrected * aiParams.EXTREME_GAP_PENALTY;
@@ -359,7 +373,7 @@ function getValueOfPossibility(
     : 0;
   const holeFactor = numHoles * aiParams.HOLE_PENALTY;
   const holeWeightFactor =
-    countLinesNeededUntilClean(trialBoard) * aiParams.HOLE_WEIGHT_PENALTY;
+    countLinesNeededUntilClean(boardAfter) * aiParams.HOLE_WEIGHT_PENALTY;
   const lineClearFactor = getLineClearValue(numLinesCleared, aiParams);
   const maxHeightFactor =
     aiParams.MAX_HEIGHT_MULTIPLIER *
@@ -368,7 +382,7 @@ function getValueOfPossibility(
     aiParams.AVG_HEIGHT_MULTIPLIER *
     Math.pow(avgHeightAboveScareLine, aiParams.AVG_HEIGHT_EXPONENT);
   const col10Factor =
-    getNumberOfBlocksInColumn10(trialBoard) *
+    getNumberOfBlocksInColumn10(boardAfter) *
     aiParams.COL_10_PENALTY *
     (level < 29); // doesn't apply on 29+
   const slopingFactor =
@@ -376,8 +390,14 @@ function getValueOfPossibility(
     countEmptyBlocksBelowColumn9Height(surfaceArray);
   const highLeftFactor =
     aiParams.HIGH_LEFT_MULTIPLIER *
-    getHighLeftFactor(trialBoard, surfaceArray, scareHeight) *
+    getHighLeftFactor(boardAfter, surfaceArray, scareHeight) *
     (level >= 29 ? 3.5 : 1); // more powerful on 29
+  const inaccessibleLeftFactor = leftIsInaccessible
+    ? aiParams.INACCESSIBLE_LEFT_PENALTY
+    : 0;
+  const inaccessibleRightFactor = rightIsInaccessible
+    ? aiParams.INACCESSIBLE_RIGHT_PENALTY
+    : 0;
 
   const totalValue =
     surfaceFactor +
@@ -391,9 +411,11 @@ function getValueOfPossibility(
     slopingFactor +
     tetrisReadyFactor +
     highLeftFactor +
-    notBuildingTowardsTetrisFactor;
+    notBuildingTowardsTetrisFactor +
+    inaccessibleLeftFactor +
+    inaccessibleRightFactor;
 
-  const explanation = `Surf: ${surfaceFactor}, Hole: ${holeFactor}, HoleWeight: ${holeWeightFactor}, ExtremeGap: ${extremeGapFactor}, LineClear: ${lineClearFactor}, MaxHeight: ${maxHeightFactor}, AvgHeight: ${avgHeightFactor}, Col10: ${col10Factor} Slope: ${slopingFactor} HighLeft: ${highLeftFactor}, TetrisReady: ${tetrisReadyFactor} NotBldgTwdTetris: ${notBuildingTowardsTetrisFactor}, Subtotal: ${totalValue}`;
+  const explanation = `Surf: ${surfaceFactor}, Hole: ${holeFactor}, HoleWeight: ${holeWeightFactor}, ExtremeGap: ${extremeGapFactor}, LineClear: ${lineClearFactor}, MaxHeight: ${maxHeightFactor}, AvgHeight: ${avgHeightFactor}, Col10: ${col10Factor} Slope: ${slopingFactor} HighLeft: ${highLeftFactor}, TetrisReady: ${tetrisReadyFactor} NotBldgTwdTetris: ${notBuildingTowardsTetrisFactor}, InaccLeft: ${inaccessibleLeftFactor}, InaccRight: ${inaccessibleRightFactor}, Subtotal: ${totalValue}`;
   if (shouldLog) {
     console.log(
       `---- Evaluated possiblity: ${possibility[0]} ${possibility[1]}, mode: ${aiMode}\n`,
