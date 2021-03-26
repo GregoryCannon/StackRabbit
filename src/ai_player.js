@@ -18,6 +18,13 @@ AIPlayer.prototype.placeCurrentPiece = async function (
   level,
   lines
 ) {
+  for (const row of board) {
+    if (row.length > 10) {
+      console.log(board);
+      throw new Error("Invalid board!");
+    }
+  }
+
   const startTime = performance.now();
   // Convert to 1D string of 0s and 1s
   const encodedBoard = board
