@@ -3,7 +3,7 @@ local os = require("os")
 require "socket"
 
 -- Config constants
-FRAMES_BETWEEN_SHIFTS = 3 -- the ARR minus 1, e.g. 3 delay -> 15 Hz, 4 delay -> 12.5 Hz
+FRAMES_BETWEEN_SHIFTS = 4 -- the ARR minus 1, e.g. 3 delay -> 15 Hz, 4 delay -> 12.5 Hz
 REACTION_TIME_FRAMES = 12
 SHOULD_RECORD_GAMES = true
 MOVIE_PATH = "C:\\Users\\Greg\\Desktop\\VODs\\" -- Where to store the fm2 VODS (absolute path)
@@ -318,7 +318,7 @@ function runGameFrame()
     end
 
     -- Execute input sequence
-    -- executeInputs()
+    executeInputs()
 
   -- Do stuff right when the piece locks. If you want to check that the piece went to the correct spot/send an API request early here is probably good.
   elseif(memory.readbyte(0x0048) == 2 and playstate == 1) then     
