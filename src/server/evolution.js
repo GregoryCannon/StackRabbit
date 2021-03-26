@@ -1,9 +1,9 @@
-const liteGameSimulator = require("./lite_game_simulator");
-const { DEFAULT_PARAMS, getParams } = require("./params");
-const KEY_LIST = Object.keys(DEFAULT_PARAMS).sort();
 /**
  * A grid search / gradient descent algorithm for choosing the best parameter set.
  */
+
+const liteGameSimulator = require("./lite_game_simulator");
+const { V5_TRAINED_PARAMS, getParams } = require("./params");
 
 // Hyperparameters
 const DELTA = 0.07; // Small step used to calculate slope (Represents a % of the existing number)
@@ -11,7 +11,8 @@ const STEP_SIZE = 1; // Size of step taken after determining the slope (As a mul
 const NUM_ITERATIONS = 20;
 const GAMES_PER_TEST = 100;
 
-let startParams = DEFAULT_PARAMS;
+let startParams = V5_TRAINED_PARAMS;
+const KEY_LIST = Object.keys(startParams).sort();
 
 /**
  * Fitness function: the median score

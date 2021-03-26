@@ -1,8 +1,8 @@
 const AI_MODE = Object.freeze({
   STANDARD: "standard",
   DIG_WITH_HOLES: "dig_with_holes", // When digging and there are holes left
-  DIG_NON_RIGHT_WELL: "dig_non_right_well", // When digging and the only thing left is getting back to right well
   NEAR_KILLSCREEN: "near_killscreen",
+  KILLSCREEN: "killscreen",
 });
 
 const NUM_TO_CONSIDER = 20;
@@ -11,43 +11,34 @@ const NUM_TO_CONSIDER = 20;
   State-based param modification
 ---------------------------------*/
 
-function modifyParamsForAiMode(aiParams, aiMode) {
-  // Query for the object that lists all the modifications
-  const modObject =
-    aiMode === AI_MODE.DIG_WITH_HOLES
-      ? DIG_WITH_HOLES_MODIFICATIONS
-      : aiMode === AI_MODE.DIG_NON_RIGHT_WELL
-      ? DIG_NON_RIGHT_WELL_MODIFICATIONS
-      : aiMode === AI_MODE.NEAR_KILLSCREEN
-      ? NEAR_KILLSCREEN_MODIFICATIONS
-      : null;
-
-  // Apply modifications
-  if (modObject !== null) {
-    aiParams = JSON.parse(JSON.stringify(aiParams));
-    for (const key in modObject) {
-      aiParams[key] = modObject[key];
-    }
+function applyModsToParams(aiParams, modObject) {
+  const modifiedParams = JSON.parse(JSON.stringify(aiParams));
+  for (const key in modObject) {
+    modifiedParams[key] = modObject[key];
   }
+  return modifiedParams;
+}
 
-  return aiParams;
+function modifyParamsForAiMode(aiParams, aiMode) {
+  switch (aiMode) {
+    case AI_MODE.DIG_WITH_HOLES:
+      return applyModsToParams(aiParams, DIG_WITH_HOLES_MODIFICATIONS);
+    case AI_MODE.NEAR_KILLSCREEN:
+      return applyModsToParams(aiParams, NEAR_KILLSCREEN_MODIFICATIONS);
+    case AI_MODE.KILLSCREEN:
+      return applyModsToParams(aiParams, KILLSCREEN_MODIFICATIONS);
+    default:
+      return aiParams;
+  }
 }
 
 const DIG_WITH_HOLES_MODIFICATIONS = {
   BURN_PENALTY: 0,
-  COL_10_PENALTY: 0,
+  COL_10_PENALTY: -2,
   HOLE_WEIGHT_PENALTY: -3,
-  NOT_BUILDING_TOWARD_TETRIS_PENALTY: 0,
+  HOLE_PENALTY: -30,
   SURFACE_MULTIPLIER: 0.2,
   HIGH_LEFT_MULTIPLIER: 0,
-  SLOPE_PENALTY_MULTIPLIER: 0,
-};
-
-const DIG_NON_RIGHT_WELL_MODIFICATIONS = {
-  BURN_PENALTY: 0,
-  HIGH_LEFT_MULTIPLIER: 0,
-  SLOPE_PENALTY_MULTIPLIER: 0,
-  COL_10_PENALTY: -6,
 };
 
 const NEAR_KILLSCREEN_MODIFICATIONS = {
@@ -55,92 +46,35 @@ const NEAR_KILLSCREEN_MODIFICATIONS = {
   TETRIS_READY_BONUS: 10,
 };
 
-// Parameters to tweak
-const DEFAULT_PARAMS = {
-  SURFACE_MULTIPLIER: 0.4,
-  HOLE_PENALTY: -20,
-  HOLE_WEIGHT_PENALTY: 0,
-  TETRIS_BONUS: 20,
-  TETRIS_READY_BONUS: 6,
-  TETRIS_READY_BONUS_BAR_NEXT: 16,
-  NOT_BUILDING_TOWARD_TETRIS_PENALTY: -10,
-  BURN_PENALTY: -2.5,
-  SCARE_HEIGHT_18: 8,
-  SCARE_HEIGHT_19: 5,
-  SCARE_HEIGHT_29: 0,
-  MAX_HEIGHT_MULTIPLIER: -1,
-  MAX_HEIGHT_EXPONENT: 1.4,
-  AVG_HEIGHT_MULTIPLIER: -8,
-  AVG_HEIGHT_EXPONENT: 1.5,
-  COL_10_PENALTY: -5,
-  HIGH_LEFT_MULTIPLIER: 3,
-  SLOPE_PENALTY_MULTIPLIER: -0.3,
-  EXTREME_GAP_PENALTY: -2,
+const KILLSCREEN_MODIFICATIONS = {
+  COL_10_PENALTY: 0,
+  HIGH_LEFT_MULTIPLIER: 10.5,
 };
 
-const AGGRO_PARAMS = {
-  AVG_HEIGHT_EXPONENT: 1.1556000000000004,
-  AVG_HEIGHT_MULTIPLIER: -10.50624,
-  BURN_PENALTY: -5.2,
-  COL_10_PENALTY: -10.319999999999999,
-  EXTREME_GAP_PENALTY: -1.6416000000000004,
-  HIGH_LEFT_MULTIPLIER: 1.7280000000000004,
-  HOLE_PENALTY: -19.8,
-  HOLE_WEIGHT_PENALTY: 0,
-  MAX_HEIGHT_EXPONENT: 1.0415999999999999,
-  MAX_HEIGHT_MULTIPLIER: -1.1556000000000002,
-  NOT_BUILDING_TOWARD_TETRIS_PENALTY: -20.054400000000001,
-  SCARE_HEIGHT_18: 11,
-  SCARE_HEIGHT_19: 6,
-  SCARE_HEIGHT_29: 0,
-  SLOPE_PENALTY_MULTIPLIER: -0.24974400000000005,
-  SURFACE_MULTIPLIER: 0.2739200000000001,
-  TETRIS_BONUS: 28.248,
-  TETRIS_READY_BONUS: 7.909760000000001,
-  TETRIS_READY_BONUS_BAR_NEXT: 15.36,
-};
+/*--------------------------------
+    Raw Param Data
+---------------------------------*/
 
-const v1_resultParams = {
-  AVG_HEIGHT_EXPONENT: 1.2000000000000002,
-  AVG_HEIGHT_MULTIPLIER: -9.6,
-  BURN_PENALTY: -2.5,
-  COL_10_PENALTY: -4.5,
-  EXTREME_GAP_PENALTY: -1.6,
-  HIGH_LEFT_MULTIPLIER: 2.4000000000000004,
-  HOLE_PENALTY: -18,
-  HOLE_WEIGHT_PENALTY: 0,
-  MAX_HEIGHT_EXPONENT: 1.4,
-  MAX_HEIGHT_MULTIPLIER: -1.2,
-  NOT_BUILDING_TOWARD_TETRIS_PENALTY: -8,
-  SCARE_HEIGHT_18: 8.8,
-  SCARE_HEIGHT_19: 5,
-  SCARE_HEIGHT_29: 0,
-  SLOPE_PENALTY_MULTIPLIER: -0.33,
-  SURFACE_MULTIPLIER: 0.32000000000000006,
-  TETRIS_BONUS: 22,
-  TETRIS_READY_BONUS: 7.199999999999999,
-  TETRIS_READY_BONUS_BAR_NEXT: 16,
-};
+// ... (Previous results are not important now, they're in git history if curious)
 
-// ... (Intermediate results are not important now, they're in git history if curious)
-
-// Trained using gradient descent from DEFAULT_PARAMS
-const v5_resultParams = {
+// Trained using gradient descent
+const V5_TRAINED_PARAMS = {
   AVG_HEIGHT_EXPONENT: 1.1556000000000004,
   AVG_HEIGHT_MULTIPLIER: -10.50624,
   BURN_PENALTY: -2.2,
-  COL_10_PENALTY: -4.319999999999999,
+  COL_10_PENALTY: -4, // changed due to feature changing
+  MAX_DIRTY_TETRIS_HEIGHT: 0.2, // (As a multiple of the scare height) Added manually since didn't exist at time of training
   EXTREME_GAP_PENALTY: -1.6416000000000004,
   HIGH_LEFT_MULTIPLIER: 1.7280000000000004,
   HOLE_PENALTY: -19.8,
   HOLE_WEIGHT_PENALTY: 0,
-  MAX_HEIGHT_EXPONENT: 1.0415999999999999,
-  MAX_HEIGHT_MULTIPLIER: -1.1556000000000002,
+  SPIRE_HEIGHT_EXPONENT: 1.215999999999999, // changed due to feature changing
+  SPIRE_HEIGHT_MULTIPLIER: -1.1556000000000002, // changed due to feature changing
   NOT_BUILDING_TOWARD_TETRIS_PENALTY: -6.054400000000001,
   SCARE_HEIGHT_18: 10.032000000000002,
   SCARE_HEIGHT_19: 5.58,
   SCARE_HEIGHT_29: 0,
-  SLOPE_PENALTY_MULTIPLIER: -0.24974400000000005,
+  HIGH_COL_9_PENALTY_MULTIPLIER: -0.24974400000000005, // changed due to feature changing
   SURFACE_MULTIPLIER: 0.2739200000000001,
   TETRIS_BONUS: 28.248,
   TETRIS_READY_BONUS: 5.909760000000001,
@@ -149,38 +83,19 @@ const v5_resultParams = {
   INACCESSIBLE_RIGHT_PENALTY: -200, // Added manually since didn't exist at time of training
 };
 
-// Manually tuned from v5_resultParams
-const v5_aggro = {
-  AVG_HEIGHT_EXPONENT: 1.1556000000000004,
-  AVG_HEIGHT_MULTIPLIER: -10.50624,
-  BURN_PENALTY: -15, // changed
-  COL_10_PENALTY: -4.319999999999999,
-  EXTREME_GAP_PENALTY: -1.6416000000000004,
-  HIGH_LEFT_MULTIPLIER: 1.7280000000000004,
-  HOLE_PENALTY: -19.8,
-  HOLE_WEIGHT_PENALTY: 0,
-  MAX_HEIGHT_EXPONENT: 1.0415999999999999,
-  MAX_HEIGHT_MULTIPLIER: -1.1556000000000002,
-  NOT_BUILDING_TOWARD_TETRIS_PENALTY: -6.054400000000001,
-  SCARE_HEIGHT_18: 10.032000000000002,
-  SCARE_HEIGHT_19: 5.58,
-  SCARE_HEIGHT_29: 0,
-  SLOPE_PENALTY_MULTIPLIER: -0.24974400000000005,
-  SURFACE_MULTIPLIER: 0.2739200000000001,
-  TETRIS_BONUS: 28.248,
-  TETRIS_READY_BONUS: 5.909760000000001,
-  TETRIS_READY_BONUS_BAR_NEXT: 14.36, // changed
-  INACCESSIBLE_LEFT_PENALTY: -20,
-  INACCESSIBLE_RIGHT_PENALTY: -200,
+const AGGRO_MODIFICATIONS = {
+  BURN_PENALTY: -15,
+  HOLE_PENALTY: -40,
 };
+const V5_AGGRO = applyModsToParams(V5_TRAINED_PARAMS, AGGRO_MODIFICATIONS);
 
 function getParams() {
-  return v5_aggro;
+  return V5_TRAINED_PARAMS;
 }
 
 module.exports = {
   getParams,
-  DEFAULT_PARAMS,
+  V5_TRAINED_PARAMS,
   NUM_TO_CONSIDER,
   AI_MODE,
   modifyParamsForAiMode,

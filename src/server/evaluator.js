@@ -1,109 +1,87 @@
-const fs = require("fs");
 const { AI_MODE } = require("./params");
 const boardHelper = require("./board_helper");
-
-const ranks_NoNextBox_NoBars = fs.readFileSync(
-  "docs/condensed_NoNextBox_NoBars.txt",
-  "utf8"
-);
-const ranks_NextBox_NoBars_1 = fs.readFileSync("2byte_NextBox_1.txt", "utf8");
-const ranks_NextBox_NoBars_2 = fs.readFileSync("2byte_NextBox_2.txt", "utf8");
-const CUTOFF = 200000000;
+const rankLookup = require("./rank-lookup");
 
 const utils = require("./utils");
 const SquareState = utils.SquareState;
 const NUM_ROW = utils.NUM_ROW;
 const NUM_COLUMN = utils.NUM_COLUMN;
 
-function getAiMode(board, lines) {
-  if (lines > 225) {
+function getAiMode(board, lines, level, aiParams) {
+  if (level >= 29) {
+    return AI_MODE.KILLSCREEN;
+  }
+  if (lines >= 220) {
     return AI_MODE.NEAR_KILLSCREEN;
   }
-  if (
-    countHolesInRowRange(board, 0, NUM_ROW - 1, /* countCol10Holes= */ false) >
-    0
-  ) {
+  if (shouldUseDigMode(board, aiParams)) {
     return AI_MODE.DIG_WITH_HOLES;
-  }
-  if (hasNonRightWell(board)) {
-    return AI_MODE.DIG_NON_RIGHT_WELL;
   }
   return AI_MODE.STANDARD;
 }
 
-/**
- * Converts a list of board heights into the index into the ranks array.
- * Uses fractal's proprietary hashing method which involves base 9 and other shenanigans.
- * e.g
- *     3  2  2  2  1  1  2  1  0
- *  ->   -1  0  0 -1  0  1 -1 -1    make diff array
- *  ->    3  4  4  3  4  5  3  3    add 4
- *  ->    parse that number as base 10
- * @param {Array<number>} surfaceHeightsArray - DOES NOT INCLUDE COL 10
+/** The logic here is quite complex, it's a shame it has to be manually coded instead of trained.
+ * Current logic:
+ *  - If you have a high-up hole that is blocking the well, go dig it out immediately
+ *  - If the hole is in the tetris zone, go dig it
+ *  - If the hole doesn't have many filled lines above it, go dig it
+ *  - Otherwise, play on and plan to play a few rows off the bottom
  */
-function surfaceHeightsToNoNBIndex(surfaceHeightsArray) {
-  let diffs = [];
-  for (let i = 0; i < surfaceHeightsArray.length - 1; i++) {
-    diffs.push(
-      parseInt(surfaceHeightsArray[i + 1]) -
-        parseInt(surfaceHeightsArray[i]) +
-        4
+function shouldUseDigMode(board, aiParams) {
+  // Calculate where the next Tetris will be built
+  let row = 0;
+  while (row < NUM_ROW && board[row][9] == SquareState.EMPTY) {
+    row++;
+  }
+  const tetrisZoneStart = row - 4;
+  const tetrisZoneEnd = row - 1;
+
+  function holeWarrantsDigging(row, firstFullRow) {
+    const blockingWell = board[row][NUM_COLUMN - 1] === SquareState.FULL;
+    return (
+      (blockingWell && NUM_ROW - row > aiParams.MAX_DIRTY_TETRIS_HEIGHT) ||
+      (row >= tetrisZoneStart && row < tetrisZoneEnd) ||
+      row - firstFullRow < 4
     );
   }
-  const diffString = diffs.join("");
-  return parseInt(diffString, 9);
-}
 
-/**
- * Converts a list of board heights, along with the next piece ID into the index into the ranks array.
- * Is encoded such that the index / 7 = the standard NNB index, and index % 7 = the next piece index,
- * in the array [TJZOSLI].
- * @param {Array<number>} surfaceArray - DOES NOT INCLUDE COL 10
- */
-function surfaceHeightsToNBIndex(surfaceArray, nextPieceId) {
-  const noNBIndex = surfaceHeightsToNoNBIndex(surfaceArray);
-  const pieceIndex = ["T", "J", "Z", "O", "S", "L", "I"].findIndex(
-    (x) => x == nextPieceId
-  );
-  return 7 * noNBIndex + pieceIndex;
-}
-/**
- * Looks up the rank at a given index in a rank string, and decodes it from the
- * custom space-saving string encoding.
- * @param {string} rankStr
- * @param {number} index
- */
-function lookUpRankInString(lookupStr, index) {
-  const rankStr = lookupStr.substr(index * 2, 2);
-  return parseInt(rankStr, 36) / 10;
-}
+  // Check for holes that are either in the Tetris zone or have <= 3 full lines above them (are reasonably accessible with burns)
+  for (let col = 0; col < NUM_COLUMN - 1; col++) {
+    // Navigate past the empty space above each column
+    let row = 0;
+    while (row < NUM_ROW && board[row][col] === SquareState.EMPTY) {
+      row++;
+    }
+    const firstFullRow = row;
 
-function getValueOfBoardSurfaceNoNextBox(surfaceArray) {
-  const index = surfaceHeightsToNoNBIndex(surfaceArray);
-  return lookUpRankInString(ranks_NoNextBox_NoBars, index);
-}
-
-function getValueOfBoardSurfaceWithNextBox(surfaceArray, nextPieceId) {
-  const index = surfaceHeightsToNBIndex(surfaceArray, nextPieceId);
-  if (index < CUTOFF) {
-    return lookUpRankInString(ranks_NextBox_NoBars_1, index);
-  }
-  return lookUpRankInString(ranks_NextBox_NoBars_2, index - CUTOFF);
-}
-
-/** Checks if a board has a well that's not on the right. */
-function hasNonRightWell(board) {
-  let row = NUM_ROW - 1;
-  while (row >= 0 && board[row][NUM_COLUMN - 1] == SquareState.FULL) {
-    // If col 10 is full and there are any empty cells on other cols, this is true
-    for (let col = 0; col < NUM_COLUMN - 1; col++) {
-      if (board[row][col] == SquareState.EMPTY) {
-        return true;
+    // Now that we're in the stack, if there are empty cells, they're holes
+    while (row < NUM_ROW - 1) {
+      row++;
+      if (board[row][col] === SquareState.EMPTY) {
+        // Found hole
+        if (holeWarrantsDigging(row, firstFullRow)) {
+          return true;
+        }
       }
     }
-    row--;
   }
   return false;
+}
+
+/** If there is a spire in the middle of the board, return its height above the scare line. Otherwise, return 0. */
+function getSpireHeight(surfaceArray, scareHeight) {
+  let spireHeight = 0;
+  // Col 1 and 9 are covered by left/right accessible factors
+  const leftBound = 2;
+  const rightBound = 8; // The rightmost column to look for spires
+  for (let i = leftBound; i < rightBound; i++) {
+    // Only consider columns who are higher than the one on their left, so that
+    // nice sloping stacks don't count as spires
+    if (surfaceArray[i] > surfaceArray[i - 1]) {
+      spireHeight = Math.max(spireHeight, surfaceArray[i]);
+    }
+  }
+  return Math.max(0, spireHeight - scareHeight);
 }
 
 /**
@@ -126,54 +104,104 @@ function countEmptyBlocksBelowColumn9Height(surfaceArray) {
 /** Calculates the number of lines that need to be cleared for all the holes to be resolved. */
 function countLinesNeededUntilClean(board) {
   const linesNeededToClear = new Set();
-  let maxHeightNonCol10 = 0;
-
+  let highestHoleRow = 9999;
   for (let col = 0; col < NUM_COLUMN; col++) {
     // Go down to the top of the stack in that column
     let row = 0;
     while (row < NUM_ROW && board[row][col] == SquareState.EMPTY) {
       row++;
     }
-    // Update the highest height we've seen from cols 0-9
-    if (col < NUM_COLUMN - 1) {
-      maxHeightNonCol10 = Math.max(maxHeightNonCol10, NUM_ROW - 1 - row);
-    }
-    const tempSet = new Set();
+    // Track the full rows we pass through
+    const rowsAboveHole = new Set();
     while (row < NUM_ROW - 1) {
-      tempSet.add(row);
+      rowsAboveHole.add(row);
       row++;
       if (board[row][col] === SquareState.EMPTY) {
         // If not on col 10, we found a hole. Add all the full rows we passed through to the set
-        // of lines needing to be cleared
-        for (const line of tempSet) {
+        // of lines needing to be cleared. Otherwise we ignore tempSet.
+        for (const line of rowsAboveHole) {
           linesNeededToClear.add(line);
+          highestHoleRow = Math.min(highestHoleRow, row);
         }
       }
     }
   }
 
-  // Any row that has col 10 filled above the rest of the stack will need to be cleared.
-  let foundPiece = false;
-  for (let row = 0; row < NUM_ROW - 1 - maxHeightNonCol10; row++) {
-    if (board[row][NUM_COLUMN - 1] == SquareState.FULL) {
-      foundPiece = true;
-    }
-    if (foundPiece) {
-      linesNeededToClear.add(row);
+  // Any row that has col 10 filled above the highest hole will need to be cleared
+  if (linesNeededToClear.size > 0) {
+    for (let row = 0; row < highestHoleRow; row++) {
+      if (board[row][NUM_COLUMN - 1] == SquareState.FULL) {
+        linesNeededToClear.add(row);
+      }
     }
   }
   return linesNeededToClear.size;
 }
 
-function getNumberOfBlocksInColumn10(board) {
-  let count = 0;
-  for (let row = 0; row < utils.NUM_ROW; row++) {
+/** Checks if a board has a well that's not on the right. */
+function hasNonRightWell(board) {
+  let row = NUM_ROW - 1;
+  while (row >= 0 && board[row][NUM_COLUMN - 1] == SquareState.FULL) {
+    // If col 10 is full and there are any empty cells on other cols, this is true
+    for (let col = 0; col < NUM_COLUMN - 1; col++) {
+      if (board[row][col] == SquareState.EMPTY) {
+        return true;
+      }
+    }
+    row--;
+  }
+  return false;
+}
+
+/** Calculate a factor that penalizes filling column 10. Specifically, it counts the number of cells
+ * in the other columns that would needed to be filled to clear away the block on column 10.
+ * However, since holes *want* to have column 10 filled, count them oppositely.
+ * Additionally, there's a penalty for the column 10 block being high up.
+ */
+function getColumn10Factor(board, scareHeight) {
+  let sum = 0;
+  for (let row = 0; row < NUM_ROW; row++) {
+    // If column 10 filled, add to the sum
     if (board[row][NUM_COLUMN - 1] == SquareState.FULL) {
-      const height = 20 - row;
-      count += 1 + height / 6; // Count extra for high up blocks
+      for (let col = 0; col < NUM_COLUMN - 1; col++) {
+        if (board[row][col] == SquareState.FULL) {
+          continue;
+        }
+
+        let isHole = false;
+        for (let loopRow = 0; loopRow < row; loopRow++) {
+          if (board[loopRow][col] == SquareState.FULL) {
+            isHole = true;
+          }
+        }
+
+        if (isHole) {
+          // Filling in col 10 for holes is good
+          sum -= 1;
+        } else {
+          // How bad an exposed col 10 is scales with height
+          const heightMultiplier = (NUM_ROW - row) / scareHeight;
+          sum += heightMultiplier;
+        }
+        if (board[row][col] == SquareState.EMPTY) {
+        }
+      }
     }
   }
-  return count;
+  return sum;
+}
+
+/** Count the number of blocks in column 10 */
+function countBlocksInColumn10(board) {
+  let sum = 0;
+  const heightMultiplier = 3;
+  for (let row = 0; row < NUM_ROW; row++) {
+    // If column 10 filled, add to the sum
+    if (board[row][NUM_COLUMN - 1] == SquareState.FULL) {
+      sum += 1;
+    }
+  }
+  return sum;
 }
 
 /**
@@ -184,65 +212,13 @@ function getNumberOfBlocksInColumn10(board) {
  * @param {*} surfaceArray
  * @param {*} scareHeight
  */
-function getHighLeftFactor(board, surfaceArray, scareHeight) {
-  const maxHeightNonCol1 = utils.getMaxColumnHeight(board);
+function getHighLeftFactor(surfaceArray, scareHeight) {
+  const maxHeightNonCol1 = Math.max(...surfaceArray.slice(1));
   const col1Height = surfaceArray[0];
-  // Not relevant for low stacks
-  if (Math.max(maxHeightNonCol1, col1Height) < scareHeight) {
-    return 0;
-  }
+  // Scale up based on the board height
+  const boardHeightFactor = maxHeightNonCol1 / scareHeight;
   // Cap at 2 so it doesn't want crazy high col 1
-  return Math.min(2, col1Height - maxHeightNonCol1);
-}
-
-/**
- *
- * @param {number} startRow - inclusive
- * @param {number} endRow - inclusive
- */
-function countHolesInRowRange(board, startRow, endRow, countCol10Holes) {
-  let count = 0;
-
-  const colBound = countCol10Holes ? NUM_COLUMN : NUM_COLUMN - 1;
-  for (let col = 0; col < colBound; col++) {
-    // Navigate past the empty space above each column
-    let row = 0;
-    while (row < NUM_ROW && board[row][col] === SquareState.EMPTY) {
-      row++;
-    }
-
-    // Now that we're in the stack, if there are empty cells, they're holes
-    while (row < endRow) {
-      row++;
-      if (row >= startRow && board[row][col] === SquareState.EMPTY) {
-        count += 1;
-      }
-    }
-  }
-  return count;
-}
-
-/**
- * Returns true iff. there are no holes/overhangs preventing getting Tetris-ready assuming normal play.
- * This prevents the AI from never taking the triple if it has a hole in the bottom 4 rows.
- * @param {Array<Array<number>>} board
- */
-function isNotBuildingTowardTetris(board) {
-  // Move the imaginary long bar down column 10
-  let row = 0;
-  while (row < NUM_ROW && board[row][9] == SquareState.EMPTY) {
-    row++;
-  }
-
-  // If there are any holes in the zone where you'd take the tetris, you're not building towards a tetris.
-  return (
-    countHolesInRowRange(
-      board,
-      row - 4,
-      row - 1,
-      /* countCol10Holes= */ false
-    ) > 0
-  );
+  return boardHeightFactor * Math.min(2, col1Height - maxHeightNonCol1);
 }
 
 function isTetrisReadyRightWell(board) {
@@ -275,25 +251,6 @@ function getLineClearValue(numLinesCleared, aiParams) {
     : 0;
 }
 
-function getValueOfPossibilityNoNextBox(
-  possibility,
-  level,
-  lines,
-  aiMode,
-  shouldLog,
-  aiParams
-) {
-  return getValueOfPossibility(
-    possibility,
-    null,
-    level,
-    lines,
-    aiMode,
-    shouldLog,
-    aiParams
-  );
-}
-
 /**
  * Evaluates a given possibility based on a number of factors.
  * @param {[rotationId, xOffset, resultingSurface, numHoles, numLinesCleared]} possibility
@@ -307,7 +264,14 @@ function getValueOfPossibility(
   shouldLog,
   aiParams
 ) {
-  const [_, __, surfaceArray, ___, numLinesCleared, boardAfter] = possibility;
+  const [
+    _,
+    __,
+    surfaceArray,
+    numHoles,
+    numLinesCleared,
+    boardAfter,
+  ] = possibility;
 
   if (!aiParams) {
     console.log("RED ALERT", level, lines, aiMode, shouldLog, aiParams);
@@ -324,22 +288,12 @@ function getValueOfPossibility(
       : level >= 19
       ? aiParams.SCARE_HEIGHT_19
       : aiParams.SCARE_HEIGHT_18;
-  const maxHeightAboveScareLine = Math.max(
-    0,
-    utils.getMaxColumnHeight(boardAfter) - scareHeight
-  );
+  const spireHeight = getSpireHeight(surfaceArray, scareHeight);
   const avgHeightAboveScareLine = Math.max(
     0,
     utils.getAverageColumnHeight(boardAfter) - scareHeight
   );
   const tetrisReady = isTetrisReadyRightWell(boardAfter);
-  const notBuildingTowardsTetris = isNotBuildingTowardTetris(boardAfter);
-  const numHoles = countHolesInRowRange(
-    boardAfter,
-    0,
-    NUM_ROW - 1,
-    /* countCol10Holes= */ aiMode === AI_MODE.DIG_WITH_HOLES
-  );
   const levelAfterPlacement = utils.getLevelAfterLineClears(
     level,
     lines,
@@ -355,43 +309,34 @@ function getValueOfPossibility(
   );
 
   let extremeGapFactor = totalHeightCorrected * aiParams.EXTREME_GAP_PENALTY;
-  let surfaceFactor;
-  if (nextPieceId !== null) {
-    surfaceFactor =
-      aiParams.SURFACE_MULTIPLIER *
-      getValueOfBoardSurfaceWithNextBox(correctedSurface, nextPieceId);
-  } else {
-    surfaceFactor = getValueOfBoardSurfaceNoNextBox(correctedSurface);
-  }
+  let surfaceFactor =
+    aiParams.SURFACE_MULTIPLIER *
+    rankLookup.getValueOfBoardSurface(correctedSurface, nextPieceId);
   const tetrisReadyFactor =
     tetrisReady *
     (nextPieceId == "I"
       ? aiParams.TETRIS_READY_BONUS_BAR_NEXT
       : aiParams.TETRIS_READY_BONUS);
-  const notBuildingTowardsTetrisFactor = notBuildingTowardsTetris
-    ? aiParams.NOT_BUILDING_TOWARD_TETRIS_PENALTY
-    : 0;
   const holeFactor = numHoles * aiParams.HOLE_PENALTY;
   const holeWeightFactor =
     countLinesNeededUntilClean(boardAfter) * aiParams.HOLE_WEIGHT_PENALTY;
   const lineClearFactor = getLineClearValue(numLinesCleared, aiParams);
-  const maxHeightFactor =
-    aiParams.MAX_HEIGHT_MULTIPLIER *
-    Math.pow(maxHeightAboveScareLine, aiParams.MAX_HEIGHT_EXPONENT);
+  const spireHeightFactor =
+    aiParams.SPIRE_HEIGHT_MULTIPLIER *
+    Math.pow(spireHeight, aiParams.SPIRE_HEIGHT_EXPONENT);
   const avgHeightFactor =
     aiParams.AVG_HEIGHT_MULTIPLIER *
     Math.pow(avgHeightAboveScareLine, aiParams.AVG_HEIGHT_EXPONENT);
   const col10Factor =
-    getNumberOfBlocksInColumn10(boardAfter) *
-    aiParams.COL_10_PENALTY *
-    (level < 29); // doesn't apply on 29+
+    getColumn10Factor(boardAfter, scareHeight) * aiParams.COL_10_PENALTY;
+  const col10BurnFactor =
+    countBlocksInColumn10(boardAfter) * aiParams.BURN_PENALTY; // Any blocks on col 10 will result in a burn
   const slopingFactor =
-    aiParams.SLOPE_PENALTY_MULTIPLIER *
+    aiParams.HIGH_COL_9_PENALTY_MULTIPLIER *
     countEmptyBlocksBelowColumn9Height(surfaceArray);
   const highLeftFactor =
     aiParams.HIGH_LEFT_MULTIPLIER *
-    getHighLeftFactor(boardAfter, surfaceArray, scareHeight) *
-    (level >= 29 ? 3.5 : 1); // more powerful on 29
+    getHighLeftFactor(surfaceArray, scareHeight);
   const inaccessibleLeftFactor = leftIsInaccessible
     ? aiParams.INACCESSIBLE_LEFT_PENALTY
     : 0;
@@ -405,17 +350,17 @@ function getValueOfPossibility(
     holeFactor +
     holeWeightFactor +
     lineClearFactor +
-    maxHeightFactor +
+    spireHeightFactor +
     avgHeightFactor +
     col10Factor +
+    col10BurnFactor +
     slopingFactor +
     tetrisReadyFactor +
     highLeftFactor +
-    notBuildingTowardsTetrisFactor +
     inaccessibleLeftFactor +
     inaccessibleRightFactor;
 
-  const explanation = `Surf: ${surfaceFactor}, Hole: ${holeFactor}, HoleWeight: ${holeWeightFactor}, ExtremeGap: ${extremeGapFactor}, LineClear: ${lineClearFactor}, MaxHeight: ${maxHeightFactor}, AvgHeight: ${avgHeightFactor}, Col10: ${col10Factor} Slope: ${slopingFactor} HighLeft: ${highLeftFactor}, TetrisReady: ${tetrisReadyFactor} NotBldgTwdTetris: ${notBuildingTowardsTetrisFactor}, InaccLeft: ${inaccessibleLeftFactor}, InaccRight: ${inaccessibleRightFactor}, Subtotal: ${totalValue}`;
+  const explanation = `Surf: ${surfaceFactor}, Hole: ${holeFactor}, HoleWeight: ${holeWeightFactor}, ExtremeGap: ${extremeGapFactor}, LineClear: ${lineClearFactor}, Spire: ${spireHeightFactor}, AvgHeight: ${avgHeightFactor}, Col10: ${col10Factor}, Col10Burn: ${col10BurnFactor}, Slope: ${slopingFactor} HighLeft: ${highLeftFactor}, TetrisReady: ${tetrisReadyFactor}, InaccLeft: ${inaccessibleLeftFactor}, InaccRight: ${inaccessibleRightFactor}, Subtotal: ${totalValue}`;
   if (shouldLog) {
     console.log(
       `---- Evaluated possiblity: ${possibility[0]} ${possibility[1]}, mode: ${aiMode}\n`,
@@ -473,8 +418,9 @@ function pickBestMoveNoNextBox(
   let bestValue = -999;
   for (const possibility of possibilityList) {
     // Get the total value of the proposed placement + the next placement afterwards
-    const [value, explanation] = getValueOfPossibilityNoNextBox(
+    const [value, explanation] = getValueOfPossibility(
       possibility,
+      null,
       level,
       lines,
       aiMode,
