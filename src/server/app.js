@@ -153,7 +153,7 @@ function handleRequestSyncWithNextBox(requestArgs) {
     existingXOffset,
     existingYOffset,
     firstShiftDelay,
-    /* shouldLog= */ false,
+    /* shouldLog= */ true,
     params.getParams()
   );
 
