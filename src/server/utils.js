@@ -1,6 +1,6 @@
 const NUM_ROW = 20;
 const NUM_COLUMN = 10;
-const AI_TAP_ARR = 4; // 12.5 Hz tapping
+const AI_TAP_ARR = 5; // 12.5 Hz tapping
 const SquareState = Object.freeze({
   EMPTY: 0,
   FULL: 1,
