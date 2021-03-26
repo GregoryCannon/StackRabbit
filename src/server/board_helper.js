@@ -203,6 +203,11 @@ function repeatedlyShiftPiece(
   let gravityCounter = maxGravity;
   let arrCounter = firstShiftDelay;
 
+  // If a bar can't spawn or is almost immediately crashed into the stack, it's definitely out of reach
+  if (pieceCollision(board, x, y + 1, currentRotationPiece)) {
+    return true;
+  }
+
   while (true) {
     // Run a simulated 'frame' of gravity, shifting, and collision checking
     if (arrCounter == 0) {
@@ -312,7 +317,7 @@ function boardHasInaccessibileLeft(board, level) {
 }
 
 function boardHasInaccessibileRight(board, level) {
-  // If left is built out, we're fine
+  // If right is built out, we're fine
   if (
     getBoardHeightAtColumn(board, NUM_COLUMN - 1) >
     getBoardHeightAtColumn(board, NUM_COLUMN - 2)
