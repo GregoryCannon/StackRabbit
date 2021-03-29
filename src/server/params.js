@@ -37,7 +37,7 @@ const DEFAULT_PARAM_MODS = {
     BURN_PENALTY: 0,
     COL_10_PENALTY: -2,
     HOLE_WEIGHT_PENALTY: -3,
-    HOLE_PENALTY: -30,
+    HOLE_PENALTY: -200, // changed
     SURFACE_MULTIPLIER: 0.2,
     HIGH_LEFT_MULTIPLIER: 0,
   },
@@ -70,7 +70,6 @@ const V5_TRAINED_PARAMS = {
   HOLE_WEIGHT_PENALTY: 0,
   SPIRE_HEIGHT_EXPONENT: 1.215999999999999, // changed due to feature changing
   SPIRE_HEIGHT_MULTIPLIER: -1.1556000000000002, // changed due to feature changing
-  NOT_BUILDING_TOWARD_TETRIS_PENALTY: -6.054400000000001,
   SCARE_HEIGHT_18: 10.032000000000002,
   SCARE_HEIGHT_19: 5.58,
   SCARE_HEIGHT_29: 0,
@@ -79,7 +78,32 @@ const V5_TRAINED_PARAMS = {
   TETRIS_BONUS: 28.248,
   TETRIS_READY_BONUS: 5.909760000000001,
   TETRIS_READY_BONUS_BAR_NEXT: 15.36,
-  INACCESSIBLE_LEFT_PENALTY: -20, // Added manually since didn't exist at time of training
+  INACCESSIBLE_LEFT_PENALTY: -30, // Added manually since didn't exist at time of training
+  INACCESSIBLE_RIGHT_PENALTY: -200, // Added manually since didn't exist at time of training
+};
+
+// modified so that it doesn't build for dirty tetrises
+const V5_NO_DIRTIES = {
+  AVG_HEIGHT_EXPONENT: 1.1556000000000004,
+  AVG_HEIGHT_MULTIPLIER: -10.50624,
+  BURN_PENALTY: -2.2,
+  COL_10_PENALTY: -4, // changed due to feature changing
+  MAX_DIRTY_TETRIS_HEIGHT: 0, // (As a multiple of the scare height) Added manually since didn't exist at time of training
+  EXTREME_GAP_PENALTY: -1.6416000000000004,
+  HIGH_LEFT_MULTIPLIER: 1.7280000000000004,
+  HOLE_PENALTY: -19.8,
+  HOLE_WEIGHT_PENALTY: 0,
+  SPIRE_HEIGHT_EXPONENT: 1.215999999999999, // changed due to feature changing
+  SPIRE_HEIGHT_MULTIPLIER: -1.1556000000000002, // changed due to feature changing
+  SCARE_HEIGHT_18: 10.032000000000002,
+  SCARE_HEIGHT_19: 5.58,
+  SCARE_HEIGHT_29: 0,
+  HIGH_COL_9_PENALTY_MULTIPLIER: -0.24974400000000005, // changed due to feature changing
+  SURFACE_MULTIPLIER: 0.2739200000000001,
+  TETRIS_BONUS: 28.248,
+  TETRIS_READY_BONUS: 5.909760000000001,
+  TETRIS_READY_BONUS_BAR_NEXT: 15.36,
+  INACCESSIBLE_LEFT_PENALTY: -30, // Added manually since didn't exist at time of training
   INACCESSIBLE_RIGHT_PENALTY: -200, // Added manually since didn't exist at time of training
 };
 

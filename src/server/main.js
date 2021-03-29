@@ -33,6 +33,7 @@ function getMostPromisingMoves(
   // Get the AI mode (e.g. digging, scoring)
   const aiMode = evaluator.getAiMode(startingBoard, lines, level, aiParams);
   aiParams = modifyParamsForAiMode(aiParams, aiMode, paramMods);
+  // console.log("aiparams", aiParams)
 
   // Get the top contenders, sorted best -> worst
   const topN = evaluator.pickBestNMoves(
@@ -129,7 +130,7 @@ function getBestMoveWithSearch(
       /* existingXOffset= */ 0,
       /* existingYOffset= */ 0,
       /* firstShiftDelay= */ 0,
-      /* shouldLog= */ false && shouldLog
+      /* shouldLog= */ true && shouldLog
     );
     const innerBestMove = evaluator.pickBestMoveNoNextBox(
       innerPossibilityList,
@@ -142,7 +143,6 @@ function getBestMoveWithSearch(
 
     // Get a total score for this possibility (including line clears from the outer placement)
     if (innerBestMove == null) {
-      console.log("Skipping null option...");
       continue;
     }
     const originalMovePartialValue = evaluator.getLineClearValue(

@@ -9,9 +9,14 @@ const REWARDS = {
   3: 300,
   4: 1200,
 };
-const { getParams } = require("./params");
+const {
+  getParams,
+  V5_TRAINED_PARAMS,
+  DEFAULT_PARAM_MODS,
+} = require("./params");
+const DIG_LINE_CAP = 25;
 
-function simulateManyGames(numIterations, startingLevel, aiParams) {
+function simulateManyGames(numIterations, startingLevel, aiParams, paramMods) {
   const results = [];
   for (let i = 0; i < numIterations; i++) {
     // Progress indicator
@@ -20,16 +25,70 @@ function simulateManyGames(numIterations, startingLevel, aiParams) {
     }
 
     // Simulate one game
-    results.push(simulateGame(startingLevel, aiParams, null, false));
+    results.push(
+      simulateGame(
+        startingLevel,
+        getEmptyBoard(),
+        aiParams,
+        paramMods,
+        /* predefinedPieceSequence= */ null,
+        /* isDig= */ false,
+        /* shouldLog= */ false
+      )
+    );
   }
   return results;
 }
 
-function simulateGame(startingLevel, aiParams, presetPieceSequence, shouldLog) {
-  let board = getEmptyBoard();
+function simulateDigPractice(
+  numIterations,
+  startingLevel,
+  aiParams,
+  paramMods
+) {
+  const results = [];
+  for (let i = 0; i < numIterations; i++) {
+    // Progress indicator
+    if (((i / numIterations) * 100) % 5 == 0) {
+      console.log(`${(i / numIterations) * 100}% complete`);
+    }
+
+    // Simulate a game with a dirty starting board and capped lines
+    results.push(
+      simulateGame(
+        startingLevel,
+        utils.generateDigPracticeBoard(5, 6),
+        aiParams,
+        paramMods,
+        /* predefinedPieceSequence= */ null,
+        /* isDig= */ true,
+        /* shouldLog= */ i == 0
+      )
+    );
+  }
+  // console.log(results);
+  return results;
+}
+
+/**
+ * Run one simulation of a game.
+ * @param {function(lines, numHoles)} gameOverCondition - function to check custom game over conditions
+ * @returns [score, lines, level]
+ */
+function simulateGame(
+  startingLevel,
+  startingBoard,
+  aiParams,
+  paramMods,
+  presetPieceSequence,
+  isDig,
+  shouldLog
+) {
+  let board = startingBoard;
   let score = 0;
   let lines = 0;
   let level = startingLevel;
+  let numHoles = utils.getHoleCount(startingBoard);
   let nextTransitionLineCount =
     startingLevel == 19 ? 140 : startingLevel == 18 ? 130 : 200;
   let pieceIndex = 0;
@@ -50,8 +109,12 @@ function simulateGame(startingLevel, aiParams, presetPieceSequence, shouldLog) {
       nextPieceId,
       level,
       lines,
+      /* existingXOffset= */ 0,
+      /* existingYOffset= */ 0,
+      /* firstShiftDelay= */ 0,
       /* shouldLog= */ false,
-      aiParams
+      aiParams,
+      paramMods
     );
 
     // Set the board to the resulting board after making that move
@@ -60,8 +123,9 @@ function simulateGame(startingLevel, aiParams, presetPieceSequence, shouldLog) {
       continue;
     }
     board = bestMove[5];
-    const numLinesCleared = bestMove[4];
+    numHoles = bestMove[3];
 
+    const numLinesCleared = bestMove[4];
     if (numLinesCleared > 0) {
       // Update lines, level, then score (needs to be that order)
       lines += numLinesCleared;
@@ -75,13 +139,15 @@ function simulateGame(startingLevel, aiParams, presetPieceSequence, shouldLog) {
       score += REWARDS[numLinesCleared] * (level + 1);
     }
 
-    if (shouldLog) {
+    if (false) {
       console.log(`Score: ${score}, Lines: ${lines}, Level: ${level}`);
       utils.logBoard(board);
     }
 
     // Check for game over, or increment and loop
-    gameOver = hasToppedOut(board);
+    gameOver =
+      hasToppedOut(board) ||
+      (isDig && (numHoles === 0 || lines >= DIG_LINE_CAP));
     i++;
     pieceIndex++;
   }
@@ -91,7 +157,7 @@ function simulateGame(startingLevel, aiParams, presetPieceSequence, shouldLog) {
     );
     utils.logBoard(board);
   }
-  return [score, lines, level];
+  return [score, lines, level, numHoles];
 }
 
 /**
@@ -143,28 +209,7 @@ function getRandomPiece(previousPieceId) {
   return PIECE_LIST[r];
 }
 
-function regressionTest() {
-  console.log("Running regression test...");
-
-  const regressionTestPieceSequence =
-    "STZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJOSTZILJO";
-  const result = simulateGame(
-    18,
-    getParams(),
-    regressionTestPieceSequence,
-    false
-  );
-
-  // Validate result
-  const [score, lines, level] = result;
-  if (score === 1245300 && lines === 266 && level === 32) {
-    console.log("Test passed!", result);
-  } else {
-    console.log("Test FAILED!", result);
-  }
-}
-
-function runExperiment(numTrials) {
+function runScoreExperiment(numTrials) {
   const resultList = simulateManyGames(numTrials, 18, getParams());
   const only1_3s = resultList.filter((x) => x[0] > 1300000);
   console.log(resultList);
@@ -174,8 +219,23 @@ function runExperiment(numTrials) {
 }
 
 // regressionTest();
-// runExperiment(100);
+// runScoreExperiment(100);
+const V1_PARAM_MODS = {
+  DIG: {
+    BURN_PENALTY: -3.3443763200000003,
+    COL_10_PENALTY: -3.9808917197452227,
+    HOLE_WEIGHT_PENALTY: -5,
+    HOLE_PENALTY: -250,
+    SURFACE_MULTIPLIER: 0.3,
+    HIGH_LEFT_MULTIPLIER: 5,
+  },
+  NEAR_KILLSCREEN: { BURN_PENALTY: -15, TETRIS_READY_BONUS: 10 },
+  KILLSCREEN: { COL_10_PENALTY: 0, HIGH_LEFT_MULTIPLIER: 10.5 },
+};
+// simulateDigPractice(1, 18, V5_TRAINED_PARAMS, V1_PARAM_MODS);
 
 module.exports = {
   simulateManyGames,
+  simulateDigPractice,
+  DIG_LINE_CAP,
 };

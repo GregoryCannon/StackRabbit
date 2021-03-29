@@ -39,6 +39,37 @@ function GetGravity(level) {
   }
 }
 
+function generateDigPracticeBoard(garbageHeight, numHoles) {
+  const randomIntLessThan = (n) => Math.floor(Math.random() * n);
+
+  // Create board
+  const board = [];
+  for (let row = 0; row < NUM_ROW; row++) {
+    board.push([]);
+    for (let col = 0; col < NUM_COLUMN; col++) {
+      const height = NUM_ROW - row;
+      board[row][col] =
+        height < garbageHeight ||
+        (height == garbageHeight && randomIntLessThan(2))
+          ? SquareState.FULL
+          : SquareState.EMPTY;
+    }
+  }
+
+  // Clear col 10
+  for (let row = NUM_ROW - garbageHeight; row < NUM_ROW; row++) {
+    board[row][NUM_COLUMN - 1] = SquareState.EMPTY;
+  }
+
+  // Add holes
+  for (let i = 0; i < numHoles; i++) {
+    const holeRow = NUM_ROW - 1 - randomIntLessThan(garbageHeight - 1);
+    const holeCol = randomIntLessThan(NUM_COLUMN - 1);
+    board[holeRow][holeCol] = SquareState.EMPTY;
+  }
+  return board;
+}
+
 function _getSurfaceArrayAndHoleCount(board) {
   const heights = [];
   let numHoles = 0;
@@ -149,6 +180,7 @@ module.exports = {
   SquareState,
   GetGravity,
   getSurfaceArray,
+  generateDigPracticeBoard,
   getHoleCount: getHoleCount,
   hasValidHeightDifferences: hasInvalidHeightDifferences,
   getMaxColumnHeight,
