@@ -1,6 +1,6 @@
 const AI_MODE = Object.freeze({
   STANDARD: "standard",
-  DIG_WITH_HOLES: "dig_with_holes", // When digging and there are holes left
+  DIG: "dig",
   NEAR_KILLSCREEN: "near_killscreen",
   KILLSCREEN: "killscreen",
 });
@@ -19,36 +19,36 @@ function applyModsToParams(aiParams, modObject) {
   return modifiedParams;
 }
 
-function modifyParamsForAiMode(aiParams, aiMode) {
+function modifyParamsForAiMode(aiParams, aiMode, paramMods) {
   switch (aiMode) {
-    case AI_MODE.DIG_WITH_HOLES:
-      return applyModsToParams(aiParams, DIG_WITH_HOLES_MODIFICATIONS);
+    case AI_MODE.DIG:
+      return applyModsToParams(aiParams, paramMods.DIG);
     case AI_MODE.NEAR_KILLSCREEN:
-      return applyModsToParams(aiParams, NEAR_KILLSCREEN_MODIFICATIONS);
+      return applyModsToParams(aiParams, paramMods.NEAR_KILLSCREEN);
     case AI_MODE.KILLSCREEN:
-      return applyModsToParams(aiParams, KILLSCREEN_MODIFICATIONS);
+      return applyModsToParams(aiParams, paramMods.KILLSCREEN);
     default:
       return aiParams;
   }
 }
 
-const DIG_WITH_HOLES_MODIFICATIONS = {
-  BURN_PENALTY: 0,
-  COL_10_PENALTY: -2,
-  HOLE_WEIGHT_PENALTY: -3,
-  HOLE_PENALTY: -30,
-  SURFACE_MULTIPLIER: 0.2,
-  HIGH_LEFT_MULTIPLIER: 0,
-};
-
-const NEAR_KILLSCREEN_MODIFICATIONS = {
-  BURN_PENALTY: -20,
-  TETRIS_READY_BONUS: 10,
-};
-
-const KILLSCREEN_MODIFICATIONS = {
-  COL_10_PENALTY: 0,
-  HIGH_LEFT_MULTIPLIER: 10.5,
+const DEFAULT_PARAM_MODS = {
+  DIG: {
+    BURN_PENALTY: 0,
+    COL_10_PENALTY: -2,
+    HOLE_WEIGHT_PENALTY: -3,
+    HOLE_PENALTY: -30,
+    SURFACE_MULTIPLIER: 0.2,
+    HIGH_LEFT_MULTIPLIER: 0,
+  },
+  NEAR_KILLSCREEN: {
+    BURN_PENALTY: -15,
+    TETRIS_READY_BONUS: 10,
+  },
+  KILLSCREEN: {
+    COL_10_PENALTY: 0,
+    HIGH_LEFT_MULTIPLIER: 10.5,
+  },
 };
 
 /*--------------------------------
@@ -93,10 +93,16 @@ function getParams() {
   return V5_TRAINED_PARAMS;
 }
 
+function getParamMods() {
+  return DEFAULT_PARAM_MODS;
+}
+
 module.exports = {
   getParams,
+  getParamMods,
   V5_TRAINED_PARAMS,
   NUM_TO_CONSIDER,
   AI_MODE,
+  DEFAULT_PARAM_MODS,
   modifyParamsForAiMode,
 };

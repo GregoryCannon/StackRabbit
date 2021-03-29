@@ -118,7 +118,8 @@ function handleRequestSyncNoNextBox(requestArgs) {
     existingYOffset,
     firstShiftDelay,
     /* shouldLog= */ false,
-    params.getParams()
+    params.getParams(),
+    params.getParamMods()
   );
 
   if (!bestMove) {
@@ -154,7 +155,8 @@ function handleRequestSyncWithNextBox(requestArgs) {
     existingYOffset,
     firstShiftDelay,
     /* shouldLog= */ true,
-    params.getParams()
+    params.getParams(),
+    params.getParamMods()
   );
 
   if (!bestMove) {

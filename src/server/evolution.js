@@ -69,7 +69,7 @@ function gridSearch() {
     console.log(
       `\n\n\n -------- Optimizing ${keyBeingOptimized}, key ${i} of ${KEY_LIST.length} ----------`
     );
-    let localMaxFitness = -9999;
+    let localMaxFitness = Number.MIN_SAFE_INTEGER;
     let localMaxTheta = null;
     let localMaxDelta = null;
 
@@ -114,5 +114,4 @@ function gridSearch() {
   console.log("params:", getCustomParams(theta, startParams));
 }
 
-// gradientDescent();
 // gridSearch();

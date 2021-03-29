@@ -15,7 +15,7 @@ function getAiMode(board, lines, level, aiParams) {
     return AI_MODE.NEAR_KILLSCREEN;
   }
   if (shouldUseDigMode(board, aiParams)) {
-    return AI_MODE.DIG_WITH_HOLES;
+    return AI_MODE.DIG;
   }
   return AI_MODE.STANDARD;
 }
@@ -415,7 +415,7 @@ function pickBestMoveNoNextBox(
   aiParams
 ) {
   let bestMove = null;
-  let bestValue = -999;
+  let bestValue = Number.MIN_SAFE_INTEGER;
   for (const possibility of possibilityList) {
     // Get the total value of the proposed placement + the next placement afterwards
     const [value, explanation] = getValueOfPossibility(

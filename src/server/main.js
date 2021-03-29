@@ -16,7 +16,8 @@ function getMostPromisingMoves(
   existingYOffset,
   firstShiftDelay,
   shouldLog,
-  aiParams
+  aiParams,
+  paramMods
 ) {
   // Get the possible moves
   const possibilityList = BoardHelper.getPossibleMoves(
@@ -31,7 +32,7 @@ function getMostPromisingMoves(
 
   // Get the AI mode (e.g. digging, scoring)
   const aiMode = evaluator.getAiMode(startingBoard, lines, level, aiParams);
-  aiParams = modifyParamsForAiMode(aiParams, aiMode);
+  aiParams = modifyParamsForAiMode(aiParams, aiMode, paramMods);
 
   // Get the top contenders, sorted best -> worst
   const topN = evaluator.pickBestNMoves(
@@ -56,7 +57,8 @@ function getBestMoveNoSearch(
   existingYOffset,
   firstShiftDelay,
   shouldLog,
-  initialAiParams
+  initialAiParams,
+  paramMods
 ) {
   let { topN } = getMostPromisingMoves(
     startingBoard,
@@ -68,7 +70,8 @@ function getBestMoveNoSearch(
     existingYOffset,
     firstShiftDelay,
     shouldLog,
-    initialAiParams
+    initialAiParams,
+    paramMods
   );
   return topN ? topN[0] : null;
 }
@@ -83,7 +86,8 @@ function getBestMoveWithSearch(
   existingYOffset,
   firstShiftDelay,
   shouldLog,
-  initialAiParams
+  initialAiParams,
+  paramMods
 ) {
   const startTime = Date.now();
 
@@ -97,18 +101,20 @@ function getBestMoveWithSearch(
     existingYOffset,
     firstShiftDelay,
     shouldLog,
-    initialAiParams
+    initialAiParams,
+    paramMods
   );
 
   const time2 = Date.now();
   if (shouldLog) {
     console.log("\tElapsed to get N most promising moves:", time2 - startTime);
+    console.log("Num promising moves:", topN.length);
     console.log("\n\n---------");
   }
 
   // For each contender, place the next piece and maximize the resulting value
   let bestPossibilityAfterNextPiece = null;
-  let bestValueAfterNextPiece = -999;
+  let bestValueAfterNextPiece = Number.MIN_SAFE_INTEGER;
   let bestIndex = 0; // The rank of the best placement (in terms of the original 'promising-ness' sort)
   let i = 0;
   for (const possibility of topN) {
