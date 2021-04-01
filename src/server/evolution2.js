@@ -4,7 +4,7 @@
 
 const liteGameSimulator = require("./lite_game_simulator");
 const params = require("./params");
-const { V5_TRAINED_PARAMS, getParams } = require("./params");
+const { V5_NO_DIRTIES, getParams } = require("./params");
 
 const NOISE_THRESHOLD = 1000;
 const DOMAIN = "DIG";
@@ -21,11 +21,11 @@ const FEATURES_TO_OPTIMIZE = [
 ];
 
 /**
- * Fitness function: the median score
+ * Fitness function: the average score
  * @param {Array of [score, lines, level, numHoles] subarrays} - simulationResult
  */
 function fitnessFunction(simulationResult) {
-  if (simulationResult.length === 0){
+  if (simulationResult.length === 0) {
     return 0;
   }
   function scoreForOneGame(score, lines, numHoles) {
@@ -34,14 +34,15 @@ function fitnessFunction(simulationResult) {
     }
     return score + (liteGameSimulator.DIG_LINE_CAP - lines) * 5000;
   }
-  const evaluatedScores = simulationResult
-    .map(([score, lines, level, numHoles]) =>
-      scoreForOneGame(score, lines, numHoles)
-    );
-  const avgScore = evaluatedScores.reduce((a, b) => a + b, 0) / evaluatedScores.length;
+  const evaluatedScores = simulationResult.map(
+    ([score, lines, level, numHoles]) => scoreForOneGame(score, lines, numHoles)
+  );
+  const avgScore =
+    evaluatedScores.reduce((a, b) => a + b, 0) / evaluatedScores.length;
   return avgScore;
 }
 
+/** Evaluate the fitness of a paramMods object using either a small sample of testing or a full suite of testing. */
 function getFitness(paramMods, currentFitness) {
   // First do a spot check with a small number of iterations.
   // If it's not even close to the current fitness, don't run more iterations
@@ -49,7 +50,7 @@ function getFitness(paramMods, currentFitness) {
   const spotCheckResults = liteGameSimulator.simulateDigPractice(
     SPOT_CHECK_ITERATIONS,
     18,
-    V5_TRAINED_PARAMS,
+    V5_NO_DIRTIES,
     paramMods
   );
   const spotCheckFitness = fitnessFunction(spotCheckResults);
@@ -70,7 +71,7 @@ function getFitness(paramMods, currentFitness) {
       liteGameSimulator.simulateDigPractice(
         ITERATIONS_PER_TEST - SPOT_CHECK_ITERATIONS,
         18,
-        V5_TRAINED_PARAMS,
+        V5_NO_DIRTIES,
         paramMods
       )
     )
@@ -83,7 +84,7 @@ function modifyParamMods(paramMods, feature, value) {
   return newParamMods;
 }
 
-function gradientDescend(mainParams, startingParamMods) {
+function gradientDescend(startingParamMods) {
   const fitnessHistory = [];
   const changeHistory = [];
 
@@ -135,12 +136,16 @@ function gradientDescend(mainParams, startingParamMods) {
         }
 
         fitnessHistory.push(currentFitness);
-        changeHistory.push(feature + "=" + parseFloat(currentParamMods[DOMAIN][feature]).toFixed(2))
+        changeHistory.push(
+          feature +
+            "=" +
+            parseFloat(currentParamMods[DOMAIN][feature]).toFixed(2)
+        );
         console.log(`Best direction: ${bestDirection}`);
         console.log(
           `\nBest params so far: ${JSON.stringify(currentParamMods)}`
         );
-        console.log(`Fitness history:`)
+        console.log(`Fitness history:`);
         console.log(fitnessHistory);
         console.log("Change history");
         console.log(changeHistory);
@@ -173,7 +178,19 @@ const MEDIUM_PARAM_MODS = {
     HIGH_LEFT_MULTIPLIER: 10.5,
   },
 };
-const V1 = {
+const V1_PARAM_MODS = {
+  DIG: {
+    BURN_PENALTY: -3.3443763200000003,
+    COL_10_PENALTY: -3.9808917197452227,
+    HOLE_WEIGHT_PENALTY: -5,
+    HOLE_PENALTY: -250,
+    SURFACE_MULTIPLIER: 0.3,
+    HIGH_LEFT_MULTIPLIER: 5,
+  },
+  NEAR_KILLSCREEN: { BURN_PENALTY: -15, TETRIS_READY_BONUS: 10 },
+  KILLSCREEN: { COL_10_PENALTY: 0, HIGH_LEFT_MULTIPLIER: 10.5 },
+};
+const V1_5 = {
   DIG: {
     BURN_PENALTY: -1,
     COL_10_PENALTY: -1,
@@ -191,30 +208,37 @@ const V1 = {
     HIGH_LEFT_MULTIPLIER: 10.5,
   },
 };
-const MODIFIED_V5 = {
-  AVG_HEIGHT_EXPONENT: 1.1556000000000004,
-  AVG_HEIGHT_MULTIPLIER: -10.50624,
-  BURN_PENALTY: -2.2,
-  COL_10_PENALTY: -4, // changed due to feature changing
-  MAX_DIRTY_TETRIS_HEIGHT: 0, // (As a multiple of the scare height) Added manually since didn't exist at time of training
-  EXTREME_GAP_PENALTY: -1.6416000000000004,
-  HIGH_LEFT_MULTIPLIER: 1.7280000000000004,
-  HOLE_PENALTY: -19.8,
-  HOLE_WEIGHT_PENALTY: 0,
-  SPIRE_HEIGHT_EXPONENT: 1.215999999999999, // changed due to feature changing
-  SPIRE_HEIGHT_MULTIPLIER: -1.1556000000000002, // changed due to feature changing
-  NOT_BUILDING_TOWARD_TETRIS_PENALTY: -6.054400000000001,
-  SCARE_HEIGHT_18: 10.032000000000002,
-  SCARE_HEIGHT_19: 5.58,
-  SCARE_HEIGHT_29: 0,
-  HIGH_COL_9_PENALTY_MULTIPLIER: -0.24974400000000005, // changed due to feature changing
-  SURFACE_MULTIPLIER: 0.2739200000000001,
-  TETRIS_BONUS: 28.248,
-  TETRIS_READY_BONUS: 5.909760000000001,
-  TETRIS_READY_BONUS_BAR_NEXT: 15.36,
-  INACCESSIBLE_LEFT_PENALTY: -20, // Added manually since didn't exist at time of training
-  INACCESSIBLE_RIGHT_PENALTY: -200, // Added manually since didn't exist at time of training
+const V2 = {
+  DIG: {
+    BURN_PENALTY: -0.4611586002571638,
+    COL_10_PENALTY: -3.3840000000000003,
+    HOLE_WEIGHT_PENALTY: -2.338196782641227,
+    HOLE_PENALTY: -338.40000000000003,
+    SURFACE_MULTIPLIER: 0.5640000000000001,
+    HIGH_LEFT_MULTIPLIER: 1.666666666666667,
+  },
+  NEAR_KILLSCREEN: {
+    BURN_PENALTY: -15,
+    TETRIS_READY_BONUS: 10,
+  },
+  KILLSCREEN: {
+    COL_10_PENALTY: 0,
+    HIGH_LEFT_MULTIPLIER: 10.5,
+  },
+};
+
+const V3 = {
+  DIG: {
+    BURN_PENALTY: -0.4611586002571638,
+    COL_10_PENALTY: -1.8800000000000001,
+    HOLE_WEIGHT_PENALTY: -2.338196782641227,
+    HOLE_PENALTY: -248.16000000000005,
+    SURFACE_MULTIPLIER: 0.7444800000000001,
+    HIGH_LEFT_MULTIPLIER: 0.6664592319119086,
+  },
+  NEAR_KILLSCREEN: { BURN_PENALTY: -15, TETRIS_READY_BONUS: 10 },
+  KILLSCREEN: { COL_10_PENALTY: 0, HIGH_LEFT_MULTIPLIER: 10.5 },
 };
 
 // gradientDescend(MODIFIED_V5, V1);
-console.log(getFitness(V1));
+console.log(getFitness(params.DEFAULT_PARAM_MODS));
