@@ -24,12 +24,14 @@ function parseArguments(requestArgs) {
     existingXOffset,
     existingYOffset,
     firstShiftDelay,
+    existingRotation,
   ] = requestArgs;
   level = parseInt(level);
   lines = parseInt(lines);
   existingXOffset = parseInt(existingXOffset) || 0;
   existingYOffset = parseInt(existingYOffset) || 0;
   firstShiftDelay = parseInt(firstShiftDelay) || 0;
+  existingRotation = parseInt(existingRotation) || 0;
 
   // Validate pieces
   currentPieceStr = currentPieceStr.toUpperCase();
@@ -45,6 +47,9 @@ function parseArguments(requestArgs) {
   }
   if (lines === undefined || lines < 0) {
     throw new Error("Illegal line count:", lines);
+  }
+  if (existingRotation < 0 || existingRotation > 3){
+    throw new Error("Illegal existing rotation:", existingRotation);
   }
   if (level < 18 || level > 30) {
     console.log("WARNING - Unusual level:", level);
@@ -64,6 +69,7 @@ function parseArguments(requestArgs) {
     existingXOffset,
     existingYOffset,
     firstShiftDelay,
+    existingRotation
   };
 }
 
@@ -105,6 +111,7 @@ function handleRequestSyncNoNextBox(requestArgs) {
     existingXOffset,
     existingYOffset,
     firstShiftDelay,
+    existingRotation
   } = parseArguments(requestArgs);
 
   // Get the best move
@@ -117,6 +124,7 @@ function handleRequestSyncNoNextBox(requestArgs) {
     existingXOffset,
     existingYOffset,
     firstShiftDelay,
+    existingRotation,
     /* shouldLog= */ false,
     params.getParams(),
     params.getParamMods()
@@ -142,6 +150,7 @@ function handleRequestSyncWithNextBox(requestArgs) {
     existingXOffset,
     existingYOffset,
     firstShiftDelay,
+    existingRotation
   } = parseArguments(requestArgs);
 
   // Get the best move
@@ -154,6 +163,7 @@ function handleRequestSyncWithNextBox(requestArgs) {
     existingXOffset,
     existingYOffset,
     firstShiftDelay,
+    existingRotation,
     /* shouldLog= */ true,
     params.getParams(),
     params.getParamMods()

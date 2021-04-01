@@ -48,6 +48,7 @@ function getMostPromisingMoves(
   existingXOffset,
   existingYOffset,
   firstShiftDelay,
+  existingRotation,
   shouldLog,
   aiParams,
   paramMods
@@ -60,6 +61,7 @@ function getMostPromisingMoves(
     existingXOffset,
     existingYOffset,
     firstShiftDelay,
+    existingRotation,
     /* shouldLog= */ false && shouldLog
   );
 
@@ -89,6 +91,7 @@ function getBestMoveNoSearch(
   existingXOffset,
   existingYOffset,
   firstShiftDelay,
+  existingRotation,
   shouldLog,
   initialAiParams,
   paramMods
@@ -102,6 +105,7 @@ function getBestMoveNoSearch(
     existingXOffset,
     existingYOffset,
     firstShiftDelay,
+    existingRotation,
     shouldLog,
     initialAiParams,
     paramMods
@@ -118,6 +122,7 @@ function getBestMoveWithSearch(
   existingXOffset,
   existingYOffset,
   firstShiftDelay,
+  existingRotation,
   shouldLog,
   initialAiParams,
   paramMods
@@ -133,6 +138,7 @@ function getBestMoveWithSearch(
     existingXOffset,
     existingYOffset,
     firstShiftDelay,
+    existingRotation,
     shouldLog,
     initialAiParams,
     paramMods
@@ -163,6 +169,7 @@ function getBestMoveWithSearch(
       /* existingXOffset= */ 0,
       /* existingYOffset= */ 0,
       /* firstShiftDelay= */ 0,
+      /* existingRotation= */ 0,
       /* shouldLog= */ false && shouldLog
     );
     const innerTopN = pickBestNMoves(innerPossibilityList, null, level, lines, aiMode, 1, aiParams);
