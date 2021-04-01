@@ -142,6 +142,7 @@ function getBestMoveWithSearch(
   if (shouldLog) {
     console.log("\tElapsed to get N most promising moves:", time2 - startTime);
     console.log("Num promising moves:", topN.length);
+    console.log("Promising moves", topN.map(x => x.slice(0,2)));
     console.log("\n\n---------");
   }
 
