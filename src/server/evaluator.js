@@ -40,6 +40,24 @@ function countEmptyBlocksBelowColumn9Height(surfaceArray) {
   return totalBlocks;
 }
 
+function countCol10Holes(board){
+  let count = 0;
+
+  // Go down to the top of the stack in that column
+  let row = 0;
+  while (row < NUM_ROW && board[row][NUM_COLUMN - 1] == SquareState.EMPTY) {
+    row++;
+  }
+  // Track the full rows we pass through
+  while (row < NUM_ROW - 1) {
+    row++;
+    if (board[row][NUM_COLUMN - 1] === SquareState.EMPTY) {
+      count++;
+    }
+  }
+  return count;
+}
+
 /** Calculates the number of lines that need to be cleared for all the holes to be resolved. */
 function countLinesNeededUntilClean(board) {
   const linesNeededToClear = new Set();
@@ -223,6 +241,7 @@ function getValueOfPossibility(
     correctedSurface,
     totalHeightCorrected,
   ] = utils.correctSurfaceForExtremeGaps(surfaceArray);
+  const adjustedNumHoles = numHoles + (aiMode === AI_MODE.KILLSCREEN && countCol10Holes(boardAfter));
   const scareHeight =
     level >= 29
       ? aiParams.SCARE_HEIGHT_29
@@ -258,7 +277,7 @@ function getValueOfPossibility(
     (nextPieceId == "I"
       ? aiParams.TETRIS_READY_BONUS_BAR_NEXT
       : aiParams.TETRIS_READY_BONUS);
-  const holeFactor = numHoles * aiParams.HOLE_PENALTY;
+  const holeFactor = adjustedNumHoles * aiParams.HOLE_PENALTY;
   const holeWeightFactor =
     countLinesNeededUntilClean(boardAfter) * aiParams.HOLE_WEIGHT_PENALTY;
   const lineClearFactor = getLineClearValue(numLinesCleared, aiParams);
