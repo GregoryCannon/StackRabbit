@@ -4,6 +4,38 @@ const BoardHelper = require("./board_helper");
 const { NUM_TO_CONSIDER, modifyParamsForAiMode } = require("./params");
 
 /**
+ * Iterates over the list of possiblities and return the one with the highest value.
+ * @param {Array<possibility obj>} possibilityList
+ */
+ function pickBestNMoves(
+  possibilityList,
+  nextPieceId,
+  level,
+  lines,
+  aiMode,
+  numMovesToConsider,
+  aiParams
+) {
+  for (const possibility of possibilityList) {
+    const [value, explanation] = evaluator.getValueOfPossibility(
+      possibility,
+      nextPieceId,
+      level,
+      lines,
+      aiMode,
+      /* shouldLog= */ false,
+      aiParams
+    );
+    possibility.push(value);
+    possibility.push(explanation);
+  }
+  // Sort by value
+  possibilityList.sort((a, b) => b[6] - a[6]);
+
+  return possibilityList.slice(0, numMovesToConsider);
+}
+
+/**
  * Finds the N highest valued moves, without doing any search into placements of the next piece.
  * Can be called with or without a next piece, and will function accordingly.
  */
@@ -34,10 +66,9 @@ function getMostPromisingMoves(
   // Get the AI mode (e.g. digging, scoring)
   const aiMode = aiModeManager.getAiMode(startingBoard, lines, level, aiParams);
   aiParams = modifyParamsForAiMode(aiParams, aiMode, paramMods);
-  // console.log("aiparams", aiParams)
 
   // Get the top contenders, sorted best -> worst
-  const topN = evaluator.pickBestNMoves(
+  const topN = pickBestNMoves(
     possibilityList,
     nextPieceId,
     level,
@@ -133,19 +164,13 @@ function getBestMoveWithSearch(
       /* firstShiftDelay= */ 0,
       /* shouldLog= */ false && shouldLog
     );
-    const innerBestMove = evaluator.pickBestMoveNoNextBox(
-      innerPossibilityList,
-      level,
-      lines,
-      aiMode,
-      /* shouldLog= */ false && shouldLog,
-      aiParams
-    );
-
-    // Get a total score for this possibility (including line clears from the outer placement)
-    if (innerBestMove == null) {
+    const innerTopN = pickBestNMoves(innerPossibilityList, null, level, lines, aiMode, 1, aiParams);
+    if (innerTopN.length == 0) {
       continue;
     }
+
+    // Get a total score for this possibility (including line clears from the outer placement)
+    const innerBestMove = innerTopN[0];
     const originalMovePartialValue = evaluator.getLineClearValue(
       linesClearedOuterMove,
       aiParams

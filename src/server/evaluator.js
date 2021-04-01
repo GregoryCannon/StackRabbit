@@ -193,6 +193,7 @@ function getLineClearValue(numLinesCleared, aiParams) {
 
 /**
  * Evaluates a given possibility based on a number of factors.
+ * NB: @param nextPieceId CAN be null if you want the NNB value of a possiblity.
  * @param {[rotationId, xOffset, resultingSurface, numHoles, numLinesCleared]} possibility
  */
 function getValueOfPossibility(
@@ -214,7 +215,7 @@ function getValueOfPossibility(
   ] = possibility;
 
   if (!aiParams) {
-    console.log("RED ALERT", level, lines, aiMode, shouldLog, aiParams);
+    throw new Error("No AI Params provided: ", aiParams);
   }
 
   // Preliminary calculations
@@ -330,7 +331,7 @@ function getValueOfPossibility(
  * Iterates over the list of possiblities and return the one with the highest value.
  * @param {Array<possibility obj>} possibilityList
  */
-function pickBestNMoves(
+ function pickBestNMoves(
   possibilityList,
   nextPieceId,
   level,
@@ -396,5 +397,6 @@ function pickBestMoveNoNextBox(
 module.exports = {
   pickBestNMoves,
   pickBestMoveNoNextBox,
+  getValueOfPossibility,
   getLineClearValue,
 };
