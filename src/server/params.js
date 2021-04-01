@@ -37,7 +37,7 @@ const DEFAULT_PARAM_MODS = {
     BURN_PENALTY: 0,
     COL_10_PENALTY: -2,
     HOLE_WEIGHT_PENALTY: -3,
-    HOLE_PENALTY: -200, // changed
+    HOLE_PENALTY: -100, // changed
     SURFACE_MULTIPLIER: 0.2,
     HIGH_LEFT_MULTIPLIER: 0,
   },
@@ -47,7 +47,8 @@ const DEFAULT_PARAM_MODS = {
   },
   KILLSCREEN: {
     COL_10_PENALTY: 0,
-    HIGH_LEFT_MULTIPLIER: 10.5,
+    HIGH_LEFT_MULTIPLIER: 4,
+    BURN_PENALTY: 0,
   },
 };
 
@@ -114,6 +115,8 @@ const AGGRO_MODIFICATIONS = {
 const V5_AGGRO = applyModsToParams(V5_TRAINED_PARAMS, AGGRO_MODIFICATIONS);
 
 function getParams() {
+  // Uncomment when using the AI to practice digging
+  // return V5_NO_DIRTIES;
   return V5_TRAINED_PARAMS;
 }
 
@@ -125,6 +128,7 @@ module.exports = {
   getParams,
   getParamMods,
   V5_TRAINED_PARAMS,
+  V5_NO_DIRTIES,
   NUM_TO_CONSIDER,
   AI_MODE,
   DEFAULT_PARAM_MODS,
