@@ -242,7 +242,7 @@ function regressionTest() {
   // }
 }
 
-regressionTest();
+// regressionTest();
 // runScoreExperiment(100);
 
 module.exports = {
