@@ -130,7 +130,7 @@ function getBestMoveWithSearch(
       /* existingXOffset= */ 0,
       /* existingYOffset= */ 0,
       /* firstShiftDelay= */ 0,
-      /* shouldLog= */ true && shouldLog
+      /* shouldLog= */ false && shouldLog
     );
     const innerBestMove = evaluator.pickBestMoveNoNextBox(
       innerPossibilityList,
