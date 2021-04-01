@@ -180,7 +180,8 @@ function getColumn10Factor(board, scareHeight) {
           sum -= 1;
         } else {
           // How bad an exposed col 10 is scales with height
-          const heightMultiplier = (NUM_ROW - row) / scareHeight;
+          const heightMultiplier =
+            scareHeight < 2 ? 1 : (NUM_ROW - row) / scareHeight;
           sum += heightMultiplier;
         }
         if (board[row][col] == SquareState.EMPTY) {
@@ -194,7 +195,6 @@ function getColumn10Factor(board, scareHeight) {
 /** Count the number of blocks in column 10 */
 function countBlocksInColumn10(board) {
   let sum = 0;
-  const heightMultiplier = 3;
   for (let row = 0; row < NUM_ROW; row++) {
     // If column 10 filled, add to the sum
     if (board[row][NUM_COLUMN - 1] == SquareState.FULL) {
@@ -212,11 +212,12 @@ function countBlocksInColumn10(board) {
  * @param {*} surfaceArray
  * @param {*} scareHeight
  */
-function getHighLeftFactor(surfaceArray, scareHeight) {
+function getHighLeftFactor(surfaceArray, scareHeight, board) {
   const maxHeightNonCol1 = Math.max(...surfaceArray.slice(1));
   const col1Height = surfaceArray[0];
   // Scale up based on the board height
-  const boardHeightFactor = maxHeightNonCol1 / scareHeight;
+  const boardHeightFactor =
+    scareHeight < 2 ? 1 : maxHeightNonCol1 / scareHeight;
   // Cap at 2 so it doesn't want crazy high col 1
   return boardHeightFactor * Math.min(2, col1Height - maxHeightNonCol1);
 }
@@ -328,15 +329,16 @@ function getValueOfPossibility(
     aiParams.AVG_HEIGHT_MULTIPLIER *
     Math.pow(avgHeightAboveScareLine, aiParams.AVG_HEIGHT_EXPONENT);
   const col10Factor =
-    getColumn10Factor(boardAfter, scareHeight) * aiParams.COL_10_PENALTY;
+    getColumn10Factor(boardAfter, scareHeight) *
+    aiParams.COL_10_PENALTY;
   const col10BurnFactor =
     countBlocksInColumn10(boardAfter) * aiParams.BURN_PENALTY; // Any blocks on col 10 will result in a burn
-  const slopingFactor =
+  const col9Factor =
     aiParams.HIGH_COL_9_PENALTY_MULTIPLIER *
     countEmptyBlocksBelowColumn9Height(surfaceArray);
   const highLeftFactor =
     aiParams.HIGH_LEFT_MULTIPLIER *
-    getHighLeftFactor(surfaceArray, scareHeight);
+    getHighLeftFactor(surfaceArray, scareHeight, boardAfter);
   const inaccessibleLeftFactor = leftIsInaccessible
     ? aiParams.INACCESSIBLE_LEFT_PENALTY
     : 0;
@@ -344,23 +346,39 @@ function getValueOfPossibility(
     ? aiParams.INACCESSIBLE_RIGHT_PENALTY
     : 0;
 
-  const totalValue =
-    surfaceFactor +
-    extremeGapFactor +
-    holeFactor +
-    holeWeightFactor +
-    lineClearFactor +
-    spireHeightFactor +
-    avgHeightFactor +
-    col10Factor +
-    col10BurnFactor +
-    slopingFactor +
-    tetrisReadyFactor +
-    highLeftFactor +
-    inaccessibleLeftFactor +
-    inaccessibleRightFactor;
+  const factors = {
+    surfaceFactor,
+    extremeGapFactor,
+    holeFactor,
+    holeWeightFactor,
+    lineClearFactor,
+    spireHeightFactor,
+    avgHeightFactor,
+    col10Factor,
+    col10BurnFactor,
+    slopingFactor: col9Factor,
+    tetrisReadyFactor,
+    highLeftFactor,
+    inaccessibleLeftFactor,
+    inaccessibleRightFactor,
+  };
 
-  const explanation = `Surf: ${surfaceFactor}, Hole: ${holeFactor}, HoleWeight: ${holeWeightFactor}, ExtremeGap: ${extremeGapFactor}, LineClear: ${lineClearFactor}, Spire: ${spireHeightFactor}, AvgHeight: ${avgHeightFactor}, Col10: ${col10Factor}, Col10Burn: ${col10BurnFactor}, Slope: ${slopingFactor} HighLeft: ${highLeftFactor}, TetrisReady: ${tetrisReadyFactor}, InaccLeft: ${inaccessibleLeftFactor}, InaccRight: ${inaccessibleRightFactor}, Subtotal: ${totalValue}`;
+  let totalValue = 0;
+  let explanation = "";
+  for (const key in factors) {
+    const val = factors[key];
+
+    // Crash instantly if any of the factors are NaN (it's better than still running and making bad placements)
+    if (isNaN(val)) {
+      throw new Error("NaN detected for factor:", key);
+    }
+
+    totalValue += val;
+    const shortKeyName = key.substr(0, key.length - 6);
+    explanation += `${shortKeyName}: ${val.toFixed(2)}, `;
+  }
+  explanation += `SUBTOTAL: ${totalValue}`;
+
   if (shouldLog) {
     console.log(
       `---- Evaluated possiblity: ${possibility[0]} ${possibility[1]}, mode: ${aiMode}\n`,
