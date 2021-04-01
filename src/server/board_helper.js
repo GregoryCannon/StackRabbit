@@ -205,7 +205,7 @@ function repeatedlyShiftPiece(
 
   // If a bar can't spawn or is almost immediately crashed into the stack, it's definitely out of reach
   if (pieceCollision(board, x, y + 1, currentRotationPiece)) {
-    return true;
+    return rangeCurrent;
   }
 
   while (true) {
