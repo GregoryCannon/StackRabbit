@@ -7,7 +7,7 @@ const { NUM_TO_CONSIDER, modifyParamsForAiMode } = require("./params");
  * Iterates over the list of possiblities and return the one with the highest value.
  * @param {Array<possibility obj>} possibilityList
  */
- function pickBestNMoves(
+function pickBestNMoves(
   possibilityList,
   nextPieceId,
   level,
@@ -148,7 +148,10 @@ function getBestMoveWithSearch(
   if (shouldLog) {
     console.log("\tElapsed to get N most promising moves:", time2 - startTime);
     console.log("Num promising moves:", topN.length);
-    console.log("Promising moves", topN.map(x => x.slice(0,2)));
+    console.log(
+      "Promising moves",
+      topN.map((x) => x.slice(0, 2))
+    );
     console.log("\n\n---------");
   }
 
@@ -172,7 +175,15 @@ function getBestMoveWithSearch(
       /* existingRotation= */ 0,
       /* shouldLog= */ false && shouldLog
     );
-    const innerTopN = pickBestNMoves(innerPossibilityList, null, level, lines, aiMode, 1, aiParams);
+    const innerTopN = pickBestNMoves(
+      innerPossibilityList,
+      null,
+      level,
+      lines,
+      aiMode,
+      1,
+      aiParams
+    );
     if (innerTopN.length == 0) {
       continue;
     }

@@ -48,7 +48,7 @@ function parseArguments(requestArgs) {
   if (lines === undefined || lines < 0) {
     throw new Error("Illegal line count:", lines);
   }
-  if (existingRotation < 0 || existingRotation > 3){
+  if (existingRotation < 0 || existingRotation > 3) {
     throw new Error("Illegal existing rotation:", existingRotation);
   }
   if (level < 18 || level > 30) {
@@ -69,7 +69,7 @@ function parseArguments(requestArgs) {
     existingXOffset,
     existingYOffset,
     firstShiftDelay,
-    existingRotation
+    existingRotation,
   };
 }
 
@@ -111,7 +111,7 @@ function handleRequestSyncNoNextBox(requestArgs) {
     existingXOffset,
     existingYOffset,
     firstShiftDelay,
-    existingRotation
+    existingRotation,
   } = parseArguments(requestArgs);
 
   // Get the best move
@@ -150,7 +150,7 @@ function handleRequestSyncWithNextBox(requestArgs) {
     existingXOffset,
     existingYOffset,
     firstShiftDelay,
-    existingRotation
+    existingRotation,
   } = parseArguments(requestArgs);
 
   // Get the best move

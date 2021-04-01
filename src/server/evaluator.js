@@ -40,7 +40,7 @@ function countEmptyBlocksBelowColumn9Height(surfaceArray) {
   return totalBlocks;
 }
 
-function countCol10Holes(board){
+function countCol10Holes(board) {
   let count = 0;
 
   // Go down to the top of the stack in that column
@@ -241,7 +241,8 @@ function getValueOfPossibility(
     correctedSurface,
     totalHeightCorrected,
   ] = utils.correctSurfaceForExtremeGaps(surfaceArray);
-  const adjustedNumHoles = numHoles + (aiMode === AI_MODE.KILLSCREEN && countCol10Holes(boardAfter));
+  const adjustedNumHoles =
+    numHoles + (aiMode === AI_MODE.KILLSCREEN && countCol10Holes(boardAfter));
   const scareHeight =
     level >= 29
       ? aiParams.SCARE_HEIGHT_29
@@ -350,7 +351,7 @@ function getValueOfPossibility(
  * Iterates over the list of possiblities and return the one with the highest value.
  * @param {Array<possibility obj>} possibilityList
  */
- function pickBestNMoves(
+function pickBestNMoves(
   possibilityList,
   nextPieceId,
   level,

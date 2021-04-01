@@ -9,10 +9,7 @@ const REWARDS = {
   3: 300,
   4: 1200,
 };
-const {
-  getParams,
-  getParamMods,
-} = require("./params");
+const { getParams, getParamMods } = require("./params");
 const DIG_LINE_CAP = 25;
 
 function simulateManyGames(numIterations, startingLevel, aiParams, paramMods) {
@@ -231,7 +228,7 @@ function regressionTest() {
     regressionTestPieceSequence,
     /* isDig= */ false,
     /* shouldLog= */ false
-  )
+  );
 
   console.log(result);
   // // Validate result
