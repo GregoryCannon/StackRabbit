@@ -268,8 +268,7 @@ function getValueOfPossibility(
     aiParams.AVG_HEIGHT_MULTIPLIER *
     Math.pow(avgHeightAboveScareLine, aiParams.AVG_HEIGHT_EXPONENT);
   const col10Factor =
-    getColumn10Factor(boardAfter, scareHeight) *
-    aiParams.COL_10_PENALTY;
+    getColumn10Factor(boardAfter, scareHeight) * aiParams.COL_10_PENALTY;
   const col10BurnFactor =
     countBlocksInColumn10(boardAfter) * aiParams.BURN_PENALTY; // Any blocks on col 10 will result in a burn
   const col9Factor =
@@ -397,5 +396,5 @@ function pickBestMoveNoNextBox(
 module.exports = {
   pickBestNMoves,
   pickBestMoveNoNextBox,
-  getLineClearValue
+  getLineClearValue,
 };
