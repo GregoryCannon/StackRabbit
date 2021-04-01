@@ -1,4 +1,5 @@
 const evaluator = require("./evaluator");
+const aiModeManager = require("./ai_mode_manager");
 const BoardHelper = require("./board_helper");
 const { NUM_TO_CONSIDER, modifyParamsForAiMode } = require("./params");
 
@@ -31,7 +32,7 @@ function getMostPromisingMoves(
   );
 
   // Get the AI mode (e.g. digging, scoring)
-  const aiMode = evaluator.getAiMode(startingBoard, lines, level, aiParams);
+  const aiMode = aiModeManager.getAiMode(startingBoard, lines, level, aiParams);
   aiParams = modifyParamsForAiMode(aiParams, aiMode, paramMods);
   // console.log("aiparams", aiParams)
 
