@@ -227,21 +227,17 @@ function regressionTest() {
     getParamMods(),
     regressionTestPieceSequence,
     /* isDig= */ false,
-    /* shouldLog= */ false
+    /* shouldLog= */ true
   );
 
   console.log(result);
-  // // Validate result
-  // const [score, lines, level] = result;
-  // if (score === 1245300 && lines === 266 && level === 32) {
-  //   console.log("Test passed!", result);
-  // } else {
-  //   console.log("Test FAILED!", result);
-  // }
 }
 
-// regressionTest();
-// runScoreExperiment(100);
+if (typeof require !== 'undefined' && require.main === module) {
+  regressionTest();
+  // runScoreExperiment(100);
+}
+
 
 module.exports = {
   simulateManyGames,
