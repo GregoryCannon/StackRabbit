@@ -123,7 +123,7 @@ function getPossibleMoves(
   existingRotation,
   shouldLog
 ) {
-  _validateIntParam(level, 0, 29);
+  _validateIntParam(level, 0, 999);
   _validateIntParam(existingXOffset, -5, 4);
   _validateIntParam(existingYOffset, 0, 20);
   _validateIntParam(firstShiftDelay, 0, 999);
@@ -302,7 +302,7 @@ function boardHasInaccessibileLeft(board, level) {
     existingRotation: 0,
   };
 
-  return placementIsLegal(1, -5, simParams);
+  return !placementIsLegal(1, -5, simParams);
 }
 
 /** Returns true if the tap speed is not sufficient to get a long bar to the right. */
@@ -329,7 +329,7 @@ function boardHasInaccessibileRight(board, level) {
     existingRotation: 0,
   };
 
-  return placementIsLegal(1, -5, simParams);
+  return !placementIsLegal(1, -5, simParams);
 }
 
 /** A modulus function that correctly handles negatives. */
