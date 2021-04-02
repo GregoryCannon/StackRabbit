@@ -262,7 +262,7 @@ function executeInputs()
     -- Debug logs
     if inputsThisFrame.left or inputsThisFrame.right then
       print("SHIFT" .. emu.framecount())
-    elseif pendingInputs.left > 0 or pendingInputs.right > 0 then
+    elseif pendingInputs.left > 0 or pendingInputs.right > 0 or pendingInputs.A > 0 or pendingInputs.B > 0 then
       print("nextShift: " .. framesUntilNextShift)
     end
 
