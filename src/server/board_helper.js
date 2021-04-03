@@ -281,16 +281,24 @@ function getBoardHeightAtColumn(board, col) {
   return 20 - row;
 }
 
-/** Returns true if the board needs a 5 tap to resolve, and the tap speed is not sufficient to get a piece there. */
-function boardHasInaccessibileLeft(board, level) {
-  // If left is built out, we're fine
-  if (getBoardHeightAtColumn(board, 0) > getBoardHeightAtColumn(board, 1)) {
-    return false;
+function hasHolesNearTopOfColumn(board, col) {
+  let row = 0;
+  while (row < NUM_ROW && board[row][col] === SquareState.EMPTY) {
+    row++;
   }
+  const HEIGHT_NEAR_TOP = 3;
+  for (let i = 0; i < HEIGHT_NEAR_TOP && row + i < NUM_ROW - 1; i++) {
+    if (board[row + i][col] === SquareState.EMPTY) {
+      return true;
+    }
+  }
+  return false;
+}
 
+function canDoPlacement(board, level, pieceId, rotationIndex, xOffset) {
   const maxGravity = utils.GetGravity(level) - 1; // 0-indexed, executes on the 0 frame. e.g. 2... 1... 0(shift).. 2... 1... 0(shift)
   const maxArr = AI_TAP_ARR - 1;
-  const rotationsList = PIECE_LOOKUP["I"][0];
+  const rotationsList = PIECE_LOOKUP[pieceId][0];
   const simParams = {
     board,
     initialX: 3,
@@ -301,35 +309,81 @@ function boardHasInaccessibileLeft(board, level) {
     rotationsList,
     existingRotation: 0,
   };
-
-  return !placementIsLegal(1, -5, simParams);
+  return placementIsLegal(rotationIndex, xOffset, simParams);
 }
 
-/** Returns true if the tap speed is not sufficient to get a long bar to the right. */
-function boardHasInaccessibileRight(board, level) {
-  // If right is built out, we're fine
+/** Returns true if the board needs a 5 tap to resolve, and the tap speed is not sufficient to get a piece there. */
+function boardHasInaccessibileLeft(board, level, averageHeight) {
+  // If has holes near the top, it has a bad left
+  if (hasHolesNearTopOfColumn(board, 0) || hasHolesNearTopOfColumn(board, 1)) {
+    return true;
+  }
+
+  const col1Height = getBoardHeightAtColumn(board, 0);
+  const col2Height = getBoardHeightAtColumn(board, 1);
+  const col3Height = getBoardHeightAtColumn(board, 2);
+
+  // If the left is built out, we good
+  if (col1Height >= col2Height && col1Height > averageHeight) {
+    return false;
+  }
+
+  // If left is accessible by square, the left is good
+  if (col1Height == col2Height && canDoPlacement(board, level, "O", 0, -4)) {
+    return false;
+  }
+
+  // If the left is accessible by L, the left is good
   if (
-    getBoardHeightAtColumn(board, NUM_COLUMN - 1) >
-    getBoardHeightAtColumn(board, NUM_COLUMN - 2)
+    col1Height === col2Height - 1 &&
+    col2Height === col3Height &&
+    canDoPlacement(board, level, "L", 0, -4)
   ) {
     return false;
   }
 
-  const maxGravity = utils.GetGravity(level) - 1; // 0-indexed, executes on the 0 frame. e.g. 2... 1... 0(shift).. 2... 1... 0(shift)
-  const maxArr = AI_TAP_ARR - 1;
-  const rotationsList = PIECE_LOOKUP["I"][0];
-  const simParams = {
-    board,
-    initialX: 3,
-    initialY: -2,
-    firstShiftDelay: 0,
-    maxGravity,
-    maxArr,
-    rotationsList,
-    existingRotation: 0,
-  };
+  // If the left is superflat, the left is good
+  if (
+    col1Height === col2Height &&
+    col2Height === col3Height &&
+    canDoPlacement(board, level, "L", 2, -4)
+  ) {
+    return false;
+  }
 
-  return !placementIsLegal(1, -5, simParams);
+  // If the left is accessible by T, the left is good
+  if (
+    col1Height === col2Height + 1 &&
+    col1Height === col3Height &&
+    canDoPlacement(board, level, "T", 0, -4)
+  ) {
+    return false;
+  }
+
+  // Otherwise we need 5 tap
+  return !canDoPlacement(board, level, "I", 1, -5);
+}
+
+/** Returns true if the tap speed is not sufficient to get a long bar to the right. */
+function boardHasInaccessibileRight(board, level, averageHeight) {
+  // If has holes near the top, it has a bad right
+  if (
+    hasHolesNearTopOfColumn(board, NUM_COLUMN - 1) ||
+    hasHolesNearTopOfColumn(board, NUM_COLUMN - 2)
+  ) {
+    return true;
+  }
+
+  const col9Height = getBoardHeightAtColumn(board, NUM_COLUMN - 2);
+  const col10Height = getBoardHeightAtColumn(board, NUM_COLUMN - 1);
+
+  // If right is built out, we're good
+  if (col10Height >= col9Height && col10Height > averageHeight) {
+    return false;
+  }
+
+  // Otherwise we need a 4 tap
+  return !canDoPlacement(board, level, "I", 1, 4);
 }
 
 /** A modulus function that correctly handles negatives. */
@@ -600,9 +654,9 @@ function getTestBoardWithHeight(height) {
 // );
 // console.log(
 //   getPossibleMoves(
-//     getTestBoardWithHeight(19),
-//     "I",
-//     19,
+//     getTestBoardWithHeight(4),
+//     "O",
+//     29,
 //     0,
 //     0,
 //     0,
@@ -616,6 +670,7 @@ function getTestBoardWithHeight(height) {
 module.exports = {
   getPossibleMoves,
   getBoardAndLinesClearedAfterPlacement,
+  getBoardHeightAtColumn,
   pieceCollision,
   boardHasInaccessibileLeft,
   boardHasInaccessibileRight,

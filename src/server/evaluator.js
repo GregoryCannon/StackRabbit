@@ -161,23 +161,23 @@ function countBlocksInColumn10(board) {
   return sum;
 }
 
-/**
- * Gives a bonus if column 1 is higher than the rest (up to 2, since more isn't
- * too helpful after that), or a penalty if it's lower. However, if the stack is low,
- * it always returns 0, since this factor isn't too relevant.
- * @param {*} board
- * @param {*} surfaceArray
- * @param {*} scareHeight
- */
-function getHighLeftFactor(surfaceArray, scareHeight, board) {
-  const maxHeightNonCol1 = Math.max(...surfaceArray.slice(1));
-  const col1Height = surfaceArray[0];
-  // Scale up based on the board height
-  const boardHeightFactor =
-    scareHeight < 2 ? 1 : maxHeightNonCol1 / scareHeight;
-  // Cap at 2 so it doesn't want crazy high col 1
-  return boardHeightFactor * Math.min(2, col1Height - maxHeightNonCol1);
-}
+// /**
+//  * Gives a bonus if column 1 is higher than the rest (up to 2, since more isn't
+//  * too helpful after that), or a penalty if it's lower. However, if the stack is low,
+//  * it always returns 0, since this factor isn't too relevant.
+//  * @param {*} board
+//  * @param {*} surfaceArray
+//  * @param {*} scareHeight
+//  */
+// function getHighLeftFactor(surfaceArray, scareHeight, board) {
+//   const maxHeightNonCol1 = Math.max(...surfaceArray.slice(1));
+//   const col1Height = surfaceArray[0];
+//   // Scale up based on the board height
+//   const boardHeightFactor =
+//     scareHeight < 2 ? 1 : maxHeightNonCol1 / scareHeight;
+//   // Cap at 2 so it doesn't want crazy high col 1
+//   return boardHeightFactor * Math.min(2, col1Height - maxHeightNonCol1);
+// }
 
 function isTetrisReadyRightWell(board) {
   // Move the imaginary long bar down column 10
@@ -250,10 +250,8 @@ function getValueOfPossibility(
       ? aiParams.SCARE_HEIGHT_19
       : aiParams.SCARE_HEIGHT_18;
   const spireHeight = getSpireHeight(surfaceArray, scareHeight);
-  const avgHeightAboveScareLine = Math.max(
-    0,
-    utils.getAverageColumnHeight(boardAfter) - scareHeight
-  );
+  const averageHeight = utils.getAverageColumnHeight(boardAfter);
+  const avgHeightAboveScareLine = Math.max(0, averageHeight - scareHeight);
   const tetrisReady = isTetrisReadyRightWell(boardAfter);
   const levelAfterPlacement = utils.getLevelAfterLineClears(
     level,
@@ -262,11 +260,18 @@ function getValueOfPossibility(
   );
   const leftIsInaccessible = boardHelper.boardHasInaccessibileLeft(
     boardAfter,
-    levelAfterPlacement
+    levelAfterPlacement,
+    averageHeight
   );
   const rightIsInaccessible = boardHelper.boardHasInaccessibileRight(
     boardAfter,
-    levelAfterPlacement
+    levelAfterPlacement,
+    averageHeight
+  );
+  const col1Height = surfaceArray[0];
+  const col10Height = boardHelper.getBoardHeightAtColumn(
+    boardAfter,
+    NUM_COLUMN - 1
   );
 
   let extremeGapFactor = totalHeightCorrected * aiParams.EXTREME_GAP_PENALTY;
@@ -295,9 +300,11 @@ function getValueOfPossibility(
   const col9Factor =
     aiParams.HIGH_COL_9_PENALTY_MULTIPLIER *
     countEmptyBlocksBelowColumn9Height(surfaceArray);
-  const highLeftFactor =
-    aiParams.HIGH_LEFT_MULTIPLIER *
-    getHighLeftFactor(surfaceArray, scareHeight, boardAfter);
+  const builtOutLeftFactor =
+    aiParams.BUILT_OUT_LEFT_MULTIPLIER * Math.max(0, col1Height - scareHeight);
+  const builtOutRightFactor =
+    aiParams.BUILT_OUT_RIGHT_MULTIPLIER *
+    Math.max(0, col10Height - scareHeight);
   const inaccessibleLeftFactor = leftIsInaccessible
     ? aiParams.INACCESSIBLE_LEFT_PENALTY
     : 0;
@@ -315,9 +322,10 @@ function getValueOfPossibility(
     avgHeightFactor,
     col10Factor,
     col10BurnFactor,
-    slopingFactor: col9Factor,
+    col9Factor,
     tetrisReadyFactor,
-    highLeftFactor,
+    builtOutLeftFactor,
+    builtOutRightFactor,
     inaccessibleLeftFactor,
     inaccessibleRightFactor,
   };
@@ -329,7 +337,7 @@ function getValueOfPossibility(
 
     // Crash instantly if any of the factors are NaN (it's better than still running and making bad placements)
     if (isNaN(val)) {
-      throw new Error("NaN detected for factor:", key);
+      throw new Error(`NaN detected for factor: ${key}`);
     }
 
     totalValue += val;
