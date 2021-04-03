@@ -20,6 +20,7 @@ AIPlayer.prototype.placeCurrentPiece = async function (
 ) {
   for (const row of board) {
     if (row.length > 10) {
+      console.log(JSON.stringify(board));
       console.log(board);
       throw new Error("Invalid board!");
     }
