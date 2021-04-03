@@ -3,8 +3,9 @@ local os = require("os")
 require "socket"
 
 -- Config constants
-FRAMES_BETWEEN_SHIFTS = 4 -- the ARR minus 1, e.g. 3 delay -> 15 Hz, 4 delay -> 12.5 Hz
+FRAMES_BETWEEN_SHIFTS = 3 -- the ARR minus 1, e.g. 3 delay -> 15 Hz, 4 delay -> 12.5 Hz
 REACTION_TIME_FRAMES = 12
+DELAY_FRAMES = 0 -- the number of frames to wait before performing the first input
 SHOULD_RECORD_GAMES = true
 MOVIE_PATH = "C:\\Users\\Greg\\Desktop\\VODs\\" -- Where to store the fm2 VODS (absolute path)
 
@@ -21,7 +22,7 @@ pnext = 0
 function resetPieceScopedVars()
   adjustmentApiResult = nil
   framesUntilAdjustment = REACTION_TIME_FRAMES
-  framesUntilNextShift = 0
+  framesUntilNextShift = DELAY_FRAMES
   pendingInputs = { left=0, right=0, A=0, B=0 }
   shiftsExecuted = 0
   rotationsExecuted = 0
@@ -83,13 +84,14 @@ end
 -- Based on the current placement, predict exactly where the piece will be when it's time to adjust it
 function predictPieceOffsetAtAdjustmentTime()
   local ARR = FRAMES_BETWEEN_SHIFTS + 1
-  local framesElapsed = REACTION_TIME_FRAMES
+  local arrFramesElapsed = REACTION_TIME_FRAMES - DELAY_FRAMES
+  local gravityFramesElapsed = REACTION_TIME_FRAMES - DELAY_FRAMES
 
-  local numInputStepsCompleted = math.ceil(framesElapsed / ARR)
-  local numGravityStepsCompleted = math.floor(framesElapsed / getGravity(level))
+  local numInputStepsCompleted = math.ceil(arrFramesElapsed / ARR)
+  local numGravityStepsCompleted = math.floor(gravityFramesElapsed / getGravity(level))
 
   offsetYAtAdjustmentTime = numGravityStepsCompleted
-  arrCounterAdjustmentTime = numInputStepsCompleted * ARR - framesElapsed
+  arrCounterAdjustmentTime = numInputStepsCompleted * ARR - arrFramesElapsed
 
   -- Calculate how many of the pending shifts it will have completed by that point
   offsetXAtAdjustmentTime = 0
@@ -141,7 +143,7 @@ end
 function requestPlacementSyncNoNextBox()
   -- Format URL arguments
   local requestStr = "http://localhost:3000/sync-nnb/" .. getEncodedBoard()
-  local requestStr = requestStr .. "/" .. orientToPiece[pcur] .. "/null/" .. level .. "/" .. numLines .. "/0/0"
+  local requestStr = requestStr .. "/" .. orientToPiece[pcur] .. "/null/" .. level .. "/" .. numLines .. "/" .. DELAY_FRAMES .. "/0"
 
   return makeHttpRequest(requestStr).data
 end
