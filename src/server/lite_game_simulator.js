@@ -233,11 +233,10 @@ function regressionTest() {
   console.log(result);
 }
 
-if (typeof require !== 'undefined' && require.main === module) {
+if (typeof require !== "undefined" && require.main === module) {
   regressionTest();
   // runScoreExperiment(100);
 }
-
 
 module.exports = {
   simulateManyGames,
