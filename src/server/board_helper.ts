@@ -41,7 +41,7 @@ function pieceCollision(
 /** Clear all filled lines on a board
  * @returns the number of lines cleared
  */
-function clearLines(board: any[][]) {
+function clearLines(board: Board) {
   let fullLines = [];
   for (let r = 0; r < NUM_ROW; r++) {
     let isRowFull = true;
@@ -71,8 +71,8 @@ function clearLines(board: any[][]) {
 }
 
 function getBoardAndLinesClearedAfterPlacement(
-  board: any,
-  currentRotationPiece: string | any[],
+  board: Board,
+currentRotationPiece: PieceArray,
   x: number,
   y: number
 ) {
@@ -118,15 +118,15 @@ function _validateIntParam(value: number, min: number, max: number) {
  * dropping it into the stack and letting the result play out.
  */
 function getPossibleMoves(
-  startingBoard: any,
+  startingBoard: Board,
   currentPieceId: string,
-  level: any,
+  level: number,
   existingXOffset: number,
   existingYOffset: number,
   tapArr: number,
-  firstShiftDelay: any,
+  firstShiftDelay: number,
   existingRotation: number,
-  shouldLog: any
+  shouldLog: boolean
 ) {
   _validateIntParam(level, 0, 999);
   _validateIntParam(existingXOffset, -5, 4);
@@ -184,7 +184,7 @@ function getPossibleMoves(
     }
   }
 
-  return _generatePossibilityList(
+  return _generateLegacyPossibilityList(
     legalPlacements,
     startingBoard,
     currentPieceId,
@@ -195,6 +195,60 @@ function getPossibleMoves(
 }
 
 function _generatePossibilityList(
+  legalPlacements: Array<[number, number]>,
+  startingBoard: Board,
+  currentPieceId: string,
+  startingX: number,
+  startingY: number,
+  shouldLog: boolean
+) {
+  const possibilityList = []; // list of [rotationId, xOffset, columnHeightsStr]
+
+  for (const [rotationIndex, xOffset] of legalPlacements) {
+    const currentRotationPiece = PIECE_LOOKUP[currentPieceId][0][rotationIndex];
+    const x = startingX + xOffset;
+    let y = startingY;
+
+    // Move the piece down until it hits the stack
+    while (!pieceCollision(startingBoard, x, y + 1, currentRotationPiece)) {
+      y++;
+    }
+
+    // Make a new board with that piece locked in
+    const [boardAfter, numLinesCleared] = getBoardAndLinesClearedAfterPlacement(
+      startingBoard,
+      currentRotationPiece,
+      x,
+      y
+    );
+    const newSurfaceArray = utils.getSurfaceArray(boardAfter);
+    const numHoles = utils.getHoleCount(boardAfter);
+
+    // Add the possibility to the list
+    if (shouldLog) {
+      console.log(
+        `Adding possibility [Index ${rotationIndex}, xOffset ${xOffset}], would make surface ${newSurfaceArray}`
+      );
+    }
+    possibilityList.push([
+      rotationIndex,
+      xOffset,
+      newSurfaceArray,
+      numHoles,
+      numLinesCleared,
+      boardAfter,
+    ]);
+  }
+
+  if (shouldLog) {
+    console.log(
+      `Result: ${possibilityList.length} possibilities for ${currentPieceId}`
+    );
+  }
+  return possibilityList;
+}
+
+function _generateLegacyPossibilityList(
   legalPlacements: any[],
   startingBoard: any,
   currentPieceId: string | number,
@@ -256,17 +310,8 @@ function _generatePossibilityList(
  * placements with abs(xOffset) >= 2.
  */
 function getPieceRanges(
-  pieceId: string | number,
-  simParams: {
-    board: any;
-    initialX: any;
-    initialY: any;
-    firstShiftDelay: any;
-    maxGravity: number;
-    maxArr: number;
-    rotationsList: any;
-    existingRotation: any;
-  }
+  pieceId: string,
+  simParams: SimParams
 ) {
   const rotationsList = PIECE_LOOKUP[pieceId][0];
 
@@ -298,7 +343,7 @@ function getBoardHeightAtColumn(board: Board, col: number) {
   return 20 - row;
 }
 
-function hasHolesNearTopOfColumn(board: { [x: string]: any }[], col: number) {
+function hasHolesNearTopOfColumn(board: Board, col: number) {
   let row = 0;
   while (row < NUM_ROW && board[row][col] === SquareState.EMPTY) {
     row++;
@@ -313,13 +358,13 @@ function hasHolesNearTopOfColumn(board: { [x: string]: any }[], col: number) {
 }
 
 function canDoPlacement(
-  board: any,
-  level: any,
+  board: Board,
+  level: number,
   pieceId: string,
   rotationIndex: number,
   xOffset: number,
   aiArr: number,
-  aiTapDelay: any
+  aiTapDelay: number
 ) {
   if (!aiArr) {
     throw new Error("Unknown ARR when checking placement");
@@ -403,11 +448,11 @@ function boardHasInaccessibileLeft(
 
 /** Returns true if the tap speed is not sufficient to get a long bar to the right. */
 function boardHasInaccessibileRight(
-  board: any,
-  level: any,
+  board: Board,
+  level: number,
   averageHeight: number,
-  aiArr: any,
-  aiTapDelay: any
+  aiArr: number,
+  aiTapDelay: number
 ) {
   // If has holes near the top, it has a bad right
   if (
@@ -530,15 +575,9 @@ function placementIsLegal(
 function performSimulationInputs(
   goalRotationIndex: number,
   xIncrement: number,
-  simState: {
-    x: any;
-    y: any;
-    gravityCounter?: any;
-    arrCounter?: any;
-    rotationIndex: any;
-  },
-  board: any,
-  rotationsList: string | any[]
+  simState: SimState,
+  board: Board,
+  rotationsList: Array<PieceArray>
 ) {
   // Plan for a rotation if needed
   const prevRotationIndex = simState.rotationIndex;
@@ -596,16 +635,7 @@ function performSimulationInputs(
 function repeatedlyShiftPiece(
   shiftIncrement: number,
   goalRotationIndex: number,
-  simulationParams: {
-    board: any;
-    initialX: any;
-    initialY: any;
-    firstShiftDelay: any;
-    maxGravity: any;
-    maxArr: any;
-    rotationsList: any;
-    existingRotation: any;
-  }
+  simulationParams: SimParams
 ) {
   const {
     board,

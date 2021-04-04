@@ -9,6 +9,14 @@ interface SimParams {
   firstShiftDelay: number;
   maxGravity: number;
   maxArr: number;
-  rotationsList: Array<Array<Array<number>>>;
+  rotationsList: Array<PieceArray>;
   existingRotation: number;
+}
+
+interface SimState {
+    x: number;
+    y: number;
+    gravityCounter: number;
+    arrCounter: number;
+    rotationIndex: number;
 }
