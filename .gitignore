@@ -4,6 +4,7 @@ raw_data/
 *.exe
 *.c
 .vscode/
+built/
 src/server/fceux/reference_only/
 
 # Logs

@@ -7,9 +7,9 @@
   "scripts": {
     "deploy": "npm run make && gh-pages -d docs",
     "start": "prettier src/*.js --write && webpack --progress --mode=development && webpack-dev-server",
-    "start-server": "node src/server/app.js",
+    "start-server": "tsc && node built/server/app.js",
     "make": "prettier src/*.js --write && webpack --progress --mode=production",
-    "format": "prettier --write \"src/**/*.+(js|jsx|json|css|md)\""
+    "format": "prettier --write \"src/**/*.+(js|jsx|ts|json|css|md)\""
   },
   "author": "",
   "license": "ISC",
@@ -22,6 +22,7 @@
   "dependencies": {
     "fs": "0.0.1-security",
     "node-fetch": "^2.6.1",
-    "prettier": "^2.0.5"
+    "prettier": "^2.0.5",
+    "typescript": "^4.2.3"
   }
 }
