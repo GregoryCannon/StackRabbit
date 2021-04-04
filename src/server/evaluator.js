@@ -261,12 +261,16 @@ function getValueOfPossibility(
   const leftIsInaccessible = boardHelper.boardHasInaccessibileLeft(
     boardAfter,
     levelAfterPlacement,
-    averageHeight
+    averageHeight,
+    aiParams.TAP_ARR,
+    aiParams.FIRST_TAP_DELAY
   );
   const rightIsInaccessible = boardHelper.boardHasInaccessibileRight(
     boardAfter,
     levelAfterPlacement,
-    averageHeight
+    averageHeight,
+    aiParams.TAP_ARR,
+    aiParams.FIRST_TAP_DELAY
   );
   const col1Height = surfaceArray[0];
   const col10Height = boardHelper.getBoardHeightAtColumn(

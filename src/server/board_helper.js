@@ -3,7 +3,6 @@ const utils = require("./utils");
 const NUM_COLUMN = utils.NUM_COLUMN;
 const NUM_ROW = utils.NUM_ROW;
 const SquareState = utils.SquareState;
-const AI_TAP_ARR = utils.AI_TAP_ARR;
 
 // Collision function
 function pieceCollision(board, x, y, piece) {
@@ -119,6 +118,7 @@ function getPossibleMoves(
   level,
   existingXOffset,
   existingYOffset,
+  tapArr,
   firstShiftDelay,
   existingRotation,
   shouldLog
@@ -132,7 +132,7 @@ function getPossibleMoves(
   const initialX = 3 + existingXOffset;
   const initialY = (currentPieceId == "I" ? -2 : -1) + existingYOffset;
   const maxGravity = utils.GetGravity(level) - 1; // 0-indexed, executes on the 0 frame. e.g. 2... 1... 0(shift).. 2... 1... 0(shift)
-  const maxArr = AI_TAP_ARR - 1; // Similarly 0-indexed
+  const maxArr = tapArr - 1; // Similarly 0-indexed
   const rotationsList = PIECE_LOOKUP[currentPieceId][0];
 
   const simParams = {
@@ -295,15 +295,18 @@ function hasHolesNearTopOfColumn(board, col) {
   return false;
 }
 
-function canDoPlacement(board, level, pieceId, rotationIndex, xOffset) {
+function canDoPlacement(board, level, pieceId, rotationIndex, xOffset, aiArr, aiTapDelay) {
+  if (!aiArr){
+    throw new Error("Unknown ARR when checking placement");
+  }
   const maxGravity = utils.GetGravity(level) - 1; // 0-indexed, executes on the 0 frame. e.g. 2... 1... 0(shift).. 2... 1... 0(shift)
-  const maxArr = AI_TAP_ARR - 1;
+  const maxArr = aiArr - 1;
   const rotationsList = PIECE_LOOKUP[pieceId][0];
   const simParams = {
     board,
     initialX: 3,
     initialY: -2,
-    firstShiftDelay: 0,
+    firstShiftDelay: aiTapDelay,
     maxGravity,
     maxArr,
     rotationsList,
@@ -313,7 +316,7 @@ function canDoPlacement(board, level, pieceId, rotationIndex, xOffset) {
 }
 
 /** Returns true if the board needs a 5 tap to resolve, and the tap speed is not sufficient to get a piece there. */
-function boardHasInaccessibileLeft(board, level, averageHeight) {
+function boardHasInaccessibileLeft(board, level, averageHeight, aiArr, aiTapDelay) {
   // If has holes near the top, it has a bad left
   if (hasHolesNearTopOfColumn(board, 0) || hasHolesNearTopOfColumn(board, 1)) {
     return true;
@@ -329,7 +332,7 @@ function boardHasInaccessibileLeft(board, level, averageHeight) {
   }
 
   // If left is accessible by square, the left is good
-  if (col1Height == col2Height && canDoPlacement(board, level, "O", 0, -4)) {
+  if (col1Height == col2Height && canDoPlacement(board, level, "O", 0, -4, aiArr, aiTapDelay)) {
     return false;
   }
 
@@ -337,7 +340,7 @@ function boardHasInaccessibileLeft(board, level, averageHeight) {
   if (
     col1Height === col2Height - 1 &&
     col2Height === col3Height &&
-    canDoPlacement(board, level, "L", 0, -4)
+    canDoPlacement(board, level, "L", 0, -4, aiArr, aiTapDelay)
   ) {
     return false;
   }
@@ -346,7 +349,7 @@ function boardHasInaccessibileLeft(board, level, averageHeight) {
   if (
     col1Height === col2Height &&
     col2Height === col3Height &&
-    canDoPlacement(board, level, "L", 2, -4)
+    canDoPlacement(board, level, "L", 2, -4, aiArr, aiTapDelay)
   ) {
     return false;
   }
@@ -355,17 +358,17 @@ function boardHasInaccessibileLeft(board, level, averageHeight) {
   if (
     col1Height === col2Height + 1 &&
     col1Height === col3Height &&
-    canDoPlacement(board, level, "T", 0, -4)
+    canDoPlacement(board, level, "T", 0, -4, aiArr, aiTapDelay)
   ) {
     return false;
   }
 
   // Otherwise we need 5 tap
-  return !canDoPlacement(board, level, "I", 1, -5);
+  return !canDoPlacement(board, level, "I", 1, -5, aiArr, aiTapDelay);
 }
 
 /** Returns true if the tap speed is not sufficient to get a long bar to the right. */
-function boardHasInaccessibileRight(board, level, averageHeight) {
+function boardHasInaccessibileRight(board, level, averageHeight, aiArr, aiTapDelay) {
   // If has holes near the top, it has a bad right
   if (
     hasHolesNearTopOfColumn(board, NUM_COLUMN - 1) ||
@@ -383,7 +386,7 @@ function boardHasInaccessibileRight(board, level, averageHeight) {
   }
 
   // Otherwise we need a 4 tap
-  return !canDoPlacement(board, level, "I", 1, 4);
+  return !canDoPlacement(board, level, "I", 1, 4, aiArr, aiTapDelay);
 }
 
 /** A modulus function that correctly handles negatives. */

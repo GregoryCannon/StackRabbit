@@ -60,6 +60,7 @@ function getMostPromisingMoves(
     level,
     existingXOffset,
     existingYOffset,
+    aiParams.TAP_ARR,
     firstShiftDelay,
     existingRotation,
     /* shouldLog= */ false && shouldLog
@@ -110,6 +111,12 @@ function getBestMoveNoSearch(
     initialAiParams,
     paramMods
   );
+  if (shouldLog){
+    topN.forEach(x =>{
+      console.log(x.slice(0, 4));
+      console.log(x[7]);
+    })
+  }
   return topN ? topN[0] : null;
 }
 
@@ -171,7 +178,8 @@ function getBestMoveWithSearch(
       level,
       /* existingXOffset= */ 0,
       /* existingYOffset= */ 0,
-      /* firstShiftDelay= */ 0,
+      aiParams.TAP_ARR,
+      aiParams.FIRST_TAP_DELAY,
       /* existingRotation= */ 0,
       /* shouldLog= */ false && shouldLog
     );
