@@ -5,7 +5,7 @@ require "socket"
 -- Config constants
 FRAMES_BETWEEN_SHIFTS = 3 -- the ARR minus 1, e.g. 3 delay -> 15 Hz, 4 delay -> 12.5 Hz
 REACTION_TIME_FRAMES = 12
-DELAY_FRAMES = 0 -- the number of frames to wait before performing the first input
+DELAY_FRAMES = 2 -- the number of frames to wait before performing the first input
 SHOULD_RECORD_GAMES = true
 MOVIE_PATH = "C:\\Users\\Greg\\Desktop\\VODs\\" -- Where to store the fm2 VODS (absolute path)
 
@@ -85,7 +85,7 @@ end
 function predictPieceOffsetAtAdjustmentTime()
   local ARR = FRAMES_BETWEEN_SHIFTS + 1
   local arrFramesElapsed = REACTION_TIME_FRAMES - DELAY_FRAMES
-  local gravityFramesElapsed = REACTION_TIME_FRAMES - DELAY_FRAMES
+  local gravityFramesElapsed = REACTION_TIME_FRAMES
 
   local numInputStepsCompleted = math.ceil(arrFramesElapsed / ARR)
   local numGravityStepsCompleted = math.floor(gravityFramesElapsed / getGravity(level))
@@ -143,7 +143,7 @@ end
 function requestPlacementSyncNoNextBox()
   -- Format URL arguments
   local requestStr = "http://localhost:3000/sync-nnb/" .. getEncodedBoard()
-  local requestStr = requestStr .. "/" .. orientToPiece[pcur] .. "/null/" .. level .. "/" .. numLines .. "/" .. DELAY_FRAMES .. "/0"
+  local requestStr = requestStr .. "/" .. orientToPiece[pcur] .. "/null/" .. level .. "/" .. numLines .. "/0/0/" .. DELAY_FRAMES .. "/0"
 
   return makeHttpRequest(requestStr).data
 end
@@ -304,6 +304,7 @@ end
 
 function runGameFrame()
   if(memory.readbyte(0x0048) == 1) then
+    print(emu.framecount())
     if(playstate ~= 1 or backtrack) then
       -- First active frame for piece. This is where board state/input sequence is calculated
       onFirstFrameOfNewPiece()
