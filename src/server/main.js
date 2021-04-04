@@ -111,11 +111,11 @@ function getBestMoveNoSearch(
     initialAiParams,
     paramMods
   );
-  if (shouldLog){
-    topN.forEach(x =>{
+  if (shouldLog) {
+    topN.forEach((x) => {
       console.log(x.slice(0, 4));
       console.log(x[7]);
-    })
+    });
   }
   return topN ? topN[0] : null;
 }

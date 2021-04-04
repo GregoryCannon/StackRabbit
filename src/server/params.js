@@ -88,7 +88,7 @@ const V5_TRAINED_PARAMS = {
   INACCESSIBLE_LEFT_PENALTY: -30, // Added manually since didn't exist at time of training
   INACCESSIBLE_RIGHT_PENALTY: -200, // Added manually since didn't exist at time of training
   TAP_ARR: 4,
-  FIRST_TAP_DELAY: 2
+  FIRST_TAP_DELAY: 2,
 };
 
 const NO_DIRTIES_MODIFICATIONS = {

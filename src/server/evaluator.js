@@ -242,7 +242,8 @@ function getValueOfPossibility(
     totalHeightCorrected,
   ] = utils.correctSurfaceForExtremeGaps(surfaceArray);
   const adjustedNumHoles =
-    numHoles + (aiMode === AI_MODE.KILLSCREEN && countCol10Holes(boardAfter) * 0.8);
+    numHoles +
+    (aiMode === AI_MODE.KILLSCREEN && countCol10Holes(boardAfter) * 0.8);
   const scareHeight =
     level >= 29
       ? aiParams.SCARE_HEIGHT_29
