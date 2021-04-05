@@ -2,7 +2,8 @@ const { AI_MODE } = require("./params");
 const boardHelper = require("./board_helper");
 const rankLookup = require("./rank-lookup");
 
-const utils = require("./utils");
+import * as utils from "./utils";
+// const utils = require("./utils");
 const SquareState = utils.SquareState;
 const NUM_ROW = utils.NUM_ROW;
 const NUM_COLUMN = utils.NUM_COLUMN;
@@ -212,28 +213,20 @@ function getLineClearValue(numLinesCleared, aiParams) {
 /**
  * Evaluates a given possibility based on a number of factors.
  * NB: @param nextPieceId CAN be null if you want the NNB value of a possiblity.
- * @param {[rotationId, xOffset, resultingSurface, numHoles, numLinesCleared]} possibility
  */
 function getValueOfPossibility(
-  possibility,
-  nextPieceId,
+  possibility: Possibility,
+  nextPieceId: PieceId,
   level,
   lines,
   aiMode,
   shouldLog,
   aiParams
 ) {
-  const [
-    _,
-    __,
-    surfaceArray,
-    numHoles,
-    numLinesCleared,
-    boardAfter,
-  ] = possibility;
+  const { surfaceArray, numHoles, numLinesCleared, boardAfter } = possibility;
 
   if (!aiParams) {
-    throw new Error("No AI Params provided: ", aiParams);
+    throw new Error("No AI Params provided: " + aiParams);
   }
 
   // Preliminary calculations
@@ -283,11 +276,11 @@ function getValueOfPossibility(
   let surfaceFactor =
     aiParams.SURFACE_MULTIPLIER *
     rankLookup.getValueOfBoardSurface(correctedSurface, nextPieceId);
-  const tetrisReadyFactor =
-    tetrisReady *
-    (nextPieceId == "I"
+  const tetrisReadyFactor = tetrisReady
+    ? nextPieceId == "I"
       ? aiParams.TETRIS_READY_BONUS_BAR_NEXT
-      : aiParams.TETRIS_READY_BONUS);
+      : aiParams.TETRIS_READY_BONUS
+    : 0;
   const holeFactor = adjustedNumHoles * aiParams.HOLE_PENALTY;
   const holeWeightFactor =
     countLinesNeededUntilClean(boardAfter) * aiParams.HOLE_WEIGHT_PENALTY;
@@ -353,83 +346,14 @@ function getValueOfPossibility(
 
   if (shouldLog) {
     console.log(
-      `---- Evaluated possiblity: ${possibility[0]} ${possibility[1]}, mode: ${aiMode}\n`,
+      `---- Evaluated possiblity: ${possibility.placement}, mode: ${aiMode}\n`,
       explanation
     );
   }
   return [totalValue, explanation];
 }
 
-/**
- * Iterates over the list of possiblities and return the one with the highest value.
- * @param {Array<possibility obj>} possibilityList
- */
-function pickBestNMoves(
-  possibilityList,
-  nextPieceId,
-  level,
-  lines,
-  aiMode,
-  numMovesToConsider,
-  aiParams
-) {
-  for (const possibility of possibilityList) {
-    const [value, explanation] = getValueOfPossibility(
-      possibility,
-      nextPieceId,
-      level,
-      lines,
-      aiMode,
-      /* shouldLog= */ false,
-      aiParams
-    );
-    possibility.push(value);
-    possibility.push(explanation);
-  }
-  // Sort by value
-  possibilityList.sort((a, b) => b[6] - a[6]);
-
-  return possibilityList.slice(0, numMovesToConsider);
-}
-
-/**
- * Iterates over the list of possiblities and return the one with the highest value.
- * @param {Array<possibility obj>} possibilityList
- */
-function pickBestMoveNoNextBox(
-  possibilityList,
-  level,
-  lines,
-  aiMode,
-  shouldLog,
-  aiParams
-) {
-  let bestMove = null;
-  let bestValue = Number.MIN_SAFE_INTEGER;
-  for (const possibility of possibilityList) {
-    // Get the total value of the proposed placement + the next placement afterwards
-    const [value, explanation] = getValueOfPossibility(
-      possibility,
-      null,
-      level,
-      lines,
-      aiMode,
-      shouldLog,
-      aiParams
-    );
-    if (value > bestValue) {
-      possibility.push(value);
-      possibility.push(explanation);
-      bestValue = value;
-      bestMove = possibility;
-    }
-  }
-  return bestMove;
-}
-
 module.exports = {
-  pickBestNMoves,
-  pickBestMoveNoNextBox,
   getValueOfPossibility,
   getLineClearValue,
 };

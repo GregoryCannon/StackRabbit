@@ -1,11 +1,11 @@
-const NUM_ROW = 20;
-const NUM_COLUMN = 10;
-const SquareState = Object.freeze({
+export const NUM_ROW = 20;
+export const NUM_COLUMN = 10;
+export const SquareState = Object.freeze({
   EMPTY: 0,
   FULL: 1,
 });
 
-function GetGravity(level) {
+export function GetGravity(level) {
   const GRAVITY = {
     0: 48,
     1: 43,
@@ -38,7 +38,7 @@ function GetGravity(level) {
   }
 }
 
-function generateDigPracticeBoard(garbageHeight, numHoles) {
+export function generateDigPracticeBoard(garbageHeight, numHoles) {
   const randomIntLessThan = (n) => Math.floor(Math.random() * n);
 
   // Create board
@@ -95,11 +95,11 @@ function _getSurfaceArrayAndHoleCount(board) {
  * boards (since it omits holes and the state of column 10).
  * @param {Array<Array<number>>} board
  */
-function getSurfaceArray(board) {
+export function getSurfaceArray(board) {
   return _getSurfaceArrayAndHoleCount(board)[0].slice(0, 9);
 }
 
-function hasInvalidHeightDifferences(surfaceArray) {
+export function hasInvalidHeightDifferences(surfaceArray) {
   for (let i = 1; i < surfaceArray.length; i++) {
     if (Math.abs(surfaceArray[i] - surfaceArray[i - 1]) > 4) {
       return true;
@@ -114,7 +114,7 @@ function hasInvalidHeightDifferences(surfaceArray) {
  * (for surface rating purposes only)
  * @param {*} surfaceArray
  */
-function correctSurfaceForExtremeGaps(initialArray) {
+ export function correctSurfaceForExtremeGaps(initialArray) {
   const newArray = JSON.parse(JSON.stringify(initialArray));
   let totalExcessHeight = 0; // Accumulator for the excess height trimmed away. Used for evaluation purposes.
 
@@ -132,16 +132,16 @@ function correctSurfaceForExtremeGaps(initialArray) {
   return [newArray, totalExcessHeight];
 }
 
-function getHoleCount(board) {
+export function getHoleCount(board) {
   return _getSurfaceArrayAndHoleCount(board)[1];
 }
 
-function getMaxColumnHeight(board) {
+export function getMaxColumnHeight(board) {
   const heights = _getSurfaceArrayAndHoleCount(board)[0];
   return Math.max(...heights.slice(1));
 }
 
-function getAverageColumnHeight(board) {
+export function getAverageColumnHeight(board) {
   const heights = _getSurfaceArrayAndHoleCount(board)[0].slice(1, 9);
   let totalHeight = 0;
   for (let height of heights) {
@@ -151,7 +151,7 @@ function getAverageColumnHeight(board) {
 }
 
 /** Checks if clearing a certain number of lines will increase the level, and if so what that level is. */
-function getLevelAfterLineClears(level, lines, numLinesCleared) {
+export function getLevelAfterLineClears(level, lines, numLinesCleared) {
   if (level === 18 && lines + numLinesCleared >= 130) {
     return 19;
   }
@@ -161,7 +161,7 @@ function getLevelAfterLineClears(level, lines, numLinesCleared) {
   return level;
 }
 
-function logBoard(board) {
+export function logBoard(board) {
   console.log(" -- Board start -- ");
   for (let r = 0; r < NUM_ROW; r++) {
     let rowStr = "";
@@ -172,18 +172,44 @@ function logBoard(board) {
   }
 }
 
-module.exports = {
-  NUM_ROW,
-  NUM_COLUMN,
-  SquareState,
-  GetGravity,
-  getSurfaceArray,
-  generateDigPracticeBoard,
-  getHoleCount: getHoleCount,
-  hasValidHeightDifferences: hasInvalidHeightDifferences,
-  getMaxColumnHeight,
-  getAverageColumnHeight,
-  logBoard,
-  correctSurfaceForExtremeGaps,
-  getLevelAfterLineClears,
-};
+ // O(n) time & O(n) space
+ export function mergeSortedArrays(arr1, arr2) {
+  let merged = [];
+  let index1 = 0;
+  let index2 = 0;
+  let current = 0;
+
+  while (current < (arr1.length + arr2.length)) {
+
+    let isArr1Depleted = index1 >= arr1.length;
+    let isArr2Depleted = index2 >= arr2.length;
+
+    if (!isArr1Depleted && (isArr2Depleted || (arr1[index1] < arr2[index2]))) {
+      merged[current] = arr1[index1];
+      index1++;
+    } else {
+      merged[current] = arr2[index2];
+      index2++;
+    }
+
+    current++;
+  }
+
+  return merged;
+}
+
+// module.exports = {
+//   NUM_ROW,
+//   NUM_COLUMN,
+//   SquareState,
+//   GetGravity,
+//   getSurfaceArray,
+//   generateDigPracticeBoard,
+//   getHoleCount: getHoleCount,
+//   hasValidHeightDifferences: hasInvalidHeightDifferences,
+//   getMaxColumnHeight,
+//   getAverageColumnHeight,
+//   logBoard,
+//   correctSurfaceForExtremeGaps,
+//   getLevelAfterLineClears,
+// };

@@ -5,12 +5,7 @@ const NUM_ROW = utils.NUM_ROW;
 const SquareState = utils.SquareState;
 
 // Collision function
-function pieceCollision(
-  board: Board,
-  x: number,
-  y: number,
-  piece: PieceArray
-) {
+function pieceCollision(board: Board, x: number, y: number, piece: PieceArray) {
   for (let r = 0; r < piece.length; r++) {
     for (let c = 0; c < piece[r].length; c++) {
       // If the square is empty, we skip it
@@ -72,7 +67,7 @@ function clearLines(board: Board) {
 
 function getBoardAndLinesClearedAfterPlacement(
   board: Board,
-currentRotationPiece: PieceArray,
+  currentRotationPiece: PieceArray,
   x: number,
   y: number
 ) {
@@ -195,14 +190,14 @@ function getPossibleMoves(
 }
 
 function _generatePossibilityList(
-  legalPlacements: Array<[number, number]>,
+  legalPlacements: Array<Placement>,
   startingBoard: Board,
   currentPieceId: string,
   startingX: number,
   startingY: number,
   shouldLog: boolean
-) {
-  const possibilityList = []; // list of [rotationId, xOffset, columnHeightsStr]
+): Array<Possibility> {
+  const possibilityList = [];
 
   for (const [rotationIndex, xOffset] of legalPlacements) {
     const currentRotationPiece = PIECE_LOOKUP[currentPieceId][0][rotationIndex];
@@ -221,23 +216,22 @@ function _generatePossibilityList(
       x,
       y
     );
-    const newSurfaceArray = utils.getSurfaceArray(boardAfter);
+    const surfaceArray = utils.getSurfaceArray(boardAfter);
     const numHoles = utils.getHoleCount(boardAfter);
 
     // Add the possibility to the list
     if (shouldLog) {
       console.log(
-        `Adding possibility [Index ${rotationIndex}, xOffset ${xOffset}], would make surface ${newSurfaceArray}`
+        `Adding possibility [Index ${rotationIndex}, xOffset ${xOffset}], would make surface ${surfaceArray}`
       );
     }
-    possibilityList.push([
-      rotationIndex,
-      xOffset,
-      newSurfaceArray,
+    possibilityList.push({
+      placement: [rotationIndex, xOffset],
+      surfaceArray,
       numHoles,
       numLinesCleared,
       boardAfter,
-    ]);
+    });
   }
 
   if (shouldLog) {
@@ -309,10 +303,7 @@ function _generateLegacyPossibilityList(
  * (!!) NB: It performs one rotation for each shift. So if the placement requires 2 rotations, this result will only be valid for
  * placements with abs(xOffset) >= 2.
  */
-function getPieceRanges(
-  pieceId: string,
-  simParams: SimParams
-) {
+function getPieceRanges(pieceId: string, simParams: SimParams) {
   const rotationsList = PIECE_LOOKUP[pieceId][0];
 
   // Piece ranges, indexed by rotation index

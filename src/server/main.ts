@@ -2,6 +2,7 @@ const evaluator = require("./evaluator");
 const aiModeManager = require("./ai_mode_manager");
 const BoardHelper = require("./board_helper");
 const { NUM_TO_CONSIDER, modifyParamsForAiMode } = require("./params");
+import { mergeSortedArrays } from "./utils";
 
 /**
  * Iterates over the list of possiblities and return the one with the highest value.
@@ -26,11 +27,11 @@ function pickBestNMoves(
       /* shouldLog= */ false,
       aiParams
     );
-    possibility.push(value);
-    possibility.push(explanation);
+    possibility.evalScore = value as number;
+    possibility.evalExplanation = explanation as string;
   }
   // Sort by value
-  possibilityList.sort((a, b) => b[6] - a[6]);
+  possibilityList.sort((a, b) => b.evalScore - a.evalScore);
 
   return possibilityList.slice(0, numMovesToConsider);
 }
@@ -167,15 +168,16 @@ function getBestMoveWithSearch(
   let bestValueAfterNextPiece = Number.MIN_SAFE_INTEGER;
   let bestIndex = 0; // The rank of the best placement (in terms of the original 'promising-ness' sort)
   let i = 0;
-  for (const possibility of topN) {
+
+  const chainPossibilityList = [];
+  for (const outerPossibility of topN) {
     i++;
     // Place the next piece in each possibility
-    const boardAfterOuterMove = possibility[5];
-    const linesClearedOuterMove = possibility[4];
+    const levelAfter = utils.getLevelAfterLineClears(level, lines, outerPossibility.numLinesCleared);
     const innerPossibilityList = BoardHelper.getPossibleMoves(
-      boardAfterOuterMove,
+      outerPossibility.boardAfter,
       nextPieceId,
-      level,
+      levelAfter,
       /* existingXOffset= */ 0,
       /* existingYOffset= */ 0,
       aiParams.TAP_ARR,
@@ -186,8 +188,8 @@ function getBestMoveWithSearch(
     const innerTopN = pickBestNMoves(
       innerPossibilityList,
       null,
-      level,
-      lines,
+      levelAfter,
+      lines + outerPossibility.numLinesCleared,
       aiMode,
       1,
       aiParams
@@ -199,22 +201,22 @@ function getBestMoveWithSearch(
     // Get a total score for this possibility (including line clears from the outer placement)
     const innerBestMove = innerTopN[0];
     const originalMovePartialValue = evaluator.getLineClearValue(
-      linesClearedOuterMove,
+      outerPossibility.numLinesCleared,
       aiParams
     );
-    const totalValue = innerBestMove[6] + originalMovePartialValue;
+    const totalValue = innerBestMove.evalScore + originalMovePartialValue;
 
     // If new best, update local vars
     if (totalValue > bestValueAfterNextPiece) {
       bestValueAfterNextPiece = totalValue;
-      bestPossibilityAfterNextPiece = possibility;
+      bestPossibilityAfterNextPiece = outerPossibility;
       bestIndex = i;
     }
 
     // Log details about the top-level possibility
     if (shouldLog) {
       console.log(
-        `\nCurrent move: ${possibility[0]}, ${possibility[1]}. Next move: ${innerBestMove[0]}, ${innerBestMove[1]}.`
+        `\nCurrent move: ${outerPossibility[0]}, ${outerPossibility[1]}. Next move: ${innerBestMove[0]}, ${innerBestMove[1]}.`
       );
       console.log("Final state eval:", innerBestMove[7], "mode:", aiMode); // Log inner explanation
       console.log(
