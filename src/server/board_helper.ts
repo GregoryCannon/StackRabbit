@@ -179,7 +179,7 @@ function getPossibleMoves(
     }
   }
 
-  return _generateLegacyPossibilityList(
+  return _generatePossibilityList(
     legalPlacements,
     startingBoard,
     currentPieceId,

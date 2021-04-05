@@ -133,7 +133,7 @@ function handleRequestSyncNoNextBox(requestArgs) {
   if (!bestMove) {
     return "No legal moves";
   }
-  return bestMove[0] + "," + bestMove[1];
+  return bestMove.placement[0] + "," + bestMove.placement[1];
 }
 
 /**
@@ -172,7 +172,7 @@ function handleRequestSyncWithNextBox(requestArgs) {
   if (!bestMove) {
     return "No legal moves";
   }
-  return bestMove[0] + "," + bestMove[1];
+  return bestMove.placement[0] + "," + bestMove.placement[1];
 }
 
 /**

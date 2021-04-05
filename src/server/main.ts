@@ -2,7 +2,7 @@ const evaluator = require("./evaluator");
 const aiModeManager = require("./ai_mode_manager");
 const BoardHelper = require("./board_helper");
 const { NUM_TO_CONSIDER, modifyParamsForAiMode } = require("./params");
-import { mergeSortedArrays } from "./utils";
+import * as utils from "./utils";
 
 /**
  * Iterates over the list of possiblities and return the one with the highest value.
@@ -114,8 +114,8 @@ function getBestMoveNoSearch(
   );
   if (shouldLog) {
     topN.forEach((x) => {
-      console.log(x.slice(0, 4));
-      console.log(x[7]);
+      console.log(`${x.placement} : surface ${x.surfaceArray}, holes ${x.numHoles}, score ${x.evalScore}`);
+      console.log(x.explanation);
     });
   }
   return topN ? topN[0] : null;
@@ -158,7 +158,7 @@ function getBestMoveWithSearch(
     console.log("Num promising moves:", topN.length);
     console.log(
       "Promising moves",
-      topN.map((x) => x.slice(0, 2))
+      topN.map((x) => x.placement)
     );
     console.log("\n\n---------");
   }
@@ -216,11 +216,11 @@ function getBestMoveWithSearch(
     // Log details about the top-level possibility
     if (shouldLog) {
       console.log(
-        `\nCurrent move: ${outerPossibility[0]}, ${outerPossibility[1]}. Next move: ${innerBestMove[0]}, ${innerBestMove[1]}.`
+        `\nCurrent move: ${outerPossibility.placement}. Next move: ${innerBestMove.placement}.`
       );
-      console.log("Final state eval:", innerBestMove[7], "mode:", aiMode); // Log inner explanation
+      console.log("Final state eval:", innerBestMove.evalExplanation, "mode:", aiMode); // Log inner explanation
       console.log(
-        `\nSurface: ${innerBestMove[2]}, inner value: ${innerBestMove[6]}, original partial value: ${originalMovePartialValue}, \nFINAL TOTAL: ${totalValue}`
+        `\nSurface: ${innerBestMove.surfaceArray}, inner value: ${innerBestMove.evalScore}, original partial value: ${originalMovePartialValue}, \nFINAL TOTAL: ${totalValue}`
       );
       console.log("---------------------------------------------");
     }
@@ -235,7 +235,7 @@ function getBestMoveWithSearch(
 
   if (shouldLog && bestPossibilityAfterNextPiece) {
     console.log(
-      `\nSelected: ${bestPossibilityAfterNextPiece[0]}, ${bestPossibilityAfterNextPiece[1]}`
+      `\nSelected: ${bestPossibilityAfterNextPiece.placement}`
     );
     console.log("# Candidates:", topN.length, "Selected rank:", bestIndex);
   }

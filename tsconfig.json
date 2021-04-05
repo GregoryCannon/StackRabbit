@@ -1,9 +1,9 @@
 {
   "compilerOptions": {
-    "outDir": "../../built",
+    "outDir": "./built",
     "allowJs": true,
     "target": "es5",
     "downlevelIteration": true
   },
-  "include": ["./src/server/*"]
+  "include": ["./src/server/*", "./src/tetrominoes.js"]
 }
