@@ -5,7 +5,8 @@ const AI_MODE = Object.freeze({
   KILLSCREEN: "killscreen",
 });
 
-const NUM_TO_CONSIDER = 20;
+const POSSIBILITIES_TO_CONSIDER = 5;
+const CHAIN_POSSIBILITIES_TO_CONSIDER = 1;
 
 /*--------------------------------
   State-based param modification
@@ -120,7 +121,8 @@ module.exports = {
   getParamMods,
   V5_TRAINED_PARAMS,
   V5_NO_DIRTIES,
-  NUM_TO_CONSIDER,
+  POSSIBILITIES_TO_CONSIDER,
+  CHAIN_POSSIBILITIES_TO_CONSIDER,
   AI_MODE,
   DEFAULT_PARAM_MODS,
   modifyParamsForAiMode,

@@ -1,7 +1,11 @@
 const evaluator = require("./evaluator");
 const aiModeManager = require("./ai_mode_manager");
 const BoardHelper = require("./board_helper");
-const { NUM_TO_CONSIDER, modifyParamsForAiMode } = require("./params");
+const {
+  POSSIBILITIES_TO_CONSIDER,
+  CHAIN_POSSIBILITIES_TO_CONSIDER,
+  modifyParamsForAiMode,
+} = require("./params");
 import * as utils from "./utils";
 
 /**
@@ -14,7 +18,6 @@ function pickBestNMoves(
   level,
   lines,
   aiMode,
-  numMovesToConsider,
   aiParams
 ) {
   for (const possibility of possibilityList) {
@@ -31,9 +34,7 @@ function pickBestNMoves(
     possibility.evalExplanation = explanation as string;
   }
   // Sort by value
-  possibilityList.sort((a, b) => b.evalScore - a.evalScore);
-
-  return possibilityList.slice(0, numMovesToConsider);
+  return possibilityList.sort((a, b) => b.evalScore - a.evalScore);
 }
 
 /**
@@ -52,7 +53,7 @@ function getMostPromisingMoves(
   existingRotation,
   shouldLog,
   aiParams,
-  paramMods
+  aiMode
 ) {
   // Get the possible moves
   const possibilityList = BoardHelper.getPossibleMoves(
@@ -67,21 +68,15 @@ function getMostPromisingMoves(
     /* shouldLog= */ false && shouldLog
   );
 
-  // Get the AI mode (e.g. digging, scoring)
-  const aiMode = aiModeManager.getAiMode(startingBoard, lines, level, aiParams);
-  aiParams = modifyParamsForAiMode(aiParams, aiMode, paramMods);
-
   // Get the top contenders, sorted best -> worst
-  const topN = pickBestNMoves(
+  return pickBestNMoves(
     possibilityList,
     nextPieceId,
     level,
     lines,
     aiMode,
-    NUM_TO_CONSIDER,
     aiParams
   );
-  return { topN, aiMode, aiParams };
 }
 
 function getBestMoveNoSearch(
@@ -98,7 +93,16 @@ function getBestMoveNoSearch(
   initialAiParams,
   paramMods
 ) {
-  let { topN } = getMostPromisingMoves(
+  // Get the AI mode (e.g. digging, scoring)
+  const aiMode = aiModeManager.getAiMode(
+    startingBoard,
+    lines,
+    level,
+    initialAiParams
+  );
+  const aiParams = modifyParamsForAiMode(initialAiParams, aiMode, paramMods);
+
+  const sortedPossibilityList = getMostPromisingMoves(
     startingBoard,
     currentPieceId,
     nextPieceId,
@@ -109,16 +113,19 @@ function getBestMoveNoSearch(
     firstShiftDelay,
     existingRotation,
     shouldLog,
-    initialAiParams,
+    aiParams,
     paramMods
   );
+
   if (shouldLog) {
-    topN.forEach((x) => {
-      console.log(`${x.placement} : surface ${x.surfaceArray}, holes ${x.numHoles}, score ${x.evalScore}`);
+    sortedPossibilityList.forEach((x) => {
+      console.log(
+        `${x.placement} : surface ${x.surfaceArray}, holes ${x.numHoles}, score ${x.evalScore}`
+      );
       console.log(x.explanation);
     });
   }
-  return topN ? topN[0] : null;
+  return sortedPossibilityList ? sortedPossibilityList[0] : null;
 }
 
 function getBestMoveWithSearch(
@@ -137,7 +144,18 @@ function getBestMoveWithSearch(
 ) {
   const startTime = Date.now();
 
-  const { topN, aiMode, aiParams } = getMostPromisingMoves(
+  // Get the AI mode (e.g. digging, scoring)
+  const aiMode = aiModeManager.getAiMode(
+    startingBoard,
+    lines,
+    level,
+    initialAiParams
+  );
+  const aiParams = modifyParamsForAiMode(initialAiParams, aiMode, paramMods);
+
+  /* ---------- Initial top-level search ------------ */
+
+  const topN = getMostPromisingMoves(
     startingBoard,
     currentPieceId,
     nextPieceId,
@@ -148,9 +166,9 @@ function getBestMoveWithSearch(
     firstShiftDelay,
     existingRotation,
     shouldLog,
-    initialAiParams,
+    aiParams,
     paramMods
-  );
+  ).slice(0, POSSIBILITIES_TO_CONSIDER);
 
   const time2 = Date.now();
   if (shouldLog) {
@@ -163,85 +181,62 @@ function getBestMoveWithSearch(
     console.log("\n\n---------");
   }
 
-  // For each contender, place the next piece and maximize the resulting value
-  let bestPossibilityAfterNextPiece = null;
-  let bestValueAfterNextPiece = Number.MIN_SAFE_INTEGER;
-  let bestIndex = 0; // The rank of the best placement (in terms of the original 'promising-ness' sort)
-  let i = 0;
+  /* ---------- Explore at depth 2 for promising moves ------------ */
 
-  const chainPossibilityList = [];
+  let chainPossibilityList: Array<ChainPossibility> = [];
   for (const outerPossibility of topN) {
-    i++;
     // Place the next piece in each possibility
-    const levelAfter = utils.getLevelAfterLineClears(level, lines, outerPossibility.numLinesCleared);
-    const innerPossibilityList = BoardHelper.getPossibleMoves(
+    const levelAfter = utils.getLevelAfterLineClears(
+      level,
+      lines,
+      outerPossibility.numLinesCleared
+    );
+    const innerTopN = getMostPromisingMoves(
       outerPossibility.boardAfter,
       nextPieceId,
-      levelAfter,
-      /* existingXOffset= */ 0,
-      /* existingYOffset= */ 0,
-      aiParams.TAP_ARR,
-      aiParams.FIRST_TAP_DELAY,
-      /* existingRotation= */ 0,
-      /* shouldLog= */ false && shouldLog
-    );
-    const innerTopN = pickBestNMoves(
-      innerPossibilityList,
-      null,
+      /* nextPieceId= */ null,
       levelAfter,
       lines + outerPossibility.numLinesCleared,
-      aiMode,
-      1,
-      aiParams
-    );
-    if (innerTopN.length == 0) {
+      /* existingXOffset= */ 0,
+      /* existingYOffset= */ 0,
+      aiParams.FIRST_TAP_DELAY,
+      /* existingRotation= */ 0,
+      /* shouldLog= */ false,
+      aiParams,
+      aiMode
+    ).slice(0, CHAIN_POSSIBILITIES_TO_CONSIDER);
+
+    // Wrap each inner possibility with its outer move
+    const topNChains = innerTopN.map((x: Possibility) => {
+      const outerMovePartialValue = evaluator.getLineClearValue(
+        outerPossibility.numLinesCleared,
+        aiParams
+      );
+      const innerPlacement = x.placement;
+      return {
+        ...x,
+        innerPlacement,
+        placement: outerPossibility.placement,
+        parentPlacementPartialValue: outerMovePartialValue,
+        totalValue: x.evalScore + outerMovePartialValue,
+      };
+    });
+
+    if (topNChains.length == 0) {
       continue;
     }
 
-    // Get a total score for this possibility (including line clears from the outer placement)
-    const innerBestMove = innerTopN[0];
-    const originalMovePartialValue = evaluator.getLineClearValue(
-      outerPossibility.numLinesCleared,
-      aiParams
-    );
-    const totalValue = innerBestMove.evalScore + originalMovePartialValue;
-
-    // If new best, update local vars
-    if (totalValue > bestValueAfterNextPiece) {
-      bestValueAfterNextPiece = totalValue;
-      bestPossibilityAfterNextPiece = outerPossibility;
-      bestIndex = i;
-    }
-
-    // Log details about the top-level possibility
-    if (shouldLog) {
-      console.log(
-        `\nCurrent move: ${outerPossibility.placement}. Next move: ${innerBestMove.placement}.`
-      );
-      console.log("Final state eval:", innerBestMove.evalExplanation, "mode:", aiMode); // Log inner explanation
-      console.log(
-        `\nSurface: ${innerBestMove.surfaceArray}, inner value: ${innerBestMove.evalScore}, original partial value: ${originalMovePartialValue}, \nFINAL TOTAL: ${totalValue}`
-      );
-      console.log("---------------------------------------------");
-    }
+    // Merge with the current best list, leaving the highest N chain possibilities seen so far
+    chainPossibilityList = utils
+      .mergeSortedArrays(
+        chainPossibilityList,
+        topNChains,
+        (x, y) => y.totalValue - x.totalValue
+      )
+      .slice(0, CHAIN_POSSIBILITIES_TO_CONSIDER);
   }
 
-  if (shouldLog) {
-    // Log performance info
-    const msElapsedMoves = Date.now() - time2;
-    console.log("\tElapsed per possibility:", msElapsedMoves / topN.length);
-    console.log("\tElapsed on all moves:", msElapsedMoves);
-  }
-
-  if (shouldLog && bestPossibilityAfterNextPiece) {
-    console.log(
-      `\nSelected: ${bestPossibilityAfterNextPiece.placement}`
-    );
-    console.log("# Candidates:", topN.length, "Selected rank:", bestIndex);
-  }
-
-  // Send back the highest value move after the next piece is placed
-  return bestPossibilityAfterNextPiece;
+  return chainPossibilityList[0] || null;
 }
 
 module.exports = { getBestMoveWithSearch, getBestMoveNoSearch };

@@ -114,7 +114,7 @@ export function hasInvalidHeightDifferences(surfaceArray) {
  * (for surface rating purposes only)
  * @param {*} surfaceArray
  */
- export function correctSurfaceForExtremeGaps(initialArray) {
+export function correctSurfaceForExtremeGaps(initialArray) {
   const newArray = JSON.parse(JSON.stringify(initialArray));
   let totalExcessHeight = 0; // Accumulator for the excess height trimmed away. Used for evaluation purposes.
 
@@ -172,27 +172,29 @@ export function logBoard(board) {
   }
 }
 
- // O(n) time & O(n) space
- export function mergeSortedArrays(arr1, arr2) {
+// O(n) time & O(n) space
+export function mergeSortedArrays(arr1, arr2, compareFunc) {
   let merged = [];
   let index1 = 0;
   let index2 = 0;
-  let current = 0;
+  let indexMerged = 0;
 
-  while (current < (arr1.length + arr2.length)) {
-
+  while (indexMerged < arr1.length + arr2.length) {
     let isArr1Depleted = index1 >= arr1.length;
     let isArr2Depleted = index2 >= arr2.length;
 
-    if (!isArr1Depleted && (isArr2Depleted || (arr1[index1] < arr2[index2]))) {
-      merged[current] = arr1[index1];
+    if (
+      !isArr1Depleted &&
+      (isArr2Depleted || compareFunc(arr1[index1], arr2[index2]) < 0)
+    ) {
+      merged[indexMerged] = arr1[index1];
       index1++;
     } else {
-      merged[current] = arr2[index2];
+      merged[indexMerged] = arr2[index2];
       index2++;
     }
 
-    current++;
+    indexMerged++;
   }
 
   return merged;

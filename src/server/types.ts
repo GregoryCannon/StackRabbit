@@ -36,5 +36,7 @@ interface Possibility {
 }
 
 interface ChainPossibility extends Possibility {
-  parentPlacement: Placement;
+  innerPlacement: Placement;
+  outerPlacementPartialValue: number;
+  totalValue: number;
 }
