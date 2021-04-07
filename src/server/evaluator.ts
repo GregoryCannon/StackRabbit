@@ -186,7 +186,6 @@ function getBuiltOutLeftFactor(boardAfter, surfaceArray, scareHeight) {
   }
   const col1Height = surfaceArray[0];
   return Math.max(0, col1Height - scareHeight);
-
 }
 
 function getBuiltOutRightFactor(boardAfter, scareHeight) {
