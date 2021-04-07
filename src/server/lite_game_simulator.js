@@ -99,7 +99,7 @@ function simulateGame(
     const nextPieceId = pieceSequence[pieceIndex + 1];
 
     // Place one piece
-    const bestMove = mainApp.getBestMoveWithSearch(
+    const bestMove = mainApp.getBestMove(
       board,
       currentPieceId,
       nextPieceId,
@@ -111,7 +111,8 @@ function simulateGame(
       /* existingRotation= */ 0,
       /* shouldLog= */ false,
       aiParams,
-      paramMods
+      paramMods,
+      /* searchDepth= */ 2
     );
 
     // Set the board to the resulting board after making that move

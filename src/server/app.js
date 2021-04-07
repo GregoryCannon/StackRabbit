@@ -115,7 +115,7 @@ function handleRequestSyncNoNextBox(requestArgs) {
   } = parseArguments(requestArgs);
 
   // Get the best move
-  const bestMove = mainApp.getBestMoveNoSearch(
+  const bestMove = mainApp.getBestMove(
     startingBoard,
     currentPieceStr,
     null,
@@ -127,7 +127,8 @@ function handleRequestSyncNoNextBox(requestArgs) {
     existingRotation,
     /* shouldLog= */ false,
     params.getParams(),
-    params.getParamMods()
+    params.getParamMods(),
+    /* searchDepth= */ 1,
   );
 
   if (!bestMove) {
@@ -154,7 +155,7 @@ function handleRequestSyncWithNextBox(requestArgs) {
   } = parseArguments(requestArgs);
 
   // Get the best move
-  const bestMove = mainApp.getBestMoveWithSearch(
+  const bestMove = mainApp.getBestMove(
     startingBoard,
     currentPieceStr,
     nextPieceStr,
@@ -166,7 +167,8 @@ function handleRequestSyncWithNextBox(requestArgs) {
     existingRotation,
     /* shouldLog= */ true,
     params.getParams(),
-    params.getParamMods()
+    params.getParamMods(),
+    /* searchDepth= */ 2
   );
 
   if (!bestMove) {
