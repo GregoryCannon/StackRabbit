@@ -177,6 +177,32 @@ function getLineClearValue(numLinesCleared, aiParams) {
     : 0;
 }
 
+function getBuiltOutLeftFactor(boardAfter, surfaceArray, scareHeight) {
+  if (
+    boardHelper.hasHoleInColumn(boardAfter, 0) ||
+    boardHelper.hasHoleInColumn(boardAfter, 1)
+  ) {
+    return 0;
+  }
+  const col1Height = surfaceArray[0];
+  return Math.max(0, col1Height - scareHeight);
+
+}
+
+function getBuiltOutRightFactor(boardAfter, scareHeight) {
+  if (
+    boardHelper.hasHoleInColumn(boardAfter, NUM_COLUMN - 1) ||
+    boardHelper.hasHoleInColumn(boardAfter, NUM_COLUMN - 2)
+  ) {
+    return 0;
+  }
+  const col10Height = boardHelper.getBoardHeightAtColumn(
+    boardAfter,
+    NUM_COLUMN - 1
+  );
+  return Math.max(0, col10Height - scareHeight);
+}
+
 /**
  * Evaluates a given possibility based on a number of factors.
  * NB: @param nextPieceId CAN be null if you want the NNB value of a possiblity.
@@ -233,11 +259,6 @@ function getValueOfPossibility(
     aiParams.TAP_ARR,
     aiParams.FIRST_TAP_DELAY
   );
-  const col1Height = surfaceArray[0];
-  const col10Height = boardHelper.getBoardHeightAtColumn(
-    boardAfter,
-    NUM_COLUMN - 1
-  );
 
   let extremeGapFactor = totalHeightCorrected * aiParams.EXTREME_GAP_PENALTY;
   let surfaceFactor =
@@ -266,10 +287,11 @@ function getValueOfPossibility(
     aiParams.HIGH_COL_9_PENALTY_MULTIPLIER *
     countEmptyBlocksBelowColumn9Height(surfaceArray);
   const builtOutLeftFactor =
-    aiParams.BUILT_OUT_LEFT_MULTIPLIER * Math.max(0, col1Height - scareHeight);
+    aiParams.BUILT_OUT_LEFT_MULTIPLIER *
+    getBuiltOutLeftFactor(boardAfter, surfaceArray, scareHeight);
   const builtOutRightFactor =
     aiParams.BUILT_OUT_RIGHT_MULTIPLIER *
-    Math.max(0, col10Height - scareHeight);
+    getBuiltOutRightFactor(boardAfter, scareHeight);
   const inaccessibleLeftFactor = leftIsInaccessible
     ? aiParams.INACCESSIBLE_LEFT_PENALTY
     : 0;

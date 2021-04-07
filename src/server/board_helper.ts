@@ -334,13 +334,15 @@ function getBoardHeightAtColumn(board: Board, col: number) {
   return 20 - row;
 }
 
-function hasHolesNearTopOfColumn(board: Board, col: number) {
+/** Searches a column for holes.
+ * @param heightFromTop (Optional) limits the search to N rows below the top of the stack in that column
+ */
+function hasHoleInColumn(board: Board, col: number, heightFromTop = 20) {
   let row = 0;
   while (row < NUM_ROW && board[row][col] === SquareState.EMPTY) {
     row++;
   }
-  const HEIGHT_NEAR_TOP = 3;
-  for (let i = 0; i < HEIGHT_NEAR_TOP && row + i < NUM_ROW - 1; i++) {
+  for (let i = 0; i < heightFromTop && row + i < NUM_ROW - 1; i++) {
     if (board[row + i][col] === SquareState.EMPTY) {
       return true;
     }
@@ -385,7 +387,7 @@ function boardHasInaccessibileLeft(
   aiTapDelay: number
 ) {
   // If has holes near the top, it has a bad left
-  if (hasHolesNearTopOfColumn(board, 0) || hasHolesNearTopOfColumn(board, 1)) {
+  if (hasHoleInColumn(board, 0, 3) || hasHoleInColumn(board, 1, 3)) {
     return true;
   }
 
@@ -447,8 +449,8 @@ function boardHasInaccessibileRight(
 ) {
   // If has holes near the top, it has a bad right
   if (
-    hasHolesNearTopOfColumn(board, NUM_COLUMN - 1) ||
-    hasHolesNearTopOfColumn(board, NUM_COLUMN - 2)
+    hasHoleInColumn(board, NUM_COLUMN - 1) ||
+    hasHoleInColumn(board, NUM_COLUMN - 2)
   ) {
     return true;
   }
@@ -754,6 +756,7 @@ module.exports = {
   getPossibleMoves,
   getBoardAndLinesClearedAfterPlacement,
   getBoardHeightAtColumn,
+  hasHoleInColumn: hasHoleInColumn,
   pieceCollision,
   boardHasInaccessibileLeft,
   boardHasInaccessibileRight,

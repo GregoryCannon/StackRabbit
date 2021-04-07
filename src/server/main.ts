@@ -19,9 +19,7 @@ function pickBestNMoves(
   lines,
   aiMode,
   aiParams
-) {
-  
-}
+) {}
 
 /**
  * Finds the N highest valued moves, without doing any search into placements of the next piece.
@@ -116,7 +114,7 @@ function getBestMove(
   ).slice(0, POSSIBILITIES_TO_CONSIDER);
 
   // If the search depth was 1, we're done
-  if (searchDepth == 1){
+  if (searchDepth == 1) {
     if (shouldLog) {
       depth1Possibilities.forEach((x) => {
         console.log(
@@ -181,14 +179,14 @@ function getBestMove(
     });
 
     // Merge with the current best list, leaving the highest N chain possibilities seen so far
-    if (newD2Possibilities.length > 0){
+    if (newD2Possibilities.length > 0) {
       depth2Possibilities = utils
-      .mergeSortedArrays(
-        depth2Possibilities,
-        newD2Possibilities,
-        (x, y) => y.totalValue - x.totalValue
-      )
-      .slice(0, CHAIN_POSSIBILITIES_TO_CONSIDER);
+        .mergeSortedArrays(
+          depth2Possibilities,
+          newD2Possibilities,
+          (x, y) => y.totalValue - x.totalValue
+        )
+        .slice(0, CHAIN_POSSIBILITIES_TO_CONSIDER);
     }
   }
 

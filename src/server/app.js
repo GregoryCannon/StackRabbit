@@ -128,7 +128,7 @@ function handleRequestSyncNoNextBox(requestArgs) {
     /* shouldLog= */ false,
     params.getParams(),
     params.getParamMods(),
-    /* searchDepth= */ 1,
+    /* searchDepth= */ 1
   );
 
   if (!bestMove) {
