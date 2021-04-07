@@ -96,21 +96,6 @@ function countLinesNeededUntilClean(board) {
   return linesNeededToClear.size;
 }
 
-/** Checks if a board has a well that's not on the right. */
-function hasNonRightWell(board) {
-  let row = NUM_ROW - 1;
-  while (row >= 0 && board[row][NUM_COLUMN - 1] == SquareState.FULL) {
-    // If col 10 is full and there are any empty cells on other cols, this is true
-    for (let col = 0; col < NUM_COLUMN - 1; col++) {
-      if (board[row][col] == SquareState.EMPTY) {
-        return true;
-      }
-    }
-    row--;
-  }
-  return false;
-}
-
 /** Calculate a factor that penalizes filling column 10. Specifically, it counts the number of cells
  * in the other columns that would needed to be filled to clear away the block on column 10.
  * However, since holes *want* to have column 10 filled, count them oppositely.
@@ -161,24 +146,6 @@ function countBlocksInColumn10(board) {
   }
   return sum;
 }
-
-// /**
-//  * Gives a bonus if column 1 is higher than the rest (up to 2, since more isn't
-//  * too helpful after that), or a penalty if it's lower. However, if the stack is low,
-//  * it always returns 0, since this factor isn't too relevant.
-//  * @param {*} board
-//  * @param {*} surfaceArray
-//  * @param {*} scareHeight
-//  */
-// function getHighLeftFactor(surfaceArray, scareHeight, board) {
-//   const maxHeightNonCol1 = Math.max(...surfaceArray.slice(1));
-//   const col1Height = surfaceArray[0];
-//   // Scale up based on the board height
-//   const boardHeightFactor =
-//     scareHeight < 2 ? 1 : maxHeightNonCol1 / scareHeight;
-//   // Cap at 2 so it doesn't want crazy high col 1
-//   return boardHeightFactor * Math.min(2, col1Height - maxHeightNonCol1);
-// }
 
 function isTetrisReadyRightWell(board) {
   // Move the imaginary long bar down column 10
