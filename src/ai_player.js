@@ -24,10 +24,9 @@ AIPlayer.prototype.placeCurrentPiece = async function (
       console.log(JSON.stringify(board));
       console.log(board);
       // throw new Error("Invalid board!");
-      row = row.slice(0,10);
+      row = row.slice(0, 10);
     }
   }
-
 
   const startTime = performance.now();
   // Convert to 1D string of 0s and 1s
