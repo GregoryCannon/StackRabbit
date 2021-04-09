@@ -229,32 +229,33 @@ function getValueOfPossibility(
   const adjustedNumHoles =
     numHoles +
     (aiMode === AI_MODE.KILLSCREEN && countCol10Holes(boardAfter) * 0.8);
+  const levelAfterPlacement = utils.getLevelAfterLineClears(
+    level,
+    lines,
+    numLinesCleared
+  );
   const scareHeight =
-    level >= 29
+    levelAfterPlacement >= 29
       ? aiParams.SCARE_HEIGHT_29
-      : level >= 19
+      : levelAfterPlacement >= 19
       ? aiParams.SCARE_HEIGHT_19
       : aiParams.SCARE_HEIGHT_18;
   const spireHeight = getSpireHeight(surfaceArray, scareHeight);
   const averageHeight = utils.getAverageColumnHeight(boardAfter);
   const avgHeightAboveScareLine = Math.max(0, averageHeight - scareHeight);
   const tetrisReady = isTetrisReadyRightWell(boardAfter);
-  const levelAfterPlacement = utils.getLevelAfterLineClears(
-    level,
-    lines,
-    numLinesCleared
-  );
+
   const leftIsInaccessible = boardHelper.boardHasInaccessibileLeft(
     boardAfter,
     levelAfterPlacement,
-    averageHeight,
+    scareHeight,
     aiParams.TAP_ARR,
     aiParams.FIRST_TAP_DELAY
   );
   const rightIsInaccessible = boardHelper.boardHasInaccessibileRight(
     boardAfter,
     levelAfterPlacement,
-    averageHeight,
+    scareHeight,
     aiParams.TAP_ARR,
     aiParams.FIRST_TAP_DELAY
   );
