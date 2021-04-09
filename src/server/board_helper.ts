@@ -245,60 +245,6 @@ function _generatePossibilityList(
   return possibilityList;
 }
 
-function _generateLegacyPossibilityList(
-  legalPlacements: any[],
-  startingBoard: any,
-  currentPieceId: string | number,
-  startingX: any,
-  startingY: any,
-  shouldLog: any
-) {
-  const possibilityList = []; // list of [rotationId, xOffset, columnHeightsStr]
-
-  for (const [rotationIndex, xOffset] of legalPlacements) {
-    const currentRotationPiece = PIECE_LOOKUP[currentPieceId][0][rotationIndex];
-    const x = startingX + xOffset;
-    let y = startingY;
-
-    // Move the piece down until it hits the stack
-    while (!pieceCollision(startingBoard, x, y + 1, currentRotationPiece)) {
-      y++;
-    }
-
-    // Make a new board with that piece locked in
-    const [boardAfter, numLinesCleared] = getBoardAndLinesClearedAfterPlacement(
-      startingBoard,
-      currentRotationPiece,
-      x,
-      y
-    );
-    const newSurfaceArray = utils.getSurfaceArray(boardAfter);
-    const numHoles = utils.getHoleCount(boardAfter);
-
-    // Add the possibility to the list
-    if (shouldLog) {
-      console.log(
-        `Adding possibility [Index ${rotationIndex}, xOffset ${xOffset}], would make surface ${newSurfaceArray}`
-      );
-    }
-    possibilityList.push([
-      rotationIndex,
-      xOffset,
-      newSurfaceArray,
-      numHoles,
-      numLinesCleared,
-      boardAfter,
-    ]);
-  }
-
-  if (shouldLog) {
-    console.log(
-      `Result: ${possibilityList.length} possibilities for ${currentPieceId}`
-    );
-  }
-  return possibilityList;
-}
-
 /**
  * Calculates how far in each direction a hypothetical piece can be tapped (for each rotation), given the AI's tap speed and
  * the piece's current position.
@@ -371,7 +317,7 @@ function canDoPlacement(
   const simParams: SimParams = {
     board,
     initialX: 3,
-    initialY: -2,
+    initialY: pieceId === "I" ? -2 : -1,
     firstShiftDelay: aiTapDelay,
     maxGravity,
     maxArr,
@@ -382,33 +328,20 @@ function canDoPlacement(
 }
 
 /** Returns true if the board needs a 5 tap to resolve, and the tap speed is not sufficient to get a piece there. */
-const DESIRED_HEIGHT_ABOVE_SCARE_LINE_LEFT = 0;
 function boardHasInaccessibileLeft(
   board: Board,
   level: number,
-  scareHeight: number,
-  aiArr: number,
-  aiTapDelay: number
+  aiParams: AiParams
 ) {
-  // If has holes near the top, it has a bad left
-  if (hasHoleInColumn(board, 0, 3) || hasHoleInColumn(board, 1, 3)) {
-    return true;
-  }
-
   const col1Height = getBoardHeightAtColumn(board, 0);
   const col2Height = getBoardHeightAtColumn(board, 1);
   const col3Height = getBoardHeightAtColumn(board, 2);
-
   // If the left is built out, we good
-  if (
-    col1Height >= col2Height &&
-    col1Height > scareHeight + DESIRED_HEIGHT_ABOVE_SCARE_LINE_LEFT
-  ) {
+  if (col1Height >= col2Height && col1Height > aiParams.MAX_5_TAP_HEIGHT) {
     return false;
   }
-  // else {
-  //   console.log(col1Height, scareHeight + DESIRED_HEIGHT_ABOVE_SCARE_LINE_LEFT);
-  // }
+  const aiArr = aiParams.TAP_ARR;
+  const aiTapDelay = aiParams.FIRST_TAP_DELAY;
 
   // If left is accessible by square, the left is good
   if (
@@ -450,35 +383,28 @@ function boardHasInaccessibileLeft(
 }
 
 /** Returns true if the tap speed is not sufficient to get a long bar to the right. */
-const DESIRED_HEIGHT_ABOVE_SCARE_LINE_RIGHT = 5;
 function boardHasInaccessibileRight(
   board: Board,
   level: number,
-  scareHeight: number,
-  aiArr: number,
-  aiTapDelay: number
+  aiParams: AiParams
 ) {
-  // If has holes near the top, it has a bad right
-  if (
-    hasHoleInColumn(board, NUM_COLUMN - 1) ||
-    hasHoleInColumn(board, NUM_COLUMN - 2)
-  ) {
-    return true;
-  }
-
   const col9Height = getBoardHeightAtColumn(board, NUM_COLUMN - 2);
   const col10Height = getBoardHeightAtColumn(board, NUM_COLUMN - 1);
-
   // If right is built out, we're good
-  if (
-    col10Height >= col9Height &&
-    col10Height > scareHeight + DESIRED_HEIGHT_ABOVE_SCARE_LINE_RIGHT
-  ) {
+  if (col10Height >= col9Height && col10Height > aiParams.MAX_4_TAP_HEIGHT) {
     return false;
   }
 
   // Otherwise we need a 4 tap
-  return !canDoPlacement(board, level, "I", 1, 4, aiArr, aiTapDelay);
+  return !canDoPlacement(
+    board,
+    level,
+    "I",
+    1,
+    4,
+    aiParams.TAP_ARR,
+    aiParams.FIRST_TAP_DELAY
+  );
 }
 
 /** A modulus function that correctly handles negatives. */
@@ -567,13 +493,22 @@ function placementIsLegal(
         //     simState.y
         //   )[0]
         // );
-        return false; // Piece would lock in
+        return simState.x == initialX + goalOffsetX; // Piece would lock in
       }
       simState.y++;
       simState.gravityCounter = maxGravity;
     } else {
       simState.gravityCounter--;
     }
+
+    // utils.logBoard(
+    //   getBoardAndLinesClearedAfterPlacement(
+    //     board,
+    //     rotationsList[simState.rotationIndex],
+    //     simState.x,
+    //     simState.y
+    //   )[0]
+    // );
   }
   return true;
 }
@@ -739,38 +674,32 @@ function getTestBoardWithHeight(height: number) {
   return board;
 }
 
-// console.log(
-//   trySpecificPlacement(2, 0, {
-//     board: getTestBoardWithHeight(18),
-//     initialX: 3,
-//     initialY: -1,
-//     firstShiftDelay: 0,
-//     maxGravity: 1,
-//     maxArr: 4,
-//     rotationsList: PIECE_LOOKUP["L"][0],
-//     existingRotation: 0,
-//   })
-// );
-// console.log(
-//   getPossibleMoves(
-//     getTestBoardWithHeight(4),
-//     "O",
-//     29,
-//     0,
-//     0,
-//     0,
-//     0,
-//     true
-//   ).map((p) => p.slice(0, 2))
-// );
-// console.log(boardHasInaccessibileLeft(getTestBoardWithHeight(9), 19));
-// console.log(boardHasInaccessibileRight(getTestBoardWithHeight(10), 19));
+/** Gets the max height that can be cleared, given a level, ARR, delay, and number of taps desired. */
+function calculateTapHeight(level, arr, delay, numTaps) {
+  let height = 0;
+  while (
+    canDoPlacement(
+      getTestBoardWithHeight(height),
+      level,
+      "I",
+      1,
+      -1 * numTaps,
+      arr,
+      delay
+    )
+  ) {
+    height++;
+  }
+  height--;
+  return height;
+}
 
 module.exports = {
+  calculateTapHeight,
   getPossibleMoves,
   getBoardAndLinesClearedAfterPlacement,
   getBoardHeightAtColumn,
-  hasHoleInColumn: hasHoleInColumn,
+  hasHoleInColumn,
   pieceCollision,
   boardHasInaccessibileLeft,
   boardHasInaccessibileRight,

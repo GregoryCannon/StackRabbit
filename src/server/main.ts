@@ -1,6 +1,6 @@
 const evaluator = require("./evaluator");
 const aiModeManager = require("./ai_mode_manager");
-const BoardHelper = require("./board_helper");
+const boardHelper = require("./board_helper");
 const {
   POSSIBILITIES_TO_CONSIDER,
   CHAIN_POSSIBILITIES_TO_CONSIDER,
@@ -19,7 +19,7 @@ function searchDepth1(
   aiMode: AiMode
 ) {
   // Get the possible moves
-  const possibilityList = BoardHelper.getPossibleMoves(
+  const possibilityList = boardHelper.getPossibleMoves(
     searchState.board,
     searchState.currentPieceId,
     searchState.level,
@@ -77,6 +77,18 @@ function getBestMove(
     initialAiParams
   );
   const aiParams = modifyParamsForAiMode(initialAiParams, aiMode, paramMods);
+  aiParams.MAX_5_TAP_HEIGHT = boardHelper.calculateTapHeight(
+    searchState.level,
+    aiParams.TAP_ARR,
+    aiParams.FIRST_TAP_DELAY,
+    5
+  );
+  aiParams.MAX_4_TAP_HEIGHT = boardHelper.calculateTapHeight(
+    searchState.level,
+    aiParams.TAP_ARR,
+    aiParams.FIRST_TAP_DELAY,
+    5
+  );
 
   /* ---------- Initial top-level search ------------ */
 
@@ -85,7 +97,7 @@ function getBestMove(
     shouldLog,
     aiParams,
     aiMode
-  ).slice(0, POSSIBILITIES_TO_CONSIDER);
+  );
 
   // If the search depth was 1, we're done
   if (searchDepth == 1) {
@@ -114,7 +126,7 @@ function getBestMove(
   /* ---------- Explore at depth 2 for promising moves ------------ */
 
   const depth2Possibilities = searchDepth2(
-    depth1Possibilities,
+    depth1Possibilities.slice(0, POSSIBILITIES_TO_CONSIDER),
     searchState,
     aiParams,
     aiMode

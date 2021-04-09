@@ -85,6 +85,8 @@ interface AiParams {
   INACCESSIBLE_RIGHT_COEF: number;
   TAP_ARR: number;
   FIRST_TAP_DELAY: number;
+  MAX_5_TAP_HEIGHT?: number;
+  MAX_4_TAP_HEIGHT?: number;
 }
 
 interface ParamMods {

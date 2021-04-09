@@ -247,16 +247,12 @@ function getValueOfPossibility(
   const leftIsInaccessible = boardHelper.boardHasInaccessibileLeft(
     boardAfter,
     levelAfterPlacement,
-    scareHeight,
-    aiParams.TAP_ARR,
-    aiParams.FIRST_TAP_DELAY
+    aiParams
   );
   const rightIsInaccessible = boardHelper.boardHasInaccessibileRight(
     boardAfter,
     levelAfterPlacement,
-    scareHeight,
-    aiParams.TAP_ARR,
-    aiParams.FIRST_TAP_DELAY
+    aiParams
   );
 
   let extremeGapFactor = totalHeightCorrected * aiParams.EXTREME_GAP_COEF;
