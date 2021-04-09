@@ -18,18 +18,21 @@ AIPlayer.prototype.placeCurrentPiece = async function (
   level,
   lines
 ) {
+  // Fix the board if it's in an invalid state (still not sure why this happens but this bandaid fixes it)
   for (const row of board) {
     if (row.length > 10) {
       console.log(JSON.stringify(board));
       console.log(board);
-      throw new Error("Invalid board!");
+      // throw new Error("Invalid board!");
+      row = row.slice(0,10);
     }
   }
+
 
   const startTime = performance.now();
   // Convert to 1D string of 0s and 1s
   const encodedBoard = board
-    .map((row) => row.join(""))
+    .map((row) => row.slice(0, 10).join(""))
     .join("")
     .replace(/2|3/g, "1");
   console.log(board);
