@@ -342,7 +342,7 @@ function hasHoleInColumn(board: Board, col: number, heightFromTop = 20) {
   while (row < NUM_ROW && board[row][col] === SquareState.EMPTY) {
     row++;
   }
-  for (let i = 0; i < heightFromTop && row + i < NUM_ROW - 1; i++) {
+  for (let i = 0; i < heightFromTop && row + i < NUM_ROW; i++) {
     if (board[row + i][col] === SquareState.EMPTY) {
       return true;
     }
@@ -379,10 +379,11 @@ function canDoPlacement(
 }
 
 /** Returns true if the board needs a 5 tap to resolve, and the tap speed is not sufficient to get a piece there. */
+const DESIRED_HEIGHT_ABOVE_SCARE_LINE_LEFT = 0;
 function boardHasInaccessibileLeft(
   board: Board,
   level: number,
-  averageHeight: number,
+  scareHeight: number,
   aiArr: number,
   aiTapDelay: number
 ) {
@@ -396,8 +397,13 @@ function boardHasInaccessibileLeft(
   const col3Height = getBoardHeightAtColumn(board, 2);
 
   // If the left is built out, we good
-  if (col1Height >= col2Height && col1Height > averageHeight) {
+  if (
+    col1Height >= col2Height &&
+    col1Height > scareHeight + DESIRED_HEIGHT_ABOVE_SCARE_LINE_LEFT
+  ) {
     return false;
+  } else {
+    console.log(col1Height, scareHeight + DESIRED_HEIGHT_ABOVE_SCARE_LINE_LEFT);
   }
 
   // If left is accessible by square, the left is good
@@ -440,10 +446,11 @@ function boardHasInaccessibileLeft(
 }
 
 /** Returns true if the tap speed is not sufficient to get a long bar to the right. */
+const DESIRED_HEIGHT_ABOVE_SCARE_LINE_RIGHT = 5;
 function boardHasInaccessibileRight(
   board: Board,
   level: number,
-  averageHeight: number,
+  scareHeight: number,
   aiArr: number,
   aiTapDelay: number
 ) {
@@ -459,7 +466,10 @@ function boardHasInaccessibileRight(
   const col10Height = getBoardHeightAtColumn(board, NUM_COLUMN - 1);
 
   // If right is built out, we're good
-  if (col10Height >= col9Height && col10Height > averageHeight) {
+  if (
+    col10Height >= col9Height &&
+    col10Height > scareHeight + DESIRED_HEIGHT_ABOVE_SCARE_LINE_RIGHT
+  ) {
     return false;
   }
 
