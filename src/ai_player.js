@@ -19,12 +19,13 @@ AIPlayer.prototype.placeCurrentPiece = async function (
   lines
 ) {
   // Fix the board if it's in an invalid state (still not sure why this happens but this bandaid fixes it)
-  for (const row of board) {
+  for (let i = 0; i < board.length; i++) {
+    const row = board[i];
     if (row.length > 10) {
       console.log(JSON.stringify(board));
       console.log(board);
       // throw new Error("Invalid board!");
-      row = row.slice(0, 10);
+      board[i] = row.slice(0, 10);
     }
   }
 
