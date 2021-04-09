@@ -13,12 +13,12 @@ let asyncResult = null;
  * Parses and validates the inputs
  * @returns {Object} an object with all the parsed arguments
  */
-function parseArguments(requestArgs) {
+function parseArguments(requestArgs): SearchState {
   // Parse and validate inputs
   let [
     boardStr,
-    currentPieceStr,
-    nextPieceStr,
+    currentPieceId,
+    nextPieceId,
     level,
     lines,
     existingXOffset,
@@ -34,36 +34,36 @@ function parseArguments(requestArgs) {
   existingRotation = parseInt(existingRotation) || 0;
 
   // Validate pieces
-  currentPieceStr = currentPieceStr.toUpperCase();
-  nextPieceStr = nextPieceStr.toUpperCase();
-  if (!["I", "O", "L", "J", "T", "S", "Z"].includes(currentPieceStr)) {
-    throw new Error("Unknown current piece:" + currentPieceStr);
+  currentPieceId = currentPieceId.toUpperCase();
+  nextPieceId = nextPieceId.toUpperCase();
+  if (!["I", "O", "L", "J", "T", "S", "Z"].includes(currentPieceId)) {
+    throw new Error("Unknown current piece:" + currentPieceId);
   }
-  if (!["I", "O", "L", "J", "T", "S", "Z", "NULL"].includes(nextPieceStr)) {
-    throw new Error("Unknown next piece: '" + nextPieceStr + "'");
+  if (!["I", "O", "L", "J", "T", "S", "Z", "NULL"].includes(nextPieceId)) {
+    throw new Error("Unknown next piece: '" + nextPieceId + "'");
   }
   if (level < 0) {
-    throw new Error("Illegal level:", level);
+    throw new Error("Illegal level: " + level);
   }
   if (lines === undefined || lines < 0) {
-    throw new Error("Illegal line count:", lines);
+    throw new Error("Illegal line count: " + lines);
   }
   if (existingRotation < 0 || existingRotation > 3) {
-    throw new Error("Illegal existing rotation:", existingRotation);
+    throw new Error("Illegal existing rotation: " + existingRotation);
   }
   if (level < 18 || level > 30) {
     console.log("WARNING - Unusual level:", level);
   }
 
   // Decode the board
-  const startingBoard = boardStr
+  const board = boardStr
     .match(/.{1,10}/g) // Select groups of 10 characters
     .map((rowSerialized) => rowSerialized.split("").map((x) => parseInt(x)));
 
   return {
-    startingBoard,
-    currentPieceStr,
-    nextPieceStr,
+    board,
+    currentPieceId,
+    nextPieceId,
     level,
     lines,
     existingXOffset,
@@ -79,7 +79,7 @@ function parseArguments(requestArgs) {
  * @param {function} callbackFunction called on completion
  * @returns {string} the *initial* API response - i.e. whether the request was accepted and started
  */
-function handleRequestAsyncWithNextBox(requestArgs) {
+function handleRequestAsyncWithNextBox(requestArgs): [string, number] {
   if (asyncCallInProgress) {
     return ["Error - already handling an async call", 500];
   }
@@ -104,8 +104,8 @@ function handleRequestAsyncWithNextBox(requestArgs) {
  */
 function handleRequestSyncNoNextBox(requestArgs) {
   let {
-    startingBoard,
-    currentPieceStr,
+    board,
+    currentPieceId,
     level,
     lines,
     existingXOffset,
@@ -116,16 +116,18 @@ function handleRequestSyncNoNextBox(requestArgs) {
 
   // Get the best move
   const bestMove = mainApp.getBestMove(
-    startingBoard,
-    currentPieceStr,
-    null,
-    level,
-    lines,
-    existingXOffset,
-    existingYOffset,
-    firstShiftDelay,
-    existingRotation,
-    /* shouldLog= */ false,
+    {
+      board,
+      currentPieceId,
+      nextPieceId: null,
+      level,
+      lines,
+      existingXOffset,
+      existingYOffset,
+      firstShiftDelay,
+      existingRotation,
+    },
+    /* shouldLog= */ true,
     params.getParams(),
     params.getParamMods(),
     /* searchDepth= */ 1
@@ -143,9 +145,9 @@ function handleRequestSyncNoNextBox(requestArgs) {
  */
 function handleRequestSyncWithNextBox(requestArgs) {
   let {
-    startingBoard,
-    currentPieceStr,
-    nextPieceStr,
+    board,
+    currentPieceId,
+    nextPieceId,
     level,
     lines,
     existingXOffset,
@@ -156,15 +158,17 @@ function handleRequestSyncWithNextBox(requestArgs) {
 
   // Get the best move
   const bestMove = mainApp.getBestMove(
-    startingBoard,
-    currentPieceStr,
-    nextPieceStr,
-    level,
-    lines,
-    existingXOffset,
-    existingYOffset,
-    firstShiftDelay,
-    existingRotation,
+    {
+      board,
+      currentPieceId,
+      nextPieceId,
+      level,
+      lines,
+      existingXOffset,
+      existingYOffset,
+      firstShiftDelay,
+      existingRotation,
+    },
     /* shouldLog= */ true,
     params.getParams(),
     params.getParamMods(),

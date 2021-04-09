@@ -1,21 +1,19 @@
-const { AI_MODE } = require("./params");
-
-const utils = require("./utils");
+import * as utils from "./utils";
 const SquareState = utils.SquareState;
 const NUM_ROW = utils.NUM_ROW;
 const NUM_COLUMN = utils.NUM_COLUMN;
 
 function getAiMode(board, lines, level, aiParams) {
   if (level >= 29) {
-    return AI_MODE.KILLSCREEN;
+    return AiMode.KILLSCREEN;
   }
   if (lines >= 220) {
-    return AI_MODE.NEAR_KILLSCREEN;
+    return AiMode.NEAR_KILLSCREEN;
   }
   if (shouldUseDigMode(board, aiParams)) {
-    return AI_MODE.DIG;
+    return AiMode.DIG;
   }
-  return AI_MODE.STANDARD;
+  return AiMode.STANDARD;
 }
 
 /** The logic here is quite complex, it's a shame it has to be manually coded instead of trained.

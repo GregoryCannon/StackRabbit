@@ -6,6 +6,9 @@ const SquareState = utils.SquareState;
 
 // Collision function
 function pieceCollision(board: Board, x: number, y: number, piece: PieceArray) {
+  if (!piece || piece.length < 1) {
+    throw new Error("Unknown piece passed into collision function");
+  }
   for (let r = 0; r < piece.length; r++) {
     for (let c = 0; c < piece[r].length; c++) {
       // If the square is empty, we skip it
@@ -118,9 +121,9 @@ function getPossibleMoves(
   level: number,
   existingXOffset: number,
   existingYOffset: number,
-  tapArr: number,
   firstShiftDelay: number,
   existingRotation: number,
+  tapArr: number,
   shouldLog: boolean
 ) {
   _validateIntParam(level, 0, 999);
@@ -402,9 +405,10 @@ function boardHasInaccessibileLeft(
     col1Height > scareHeight + DESIRED_HEIGHT_ABOVE_SCARE_LINE_LEFT
   ) {
     return false;
-  } else {
-    console.log(col1Height, scareHeight + DESIRED_HEIGHT_ABOVE_SCARE_LINE_LEFT);
   }
+  // else {
+  //   console.log(col1Height, scareHeight + DESIRED_HEIGHT_ABOVE_SCARE_LINE_LEFT);
+  // }
 
   // If left is accessible by square, the left is good
   if (

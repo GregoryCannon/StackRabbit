@@ -9,46 +9,25 @@ const {
 import * as utils from "./utils";
 
 /**
- * Iterates over the list of possiblities and return the one with the highest value.
- * @param {Array<possibility obj>} possibilityList
- */
-function pickBestNMoves(
-  possibilityList,
-  nextPieceId,
-  level,
-  lines,
-  aiMode,
-  aiParams
-) {}
-
-/**
  * Finds the N highest valued moves, without doing any search into placements of the next piece.
  * Can be called with or without a next piece, and will function accordingly.
  */
-function getSortedPossibilityList(
-  startingBoard,
-  currentPieceId,
-  nextPieceId,
-  level,
-  lines,
-  existingXOffset,
-  existingYOffset,
-  firstShiftDelay,
-  existingRotation,
-  shouldLog,
-  aiParams,
-  aiMode
+function searchDepth1(
+  searchState: SearchState,
+  shouldLog: boolean,
+  aiParams: AiParams,
+  aiMode: AiMode
 ) {
   // Get the possible moves
   const possibilityList = BoardHelper.getPossibleMoves(
-    startingBoard,
-    currentPieceId,
-    level,
-    existingXOffset,
-    existingYOffset,
+    searchState.board,
+    searchState.currentPieceId,
+    searchState.level,
+    searchState.existingXOffset,
+    searchState.existingYOffset,
+    searchState.firstShiftDelay,
+    searchState.existingRotation,
     aiParams.TAP_ARR,
-    firstShiftDelay,
-    existingRotation,
     /* shouldLog= */ false && shouldLog
   );
 
@@ -56,9 +35,9 @@ function getSortedPossibilityList(
   for (const possibility of possibilityList) {
     const [value, explanation] = evaluator.getValueOfPossibility(
       possibility,
-      nextPieceId,
-      level,
-      lines,
+      searchState.nextPieceId,
+      searchState.level,
+      searchState.lines,
       aiMode,
       /* shouldLog= */ false,
       aiParams
@@ -70,47 +49,42 @@ function getSortedPossibilityList(
   return possibilityList.sort((a, b) => b.evalScore - a.evalScore);
 }
 
+/**
+ * Main function called externally.
+ * Finds the best move for a given scenario (with or without a next box). Behavior changes based on the search depth:
+ *   - If searchDepth is 1, it looks at all the possible placements of the current
+ *        piece, then evaluates the resulting states.
+ *   - If searchDepth is 2, it takes the most promising of those 1-states and calculates
+ *        the 2-states that can occur from them.
+ *   - If searchDepth is 3, it takes a small number of the best 2-states and calculates
+ *        placements for all 7 theoretical next pieces that could occur.
+ */
+
 function getBestMove(
-  startingBoard,
-  currentPieceId,
-  nextPieceId,
-  level,
-  lines,
-  existingXOffset,
-  existingYOffset,
-  firstShiftDelay,
-  existingRotation,
-  shouldLog,
-  initialAiParams,
-  paramMods,
-  searchDepth
+  searchState: SearchState,
+  shouldLog: boolean,
+  initialAiParams: AiParams,
+  paramMods: ParamMods,
+  searchDepth: number
 ) {
   const startTime = Date.now();
 
   // Get the AI mode (e.g. digging, scoring)
   const aiMode = aiModeManager.getAiMode(
-    startingBoard,
-    lines,
-    level,
+    searchState.board,
+    searchState.lines,
+    searchState.level,
     initialAiParams
   );
   const aiParams = modifyParamsForAiMode(initialAiParams, aiMode, paramMods);
 
   /* ---------- Initial top-level search ------------ */
 
-  const depth1Possibilities: Array<Possibility> = getSortedPossibilityList(
-    startingBoard,
-    currentPieceId,
-    nextPieceId,
-    level,
-    lines,
-    existingXOffset,
-    existingYOffset,
-    firstShiftDelay,
-    existingRotation,
+  const depth1Possibilities: Array<Possibility> = searchDepth1(
+    searchState,
     shouldLog,
     aiParams,
-    paramMods
+    aiMode
   ).slice(0, POSSIBILITIES_TO_CONSIDER);
 
   // If the search depth was 1, we're done
@@ -132,31 +106,50 @@ function getBestMove(
     console.log("Num promising moves:", depth1Possibilities.length);
     console.log(
       "Promising moves",
-      depth1Possibilities.map((x) => x.placement)
+      depth1Possibilities.map((x) => [x.placement, x.evalExplanation])
     );
     console.log("\n\n---------");
   }
 
   /* ---------- Explore at depth 2 for promising moves ------------ */
 
-  let depth2Possibilities: Array<ChainPossibility> = [];
+  const depth2Possibilities = searchDepth2(
+    depth1Possibilities,
+    searchState,
+    aiParams,
+    aiMode
+  );
+
+  return depth2Possibilities[0] || null;
+}
+
+function searchDepth2(
+  depth1Possibilities: Array<Possibility>,
+  prevSearchState: SearchState,
+  aiParams: AiParams,
+  aiMode: AiMode
+): Array<PossibilityDepth2> {
+  let depth2Possibilities: Array<PossibilityDepth2> = [];
   for (const outerPossibility of depth1Possibilities) {
     // Place the next piece in each possibility
     const levelAfter = utils.getLevelAfterLineClears(
-      level,
-      lines,
+      prevSearchState.level,
+      prevSearchState.lines,
       outerPossibility.numLinesCleared
     );
-    const innerPossibilities = getSortedPossibilityList(
-      outerPossibility.boardAfter,
-      nextPieceId,
-      /* nextPieceId= */ null,
-      levelAfter,
-      lines + outerPossibility.numLinesCleared,
-      /* existingXOffset= */ 0,
-      /* existingYOffset= */ 0,
-      aiParams.FIRST_TAP_DELAY,
-      /* existingRotation= */ 0,
+    const newSearchState = {
+      board: outerPossibility.boardAfter,
+      currentPieceId: prevSearchState.nextPieceId,
+      nextPieceId: null,
+      level: levelAfter,
+      lines: prevSearchState.lines + outerPossibility.numLinesCleared,
+      existingXOffset: 0,
+      existingYOffset: 0,
+      firstShiftDelay: aiParams.FIRST_TAP_DELAY,
+      existingRotation: 0,
+    };
+    const innerPossibilities = searchDepth1(
+      newSearchState,
       /* shouldLog= */ false,
       aiParams,
       aiMode
@@ -178,11 +171,11 @@ function getBestMove(
       };
     });
 
-    console.log(newD2Possibilities);
-    console.log(
-      "current best:",
-      depth2Possibilities[0] ? depth2Possibilities[0].totalValue : 0
-    );
+    // console.log(newD2Possibilities);
+    // console.log(
+    //   "current best:",
+    //   depth2Possibilities[0] ? depth2Possibilities[0].totalValue : 0
+    // );
 
     // Merge with the current best list, leaving the highest N chain possibilities seen so far
     if (newD2Possibilities.length > 0) {
@@ -195,8 +188,7 @@ function getBestMove(
         .slice(0, CHAIN_POSSIBILITIES_TO_CONSIDER);
     }
   }
-
-  return depth2Possibilities[0] || null;
+  return depth2Possibilities;
 }
 
 module.exports = { getBestMove };

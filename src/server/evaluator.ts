@@ -1,4 +1,3 @@
-const { AI_MODE } = require("./params");
 const boardHelper = require("./board_helper");
 const rankLookup = require("./rank-lookup");
 
@@ -173,7 +172,7 @@ function getLineClearValue(numLinesCleared, aiParams) {
   return numLinesCleared == 4
     ? aiParams.TETRIS_BONUS
     : numLinesCleared > 0
-    ? aiParams.BURN_PENALTY * numLinesCleared
+    ? aiParams.BURN_COEF * numLinesCleared
     : 0;
 }
 
@@ -228,7 +227,7 @@ function getValueOfPossibility(
   ] = utils.correctSurfaceForExtremeGaps(surfaceArray);
   const adjustedNumHoles =
     numHoles +
-    (aiMode === AI_MODE.KILLSCREEN && countCol10Holes(boardAfter) * 0.8);
+    (aiMode === AiMode.KILLSCREEN && countCol10Holes(boardAfter) * 0.8);
   const levelAfterPlacement = utils.getLevelAfterLineClears(
     level,
     lines,
@@ -260,43 +259,43 @@ function getValueOfPossibility(
     aiParams.FIRST_TAP_DELAY
   );
 
-  let extremeGapFactor = totalHeightCorrected * aiParams.EXTREME_GAP_PENALTY;
+  let extremeGapFactor = totalHeightCorrected * aiParams.EXTREME_GAP_COEF;
   let surfaceFactor =
-    aiParams.SURFACE_MULTIPLIER *
+    aiParams.SURFACE_COEF *
     rankLookup.getValueOfBoardSurface(correctedSurface, nextPieceId);
   const tetrisReadyFactor = tetrisReady
     ? nextPieceId == "I"
       ? aiParams.TETRIS_READY_BONUS_BAR_NEXT
       : aiParams.TETRIS_READY_BONUS
     : 0;
-  const holeFactor = adjustedNumHoles * aiParams.HOLE_PENALTY;
+  const holeFactor = adjustedNumHoles * aiParams.HOLE_COEF;
   const holeWeightFactor =
-    countLinesNeededUntilClean(boardAfter) * aiParams.HOLE_WEIGHT_PENALTY;
+    countLinesNeededUntilClean(boardAfter) * aiParams.HOLE_WEIGHT_COEF;
   const lineClearFactor = getLineClearValue(numLinesCleared, aiParams);
   const spireHeightFactor =
-    aiParams.SPIRE_HEIGHT_MULTIPLIER *
+    aiParams.SPIRE_HEIGHT_COEF *
     Math.pow(spireHeight, aiParams.SPIRE_HEIGHT_EXPONENT);
   const avgHeightFactor =
-    aiParams.AVG_HEIGHT_MULTIPLIER *
+    aiParams.AVG_HEIGHT_COEF *
     Math.pow(avgHeightAboveScareLine, aiParams.AVG_HEIGHT_EXPONENT);
   const col10Factor =
-    getColumn10Factor(boardAfter, scareHeight) * aiParams.COL_10_PENALTY;
+    getColumn10Factor(boardAfter, scareHeight) * aiParams.COL_10_COEF;
   const col10BurnFactor =
-    countBlocksInColumn10(boardAfter) * aiParams.BURN_PENALTY; // Any blocks on col 10 will result in a burn
+    countBlocksInColumn10(boardAfter) * aiParams.BURN_COEF; // Any blocks on col 10 will result in a burn
   const col9Factor =
-    aiParams.HIGH_COL_9_PENALTY_MULTIPLIER *
+    aiParams.HIGH_COL_9_COEF_COEF *
     countEmptyBlocksBelowColumn9Height(surfaceArray);
   const builtOutLeftFactor =
-    aiParams.BUILT_OUT_LEFT_MULTIPLIER *
+    aiParams.BUILT_OUT_LEFT_COEF *
     getBuiltOutLeftFactor(boardAfter, surfaceArray, scareHeight);
   const builtOutRightFactor =
-    aiParams.BUILT_OUT_RIGHT_MULTIPLIER *
+    aiParams.BUILT_OUT_RIGHT_COEF *
     getBuiltOutRightFactor(boardAfter, scareHeight);
   const inaccessibleLeftFactor = leftIsInaccessible
-    ? aiParams.INACCESSIBLE_LEFT_PENALTY
+    ? aiParams.INACCESSIBLE_LEFT_COEF
     : 0;
   const inaccessibleRightFactor = rightIsInaccessible
-    ? aiParams.INACCESSIBLE_RIGHT_PENALTY
+    ? aiParams.INACCESSIBLE_RIGHT_COEF
     : 0;
 
   const factors = {

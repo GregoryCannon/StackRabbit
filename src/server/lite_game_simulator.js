@@ -100,15 +100,17 @@ function simulateGame(
 
     // Place one piece
     const bestMove = mainApp.getBestMove(
-      board,
-      currentPieceId,
-      nextPieceId,
-      level,
-      lines,
-      /* existingXOffset= */ 0,
-      /* existingYOffset= */ 0,
-      /* firstShiftDelay= */ 0,
-      /* existingRotation= */ 0,
+      {
+        startingBoard: board,
+        currentPieceId,
+        nextPieceId,
+        level,
+        lines,
+        existingXOffset: 0,
+        existingYOffset: 0,
+        firstShiftDelay: 0,
+        existingRotation: 0,
+      },
       /* shouldLog= */ false,
       aiParams,
       paramMods,
