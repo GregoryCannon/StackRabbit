@@ -37,11 +37,8 @@ AIPlayer.prototype.placeCurrentPiece = async function (
     .replace(/2|3/g, "1");
   console.log(board);
   const result = await fetch(
-    `http://127.0.0.1:3000/sync-nb/${encodedBoard}/${piece.id}/${nextPiece.id}/${level}/${lines}/0/0/0`
+    `http://127.0.0.1:3000/sync-nb/${encodedBoard}/${piece.id}/${nextPiece.id}/${level}/${lines}/0/0/2/0`
   );
-  // const result = await fetch(
-  //   `http://127.0.0.1:3000/sync-nnb/${encodedBoard}/${piece.id}/null/${level}/${lines}`
-  // );
   const endTime = performance.now();
   this.totalApiCalls++;
   if (this.totalApiCalls > 1) {
