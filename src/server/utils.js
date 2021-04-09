@@ -142,7 +142,7 @@ export function getMaxColumnHeight(board) {
 }
 
 export function getAverageColumnHeight(board) {
-  const heights = _getSurfaceArrayAndHoleCount(board)[0].slice(1, 9);
+  const heights = _getSurfaceArrayAndHoleCount(board)[0];
   let totalHeight = 0;
   for (let height of heights) {
     totalHeight += height;
