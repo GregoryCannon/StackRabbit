@@ -37,6 +37,7 @@ const DEFAULT_PARAM_MODS = {
   NEAR_KILLSCREEN: {
     BURN_COEF: -15,
     TETRIS_READY_BONUS: 10,
+    TETRIS_BONUS: 200, // has to be more than INACCESSIBLE_RIGHT, so that it'll take a tetris on 229 lines
   },
   KILLSCREEN: {
     COL_10_COEF: 0,
@@ -80,7 +81,7 @@ const V5_TRAINED_PARAMS = {
   TETRIS_READY_BONUS: 5.909760000000001,
   TETRIS_READY_BONUS_BAR_NEXT: 15.36,
   INACCESSIBLE_LEFT_COEF: -30, // Added manually since didn't exist at time of training
-  INACCESSIBLE_RIGHT_COEF: -200, // Added manually since didn't exist at time of training
+  INACCESSIBLE_RIGHT_COEF: -100, // Added manually since didn't exist at time of training
   TAP_ARR: 4,
   FIRST_TAP_DELAY: 2,
 };
