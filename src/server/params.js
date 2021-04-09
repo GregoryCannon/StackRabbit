@@ -5,7 +5,7 @@ const AI_MODE = Object.freeze({
   KILLSCREEN: "killscreen",
 });
 
-const POSSIBILITIES_TO_CONSIDER = 5;
+const POSSIBILITIES_TO_CONSIDER = 20;
 const CHAIN_POSSIBILITIES_TO_CONSIDER = 1;
 
 /*--------------------------------

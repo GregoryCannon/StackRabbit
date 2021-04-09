@@ -178,6 +178,12 @@ function getBestMove(
       };
     });
 
+    console.log(newD2Possibilities);
+    console.log(
+      "current best:",
+      depth2Possibilities[0] ? depth2Possibilities[0].totalValue : 0
+    );
+
     // Merge with the current best list, leaving the highest N chain possibilities seen so far
     if (newD2Possibilities.length > 0) {
       depth2Possibilities = utils
