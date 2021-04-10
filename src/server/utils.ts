@@ -69,7 +69,9 @@ export function generateDigPracticeBoard(garbageHeight, numHoles) {
   return board;
 }
 
-function _getSurfaceArrayAndHoleCount(board) {
+export function getSurfaceArrayAndHoleCount(
+  board: Board
+): [Array<number>, number] {
   const heights = [];
   let numHoles = 0;
   for (let col = 0; col < NUM_COLUMN; col++) {
@@ -96,7 +98,7 @@ function _getSurfaceArrayAndHoleCount(board) {
  * @param {Array<Array<number>>} board
  */
 export function getSurfaceArray(board) {
-  return _getSurfaceArrayAndHoleCount(board)[0].slice(0, 9);
+  return getSurfaceArrayAndHoleCount(board)[0].slice(0, 9);
 }
 
 export function hasInvalidHeightDifferences(surfaceArray) {
@@ -114,8 +116,14 @@ export function hasInvalidHeightDifferences(surfaceArray) {
  * (for surface rating purposes only)
  * @param {*} surfaceArray
  */
-export function correctSurfaceForExtremeGaps(initialArray) {
-  const newArray = JSON.parse(JSON.stringify(initialArray));
+export function correctSurfaceForExtremeGaps(
+  initialArray
+): [Array<number>, number] {
+  const newArray = [];
+  for (const elt of initialArray) {
+    newArray.push(elt);
+  }
+
   let totalExcessHeight = 0; // Accumulator for the excess height trimmed away. Used for evaluation purposes.
 
   for (let i = 1; i < newArray.length; i++) {
@@ -133,16 +141,16 @@ export function correctSurfaceForExtremeGaps(initialArray) {
 }
 
 export function getHoleCount(board) {
-  return _getSurfaceArrayAndHoleCount(board)[1];
+  return getSurfaceArrayAndHoleCount(board)[1];
 }
 
 export function getMaxColumnHeight(board) {
-  const heights = _getSurfaceArrayAndHoleCount(board)[0];
+  const heights = getSurfaceArrayAndHoleCount(board)[0];
   return Math.max(...heights.slice(1));
 }
 
 export function getAverageColumnHeight(board) {
-  const heights = _getSurfaceArrayAndHoleCount(board)[0];
+  const heights = getSurfaceArrayAndHoleCount(board)[0];
   let totalHeight = 0;
   for (let height of heights) {
     totalHeight += height;
@@ -198,6 +206,18 @@ export function mergeSortedArrays(arr1, arr2, compareFunc) {
   }
 
   return merged;
+}
+
+export function cloneBoard(board) {
+  const newBoard = [];
+  for (let row = 0; row < NUM_ROW; row++) {
+    const newRow = [];
+    for (let col = 0; col < NUM_COLUMN; col++) {
+      newRow.push(board[row][col]);
+    }
+    newBoard.push(newRow);
+  }
+  return newBoard;
 }
 
 // module.exports = {

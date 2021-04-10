@@ -169,7 +169,7 @@ function handleRequestSyncWithNextBox(requestArgs) {
       firstShiftDelay,
       existingRotation,
     },
-    /* shouldLog= */ true,
+    /* shouldLog= */ false,
     params.getParams(),
     params.getParamMods(),
     /* searchDepth= */ 2

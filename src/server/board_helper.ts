@@ -74,7 +74,7 @@ function getBoardAndLinesClearedAfterPlacement(
   x: number,
   y: number
 ) {
-  let tempBoard = JSON.parse(JSON.stringify(board));
+  let tempBoard = utils.cloneBoard(board);
   for (let r = 0; r < currentRotationPiece.length; r++) {
     for (let c = 0; c < currentRotationPiece[r].length; c++) {
       // If the square is empty, we skip it
@@ -219,8 +219,10 @@ function _generatePossibilityList(
       x,
       y
     );
-    const surfaceArray = utils.getSurfaceArray(boardAfter);
-    const numHoles = utils.getHoleCount(boardAfter);
+    let [surfaceArray, numHoles] = utils.getSurfaceArrayAndHoleCount(
+      boardAfter
+    );
+    surfaceArray = surfaceArray.slice(0, 9);
 
     // Add the possibility to the list
     if (shouldLog) {
