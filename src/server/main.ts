@@ -1,11 +1,7 @@
 const evaluator = require("./evaluator");
 const aiModeManager = require("./ai_mode_manager");
 const boardHelper = require("./board_helper");
-const {
-  POSSIBILITIES_TO_CONSIDER,
-  CHAIN_POSSIBILITIES_TO_CONSIDER,
-  modifyParamsForAiMode,
-} = require("./params");
+const { SEARCH_BREADTH, modifyParamsForAiMode } = require("./params");
 import * as utils from "./utils";
 
 /**
@@ -87,7 +83,7 @@ function getBestMove(
     searchState.level,
     aiParams.TAP_ARR,
     aiParams.FIRST_TAP_DELAY,
-    5
+    4
   );
 
   /* ---------- Initial top-level search ------------ */
@@ -126,13 +122,34 @@ function getBestMove(
   /* ---------- Explore at depth 2 for promising moves ------------ */
 
   const depth2Possibilities = searchDepth2(
-    depth1Possibilities.slice(0, POSSIBILITIES_TO_CONSIDER),
+    depth1Possibilities.slice(0, SEARCH_BREADTH[1]),
     searchState,
     aiParams,
     aiMode
   );
 
+  if (searchDepth === 2) {
+    if (shouldLog) {
+      console.log(
+        depth2Possibilities.map((x) => [
+          x.placement,
+          x.innerPlacements[0],
+          x.evalExplanation,
+        ])
+      );
+    }
+    return depth2Possibilities[0] || null;
+  }
+
+  console.log(searchDepth);
   return depth2Possibilities[0] || null;
+
+  // /* ---------- Explore at depth 3 for promising states at depth 2 ------------ */
+  // const depth3Possibilities : Map<PieceId, Array<PossibilityChain>> = new Map();
+  // for (const pieceId of ["I", "O", "L", "J", "T", "S", "Z"]){
+  //   const depth3Possibilities = searchDepth2(depth1)
+  //   depth3Possibilities.set(pieceId as PieceId, []);
+  // }
 }
 
 function searchDepth2(
@@ -140,8 +157,8 @@ function searchDepth2(
   prevSearchState: SearchState,
   aiParams: AiParams,
   aiMode: AiMode
-): Array<PossibilityDepth2> {
-  let depth2Possibilities: Array<PossibilityDepth2> = [];
+): Array<PossibilityChain> {
+  let depth2Possibilities: Array<PossibilityChain> = [];
   for (const outerPossibility of depth1Possibilities) {
     // Place the next piece in each possibility
     const levelAfter = utils.getLevelAfterLineClears(
@@ -165,7 +182,10 @@ function searchDepth2(
       /* shouldLog= */ false,
       aiParams,
       aiMode
-    ).slice(0, CHAIN_POSSIBILITIES_TO_CONSIDER);
+    ).slice(0, SEARCH_BREADTH[2]);
+
+    // console.log(`\n\nSearching: ${outerPossibility.placement}`);
+    // console.log(innerPossibilities.map((x) => `${x.placement} : ${x.evalExplanation}`));
 
     // Wrap each inner possibility with its outer move
     const newD2Possibilities = innerPossibilities.map((x: Possibility) => {
@@ -173,21 +193,17 @@ function searchDepth2(
         outerPossibility.numLinesCleared,
         aiParams
       );
-      const innerPlacement = x.placement;
+      const innerPlacements = [x.placement];
       return {
         ...x,
-        innerPlacement,
+        boardAfter: outerPossibility.boardAfter,
+        innerPlacements,
+        searchStateAfter: newSearchState,
         placement: outerPossibility.placement,
         parentPlacementPartialValue: outerMovePartialValue,
         totalValue: x.evalScore + outerMovePartialValue,
       };
     });
-
-    // console.log(newD2Possibilities);
-    // console.log(
-    //   "current best:",
-    //   depth2Possibilities[0] ? depth2Possibilities[0].totalValue : 0
-    // );
 
     // Merge with the current best list, leaving the highest N chain possibilities seen so far
     if (newD2Possibilities.length > 0) {
@@ -197,10 +213,75 @@ function searchDepth2(
           newD2Possibilities,
           (x, y) => y.totalValue - x.totalValue
         )
-        .slice(0, CHAIN_POSSIBILITIES_TO_CONSIDER);
+        .slice(0, SEARCH_BREADTH[2]);
     }
   }
   return depth2Possibilities;
+}
+
+function searchDeeper(
+  outerPossibilities: Array<PossibilityChain>,
+  potentialPieceId: PieceId,
+  aiParams: AiParams,
+  aiMode: AiMode
+): Array<PossibilityChain> {
+  let newPossibilities: Array<PossibilityChain> = [];
+  for (const outerPossibility of outerPossibilities) {
+    const prevSearchState = outerPossibility.searchStateAfter;
+
+    // Place the next piece in each possibility
+    const levelAfter = utils.getLevelAfterLineClears(
+      prevSearchState.level,
+      prevSearchState.lines,
+      outerPossibility.numLinesCleared
+    );
+    const newSearchState = {
+      board: outerPossibility.boardAfter,
+      currentPieceId: potentialPieceId,
+      nextPieceId: null,
+      level: levelAfter,
+      lines: prevSearchState.lines + outerPossibility.numLinesCleared,
+      existingXOffset: 0,
+      existingYOffset: 0,
+      firstShiftDelay: aiParams.FIRST_TAP_DELAY,
+      existingRotation: 0,
+    };
+    const innerPossibilities = searchDepth1(
+      newSearchState,
+      /* shouldLog= */ false,
+      aiParams,
+      aiMode
+    ).slice(0, SEARCH_BREADTH[2]);
+
+    // Wrap each inner possibility with its outer move
+    const newD2Possibilities = innerPossibilities.map((x: Possibility) => {
+      const outerMovePartialValue = evaluator.getLineClearValue(
+        outerPossibility.numLinesCleared,
+        aiParams
+      );
+      const innerPlacements = [x.placement];
+      return {
+        ...x,
+        innerPlacements,
+        searchStateAfter: newSearchState,
+        placement: outerPossibility.placement,
+        parentPlacementPartialValue: outerMovePartialValue,
+        totalValue: x.evalScore + outerMovePartialValue,
+      };
+    });
+
+    // Merge with the current best list, leaving the highest N chain possibilities seen so far
+    if (newD2Possibilities.length > 0) {
+      newPossibilities = utils
+        .mergeSortedArrays(
+          newPossibilities,
+          newD2Possibilities,
+          (x, y) => y.totalValue - x.totalValue
+        )
+        .slice(0, SEARCH_BREADTH[2]);
+    }
+  }
+  return newPossibilities;
 }
 
 module.exports = { getBestMove };

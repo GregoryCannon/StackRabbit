@@ -1,4 +1,4 @@
-import * as utils from "../built/server/utils";
+const utils = require("../built/src/server/utils");
 
 const { NUM_COLUMN, NUM_ROW, SquareState } = require("./constants");
 

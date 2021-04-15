@@ -35,10 +35,11 @@ interface Possibility {
   evalExplanation?: string;
 }
 
-interface PossibilityDepth2 extends Possibility {
-  innerPlacement: Placement;
-  outerPlacementPartialValue: number;
+interface PossibilityChain extends Possibility {
+  innerPlacements: Array<Placement>;
+  outerPlacementPartialValues: Array<number>;
   totalValue: number;
+  searchStateAfter?: SearchState;
 }
 
 interface SearchState {

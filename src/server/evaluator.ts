@@ -1,11 +1,21 @@
 const boardHelper = require("./board_helper");
 const rankLookup = require("./rank-lookup");
+const killscreenRanks = require("../../docs/killscreen_ranks");
 
 import * as utils from "./utils";
 // const utils = require("./utils");
 const SquareState = utils.SquareState;
 const NUM_ROW = utils.NUM_ROW;
 const NUM_COLUMN = utils.NUM_COLUMN;
+
+/** Get the rank of the left-3-column surface (killscreen-only) */
+function getLeftSurfaceValue(board, aiParams) {
+  const leftSurface = boardHelper.getLeftSurface(
+    board,
+    aiParams.MAX_4_TAP_HEIGHT + 3
+  );
+  return killscreenRanks.RANKS_12HZ_5K[leftSurface] || 0;
+}
 
 /** If there is a spire in the middle of the board, return its height above the scare line. Otherwise, return 0. */
 function getSpireHeight(surfaceArray, scareHeight) {
@@ -227,7 +237,7 @@ function getValueOfPossibility(
   ] = utils.correctSurfaceForExtremeGaps(surfaceArray);
   const adjustedNumHoles =
     numHoles +
-    (aiMode === AiMode.KILLSCREEN && countCol10Holes(boardAfter) * 0.8);
+    (aiMode === AiMode.KILLSCREEN && countCol10Holes(boardAfter) * 0.7);
   const levelAfterPlacement = utils.getLevelAfterLineClears(
     level,
     lines,
@@ -259,6 +269,8 @@ function getValueOfPossibility(
   let surfaceFactor =
     aiParams.SURFACE_COEF *
     rankLookup.getValueOfBoardSurface(correctedSurface, nextPieceId);
+  let killscreenSurfaceLeftFactor =
+    aiParams.LEFT_SURFACE_COEF * getLeftSurfaceValue(boardAfter, aiParams);
   const tetrisReadyFactor = tetrisReady
     ? nextPieceId == "I"
       ? aiParams.TETRIS_READY_BONUS_BAR_NEXT
@@ -296,6 +308,7 @@ function getValueOfPossibility(
 
   const factors = {
     surfaceFactor,
+    killscreenSurfaceLeftFactor,
     extremeGapFactor,
     holeFactor,
     holeWeightFactor,

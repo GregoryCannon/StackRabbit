@@ -277,6 +277,25 @@ function getPieceRanges(pieceId: string, simParams: SimParams) {
   return { rangesLeft, rangesRight };
 }
 
+/** Gets the surface of just the left-most 3 columns, if they don't have any holes.
+ * (This is used for killscreen play)
+ */
+function getLeftSurface(board: Board, maxHeight) {
+  if (
+    hasHoleInColumn(board, 0) ||
+    hasHoleInColumn(board, 1) ||
+    hasHoleInColumn(board, 2)
+  ) {
+    return null;
+  }
+
+  const getColHeight = (col) =>
+    Math.min(Math.min(9, maxHeight), getBoardHeightAtColumn(board, col));
+
+  return "" + getColHeight(0) + getColHeight(1) + getColHeight(2);
+}
+
+/** Gets the height in a particular column. */
 function getBoardHeightAtColumn(board: Board, col: number) {
   let row = 0;
   while (row < NUM_ROW && board[row][col] == 0) {
@@ -301,7 +320,7 @@ function hasHoleInColumn(board: Board, col: number, heightFromTop = 20) {
   return false;
 }
 
-function canDoPlacement(
+export function canDoPlacement(
   board: Board,
   level: number,
   pieceId: string,
@@ -339,11 +358,12 @@ function boardHasInaccessibileLeft(
   const col2Height = getBoardHeightAtColumn(board, 1);
   const col3Height = getBoardHeightAtColumn(board, 2);
   // If the left is built out, we good
-  if (col1Height >= col2Height && col1Height > aiParams.MAX_5_TAP_HEIGHT) {
+  if (col1Height >= col2Height && col1Height > aiParams.MAX_4_TAP_HEIGHT) {
     return false;
   }
   const aiArr = aiParams.TAP_ARR;
   const aiTapDelay = aiParams.FIRST_TAP_DELAY;
+  return !canDoPlacement(board, level, "O", 0, -4, aiArr, aiTapDelay);
 
   // If left is accessible by square, the left is good
   if (
@@ -458,26 +478,40 @@ function placementIsLegal(
   ) {
     // Run a simulated 'frame' of gravity, shifting, and collision checking
     // We simulate shifts and rotations on the ARR triggers, just like the Lua script does
+    const isInputFrame = simState.arrCounter == 0;
+    const isGravityFrame = simState.gravityCounter == 0;
+    simState.arrCounter = isInputFrame ? maxArr : simState.arrCounter - 1; // Either decrement or reset counter
+    simState.gravityCounter = isGravityFrame
+      ? maxGravity
+      : simState.gravityCounter - 1;
 
-    if (simState.arrCounter == 0) {
-      const shiftThisStep =
+    if (isInputFrame) {
+      const xIncrement =
         simState.x !== initialX + goalOffsetX ? shiftIncrement : 0;
-      const inputsSucceeded = performSimulationInputs(
+      const inputSucceeded = performSimulationShift(
+        xIncrement,
+        simState,
+        board,
+        rotationsList[simState.rotationIndex]
+      );
+      if (!inputSucceeded) {
+        return false;
+      }
+    }
+
+    if (isInputFrame) {
+      const inputSucceeded = performSimulationRotation(
         goalRotationIndex,
-        shiftThisStep,
         simState,
         board,
         rotationsList
       );
-      if (!inputsSucceeded) {
+      if (!inputSucceeded) {
         return false;
       }
-      simState.arrCounter = maxArr;
-    } else {
-      simState.arrCounter--;
     }
 
-    if (simState.gravityCounter == 0) {
+    if (isGravityFrame) {
       if (
         pieceCollision(
           board,
@@ -495,12 +529,12 @@ function placementIsLegal(
         //     simState.y
         //   )[0]
         // );
-        return simState.x == initialX + goalOffsetX; // Piece would lock in
+        return (
+          simState.x == initialX + goalOffsetX &&
+          simState.rotationIndex === goalRotationIndex
+        ); // Piece would lock in
       }
       simState.y++;
-      simState.gravityCounter = maxGravity;
-    } else {
-      simState.gravityCounter--;
     }
 
     // utils.logBoard(
@@ -515,25 +549,53 @@ function placementIsLegal(
   return true;
 }
 
-/** Carry out one "frame" worth of inputs, modifying the simulation state in-place. */
-function performSimulationInputs(
-  goalRotationIndex: number,
+function performSimulationShift(
   xIncrement: number,
   simState: SimState,
   board: Board,
-  rotationsList: Array<PieceArray>
-) {
-  // Plan for a rotation if needed
-  const prevRotationIndex = simState.rotationIndex;
-  if (simState.rotationIndex !== goalRotationIndex) {
-    if (_modulus(simState.rotationIndex - 1, 4) === goalRotationIndex) {
-      // Left rotation
-      simState.rotationIndex--;
-    } else {
-      simState.rotationIndex++;
-    }
-    simState.rotationIndex = _modulus(simState.rotationIndex, 4);
+  currentRotationPiece: PieceArray
+): boolean {
+  if (
+    pieceCollision(
+      board,
+      simState.x + xIncrement,
+      simState.y,
+      currentRotationPiece
+    )
+  ) {
+    // console.log("DEBUG: COLLISION");
+    // utils.logBoard(
+    //   getBoardAndLinesClearedAfterPlacement(
+    //     board,
+    //     currentRotationPiece,
+    //     simState.x,
+    //     simState.y
+    //   )[0]
+    // );
+    return false; // We're done, can't go any further
   }
+  simState.x += xIncrement;
+  return true;
+}
+
+function performSimulationRotation(
+  goalRotationIndex: number,
+  simState: SimState,
+  board: Board,
+  rotationsList: Array<PieceArray>
+): boolean {
+  // Plan for a rotation if needed
+  if (simState.rotationIndex === goalRotationIndex) {
+    return true;
+  }
+  const prevRotationIndex = simState.rotationIndex;
+  if (_modulus(simState.rotationIndex - 1, 4) === goalRotationIndex) {
+    // Left rotation
+    simState.rotationIndex--;
+  } else {
+    simState.rotationIndex++;
+  }
+  simState.rotationIndex = _modulus(simState.rotationIndex, 4);
 
   if (
     simState.rotationIndex >= rotationsList.length ||
@@ -546,13 +608,7 @@ function performSimulationInputs(
   if (
     pieceCollision(
       board,
-      simState.x + xIncrement,
-      simState.y,
-      rotationsList[prevRotationIndex]
-    ) ||
-    pieceCollision(
-      board,
-      simState.x + xIncrement,
+      simState.x,
       simState.y,
       rotationsList[simState.rotationIndex]
     )
@@ -568,7 +624,6 @@ function performSimulationInputs(
     // );
     return false; // We're done, can't go any further
   }
-  simState.x += xIncrement;
   return true;
 }
 
@@ -581,6 +636,7 @@ function repeatedlyShiftPiece(
   goalRotationIndex: number,
   simulationParams: SimParams
 ) {
+  let inputString = "";
   const {
     board,
     initialX,
@@ -617,25 +673,30 @@ function repeatedlyShiftPiece(
   while (true) {
     // Run a simulated 'frame' of gravity, shifting, and collision checking
     // We simulate shifts and rotations on the ARR triggers, just like the Lua script does
+    const isInputFrame = simState.arrCounter == 0;
+    const isGravityFrame = simState.gravityCounter == 0;
+    simState.arrCounter = isInputFrame ? maxArr : simState.arrCounter - 1; // Either decrement or reset counter
+    simState.gravityCounter = isGravityFrame
+      ? maxGravity
+      : simState.gravityCounter - 1;
 
-    if (simState.arrCounter == 0) {
-      const inputsSucceeded = performSimulationInputs(
-        goalRotationIndex,
+    if (isInputFrame) {
+      const inputsSucceeded = performSimulationShift(
         shiftIncrement,
         simState,
         board,
-        rotationsList
+        rotationsList[simState.rotationIndex]
       );
       if (!inputsSucceeded) {
         return rangeCurrent;
       }
       rangeCurrent += shiftIncrement;
-      simState.arrCounter = maxArr;
+      inputString += "X";
     } else {
-      simState.arrCounter--;
+      inputString += ".";
     }
 
-    if (simState.gravityCounter == 0) {
+    if (isGravityFrame) {
       if (
         pieceCollision(
           board,
@@ -653,12 +714,22 @@ function repeatedlyShiftPiece(
         //     simState.y
         //   )[0]
         // );
+        // console.log(inputString);
         return rangeCurrent; // Piece would lock in
       }
       simState.y++;
-      simState.gravityCounter = maxGravity;
-    } else {
-      simState.gravityCounter--;
+    }
+
+    if (isInputFrame) {
+      const inputSucceeded = performSimulationRotation(
+        goalRotationIndex,
+        simState,
+        board,
+        rotationsList
+      );
+      if (!inputSucceeded) {
+        return rangeCurrent;
+      }
     }
   }
 }
@@ -696,9 +767,185 @@ function calculateTapHeight(level, arr, delay, numTaps) {
   return height;
 }
 
+function tapRangeTest() {
+  let expected1 = true;
+  if (
+    canDoPlacement(getTestBoardWithHeight(0), 29, "I", 1, -5, 4, 2) !==
+    expected1
+  ) {
+    console.log(`Failed: 0 left 29 2 delay. Expected: ${expected1}`);
+  }
+
+  const expected2 = false;
+  if (
+    canDoPlacement(getTestBoardWithHeight(1), 29, "I", 1, -5, 4, 2) !==
+    expected2
+  ) {
+    console.log(`Failed: 1 left 29 2 delay. Expected: ${expected2}`);
+  }
+
+  const expected3 = true;
+  if (
+    canDoPlacement(getTestBoardWithHeight(1), 29, "I", 1, -5, 4, 1) !==
+    expected3
+  ) {
+    console.log(`Failed: 1 left 29 1 delay. Expected: ${expected3}`);
+  }
+
+  const expected4 = false;
+  if (
+    canDoPlacement(getTestBoardWithHeight(2), 29, "I", 1, -5, 4, 1) !==
+    expected4
+  ) {
+    console.log(`Failed: 2 left 29 1 delay. Expected: ${expected4}`);
+  }
+
+  const expected5 = true;
+  if (
+    canDoPlacement(getTestBoardWithHeight(8), 19, "I", 1, -5, 5, 0) !==
+    expected5
+  ) {
+    console.log(`Failed: 8 left 19 12 Hz. Expected: ${expected5}`);
+  }
+
+  const expected6 = false;
+  if (
+    canDoPlacement(getTestBoardWithHeight(9), 19, "I", 1, -5, 5, 0) !==
+    expected6
+  ) {
+    console.log(`Failed: 9 left 19 12 Hz. Expected: ${expected6}`);
+  }
+
+  const expected7 = false;
+  if (
+    canDoPlacement(getTestBoardWithHeight(5), 29, "I", 1, 4, 4, 2) !== expected7
+  ) {
+    console.log(`Failed: 5 right 29 0 delay. Expected: ${expected7}`);
+  }
+
+  const expected8 = true;
+  if (
+    canDoPlacement(getTestBoardWithHeight(4), 29, "I", 1, 4, 4, 2) !== expected8
+  ) {
+    console.log(`Failed: 4 right 29 0 delay. Expected: ${expected8}`);
+  }
+
+  const expected9 = true;
+  if (
+    canDoPlacement(getTestBoardWithHeight(11), 19, "I", 1, 4, 4, 2) !==
+    expected9
+  ) {
+    console.log(`Failed: 11 left 19 2 delay. Expected: ${expected9}`);
+  }
+
+  const expected10 = true;
+  if (
+    canDoPlacement(getTestBoardWithHeight(11), 19, "I", 1, 4, 4, 2) !==
+    expected10
+  ) {
+    console.log(`Failed: 12 right 19 2 delay. Expected: ${expected10}`);
+  }
+
+  const expected11 = false;
+  if (
+    canDoPlacement(getTestBoardWithHeight(7), 19, "I", 1, -5, 6, 0) !==
+    expected11
+  ) {
+    console.log(`Failed: 7 left 19 10 Hz. Expected: ${expected11}`);
+  }
+
+  const expected12 = true;
+  if (
+    canDoPlacement(getTestBoardWithHeight(3), 29, "O", 0, -4, 5, 0) !==
+    expected12
+  ) {
+    console.log(`Failed: 3 right 29 12Hz. Expected: ${expected12}`);
+  }
+
+  const expected13 = false;
+  if (
+    canDoPlacement(getTestBoardWithHeight(4), 29, "O", 0, -4, 5, 0) !==
+    expected13
+  ) {
+    console.log(`Failed: 4 right 29 12Hz. Expected: ${expected13}`);
+  }
+}
+
+function lastMinuteRotationsTest() {
+  let expected1 = true;
+  if (
+    placementIsLegal(2, 0, {
+      board: getTestBoardWithHeight(14),
+      initialX: 3,
+      initialY: -1,
+      firstShiftDelay: 0,
+      maxGravity: 0,
+      maxArr: 3,
+      rotationsList: PIECE_LOOKUP["J"][0],
+      existingRotation: 0,
+    }) !== expected1
+  ) {
+    console.log(`Failed: double rotate J 14 high 29. Expected ${expected1}`);
+  }
+
+  let expected2 = false;
+  if (
+    placementIsLegal(2, 0, {
+      board: getTestBoardWithHeight(15),
+      initialX: 3,
+      initialY: -1,
+      firstShiftDelay: 0,
+      maxGravity: 0,
+      maxArr: 3,
+      rotationsList: PIECE_LOOKUP["J"][0],
+      existingRotation: 0,
+    }) !== expected2
+  ) {
+    console.log(`Failed: double rotate J 15 high 29. Expected ${expected2}`);
+  }
+}
+
+// tapRangeTest();
+// lastMinuteRotationsTest();
+
+// const simParams = {
+//   board: getTestBoardWithHeight(3),
+//   initialX: 3,
+//   initialY: -1,
+//   firstShiftDelay: 0,
+//   maxGravity: 0,
+//   maxArr: 4,
+//   rotationsList: PIECE_LOOKUP["O"][0],
+//   existingRotation: 0,
+// }
+// console.log("O 3 left = ", repeatedlyShiftPiece(-1, 0, simParams));
+
+// console.log(placementIsLegal(2, 0, {
+//   board: getTestBoardWithHeight(14),
+//   initialX: 3,
+//   initialY: -1,
+//   firstShiftDelay: 0,
+//   maxGravity: 0,
+//   maxArr: 3,
+//   rotationsList: PIECE_LOOKUP["J"][0],
+//   existingRotation: 0,
+// }));
+// console.log(canDoPlacement(getTestBoardWithHeight(8), 19, "I", 1, -5, 4, 2));
+// console.log(getPieceRanges("I", {
+//   board: getTestBoardWithHeight(9),
+//   initialX: 3,
+//   initialY: -2,
+//   firstShiftDelay: 0,
+//   maxGravity: 1,
+//   maxArr: 4,
+//   rotationsList: PIECE_LOOKUP["I"][0],
+//   existingRotation: 0,
+// }));
+
 module.exports = {
   calculateTapHeight,
   getPossibleMoves,
+  getLeftSurface,
   getBoardAndLinesClearedAfterPlacement,
   getBoardHeightAtColumn,
   hasHoleInColumn,

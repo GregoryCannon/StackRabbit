@@ -43,4 +43,6 @@ function computeTime(depth) {
   }
 }
 
-console.log(`depth 2: ${computeTime(2)}, depth 3: ${computeTime(3)}, 4: ${computeTime(4)}`);
+console.log(
+  `depth 2: ${computeTime(2)}, depth 3: ${computeTime(3)}, 4: ${computeTime(4)}`
+);

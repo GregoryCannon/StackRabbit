@@ -2,7 +2,7 @@
  * A grid search / gradient descent algorithm for choosing the best parameter set.
  */
 
-const liteGameSimulator = require("./lite_game_simulator");
+const liteGameSimulator = require("../../built/src/server/lite_game_simulator");
 const params = require("./params");
 const { V5_NO_DIRTIES, getParams } = require("./params");
 

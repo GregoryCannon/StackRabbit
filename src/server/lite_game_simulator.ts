@@ -1,5 +1,6 @@
-const mainApp = require("./main");
+const main = require("./main");
 const utils = require("./utils");
+const boardHelper = require("./board_helper");
 const NUM_ROW = utils.NUM_ROW;
 const NUM_COLUMN = utils.NUM_COLUMN;
 const SquareState = utils.SquareState;
@@ -9,7 +10,7 @@ const REWARDS = {
   3: 300,
   4: 1200,
 };
-const { getParams, getParamMods } = require("./params");
+const paramsManager = require("./params");
 const DIG_LINE_CAP = 25;
 
 function simulateManyGames(numIterations, startingLevel, aiParams, paramMods) {
@@ -29,6 +30,7 @@ function simulateManyGames(numIterations, startingLevel, aiParams, paramMods) {
         paramMods,
         /* predefinedPieceSequence= */ null,
         /* isDig= */ false,
+        /* onPlacementCallback= */ null,
         /* shouldLog= */ false
       )
     );
@@ -58,6 +60,7 @@ function simulateDigPractice(
         paramMods,
         /* predefinedPieceSequence= */ null,
         /* isDig= */ true,
+        /* onPlacementCallback= */ null,
         /* shouldLog= */ i == 0
       )
     );
@@ -66,18 +69,98 @@ function simulateDigPractice(
   return results;
 }
 
+/** Runs trials on the killscreen and logs down how good various surfaces are for the left-most 3 columns. */
+function simulateKillscreenTraining(numIterations) {
+  const ranks: Map<string, Array<number>> = new Map();
+
+  const aiParams = paramsManager.getParams();
+  const MAX_4_TAP_HEIGHT = boardHelper.calculateTapHeight(
+    29,
+    aiParams.TAP_ARR,
+    aiParams.FIRST_TAP_DELAY,
+    4
+  );
+  console.log("height: ", MAX_4_TAP_HEIGHT);
+
+  for (let i = 0; i < numIterations; i++) {
+    console.log(`Iteration ${i + 1} of ${numIterations}`);
+    const history = [];
+    const afterPlacementCallback = (board) => {
+      const leftSurface = boardHelper.getLeftSurface(
+        board,
+        MAX_4_TAP_HEIGHT + 3
+      );
+      if (leftSurface !== null) {
+        history.push(leftSurface);
+      }
+    };
+
+    // Play out one game
+    simulateGame(
+      29,
+      getEmptyBoard(),
+      paramsManager.getParams(),
+      paramsManager.getParamMods(),
+      /* presetSequence= */ null,
+      /* isDig= */ false,
+      afterPlacementCallback,
+      /* shouldLog= */ true
+    );
+
+    // Process the history
+    console.log(history);
+    if (history.length === 0) {
+      continue;
+    }
+    history.reverse(); // We'll work back to front
+    let lastAdded = null;
+    // Score each surface based on how many clean surfaces succeeded it
+    for (let t = 0; t < history.length; t++) {
+      const surface = history[t];
+      // Don't repeatedly add for long sequences of the same surface
+      if (surface === lastAdded) {
+        continue;
+      }
+      if (!ranks.has(surface)) {
+        ranks.set(surface, []);
+      }
+      // Add the score to the list of scores for that surface
+      ranks.get(surface).push(t);
+      lastAdded = surface;
+    }
+  }
+  console.log(ranks);
+  const avgRanks = {};
+  ranks.forEach((scoreList, surface) => {
+    if (scoreList.length == 0) {
+      return;
+    }
+    let total = scoreList.reduce((a, b) => a + b);
+    const avgScore = total / scoreList.length;
+    avgRanks[surface] = avgScore;
+  });
+  console.log(avgRanks);
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
 /**
  * Run one simulation of a game.
  * @param {function(lines, numHoles)} gameOverCondition - function to check custom game over conditions
  * @returns [score, lines, level]
  */
-function simulateGame(
+async function simulateGame(
   startingLevel,
   startingBoard,
   aiParams,
   paramMods,
   presetPieceSequence,
   isDig,
+  afterPlacementCallback,
   shouldLog
 ) {
   let board = startingBoard;
@@ -98,10 +181,12 @@ function simulateGame(
     const currentPieceId = pieceSequence[pieceIndex];
     const nextPieceId = pieceSequence[pieceIndex + 1];
 
+    // await sleep(1000);
+
     // Place one piece
-    const bestMove = mainApp.getBestMove(
+    const bestMove: Possibility = main.getBestMove(
       {
-        startingBoard: board,
+        board: board,
         currentPieceId,
         nextPieceId,
         level,
@@ -122,10 +207,10 @@ function simulateGame(
       gameOver = true;
       continue;
     }
-    board = bestMove[5];
-    numHoles = bestMove[3];
+    board = bestMove.boardAfter;
+    numHoles = bestMove.numHoles;
 
-    const numLinesCleared = bestMove[4];
+    const numLinesCleared = bestMove.numLinesCleared;
     if (numLinesCleared > 0) {
       // Update lines, level, then score (needs to be that order)
       lines += numLinesCleared;
@@ -137,6 +222,11 @@ function simulateGame(
         }
       }
       score += REWARDS[numLinesCleared] * (level + 1);
+    }
+
+    // Call the post-placement callback if needed
+    if (afterPlacementCallback !== null) {
+      afterPlacementCallback(board);
     }
 
     if (false) {
@@ -210,7 +300,12 @@ function getRandomPiece(previousPieceId) {
 }
 
 function runScoreExperiment(numTrials) {
-  const resultList = simulateManyGames(numTrials, 18, getParams());
+  const resultList = simulateManyGames(
+    numTrials,
+    18,
+    paramsManager.getParams(),
+    paramsManager.getParamMods()
+  );
   const only1_3s = resultList.filter((x) => x[0] > 1300000);
   console.log(resultList);
   console.log("1.3 count:", only1_3s.length);
@@ -226,10 +321,11 @@ function regressionTest() {
   const result = simulateGame(
     18,
     getEmptyBoard(),
-    getParams(),
-    getParamMods(),
+    paramsManager.getParams(),
+    paramsManager.getParamMods(),
     regressionTestPieceSequence,
     /* isDig= */ false,
+    null,
     /* shouldLog= */ true
   );
 
@@ -237,8 +333,9 @@ function regressionTest() {
 }
 
 if (typeof require !== "undefined" && require.main === module) {
-  regressionTest();
+  // regressionTest();
   // runScoreExperiment(100);
+  simulateKillscreenTraining(500);
 }
 
 module.exports = {
