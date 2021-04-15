@@ -5,5 +5,5 @@
     "target": "es5",
     "downlevelIteration": true
   },
-  "include": ["./src/server/*", "./src/tetrominoes.js"]
+  "include": ["./src/server/*.ts", "./src/tetrominoes.js", "./docs/killscreen_ranks.js"]
 }
