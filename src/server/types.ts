@@ -36,10 +36,10 @@ interface Possibility {
 }
 
 interface PossibilityChain extends Possibility {
-  innerPlacements: Array<Placement>;
-  outerPlacementPartialValues: Array<number>;
   totalValue: number;
-  searchStateAfter?: SearchState;
+  searchStateAfterChain?: SearchState; // The search state after the full chain is complete
+  partialValue?: number; // If it has subsequent moves, the value of just the line clears involved in this move
+  innerPossibility?: PossibilityChain; // The subsequent move in the chain, or null if this is the end of the chain
 }
 
 interface SearchState {
@@ -77,7 +77,7 @@ interface AiParams {
   SCARE_HEIGHT_18: number;
   SCARE_HEIGHT_19: number;
   SCARE_HEIGHT_29: number;
-  HIGH_COL_9_COEF_COEF: number;
+  HIGH_COL_9_COEF: number;
   SURFACE_COEF: number;
   TETRIS_BONUS: number;
   TETRIS_READY_BONUS: number;

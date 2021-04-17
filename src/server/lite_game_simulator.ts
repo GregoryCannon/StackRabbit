@@ -11,9 +11,14 @@ const REWARDS = {
   4: 1200,
 };
 const paramsManager = require("./params");
-const DIG_LINE_CAP = 25;
+export const DIG_LINE_CAP = 25;
 
-function simulateManyGames(numIterations, startingLevel, aiParams, paramMods) {
+export function simulateManyGames(
+  numIterations,
+  startingLevel,
+  aiParams,
+  paramMods
+) {
   const results = [];
   for (let i = 0; i < numIterations; i++) {
     // Progress indicator
@@ -38,7 +43,7 @@ function simulateManyGames(numIterations, startingLevel, aiParams, paramMods) {
   return results;
 }
 
-function simulateDigPractice(
+export function simulateDigPractice(
   numIterations,
   startingLevel,
   aiParams,
@@ -153,7 +158,7 @@ function sleep(ms) {
  * @param {function(lines, numHoles)} gameOverCondition - function to check custom game over conditions
  * @returns [score, lines, level]
  */
-async function simulateGame(
+function simulateGame(
   startingLevel,
   startingBoard,
   aiParams,
@@ -199,7 +204,8 @@ async function simulateGame(
       /* shouldLog= */ false,
       aiParams,
       paramMods,
-      /* searchDepth= */ 2
+      /* searchDepth= */ 2,
+      /* hypotheticalSearchDepth= */ 0
     );
 
     // Set the board to the resulting board after making that move
@@ -335,7 +341,7 @@ function regressionTest() {
 if (typeof require !== "undefined" && require.main === module) {
   // regressionTest();
   // runScoreExperiment(100);
-  simulateKillscreenTraining(500);
+  // simulateKillscreenTraining(500);
 }
 
 module.exports = {

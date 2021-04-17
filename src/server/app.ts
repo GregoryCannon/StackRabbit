@@ -4,7 +4,6 @@ const port = 3000;
 
 const mainApp = require("./main");
 const params = require("./params");
-const evolution = require("./evolution");
 
 let asyncCallInProgress = false;
 let asyncResult = null;
@@ -130,7 +129,8 @@ function handleRequestSyncNoNextBox(requestArgs) {
     /* shouldLog= */ true,
     params.getParams(),
     params.getParamMods(),
-    /* searchDepth= */ 1
+    /* searchDepth= */ 1,
+    /* hypotheticalSearchDepth= */ 0
   );
 
   if (!bestMove) {
@@ -172,7 +172,8 @@ function handleRequestSyncWithNextBox(requestArgs) {
     /* shouldLog= */ true,
     params.getParams(),
     params.getParamMods(),
-    /* searchDepth= */ 2
+    /* searchDepth= */ 2,
+    /* hypotheticalSearchDepth= */ 0
   );
 
   if (!bestMove) {

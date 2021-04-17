@@ -3,7 +3,7 @@
  */
 
 const liteGameSimulator = require("./lite_game_simulator");
-const { V5_TRAINED_PARAMS, getParams } = require("./params");
+const { getParams } = require("./params");
 
 // Hyperparameters
 const DELTA = 0.07; // Small step used to calculate slope (Represents a % of the existing number)
@@ -11,7 +11,7 @@ const STEP_SIZE = 1; // Size of step taken after determining the slope (As a mul
 const NUM_ITERATIONS = 20;
 const GAMES_PER_TEST = 100;
 
-let startParams = V5_TRAINED_PARAMS;
+let startParams = getParams();
 const KEY_LIST = Object.keys(startParams).sort();
 
 /**
@@ -46,7 +46,7 @@ function getCustomParams(theta, existingParams) {
 }
 
 /**
- * Theta is defined here as an array of scaling factors for the DEFAULT_PARAMS.
+ * Theta is defined here as an array of scaling factors for the default params.
  * They are listed in the order of the key names, alphabetically.
  */
 function getInitialTheta() {
