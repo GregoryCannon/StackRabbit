@@ -172,6 +172,13 @@ function removeFullRows() {
   }
 }
 
+function filledIfExists(row, col, board) {
+  if (col < 0 || col >= NUM_COLUMN || row < 0 || row >= NUM_ROW) {
+    return true;
+  }
+  return board[row][col] != SquareState.EMPTY;
+}
+
 function isGameOver() {
   // If the current piece collides with the existing board as it spawns in, you die
   const currentTetromino = m_currentPiece.activeTetromino;
@@ -179,7 +186,7 @@ function isGameOver() {
     for (let c = 0; c < currentTetromino[r].length; c++) {
       if (
         currentTetromino[r][c] &&
-        m_board[m_currentPiece.y + r][m_currentPiece.x + c]
+        filledIfExists(m_currentPiece.y + r, m_currentPiece.x + c, m_board)
       ) {
         return true;
       }

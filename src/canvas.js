@@ -332,6 +332,40 @@ function filledIfExists(row, col, board) {
   return board[row][col] != SquareState.EMPTY;
 }
 
+function getCellsThatNeedToBeFilled(board, doesWantCleanCol10) {
+  const linesNeededToClear = new Set();
+  for (let col = 0; col < NUM_COLUMN; col++) {
+    // Go down to the top of the stack in that column
+    let row = 0;
+    while (row < NUM_ROW && board[row][col] == SquareState.EMPTY) {
+      row++;
+    }
+    // Track the full rows we pass through
+    const rowsAboveHole = new Set();
+    while (row < NUM_ROW - 1) {
+      rowsAboveHole.add(row);
+      row++;
+      if (board[row][col] === SquareState.EMPTY) {
+        // If not on col 10, we found a hole. Add all the full rows we passed through to the set
+        // of lines needing to be cleared. Otherwise we ignore tempSet.
+        for (const line of rowsAboveHole) {
+          linesNeededToClear.add(line);
+        }
+      }
+    }
+  }
+
+  // Any row that has col 10 filled above the highest hole will need to be cleared
+  if (linesNeededToClear.size > 0) {
+    for (let row = 0; row < NUM_ROW; row++) {
+      if (board[row][NUM_COLUMN - 1] == SquareState.FULL) {
+        linesNeededToClear.add(row);
+      }
+    }
+  }
+  return linesNeededToClear.size;
+}
+
 function getTopmostHole(board) {
   for (let r = 0; r < NUM_ROW; r++) {
     for (let c = 0; c < NUM_COLUMN; c++) {
