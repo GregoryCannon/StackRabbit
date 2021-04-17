@@ -82,9 +82,14 @@ export function getSurfaceArrayAndHoleCount(
     heights.push(20 - row);
     while (row < NUM_ROW - 1) {
       row++;
-      if (board[row][col] == 0 && col < NUM_COLUMN - 1) {
+      if (board[row][col] === SquareState.EMPTY && col < NUM_COLUMN - 1) {
         // Add a hole if it's anywhere other than column 10
         numHoles++;
+        row++;
+        while (row < NUM_ROW && board[row][col] === SquareState.EMPTY) {
+          numHoles += 0.2;
+          row++;
+        }
       }
     }
   }
@@ -163,7 +168,7 @@ export function getLevelAfterLineClears(level, lines, numLinesCleared) {
   if (level === 18 && lines + numLinesCleared >= 130) {
     return 19;
   }
-  if (level === 28 && lines + numLinesCleared > 230) {
+  if (level === 28 && lines + numLinesCleared >= 230) {
     return 29;
   }
   return level;
