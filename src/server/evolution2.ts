@@ -2,9 +2,8 @@
  * A grid search / gradient descent algorithm for choosing the best parameter set.
  */
 
-const liteGameSimulator = require("../../built/src/server/lite_game_simulator");
-const params = require("./params");
-const { V5_NO_DIRTIES, getParams } = require("./params");
+import * as liteGameSimulator from "./lite_game_simulator";
+import { V5_NO_DIRTIES, getParams, DEFAULT_PARAM_MODS } from "./params";
 
 const NOISE_THRESHOLD = 1000;
 const DOMAIN = "DIG";
@@ -43,7 +42,7 @@ function fitnessFunction(simulationResult) {
 }
 
 /** Evaluate the fitness of a paramMods object using either a small sample of testing or a full suite of testing. */
-function getFitness(paramMods, currentFitness) {
+function getFitness(paramMods, currentFitness?) {
   // First do a spot check with a small number of iterations.
   // If it's not even close to the current fitness, don't run more iterations
   console.log("Running spot check...");
@@ -241,4 +240,4 @@ const V3 = {
 };
 
 // gradientDescend(MODIFIED_V5, V1);
-console.log(getFitness(params.DEFAULT_PARAM_MODS));
+console.log(getFitness(DEFAULT_PARAM_MODS));
