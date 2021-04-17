@@ -38,7 +38,7 @@ function getSpireHeight(surfaceArray, scareHeight) {
  * These cells indicate cells that would need to be filled in before burning is possible.
  * @param {Array<number>} surfaceArray
  */
-function countEmptyBlocksBelowColumn9Height(surfaceArray) {
+function getCol9Factor(surfaceArray, scareHeight) {
   let totalBlocks = 0;
   const surfaceWithoutCol9 = surfaceArray.slice(0, 8);
   const col9Height = surfaceArray[8];
@@ -47,7 +47,9 @@ function countEmptyBlocksBelowColumn9Height(surfaceArray) {
       totalBlocks += col9Height - height;
     }
   }
-  return totalBlocks;
+  // Scale the importance based on the height relative to scare height
+  const heightMultiplier = surfaceArray[8] / Math.max(scareHeight, 2);
+  return totalBlocks * heightMultiplier;
 }
 
 function countCol10Holes(board) {
@@ -69,7 +71,7 @@ function countCol10Holes(board) {
 }
 
 /** Calculates the number of lines that need to be cleared for all the holes to be resolved. */
-function countLinesNeededUntilClean(board) {
+function countLinesNeededUntilClean(board, maxDirtyTetrisHeight) {
   const linesNeededToClear = new Set();
   let highestHoleRow = 9999;
   for (let col = 0; col < NUM_COLUMN; col++) {
@@ -83,7 +85,10 @@ function countLinesNeededUntilClean(board) {
     while (row < NUM_ROW - 1) {
       rowsAboveHole.add(row);
       row++;
-      if (board[row][col] === SquareState.EMPTY) {
+      if (
+        board[row][col] === SquareState.EMPTY &&
+        NUM_ROW - row > maxDirtyTetrisHeight
+      ) {
         // If not on col 10, we found a hole. Add all the full rows we passed through to the set
         // of lines needing to be cleared. Otherwise we ignore tempSet.
         for (const line of rowsAboveHole) {
@@ -120,6 +125,7 @@ function getColumn10Factor(board, scareHeight) {
           continue;
         }
 
+        // Scan from the top of the board to the current row to see if this is a hole or an open surface
         let isHole = false;
         for (let loopRow = 0; loopRow < row; loopRow++) {
           if (board[loopRow][col] == SquareState.FULL) {
@@ -253,6 +259,10 @@ function getValueOfPossibility(
   const averageHeight = utils.getAverageColumnHeight(boardAfter);
   const avgHeightAboveScareLine = Math.max(0, averageHeight - scareHeight);
   const tetrisReady = isTetrisReadyRightWell(boardAfter);
+  const linesNeededUntilClean = countLinesNeededUntilClean(
+    boardAfter,
+    aiParams.MAX_DIRTY_TETRIS_HEIGHT * scareHeight
+  );
 
   const leftIsInaccessible = boardHelper.boardHasInaccessibileLeft(
     boardAfter,
@@ -277,8 +287,8 @@ function getValueOfPossibility(
       : aiParams.TETRIS_READY_BONUS
     : 0;
   const holeFactor = adjustedNumHoles * aiParams.HOLE_COEF;
-  const holeWeightFactor =
-    countLinesNeededUntilClean(boardAfter) * aiParams.HOLE_WEIGHT_COEF;
+  const holeWeightFactor = linesNeededUntilClean * aiParams.HOLE_WEIGHT_COEF;
+  const holeWeightBurnFactor = linesNeededUntilClean * aiParams.BURN_COEF;
   const lineClearFactor = getLineClearValue(numLinesCleared, aiParams);
   const spireHeightFactor =
     aiParams.SPIRE_HEIGHT_COEF *
@@ -291,8 +301,7 @@ function getValueOfPossibility(
   const col10BurnFactor =
     countBlocksInColumn10(boardAfter) * aiParams.BURN_COEF; // Any blocks on col 10 will result in a burn
   const col9Factor =
-    aiParams.HIGH_COL_9_COEF_COEF *
-    countEmptyBlocksBelowColumn9Height(surfaceArray);
+    aiParams.HIGH_COL_9_COEF * getCol9Factor(surfaceArray, scareHeight);
   const builtOutLeftFactor =
     aiParams.BUILT_OUT_LEFT_COEF *
     getBuiltOutLeftFactor(boardAfter, surfaceArray, scareHeight);
@@ -312,6 +321,7 @@ function getValueOfPossibility(
     extremeGapFactor,
     holeFactor,
     holeWeightFactor,
+    holeWeightBurnFactor,
     lineClearFactor,
     spireHeightFactor,
     avgHeightFactor,

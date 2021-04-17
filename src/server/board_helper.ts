@@ -437,7 +437,8 @@ function _modulus(n: number, m: number) {
 function placementIsLegal(
   goalRotationIndex: number,
   goalOffsetX: number,
-  simulationParams: SimParams
+  simulationParams: SimParams,
+  shouldLog: boolean = false
 ) {
   const {
     board,
@@ -449,6 +450,7 @@ function placementIsLegal(
     rotationsList,
     existingRotation,
   } = simulationParams;
+  let inputString = "";
 
   // Get initial sim state
   const shiftIncrement = goalOffsetX < 0 ? -1 : 1;
@@ -497,6 +499,9 @@ function placementIsLegal(
       if (!inputSucceeded) {
         return false;
       }
+      inputString += "X";
+    } else {
+      inputString += ".";
     }
 
     if (isInputFrame) {
@@ -520,15 +525,18 @@ function placementIsLegal(
           rotationsList[simState.rotationIndex]
         )
       ) {
-        // console.log("DEBUG: GRAVITY");
-        // utils.logBoard(
-        //   getBoardAndLinesClearedAfterPlacement(
-        //     board,
-        //     rotationsList[simState.rotationIndex],
-        //     simState.x,
-        //     simState.y
-        //   )[0]
-        // );
+        if (shouldLog) {
+          console.log("DEBUG: GRAVITY");
+          console.log(inputString);
+          utils.logBoard(
+            getBoardAndLinesClearedAfterPlacement(
+              board,
+              rotationsList[simState.rotationIndex],
+              simState.x,
+              simState.y
+            )[0]
+          );
+        }
         return (
           simState.x == initialX + goalOffsetX &&
           simState.rotationIndex === goalRotationIndex
@@ -869,6 +877,22 @@ function tapRangeTest() {
   ) {
     console.log(`Failed: 4 right 29 12Hz. Expected: ${expected13}`);
   }
+
+  const expected14 = true;
+  if (
+    canDoPlacement(getTestBoardWithHeight(11), 19, "I", 1, 4, 5, 0) !==
+    expected14
+  ) {
+    console.log(`Failed: 11 right 19 12Hz. Expected: ${expected14}`);
+  }
+
+  const expected15 = false;
+  if (
+    canDoPlacement(getTestBoardWithHeight(12), 19, "I", 1, 4, 5, 0) !==
+    expected15
+  ) {
+    console.log(`Failed: 12 right 19 12Hz. Expected: ${expected15}`);
+  }
 }
 
 function lastMinuteRotationsTest() {
@@ -905,20 +929,21 @@ function lastMinuteRotationsTest() {
   }
 }
 
-// tapRangeTest();
-// lastMinuteRotationsTest();
+tapRangeTest();
+lastMinuteRotationsTest();
 
 // const simParams = {
-//   board: getTestBoardWithHeight(3),
+//   board: getTestBoardWithHeight(11),
 //   initialX: 3,
-//   initialY: -1,
+//   initialY: -2,
 //   firstShiftDelay: 0,
-//   maxGravity: 0,
+//   maxGravity: 1,
 //   maxArr: 4,
 //   rotationsList: PIECE_LOOKUP["O"][0],
 //   existingRotation: 0,
 // }
-// console.log("O 3 left = ", repeatedlyShiftPiece(-1, 0, simParams));
+// console.log("11 right 19 = ", repeatedlyShiftPiece(1, 0, simParams));
+// console.log(canDoPlacement(getTestBoardWithHeight(11), 19, "I", 1, 4, 5, 0));
 
 // console.log(placementIsLegal(2, 0, {
 //   board: getTestBoardWithHeight(14),
