@@ -1066,7 +1066,7 @@ function normalize(ranksObj){
   return ranksObj;
 }
 
-console.log(normalize(RANKS_15HZ_2DELAY));
+// console.log(normalize(RANKS_15HZ_2DELAY));
 
 module.exports = {
   RANKS_12HZ_5K,
