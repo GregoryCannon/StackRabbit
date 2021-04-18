@@ -37,9 +37,20 @@ interface Possibility {
 
 interface PossibilityChain extends Possibility {
   totalValue: number;
-  searchStateAfterChain?: SearchState; // The search state after the full chain is complete
+  searchStateAfterMove: SearchState; // The search state after the current move
   partialValue?: number; // If it has subsequent moves, the value of just the line clears involved in this move
   innerPossibility?: PossibilityChain; // The subsequent move in the chain, or null if this is the end of the chain
+  expectedValue?: number; // If hypothetical analysis has been done, the EV of this possibility chain.
+}
+
+interface HypotheticalResult {
+  expectedValue: number;
+  bestMoves: Array<HypotheticalBestMove>;
+  possibilityChain: PossibilityChain;
+}
+
+interface HypotheticalBestMove extends PossibilityChain {
+  hypotheticalPiece: PieceId;
 }
 
 interface SearchState {

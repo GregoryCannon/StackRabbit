@@ -5,6 +5,16 @@ export const SquareState = Object.freeze({
   FULL: 1,
 });
 
+export const POSSIBLE_NEXT_PIECES: Array<PieceId> = [
+  "I",
+  "O",
+  "L",
+  "J",
+  "T",
+  "S",
+  "Z",
+];
+
 export function GetGravity(level) {
   const GRAVITY = {
     0: 48,

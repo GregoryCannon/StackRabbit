@@ -3,6 +3,7 @@ const aiModeManager = require("./ai_mode_manager");
 const boardHelper = require("./board_helper");
 const { SEARCH_BREADTH, modifyParamsForAiMode } = require("./params");
 import * as utils from "./utils";
+import { POSSIBLE_NEXT_PIECES } from "./utils";
 
 /**
  * Main function called externally.
@@ -55,13 +56,14 @@ function getBestMove(
   if (hypotheticalSearchDepth == 0) {
     return concretePossibilities[0] || null;
   } else {
-    return (
-      searchHypothetically(
-        concretePossibilities,
-        aiParams,
-        hypotheticalSearchDepth
-      )[0] || null
+    const sortedPossibilities = searchHypothetically(
+      concretePossibilities,
+      aiParams,
+      aiMode,
+      hypotheticalSearchDepth,
+      shouldLog
     );
+    return sortedPossibilities[0] || null;
   }
 }
 
@@ -132,12 +134,43 @@ function searchConcretely(
 function searchHypothetically(
   possibilityChains: Array<PossibilityChain>,
   aiParams: AiParams,
-  hypotheticalSearchDepth
+  aiMode: AiMode,
+  hypotheticalSearchDepth: number,
+  shouldLog: boolean
 ): Array<PossibilityChain> {
-  // const searchState = possibilityChain.searchStateAfterChain;
-  // if (!searchState){
-  //   throw new Error("Unknown search state");
-  // }
+  if (hypotheticalSearchDepth !== 1) {
+    throw new Error("Unsupported hypothetical search depth");
+  }
+
+  const weightVector = [1, 1, 1, 1, 1, 1, 1];
+  const hypotheticalResults = searchDepthNPlusOne(
+    possibilityChains,
+    aiParams,
+    aiMode,
+    weightVector
+  );
+
+  if (shouldLog) {
+    console.log(
+      "\n\n------------------------\nBest Results after Stochastic Analysis"
+    );
+    hypotheticalResults.slice(0, 3).forEach((result: HypotheticalResult) => {
+      const chain = result.possibilityChain;
+      console.log(
+        `Moves: ${chain.placement}    ${
+          chain.innerPossibility ? chain.innerPossibility.placement : ""
+        }`
+      );
+      console.log(`Expected Value: ${result.expectedValue}, Original Value: ${chain.totalValue}`);
+      for (const hypotheticalBestMove of result.bestMoves) {
+        console.log(
+          `If ${hypotheticalBestMove.hypotheticalPiece}, do ${hypotheticalBestMove.placement}. Value: ${hypotheticalBestMove.totalValue.toFixed(2)}`
+        );
+        // console.log(hypotheticalBestMove.evalExplanation);
+      }
+    });
+    hypotheticalResults;
+  }
 
   return possibilityChains;
 }
@@ -186,7 +219,7 @@ function searchDepth1(
       possibility.numLinesCleared,
       aiParams
     );
-    possibility.searchStateAfterChain = getSearchStateAfter(
+    possibility.searchStateAfterMove = getSearchStateAfter(
       searchState,
       possibility,
       aiParams
@@ -206,7 +239,7 @@ function searchDepth2(
   for (const outerPossibility of depth1Possibilities) {
     // Search one level deeper from the result of the first move
     const innerPossibilities = searchDepth1(
-      outerPossibility.searchStateAfterChain,
+      outerPossibility.searchStateAfterMove,
       /* shouldLog= */ false,
       aiParams,
       aiMode
@@ -217,12 +250,6 @@ function searchDepth2(
       (innerPossibility: Possibility) => ({
         ...outerPossibility,
         innerPossibility: innerPossibility,
-        searchStateAfterChain: getSearchStateAfter(
-          outerPossibility.searchStateAfterChain,
-          innerPossibility,
-          aiParams
-        ),
-        partialValue: outerPossibility.partialValue,
         totalValue: innerPossibility.evalScore + outerPossibility.partialValue,
       })
     );
@@ -240,6 +267,73 @@ function searchDepth2(
     }
   }
   return best2Chains;
+}
+
+function searchDepthNPlusOne(
+  possibilityChains: Array<PossibilityChain>,
+  aiParams,
+  aiMode,
+  weightVector
+) {
+  // Evaluate the weighted EV of each possibility chain
+  let hypotheticalResults = [];
+  for (const chain of possibilityChains) {
+    // Get the search state and total partial value (the only things needed from the possibility chain)
+    let searchState, totalPartialValue;
+    if (chain.innerPossibility) {
+      searchState = chain.innerPossibility.searchStateAfterMove;
+      totalPartialValue =
+        chain.partialValue + chain.innerPossibility.partialValue;
+    } else {
+      searchState = chain.searchStateAfterMove;
+      totalPartialValue = chain.partialValue;
+    }
+
+    const bestMovesList: Array<HypotheticalBestMove> = []; // Map from piece ID to 1-chain
+    // Get the best placement for each hypothetical piece
+    for (const hypotheticalPiece of POSSIBLE_NEXT_PIECES) {
+      searchState.currentPieceId = hypotheticalPiece;
+      const bestMove =
+        searchDepth1(searchState, false, aiParams, aiMode)[0] || null;
+      bestMove.totalValue = bestMove.evalScore + totalPartialValue;
+      bestMovesList.push({
+        hypotheticalPiece,
+        ...bestMove,
+      });
+    }
+
+    // Sort the hypotheticals best to worst
+    bestMovesList.sort((a, b) => b.totalValue - a.totalValue);
+
+    // Get a weighted EV based on the weight vector
+    if (
+      weightVector.length !== bestMovesList.length ||
+      weightVector.length === 0
+    ) {
+      throw new Error(
+        "Weight vector length 0 or doesn't match hypotheticals: " +
+          weightVector.length +
+          " " +
+          bestMovesList.length
+      );
+    }
+    let total = 0;
+    const len = bestMovesList.length;
+    for (let i = 0; i < len; i++) {
+      total += bestMovesList[i].totalValue * weightVector[i];
+    }
+    const expectedValue = total / len;
+
+    hypotheticalResults.push({
+      possibilityChain: chain,
+      expectedValue,
+      bestMoves: bestMovesList,
+    });
+  }
+
+  // Sort by EV
+  hypotheticalResults.sort((a, b) => b.expectedValue - a.expectedValue);
+  return hypotheticalResults;
 }
 
 function getSearchStateAfter(

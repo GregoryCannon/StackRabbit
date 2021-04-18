@@ -173,7 +173,7 @@ function handleRequestSyncWithNextBox(requestArgs) {
     params.getParams(),
     params.getParamMods(),
     /* searchDepth= */ 2,
-    /* hypotheticalSearchDepth= */ 0
+    /* hypotheticalSearchDepth= */ 1
   );
 
   if (!bestMove) {
