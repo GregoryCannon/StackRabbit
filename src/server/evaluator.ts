@@ -33,6 +33,15 @@ function getSpireHeight(surfaceArray, scareHeight) {
   return Math.max(0, spireHeight - scareHeight);
 }
 
+/** Gets the average height of the columns (excluding col 10) */
+function getAverageColumnHeight(surfaceArray){
+  let total = 0;
+  for (const height of surfaceArray.slice(0, NUM_COLUMN - 1)){
+    total += height;
+  }
+  return total / 9;
+}
+
 /**
  * Calculates the number of un-filled cells there are below the column 9 height.
  * These cells indicate cells that would need to be filled in before burning is possible.
@@ -256,7 +265,7 @@ function getValueOfPossibility(
       ? aiParams.SCARE_HEIGHT_19
       : aiParams.SCARE_HEIGHT_18;
   const spireHeight = getSpireHeight(surfaceArray, scareHeight);
-  const averageHeight = utils.getAverageColumnHeight(boardAfter);
+  const averageHeight = getAverageColumnHeight(surfaceArray);
   const avgHeightAboveScareLine = Math.max(0, averageHeight - scareHeight);
   const tetrisReady = isTetrisReadyRightWell(boardAfter);
   const linesNeededUntilClean = countLinesNeededUntilClean(

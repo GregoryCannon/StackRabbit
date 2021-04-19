@@ -96,6 +96,7 @@ export function getSurfaceArrayAndHoleCount(
         // Add a hole if it's anywhere other than column 10
         numHoles++;
         row++;
+        // Add fractional holes for subsequent cells within a tall hole
         while (row < NUM_ROW && board[row][col] === SquareState.EMPTY) {
           numHoles += 0.2;
           row++;
@@ -104,16 +105,6 @@ export function getSurfaceArrayAndHoleCount(
     }
   }
   return [heights, numHoles];
-}
-
-/**
- * Gets a list of the heights of columns 0-9.
- * Used for rating the goodness of boards only, will not be used to reconstruct
- * boards (since it omits holes and the state of column 10).
- * @param {Array<Array<number>>} board
- */
-export function getSurfaceArray(board) {
-  return getSurfaceArrayAndHoleCount(board)[0].slice(0, 9);
 }
 
 export function hasInvalidHeightDifferences(surfaceArray) {
@@ -157,20 +148,6 @@ export function correctSurfaceForExtremeGaps(
 
 export function getHoleCount(board) {
   return getSurfaceArrayAndHoleCount(board)[1];
-}
-
-export function getMaxColumnHeight(board) {
-  const heights = getSurfaceArrayAndHoleCount(board)[0];
-  return Math.max(...heights.slice(1));
-}
-
-export function getAverageColumnHeight(board) {
-  const heights = getSurfaceArrayAndHoleCount(board)[0];
-  let totalHeight = 0;
-  for (let height of heights) {
-    totalHeight += height;
-  }
-  return totalHeight / 8;
 }
 
 /** Checks if clearing a certain number of lines will increase the level, and if so what that level is. */
@@ -234,19 +211,3 @@ export function cloneBoard(board) {
   }
   return newBoard;
 }
-
-// module.exports = {
-//   NUM_ROW,
-//   NUM_COLUMN,
-//   SquareState,
-//   GetGravity,
-//   getSurfaceArray,
-//   generateDigPracticeBoard,
-//   getHoleCount: getHoleCount,
-//   hasValidHeightDifferences: hasInvalidHeightDifferences,
-//   getMaxColumnHeight,
-//   getAverageColumnHeight,
-//   logBoard,
-//   correctSurfaceForExtremeGaps,
-//   getLevelAfterLineClears,
-// };
