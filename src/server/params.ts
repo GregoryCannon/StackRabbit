@@ -1,8 +1,13 @@
 export const SEARCH_BREADTH = {
   1: 34,
-  2: 20,
-  3: 10,
+  2: 10,
 };
+
+export const EVALUATION_BREADTH = {
+  1: 34,
+  2: 20,
+  3: 10  /* This breadth refers to the first hypothetical level, regardless of whether there was 1 or 2 concrete levels before */
+}
 
 /*--------------------------------
   State-based param modification
@@ -63,13 +68,13 @@ export const DEFAULT_PARAM_MODS = {
 
 // ... (Previous results are not important now, they're in git history if curious)
 
-// Trained using gradient descent
+// Trained using gradient descent and heavily modified
 export const DEFAULT_PARAMS = {
   AVG_HEIGHT_EXPONENT: 1.356000000000004,
   AVG_HEIGHT_COEF: -5.50624,
   BURN_COEF: -4,
   COL_10_COEF: -1, // changed due to feature changing
-  MAX_DIRTY_TETRIS_HEIGHT: 0.2, // (As a multiple of the scare height) Added manually since didn't exist at time of training
+  MAX_DIRTY_TETRIS_HEIGHT: 0.15, // (As a multiple of the scare height) Added manually since didn't exist at time of training
   EXTREME_GAP_COEF: -1.6416000000000004,
   BUILT_OUT_LEFT_COEF: 0.5, // changed due to feature changing
   BUILT_OUT_RIGHT_COEF: 0, // Added manually since didn't exist at time of training
@@ -85,7 +90,6 @@ export const DEFAULT_PARAMS = {
   LEFT_SURFACE_COEF: 0,
   TETRIS_BONUS: 28.248,
   TETRIS_READY_BONUS: 5.909760000000001,
-  TETRIS_READY_BONUS_BAR_NEXT: 15.36,
   INACCESSIBLE_LEFT_COEF: -30, // Added manually since didn't exist at time of training
   INACCESSIBLE_RIGHT_COEF: -100, // Added manually since didn't exist at time of training
   TAP_ARR: 4,
@@ -114,8 +118,8 @@ export function getParams() {
 
 const V3_CUSTOM = {
   DIG: {
-    BURN_COEF: -0.4611586002571638,
-    COL_10_COEF: -4.8800000000000001,
+    BURN_COEF: 0,
+    COL_10_COEF: 0,
     HOLE_WEIGHT_COEF: -5.338196782641227,
     HOLE_COEF: -100,
     SURFACE_COEF: 0.7444800000000001,

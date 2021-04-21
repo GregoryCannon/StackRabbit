@@ -31,6 +31,7 @@ interface Possibility {
   numHoles: number;
   numLinesCleared: number;
   boardAfter: Board;
+  fastEvalScore?: number;
   evalScore?: number;
   evalExplanation?: string;
 }
@@ -90,15 +91,15 @@ interface AiParams {
   SCARE_HEIGHT_29: number;
   HIGH_COL_9_COEF: number;
   SURFACE_COEF: number;
+  LEFT_SURFACE_COEF: number;
   TETRIS_BONUS: number;
   TETRIS_READY_BONUS: number;
-  TETRIS_READY_BONUS_BAR_NEXT: number;
   INACCESSIBLE_LEFT_COEF: number;
   INACCESSIBLE_RIGHT_COEF: number;
   TAP_ARR: number;
   FIRST_TAP_DELAY: number;
-  MAX_5_TAP_HEIGHT?: number;
-  MAX_4_TAP_HEIGHT?: number;
+  MAX_5_TAP_LOOKUP?: Object;
+  MAX_4_TAP_LOOKUP?: Object;
 }
 
 interface ParamMods {

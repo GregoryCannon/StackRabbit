@@ -161,6 +161,14 @@ export function getLevelAfterLineClears(level, lines, numLinesCleared) {
   return level;
 }
 
+export function getScareHeight(level: number, aiParams: AiParams){
+  if (!aiParams.MAX_5_TAP_LOOKUP){
+    throw new Error("No tap heights calculated when looking up scare height");
+  }
+  const max5TapHeight = aiParams.MAX_5_TAP_LOOKUP[level];
+  return Math.max(0, max5TapHeight - 3);
+}
+
 export function logBoard(board) {
   console.log(" -- Board start -- ");
   for (let r = 0; r < NUM_ROW; r++) {

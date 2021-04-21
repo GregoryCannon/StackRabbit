@@ -352,55 +352,38 @@ export function canDoPlacement(
 function boardHasInaccessibileLeft(
   board: Board,
   level: number,
-  aiParams: AiParams
+  aiParams: AiParams,
+  aiMode: AiMode
 ) {
   const col1Height = getBoardHeightAtColumn(board, 0);
   const col2Height = getBoardHeightAtColumn(board, 1);
-  const col3Height = getBoardHeightAtColumn(board, 2);
-  // If the left is built out, we good
-  if (col1Height >= col2Height && col1Height > aiParams.MAX_4_TAP_HEIGHT) {
+
+  if (aiMode === AiMode.KILLSCREEN){
+    // On killscreen, we mainly access the left with 4-taps. So we need either
+    // 1) a left built as high as the 4 tap height
+    // 2) access to the left with a 4 tap
+    if (
+      col1Height >= col2Height &&
+      col1Height > aiParams.MAX_4_TAP_LOOKUP[level]
+    ) {
+      return false;
+    }
+    const aiArr = aiParams.TAP_ARR;
+    const aiTapDelay = aiParams.FIRST_TAP_DELAY;
+    return !canDoPlacement(board, level, "O", 0, -4, aiArr, aiTapDelay);
+  }
+
+  //In normal stacking, we mainly access the left with 5-taps. So we need either
+  // 1) a left built as high as the 5 tap height
+  // 2) access to the left with a 5 tap
+  if (
+    col1Height >= col2Height &&
+    col1Height > aiParams.MAX_5_TAP_LOOKUP[level]
+  ) {
     return false;
   }
   const aiArr = aiParams.TAP_ARR;
   const aiTapDelay = aiParams.FIRST_TAP_DELAY;
-  return !canDoPlacement(board, level, "O", 0, -4, aiArr, aiTapDelay);
-
-  // If left is accessible by square, the left is good
-  if (
-    col1Height == col2Height &&
-    canDoPlacement(board, level, "O", 0, -4, aiArr, aiTapDelay)
-  ) {
-    return false;
-  }
-
-  // If the left is accessible by L, the left is good
-  if (
-    col1Height === col2Height - 1 &&
-    col2Height === col3Height &&
-    canDoPlacement(board, level, "L", 0, -4, aiArr, aiTapDelay)
-  ) {
-    return false;
-  }
-
-  // If the left is superflat, the left is good
-  if (
-    col1Height === col2Height &&
-    col2Height === col3Height &&
-    canDoPlacement(board, level, "L", 2, -4, aiArr, aiTapDelay)
-  ) {
-    return false;
-  }
-
-  // If the left is accessible by T, the left is good
-  if (
-    col1Height === col2Height + 1 &&
-    col1Height === col3Height &&
-    canDoPlacement(board, level, "T", 0, -4, aiArr, aiTapDelay)
-  ) {
-    return false;
-  }
-
-  // Otherwise we need 5 tap
   return !canDoPlacement(board, level, "I", 1, -5, aiArr, aiTapDelay);
 }
 
@@ -413,7 +396,10 @@ function boardHasInaccessibileRight(
   const col9Height = getBoardHeightAtColumn(board, NUM_COLUMN - 2);
   const col10Height = getBoardHeightAtColumn(board, NUM_COLUMN - 1);
   // If right is built out, we're good
-  if (col10Height >= col9Height && col10Height > aiParams.MAX_4_TAP_HEIGHT) {
+  if (
+    col10Height >= col9Height &&
+    col10Height > aiParams.MAX_4_TAP_LOOKUP[level]
+  ) {
     return false;
   }
 

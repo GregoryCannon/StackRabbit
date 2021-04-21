@@ -9,10 +9,10 @@ const NUM_ROW = utils.NUM_ROW;
 const NUM_COLUMN = utils.NUM_COLUMN;
 
 /** Get the rank of the left-3-column surface (killscreen-only) */
-function getLeftSurfaceValue(board, aiParams) {
+function getLeftSurfaceValue(board, aiParams, level) {
   const leftSurface = boardHelper.getLeftSurface(
     board,
-    aiParams.MAX_4_TAP_HEIGHT + 3
+    aiParams.MAX_4_TAP_LOOKUP[level] + 3
   );
   return killscreenRanks.RANKS_12HZ_5K[leftSurface] || 0;
 }
@@ -34,12 +34,13 @@ function getSpireHeight(surfaceArray, scareHeight) {
 }
 
 /** Gets the average height of the columns (excluding col 10) */
-function getAverageColumnHeight(surfaceArray){
+function getAverageHeightAboveScareLine(surfaceArray, scareHeight) {
   let total = 0;
-  for (const height of surfaceArray.slice(0, NUM_COLUMN - 1)){
+  for (const height of surfaceArray.slice(0, NUM_COLUMN - 1)) {
     total += height;
   }
-  return total / 9;
+  const averageHeight = total / 9;
+  return Math.max(0, averageHeight - scareHeight);
 }
 
 /**
@@ -80,9 +81,8 @@ function countCol10Holes(board) {
 }
 
 /** Calculates the number of lines that need to be cleared for all the holes to be resolved. */
-function countLinesNeededUntilClean(board, maxDirtyTetrisHeight) {
-  const linesNeededToClear = new Set();
-  let highestHoleRow = 9999;
+function getRowsNeedingToBurn(board, maxDirtyTetrisHeight) : Set<number> {
+  const linesNeededToClear : Set<number> = new Set();
   for (let col = 0; col < NUM_COLUMN; col++) {
     // Go down to the top of the stack in that column
     let row = 0;
@@ -90,33 +90,24 @@ function countLinesNeededUntilClean(board, maxDirtyTetrisHeight) {
       row++;
     }
     // Track the full rows we pass through
-    const rowsAboveHole = new Set();
+    const rowsInStackPassedThrough : Set<number> = new Set();
     while (row < NUM_ROW - 1) {
-      rowsAboveHole.add(row);
+      rowsInStackPassedThrough.add(row);
       row++;
       if (
         board[row][col] === SquareState.EMPTY &&
         NUM_ROW - row > maxDirtyTetrisHeight
       ) {
-        // If not on col 10, we found a hole. Add all the full rows we passed through to the set
-        // of lines needing to be cleared. Otherwise we ignore tempSet.
-        for (const line of rowsAboveHole) {
+        // We found a hole. This row and all the full rows above it will need to be cleared
+        linesNeededToClear.add(row);
+        for (const line of rowsInStackPassedThrough) {
           linesNeededToClear.add(line);
-          highestHoleRow = Math.min(highestHoleRow, row);
         }
       }
     }
   }
 
-  // Any row that has col 10 filled above the highest hole will need to be cleared
-  if (linesNeededToClear.size > 0) {
-    for (let row = 0; row < highestHoleRow; row++) {
-      if (board[row][NUM_COLUMN - 1] == SquareState.FULL) {
-        linesNeededToClear.add(row);
-      }
-    }
-  }
-  return linesNeededToClear.size;
+  return linesNeededToClear;
 }
 
 /** Calculate a factor that penalizes filling column 10. Specifically, it counts the number of cells
@@ -124,7 +115,7 @@ function countLinesNeededUntilClean(board, maxDirtyTetrisHeight) {
  * However, since holes *want* to have column 10 filled, count them oppositely.
  * Additionally, there's a penalty for the column 10 block being high up.
  */
-function getColumn10Factor(board, scareHeight) {
+function getColumn10Factor(board, scareHeight, rowsNeedingToBurn: Set<number>) {
   let sum = 0;
   for (let row = 0; row < NUM_ROW; row++) {
     // If column 10 filled, add to the sum
@@ -134,17 +125,9 @@ function getColumn10Factor(board, scareHeight) {
           continue;
         }
 
-        // Scan from the top of the board to the current row to see if this is a hole or an open surface
-        let isHole = false;
-        for (let loopRow = 0; loopRow < row; loopRow++) {
-          if (board[loopRow][col] == SquareState.FULL) {
-            isHole = true;
-          }
-        }
-
-        if (isHole) {
-          // Filling in col 10 for holes is good
-          sum -= 1;
+        if (rowsNeedingToBurn.has(row)) {
+          // Filling in lines that need to be cleared is good
+          // sum -= 1;
         } else {
           // How bad an exposed col 10 is scales with height
           const heightMultiplier =
@@ -193,7 +176,7 @@ function isTetrisReadyRightWell(board) {
   return true;
 }
 
-function getLineClearValue(numLinesCleared, aiParams) {
+export function getLineClearValue(numLinesCleared, aiParams) {
   return numLinesCleared == 4
     ? aiParams.TETRIS_BONUS
     : numLinesCleared > 0
@@ -226,11 +209,83 @@ function getBuiltOutRightFactor(boardAfter, scareHeight) {
   return Math.max(0, col10Height - scareHeight);
 }
 
+/** An evaluation function that only includes the factors that are super fast to calculate */
+export function fastEval(
+  possibility: Possibility,
+  nextPieceId: PieceId,
+  level: number,
+  lines: number,
+  aiMode: AiMode,
+  aiParams: AiParams
+) {
+  const { surfaceArray, numHoles, numLinesCleared, boardAfter } = possibility;
+
+  if (!aiParams) {
+    throw new Error("No AI Params provided: " + aiParams);
+  }
+
+  // Preliminary calculations
+  const [
+    correctedSurface,
+    totalHeightCorrected,
+  ] = utils.correctSurfaceForExtremeGaps(surfaceArray);
+  const adjustedNumHoles =
+    numHoles +
+    (aiMode === AiMode.KILLSCREEN && countCol10Holes(boardAfter) * 0.7);
+  const levelAfterPlacement = utils.getLevelAfterLineClears(
+    level,
+    lines,
+    numLinesCleared
+  );
+  const scareHeight = utils.getScareHeight(levelAfterPlacement, aiParams);
+  const spireHeight = getSpireHeight(surfaceArray, scareHeight);
+  const avgHeightAboveScareLine = getAverageHeightAboveScareLine(
+    surfaceArray,
+    scareHeight
+  );
+
+  let extremeGapFactor = totalHeightCorrected * aiParams.EXTREME_GAP_COEF;
+  let surfaceFactor =
+    aiParams.SURFACE_COEF *
+    rankLookup.getValueOfBoardSurface(correctedSurface, nextPieceId);
+  let killscreenSurfaceLeftFactor =
+    aiParams.LEFT_SURFACE_COEF *
+    getLeftSurfaceValue(boardAfter, aiParams, level);
+  const holeFactor = adjustedNumHoles * aiParams.HOLE_COEF;
+  const lineClearFactor = getLineClearValue(numLinesCleared, aiParams);
+  const spireHeightFactor =
+    aiParams.SPIRE_HEIGHT_COEF *
+    Math.pow(spireHeight, aiParams.SPIRE_HEIGHT_EXPONENT);
+  const avgHeightFactor =
+    aiParams.AVG_HEIGHT_COEF *
+    Math.pow(avgHeightAboveScareLine, aiParams.AVG_HEIGHT_EXPONENT);
+  const col10BurnFactor =
+    countBlocksInColumn10(boardAfter) * aiParams.BURN_COEF; // Any blocks on col 10 will result in a burn
+
+  const factors = {
+    surfaceFactor,
+    killscreenSurfaceLeftFactor,
+    extremeGapFactor,
+    holeFactor,
+    lineClearFactor,
+    spireHeightFactor,
+    avgHeightFactor,
+    col10BurnFactor,
+  };
+
+  // Sum without explanation for speed purposes.
+  let total = 0;
+  for (const key in factors) {
+    total += factors[key];
+  }
+  return [total, ""];
+}
+
 /**
  * Evaluates a given possibility based on a number of factors.
  * NB: @param nextPieceId CAN be null if you want the NNB value of a possiblity.
  */
-function getValueOfPossibility(
+export function getValueOfPossibility(
   possibility: Possibility,
   nextPieceId: PieceId,
   level,
@@ -258,17 +313,14 @@ function getValueOfPossibility(
     lines,
     numLinesCleared
   );
-  const scareHeight =
-    levelAfterPlacement >= 29
-      ? aiParams.SCARE_HEIGHT_29
-      : levelAfterPlacement >= 19
-      ? aiParams.SCARE_HEIGHT_19
-      : aiParams.SCARE_HEIGHT_18;
+  const scareHeight = utils.getScareHeight(levelAfterPlacement, aiParams);
   const spireHeight = getSpireHeight(surfaceArray, scareHeight);
-  const averageHeight = getAverageColumnHeight(surfaceArray);
-  const avgHeightAboveScareLine = Math.max(0, averageHeight - scareHeight);
+  const avgHeightAboveScareLine = getAverageHeightAboveScareLine(
+    surfaceArray,
+    scareHeight
+  );
   const tetrisReady = isTetrisReadyRightWell(boardAfter);
-  const linesNeededUntilClean = countLinesNeededUntilClean(
+  const rowsNeedingToBurn = getRowsNeedingToBurn(
     boardAfter,
     aiParams.MAX_DIRTY_TETRIS_HEIGHT * scareHeight
   );
@@ -289,15 +341,12 @@ function getValueOfPossibility(
     aiParams.SURFACE_COEF *
     rankLookup.getValueOfBoardSurface(correctedSurface, nextPieceId);
   let killscreenSurfaceLeftFactor =
-    aiParams.LEFT_SURFACE_COEF * getLeftSurfaceValue(boardAfter, aiParams);
-  const tetrisReadyFactor = tetrisReady
-    ? nextPieceId == "I"
-      ? aiParams.TETRIS_READY_BONUS_BAR_NEXT
-      : aiParams.TETRIS_READY_BONUS
-    : 0;
+    aiParams.LEFT_SURFACE_COEF *
+    getLeftSurfaceValue(boardAfter, aiParams, level);
+  const tetrisReadyFactor = tetrisReady ? aiParams.TETRIS_READY_BONUS : 0;
   const holeFactor = adjustedNumHoles * aiParams.HOLE_COEF;
-  const holeWeightFactor = linesNeededUntilClean * aiParams.HOLE_WEIGHT_COEF;
-  const holeWeightBurnFactor = linesNeededUntilClean * aiParams.BURN_COEF;
+  const holeWeightFactor = rowsNeedingToBurn.size * aiParams.HOLE_WEIGHT_COEF;
+  const holeWeightBurnFactor = rowsNeedingToBurn.size * aiParams.BURN_COEF;
   const lineClearFactor = getLineClearValue(numLinesCleared, aiParams);
   const spireHeightFactor =
     aiParams.SPIRE_HEIGHT_COEF *
@@ -306,7 +355,7 @@ function getValueOfPossibility(
     aiParams.AVG_HEIGHT_COEF *
     Math.pow(avgHeightAboveScareLine, aiParams.AVG_HEIGHT_EXPONENT);
   const col10Factor =
-    getColumn10Factor(boardAfter, scareHeight) * aiParams.COL_10_COEF;
+    getColumn10Factor(boardAfter, scareHeight, rowsNeedingToBurn) * aiParams.COL_10_COEF;
   const col10BurnFactor =
     countBlocksInColumn10(boardAfter) * aiParams.BURN_COEF; // Any blocks on col 10 will result in a burn
   const col9Factor =
@@ -344,6 +393,19 @@ function getValueOfPossibility(
     inaccessibleRightFactor,
   };
 
+  const [totalValue, explanation] = compileFactors(factors, aiMode);
+
+  if (shouldLog) {
+    console.log(
+      `---- Evaluated possiblity: ${possibility.placement}, mode: ${aiMode}\n`,
+      explanation
+    );
+  }
+
+  return [totalValue, explanation];
+}
+
+function compileFactors(factors: Object, aiMode: AiMode): [number, string] {
   let totalValue = 0;
   let explanation = "";
   for (const key in factors) {
@@ -358,18 +420,8 @@ function getValueOfPossibility(
     const shortKeyName = key.substr(0, key.length - 6);
     explanation += `${shortKeyName}: ${val.toFixed(2)}, `;
   }
-  explanation += `SUBTOTAL: ${totalValue}`;
+  explanation += `SUBTOTAL: ${totalValue}, `;
+  explanation += `Mode: ${aiMode}`;
 
-  if (shouldLog) {
-    console.log(
-      `---- Evaluated possiblity: ${possibility.placement}, mode: ${aiMode}\n`,
-      explanation
-    );
-  }
   return [totalValue, explanation];
 }
-
-module.exports = {
-  getValueOfPossibility,
-  getLineClearValue,
-};

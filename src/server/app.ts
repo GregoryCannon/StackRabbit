@@ -5,6 +5,9 @@ const port = 3000;
 const mainApp = require("./main");
 const params = require("./params");
 
+const cachedParams = params.getParams();
+const cachedParamMods = params.getParamMods();
+
 let asyncCallInProgress = false;
 let asyncResult = null;
 
