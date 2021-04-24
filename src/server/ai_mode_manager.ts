@@ -4,7 +4,7 @@ const NUM_ROW = utils.NUM_ROW;
 const NUM_COLUMN = utils.NUM_COLUMN;
 
 function getAiMode(board, lines, level, aiParams) {
-  if (level >= 29) {
+  if (aiParams.MAX_5_TAP_LOOKUP[level] <= 4) {
     return AiMode.KILLSCREEN;
   }
   if (lines >= 220) {
