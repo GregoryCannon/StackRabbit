@@ -5,7 +5,12 @@ const NUM_ROW = utils.NUM_ROW;
 const SquareState = utils.SquareState;
 
 // Collision function
-function pieceCollision(board: Board, x: number, y: number, piece: PieceArray) {
+export function pieceCollision(
+  board: Board,
+  x: number,
+  y: number,
+  piece: PieceArray
+) {
   if (!piece || piece.length < 1) {
     throw new Error("Unknown piece passed into collision function");
   }
@@ -68,7 +73,7 @@ function clearLines(board: Board) {
   return fullLines.length;
 }
 
-function getBoardAndLinesClearedAfterPlacement(
+export function getBoardAndLinesClearedAfterPlacement(
   board: Board,
   currentRotationPiece: PieceArray,
   x: number,
@@ -115,36 +120,36 @@ function _validateIntParam(value: number, min: number, max: number) {
  * placing it in each possible rotation and each possible starting column, and then
  * dropping it into the stack and letting the result play out.
  */
-function getPossibleMoves(
+export function getPossibleMoves(
   startingBoard: Board,
   currentPieceId: string,
   level: number,
   existingXOffset: number,
   existingYOffset: number,
-  firstShiftDelay: number,
+  framesAlreadyElapsed: number,
+  inputFrameTimeline: string,
   existingRotation: number,
-  tapArr: number,
+  isAdjustment: boolean,
   shouldLog: boolean
 ) {
   _validateIntParam(level, 0, 999);
   _validateIntParam(existingXOffset, -5, 4);
   _validateIntParam(existingYOffset, 0, 20);
-  _validateIntParam(firstShiftDelay, 0, 999);
+  _validateIntParam(framesAlreadyElapsed, 0, 999);
   _validateIntParam(existingRotation, 0, 4);
 
   const initialX = 3 + existingXOffset;
   const initialY = (currentPieceId == "I" ? -2 : -1) + existingYOffset;
-  const maxGravity = utils.GetGravity(level) - 1; // 0-indexed, executes on the 0 frame. e.g. 2... 1... 0(shift).. 2... 1... 0(shift)
-  const maxArr = tapArr - 1; // Similarly 0-indexed
+  const gravity = utils.GetGravity(level);
   const rotationsList = PIECE_LOOKUP[currentPieceId][0];
 
   const simParams = {
     board: startingBoard,
     initialX,
     initialY,
-    firstShiftDelay,
-    maxGravity,
-    maxArr,
+    framesAlreadyElapsed,
+    gravity,
+    inputFrameTimeline,
     rotationsList,
     existingRotation,
   };
@@ -280,7 +285,7 @@ function getPieceRanges(pieceId: string, simParams: SimParams) {
 /** Gets the surface of just the left-most 3 columns, if they don't have any holes.
  * (This is used for killscreen play)
  */
-function getLeftSurface(board: Board, maxHeight) {
+export function getLeftSurface(board: Board, maxHeight) {
   if (
     hasHoleInColumn(board, 0) ||
     hasHoleInColumn(board, 1) ||
@@ -296,7 +301,7 @@ function getLeftSurface(board: Board, maxHeight) {
 }
 
 /** Gets the height in a particular column. */
-function getBoardHeightAtColumn(board: Board, col: number) {
+export function getBoardHeightAtColumn(board: Board, col: number) {
   let row = 0;
   while (row < NUM_ROW && board[row][col] == 0) {
     row++;
@@ -307,7 +312,7 @@ function getBoardHeightAtColumn(board: Board, col: number) {
 /** Searches a column for holes.
  * @param heightFromTop (Optional) limits the search to N rows below the top of the stack in that column
  */
-function hasHoleInColumn(board: Board, col: number, heightFromTop = 20) {
+export function hasHoleInColumn(board: Board, col: number, heightFromTop = 20) {
   let row = 0;
   while (row < NUM_ROW && board[row][col] === SquareState.EMPTY) {
     row++;
@@ -326,30 +331,28 @@ export function canDoPlacement(
   pieceId: string,
   rotationIndex: number,
   xOffset: number,
-  aiArr: number,
-  aiTapDelay: number
+  inputFrameTimeline: string
 ) {
-  if (!aiArr) {
-    throw new Error("Unknown ARR when checking placement");
+  if (!inputFrameTimeline) {
+    throw new Error("Unknown input timeline when checking placement");
   }
-  const maxGravity = utils.GetGravity(level) - 1; // 0-indexed, executes on the 0 frame. e.g. 2... 1... 0(shift).. 2... 1... 0(shift)
-  const maxArr = aiArr - 1;
+  const gravity = utils.GetGravity(level); // 0-indexed, executes on the 0 frame. e.g. 2... 1... 0(shift).. 2... 1... 0(shift)
   const rotationsList = PIECE_LOOKUP[pieceId][0];
   const simParams: SimParams = {
     board,
     initialX: 3,
     initialY: pieceId === "I" ? -2 : -1,
-    firstShiftDelay: aiTapDelay,
-    maxGravity,
-    maxArr,
+    framesAlreadyElapsed: 0,
+    gravity,
     rotationsList,
     existingRotation: 0,
+    inputFrameTimeline: inputFrameTimeline,
   };
   return placementIsLegal(rotationIndex, xOffset, simParams);
 }
 
 /** Returns true if the board needs a 5 tap to resolve, and the tap speed is not sufficient to get a piece there. */
-function boardHasInaccessibileLeft(
+export function boardHasInaccessibileLeft(
   board: Board,
   level: number,
   aiParams: AiParams,
@@ -358,7 +361,7 @@ function boardHasInaccessibileLeft(
   const col1Height = getBoardHeightAtColumn(board, 0);
   const col2Height = getBoardHeightAtColumn(board, 1);
 
-  if (aiMode === AiMode.KILLSCREEN){
+  if (aiMode === AiMode.KILLSCREEN) {
     // On killscreen, we mainly access the left with 4-taps. So we need either
     // 1) a left built as high as the 4 tap height
     // 2) access to the left with a 4 tap
@@ -368,9 +371,15 @@ function boardHasInaccessibileLeft(
     ) {
       return false;
     }
-    const aiArr = aiParams.TAP_ARR;
-    const aiTapDelay = aiParams.FIRST_TAP_DELAY;
-    return !canDoPlacement(board, level, "O", 0, -4, aiArr, aiTapDelay);
+    const canDo4TapLeft = canDoPlacement(
+      board,
+      level,
+      "L",
+      0,
+      -4,
+      aiParams.INPUT_FRAME_TIMELINE
+    );
+    return !canDo4TapLeft;
   }
 
   //In normal stacking, we mainly access the left with 5-taps. So we need either
@@ -382,13 +391,18 @@ function boardHasInaccessibileLeft(
   ) {
     return false;
   }
-  const aiArr = aiParams.TAP_ARR;
-  const aiTapDelay = aiParams.FIRST_TAP_DELAY;
-  return !canDoPlacement(board, level, "I", 1, -5, aiArr, aiTapDelay);
+  return !canDoPlacement(
+    board,
+    level,
+    "I",
+    1,
+    -5,
+    aiParams.INPUT_FRAME_TIMELINE
+  );
 }
 
 /** Returns true if the tap speed is not sufficient to get a long bar to the right. */
-function boardHasInaccessibileRight(
+export function boardHasInaccessibileRight(
   board: Board,
   level: number,
   aiParams: AiParams
@@ -410,8 +424,7 @@ function boardHasInaccessibileRight(
     "I",
     1,
     4,
-    aiParams.TAP_ARR,
-    aiParams.FIRST_TAP_DELAY
+    aiParams.INPUT_FRAME_TIMELINE
   );
 }
 
@@ -430,21 +443,19 @@ function placementIsLegal(
     board,
     initialX,
     initialY,
-    firstShiftDelay,
-    maxGravity,
-    maxArr,
+    framesAlreadyElapsed,
+    gravity,
     rotationsList,
     existingRotation,
+    inputFrameTimeline,
   } = simulationParams;
-  let inputString = "";
 
   // Get initial sim state
   const shiftIncrement = goalOffsetX < 0 ? -1 : 1;
-  const simState = {
+  const simState: SimState = {
     x: initialX,
     y: initialY,
-    gravityCounter: maxGravity,
-    arrCounter: firstShiftDelay,
+    frameIndex: framesAlreadyElapsed,
     rotationIndex: existingRotation,
   };
 
@@ -466,12 +477,11 @@ function placementIsLegal(
   ) {
     // Run a simulated 'frame' of gravity, shifting, and collision checking
     // We simulate shifts and rotations on the ARR triggers, just like the Lua script does
-    const isInputFrame = simState.arrCounter == 0;
-    const isGravityFrame = simState.gravityCounter == 0;
-    simState.arrCounter = isInputFrame ? maxArr : simState.arrCounter - 1; // Either decrement or reset counter
-    simState.gravityCounter = isGravityFrame
-      ? maxGravity
-      : simState.gravityCounter - 1;
+    const isInputFrame = utils.shouldPerformInputsThisFrame(
+      inputFrameTimeline,
+      simState.frameIndex
+    );
+    const isGravityFrame = simState.frameIndex % gravity === gravity - 1; // Returns true every Nth frame, where N = gravity
 
     if (isInputFrame) {
       const xIncrement =
@@ -485,9 +495,6 @@ function placementIsLegal(
       if (!inputSucceeded) {
         return false;
       }
-      inputString += "X";
-    } else {
-      inputString += ".";
     }
 
     if (isInputFrame) {
@@ -513,7 +520,6 @@ function placementIsLegal(
       ) {
         if (shouldLog) {
           console.log("DEBUG: GRAVITY");
-          console.log(inputString);
           utils.logBoard(
             getBoardAndLinesClearedAfterPlacement(
               board,
@@ -531,14 +537,17 @@ function placementIsLegal(
       simState.y++;
     }
 
-    // utils.logBoard(
-    //   getBoardAndLinesClearedAfterPlacement(
-    //     board,
-    //     rotationsList[simState.rotationIndex],
-    //     simState.x,
-    //     simState.y
-    //   )[0]
-    // );
+    if (shouldLog) {
+      utils.logBoard(
+        getBoardAndLinesClearedAfterPlacement(
+          board,
+          rotationsList[simState.rotationIndex],
+          simState.x,
+          simState.y
+        )[0]
+      );
+    }
+    simState.frameIndex += 1;
   }
   return true;
 }
@@ -598,7 +607,6 @@ function performSimulationRotation(
     throw new Error(`Invalid rotation index ${simState.rotationIndex}`);
   }
 
-  // For the input sequence to go through, both of 1) the shift, and 2) the rotation + shift, must be valid.
   if (
     pieceCollision(
       board,
@@ -630,14 +638,13 @@ function repeatedlyShiftPiece(
   goalRotationIndex: number,
   simulationParams: SimParams
 ) {
-  let inputString = "";
   const {
     board,
     initialX,
     initialY,
-    firstShiftDelay,
-    maxGravity,
-    maxArr,
+    framesAlreadyElapsed,
+    inputFrameTimeline,
+    gravity,
     rotationsList,
     existingRotation,
   } = simulationParams;
@@ -646,8 +653,7 @@ function repeatedlyShiftPiece(
   const simState = {
     x: initialX,
     y: initialY,
-    gravityCounter: maxGravity,
-    arrCounter: firstShiftDelay,
+    frameIndex: framesAlreadyElapsed,
     rotationIndex: existingRotation,
   };
   let rangeCurrent = 0;
@@ -667,12 +673,11 @@ function repeatedlyShiftPiece(
   while (true) {
     // Run a simulated 'frame' of gravity, shifting, and collision checking
     // We simulate shifts and rotations on the ARR triggers, just like the Lua script does
-    const isInputFrame = simState.arrCounter == 0;
-    const isGravityFrame = simState.gravityCounter == 0;
-    simState.arrCounter = isInputFrame ? maxArr : simState.arrCounter - 1; // Either decrement or reset counter
-    simState.gravityCounter = isGravityFrame
-      ? maxGravity
-      : simState.gravityCounter - 1;
+    const isInputFrame = utils.shouldPerformInputsThisFrame(
+      inputFrameTimeline,
+      simState.frameIndex
+    );
+    const isGravityFrame = simState.frameIndex % gravity === gravity - 1; // Returns true every Nth frame, where N = gravity
 
     if (isInputFrame) {
       const inputsSucceeded = performSimulationShift(
@@ -685,9 +690,18 @@ function repeatedlyShiftPiece(
         return rangeCurrent;
       }
       rangeCurrent += shiftIncrement;
-      inputString += "X";
-    } else {
-      inputString += ".";
+    }
+
+    if (isInputFrame) {
+      const inputSucceeded = performSimulationRotation(
+        goalRotationIndex,
+        simState,
+        board,
+        rotationsList
+      );
+      if (!inputSucceeded) {
+        return rangeCurrent;
+      }
     }
 
     if (isGravityFrame) {
@@ -708,23 +722,22 @@ function repeatedlyShiftPiece(
         //     simState.y
         //   )[0]
         // );
-        // console.log(inputString);
         return rangeCurrent; // Piece would lock in
       }
       simState.y++;
     }
 
-    if (isInputFrame) {
-      const inputSucceeded = performSimulationRotation(
-        goalRotationIndex,
-        simState,
-        board,
-        rotationsList
-      );
-      if (!inputSucceeded) {
-        return rangeCurrent;
-      }
-    }
+    // console.log(simState.frameIndex, "wasinput?", isInputFrame, "isGrav?", isGravityFrame);
+    // utils.logBoard(
+    //   getBoardAndLinesClearedAfterPlacement(
+    //     board,
+    //     rotationsList[simState.rotationIndex],
+    //     simState.x,
+    //     simState.y
+    //   )[0]
+    // );
+
+    simState.frameIndex += 1;
   }
 }
 
@@ -742,7 +755,7 @@ function getTestBoardWithHeight(height: number) {
 }
 
 /** Gets the max height that can be cleared, given a level, ARR, delay, and number of taps desired. */
-function calculateTapHeight(level, arr, delay, numTaps) {
+export function calculateTapHeight(level, inputFrameTimeline, numTaps) {
   let height = 0;
   while (
     canDoPlacement(
@@ -751,8 +764,7 @@ function calculateTapHeight(level, arr, delay, numTaps) {
       "I",
       1,
       -1 * numTaps,
-      arr,
-      delay
+      inputFrameTimeline
     )
   ) {
     height++;
@@ -762,9 +774,14 @@ function calculateTapHeight(level, arr, delay, numTaps) {
 }
 
 function tapRangeTest() {
+  const timeline10Hz = utils.generateInputFrameTimeline([5]);
+  const timeline12Hz = utils.generateInputFrameTimeline([4]);
+  const timeline13Hz = utils.generateInputFrameTimeline([4, 3]);
+  const timeline14Hz = utils.generateInputFrameTimeline([4, 3, 3, 3]);
+
   let expected1 = true;
   if (
-    canDoPlacement(getTestBoardWithHeight(0), 29, "I", 1, -5, 4, 2) !==
+    canDoPlacement(getTestBoardWithHeight(0), 29, "I", 1, -5, timeline13Hz) !==
     expected1
   ) {
     console.log(`Failed: 0 left 29 2 delay. Expected: ${expected1}`);
@@ -772,7 +789,7 @@ function tapRangeTest() {
 
   const expected2 = false;
   if (
-    canDoPlacement(getTestBoardWithHeight(1), 29, "I", 1, -5, 4, 2) !==
+    canDoPlacement(getTestBoardWithHeight(1), 29, "I", 1, -5, timeline13Hz) !==
     expected2
   ) {
     console.log(`Failed: 1 left 29 2 delay. Expected: ${expected2}`);
@@ -780,7 +797,7 @@ function tapRangeTest() {
 
   const expected3 = true;
   if (
-    canDoPlacement(getTestBoardWithHeight(1), 29, "I", 1, -5, 4, 1) !==
+    canDoPlacement(getTestBoardWithHeight(1), 29, "I", 1, -5, timeline14Hz) !==
     expected3
   ) {
     console.log(`Failed: 1 left 29 1 delay. Expected: ${expected3}`);
@@ -788,7 +805,7 @@ function tapRangeTest() {
 
   const expected4 = false;
   if (
-    canDoPlacement(getTestBoardWithHeight(2), 29, "I", 1, -5, 4, 1) !==
+    canDoPlacement(getTestBoardWithHeight(2), 29, "I", 1, -5, timeline14Hz) !==
     expected4
   ) {
     console.log(`Failed: 2 left 29 1 delay. Expected: ${expected4}`);
@@ -796,7 +813,7 @@ function tapRangeTest() {
 
   const expected5 = true;
   if (
-    canDoPlacement(getTestBoardWithHeight(8), 19, "I", 1, -5, 5, 0) !==
+    canDoPlacement(getTestBoardWithHeight(8), 19, "I", 1, -5, timeline12Hz) !==
     expected5
   ) {
     console.log(`Failed: 8 left 19 12 Hz. Expected: ${expected5}`);
@@ -804,7 +821,7 @@ function tapRangeTest() {
 
   const expected6 = false;
   if (
-    canDoPlacement(getTestBoardWithHeight(9), 19, "I", 1, -5, 5, 0) !==
+    canDoPlacement(getTestBoardWithHeight(9), 19, "I", 1, -5, timeline12Hz) !==
     expected6
   ) {
     console.log(`Failed: 9 left 19 12 Hz. Expected: ${expected6}`);
@@ -812,21 +829,23 @@ function tapRangeTest() {
 
   const expected7 = false;
   if (
-    canDoPlacement(getTestBoardWithHeight(5), 29, "I", 1, 4, 4, 2) !== expected7
+    canDoPlacement(getTestBoardWithHeight(5), 29, "I", 1, 4, timeline13Hz) !==
+    expected7
   ) {
     console.log(`Failed: 5 right 29 0 delay. Expected: ${expected7}`);
   }
 
   const expected8 = true;
   if (
-    canDoPlacement(getTestBoardWithHeight(4), 29, "I", 1, 4, 4, 2) !== expected8
+    canDoPlacement(getTestBoardWithHeight(4), 29, "I", 1, 4, timeline13Hz) !==
+    expected8
   ) {
     console.log(`Failed: 4 right 29 0 delay. Expected: ${expected8}`);
   }
 
   const expected9 = true;
   if (
-    canDoPlacement(getTestBoardWithHeight(11), 19, "I", 1, 4, 4, 2) !==
+    canDoPlacement(getTestBoardWithHeight(11), 19, "I", 1, 4, timeline13Hz) !==
     expected9
   ) {
     console.log(`Failed: 11 left 19 2 delay. Expected: ${expected9}`);
@@ -834,7 +853,7 @@ function tapRangeTest() {
 
   const expected10 = true;
   if (
-    canDoPlacement(getTestBoardWithHeight(11), 19, "I", 1, 4, 4, 2) !==
+    canDoPlacement(getTestBoardWithHeight(11), 19, "I", 1, 4, timeline13Hz) !==
     expected10
   ) {
     console.log(`Failed: 12 right 19 2 delay. Expected: ${expected10}`);
@@ -842,7 +861,7 @@ function tapRangeTest() {
 
   const expected11 = false;
   if (
-    canDoPlacement(getTestBoardWithHeight(7), 19, "I", 1, -5, 6, 0) !==
+    canDoPlacement(getTestBoardWithHeight(7), 19, "I", 1, -5, timeline10Hz) !==
     expected11
   ) {
     console.log(`Failed: 7 left 19 10 Hz. Expected: ${expected11}`);
@@ -850,7 +869,7 @@ function tapRangeTest() {
 
   const expected12 = true;
   if (
-    canDoPlacement(getTestBoardWithHeight(3), 29, "O", 0, -4, 5, 0) !==
+    canDoPlacement(getTestBoardWithHeight(3), 29, "O", 0, -4, timeline12Hz) !==
     expected12
   ) {
     console.log(`Failed: 3 right 29 12Hz. Expected: ${expected12}`);
@@ -858,7 +877,7 @@ function tapRangeTest() {
 
   const expected13 = false;
   if (
-    canDoPlacement(getTestBoardWithHeight(4), 29, "O", 0, -4, 5, 0) !==
+    canDoPlacement(getTestBoardWithHeight(4), 29, "O", 0, -4, timeline12Hz) !==
     expected13
   ) {
     console.log(`Failed: 4 right 29 12Hz. Expected: ${expected13}`);
@@ -866,7 +885,7 @@ function tapRangeTest() {
 
   const expected14 = true;
   if (
-    canDoPlacement(getTestBoardWithHeight(11), 19, "I", 1, 4, 5, 0) !==
+    canDoPlacement(getTestBoardWithHeight(11), 19, "I", 1, 4, timeline12Hz) !==
     expected14
   ) {
     console.log(`Failed: 11 right 19 12Hz. Expected: ${expected14}`);
@@ -874,7 +893,7 @@ function tapRangeTest() {
 
   const expected15 = false;
   if (
-    canDoPlacement(getTestBoardWithHeight(12), 19, "I", 1, 4, 5, 0) !==
+    canDoPlacement(getTestBoardWithHeight(12), 19, "I", 1, 4, timeline12Hz) !==
     expected15
   ) {
     console.log(`Failed: 12 right 19 12Hz. Expected: ${expected15}`);
@@ -888,9 +907,9 @@ function lastMinuteRotationsTest() {
       board: getTestBoardWithHeight(14),
       initialX: 3,
       initialY: -1,
-      firstShiftDelay: 0,
-      maxGravity: 0,
-      maxArr: 3,
+      gravity: 0,
+      framesAlreadyElapsed: 0,
+      inputFrameTimeline: "X...",
       rotationsList: PIECE_LOOKUP["J"][0],
       existingRotation: 0,
     }) !== expected1
@@ -904,9 +923,9 @@ function lastMinuteRotationsTest() {
       board: getTestBoardWithHeight(15),
       initialX: 3,
       initialY: -1,
-      firstShiftDelay: 0,
-      maxGravity: 0,
-      maxArr: 3,
+      gravity: 0,
+      framesAlreadyElapsed: 0,
+      inputFrameTimeline: "X...",
       rotationsList: PIECE_LOOKUP["J"][0],
       existingRotation: 0,
     }) !== expected2
@@ -916,7 +935,7 @@ function lastMinuteRotationsTest() {
 }
 
 tapRangeTest();
-lastMinuteRotationsTest();
+// lastMinuteRotationsTest();
 
 // const simParams = {
 //   board: getTestBoardWithHeight(11),

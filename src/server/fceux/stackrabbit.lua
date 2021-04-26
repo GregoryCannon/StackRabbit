@@ -2,10 +2,17 @@ local http = require("socket.http")
 local os = require("os")
 require "socket"
 
+TIMELINE_12_HZ = "X....";
+TIMELINE_13_HZ = "X....X...";
+TIMELINE_13_5_HZ = "X....X...X...";
+TIMEILNE_14_HZ = "X....X...X...X...";
+TIMELINE_15_HZ = "X...";
+TIMELINE_20_HZ = "X..";
+TIMELINE_30_HZ = "X.";
+
 -- Config constants
-FRAMES_BETWEEN_SHIFTS = 3 -- the ARR minus 1, e.g. 3 delay -> 15 Hz, 4 delay -> 12.5 Hz
 REACTION_TIME_FRAMES = 12
-DELAY_FRAMES = 2 -- the number of frames to wait before performing the first input
+INPUT_TIMELINE = TIMELINE_13_5_HZ;
 SHOULD_RECORD_GAMES = true
 MOVIE_PATH = "C:\\Users\\Greg\\Desktop\\VODs\\" -- Where to store the fm2 VODS (absolute path)
 
@@ -21,8 +28,7 @@ pnext = 0
 -- Reset all variables whose values are tied to one piece
 function resetPieceScopedVars()
   adjustmentApiResult = nil
-  framesUntilAdjustment = REACTION_TIME_FRAMES
-  framesUntilNextShift = DELAY_FRAMES
+  frameIndex = 0
   pendingInputs = { left=0, right=0, A=0, B=0 }
   shiftsExecuted = 0
   rotationsExecuted = 0
@@ -83,30 +89,31 @@ end
 
 -- Based on the current placement, predict exactly where the piece will be when it's time to adjust it
 function predictPieceOffsetAtAdjustmentTime()
-  local ARR = FRAMES_BETWEEN_SHIFTS + 1
-  local arrFramesElapsed = REACTION_TIME_FRAMES - DELAY_FRAMES
-  local gravityFramesElapsed = REACTION_TIME_FRAMES
+  local shiftsCompletedByAdjTime = 0
+  offsetXAtAdjustmentTime = 0
+  offsetYAtAdjustmentTime = 0
+  for i = 0, REACTION_TIME_FRAMES-1 do
+    if (isInputFrame(i)) then
+      shiftsCompletedByAdjTime = shiftsCompletedByAdjTime + 1
+    end
+  end
 
-  local numInputStepsCompleted = math.ceil(arrFramesElapsed / ARR)
-  local numGravityStepsCompleted = math.floor(gravityFramesElapsed / getGravity(level))
-
-  offsetYAtAdjustmentTime = numGravityStepsCompleted
-  arrCounterAdjustmentTime = numInputStepsCompleted * ARR - arrFramesElapsed
+  offsetYAtAdjustmentTime = math.floor((REACTION_TIME_FRAMES) / getGravity(level))
 
   -- Calculate how many of the pending shifts it will have completed by that point
   offsetXAtAdjustmentTime = 0
   if pendingInputs.left > 0 then
-    offsetXAtAdjustmentTime = -1 * math.min(numInputStepsCompleted, pendingInputs.left)
+    offsetXAtAdjustmentTime = -1 * math.min(shiftsCompletedByAdjTime, pendingInputs.left)
   elseif pendingInputs.right > 0 then
-    offsetXAtAdjustmentTime = math.min(numInputStepsCompleted, pendingInputs.right)
+    offsetXAtAdjustmentTime = math.min(shiftsCompletedByAdjTime, pendingInputs.right)
   end
 
   -- Calculate how many of the pending rotations it will have completed by that point
   rotationAtAdjustmentTime = 0
-  if pendingInputs.B == 1 and numInputStepsCompleted >= 1 then
+  if pendingInputs.B == 1 and shiftsCompletedByAdjTime >= 1 then
     rotationAtAdjustmentTime = 3
   elseif pendingInputs.A > 0 then
-    rotationAtAdjustmentTime = math.min(numInputStepsCompleted, pendingInputs.A)
+    rotationAtAdjustmentTime = math.min(shiftsCompletedByAdjTime, pendingInputs.A)
   end
 end
 
@@ -120,8 +127,8 @@ function requestPlacementAsync()
   -- Format URL arguments
   local requestStr = "http://localhost:3000/async-nb/" .. getEncodedBoard()
   requestStr = requestStr .. "/" .. orientToPiece[pcur] .. "/" .. orientToPiece[pnext] .. "/" .. level .. "/" .. numLines
-  requestStr = requestStr .. "/" .. offsetXAtAdjustmentTime .. "/" .. offsetYAtAdjustmentTime .. "/" .. arrCounterAdjustmentTime
-  requestStr = requestStr .. "/" .. rotationAtAdjustmentTime
+  requestStr = requestStr .. "/" .. offsetXAtAdjustmentTime .. "/" .. offsetYAtAdjustmentTime .. "/" .. rotationAtAdjustmentTime
+  requestStr = requestStr .. "/" .. REACTION_TIME_FRAMES .. "/" .. INPUT_TIMELINE .. "/true"
 
   waitingOnAsyncRequest = true
   return makeHttpRequest(requestStr).data
@@ -143,7 +150,8 @@ end
 function requestPlacementSyncNoNextBox()
   -- Format URL arguments
   local requestStr = "http://localhost:3000/sync-nnb/" .. getEncodedBoard()
-  local requestStr = requestStr .. "/" .. orientToPiece[pcur] .. "/null/" .. level .. "/" .. numLines .. "/0/0/" .. DELAY_FRAMES .. "/0"
+  local requestStr = requestStr .. "/" .. orientToPiece[pcur] .. "/null/" .. level .. "/" .. numLines
+  requestStr = requestStr .. "/0/0/0/0/" .. INPUT_TIMELINE .. "/false"
 
   return makeHttpRequest(requestStr).data
 end
@@ -212,28 +220,31 @@ function calculateInputs(apiResult)
   print(pendingInputs)
 end
 
+function isInputFrame(index)
+  local len = string.len(INPUT_TIMELINE)
+  local strIndex = index % len + 1; -- IMAGINE 1-indexing!
+  return string.sub(INPUT_TIMELINE, strIndex, strIndex) == "X"
+end
+
 function executeInputs()
   if not gameOver then
     -- Either perform adjustment or decrement the adjustment countdown
-    if framesUntilAdjustment == 0 and adjustmentApiResult ~= nil then
+    if frameIndex == REACTION_TIME_FRAMES and adjustmentApiResult ~= nil then
       if shiftsExecuted ~= offsetXAtAdjustmentTime then
         print("Actual X offset: " .. shiftsExecuted .. " predicted: " .. offsetXAtAdjustmentTime .. " Diff: " .. offsetXAtAdjustmentTime - shiftsExecuted)
       end
       calculateInputs(adjustmentApiResult)
-      framesUntilAdjustment = -1
-    elseif framesUntilAdjustment > 0 then
-      framesUntilAdjustment = framesUntilAdjustment - 1
     end
 
     local inputsThisFrame = {A=false, B=false, left=false, right=false, up=false, down=false, select=false, start=false}
-    local stuckAgainstWall = shiftsExecuted == -5 or shiftsExecuted == 4 -- Can't rotate due to NES's lack of kick functionality
+    -- local stuckAgainstWall = shiftsExecuted == -5 or shiftsExecuted == 4 -- Can't rotate due to NES's lack of kick functionality
+    local stuckAgainstWall = false;
 
-    if framesUntilNextShift == 0 then
+    -- print(emu.framecount() .. "   " .. frameIndex .. "   " .. tostring(isInputFrame(frameIndex)))
+    if isInputFrame(frameIndex) then
       local function execute(inputName)
         inputsThisFrame[inputName] = true
         pendingInputs[inputName] = pendingInputs[inputName] - 1  -- Imagine having a decrement operator in your language
-        -- Reset ARR counter
-        framesUntilNextShift = FRAMES_BETWEEN_SHIFTS
       end
 
       -- Execute one rotation if any pending
@@ -249,23 +260,18 @@ function executeInputs()
         inputsThisFrame.left = true
         pendingInputs.left = pendingInputs.left - 1
         shiftsExecuted = shiftsExecuted - 1
-        framesUntilNextShift = FRAMES_BETWEEN_SHIFTS
       elseif pendingInputs.right > 0 then
         inputsThisFrame.right = true
         pendingInputs.right = pendingInputs.right - 1
         shiftsExecuted = shiftsExecuted + 1
-        framesUntilNextShift = FRAMES_BETWEEN_SHIFTS
       end
-    else
-      -- Not ready yet, decrement counter
-      framesUntilNextShift = framesUntilNextShift - 1
     end
 
     -- Debug logs
     if inputsThisFrame.left or inputsThisFrame.right then
       print("SHIFT" .. emu.framecount())
     elseif pendingInputs.left > 0 or pendingInputs.right > 0 or pendingInputs.A > 0 or pendingInputs.B > 0 then
-      print("nextShift: " .. framesUntilNextShift)
+      print("has pending inputs: " .. pendingInputs.left .. pendingInputs.right .. pendingInputs.B .. pendingInputs.A)
     end
 
     -- Send our computed inputs to the controller
@@ -304,7 +310,6 @@ end
 
 function runGameFrame()
   if(memory.readbyte(0x0048) == 1) then
-    print(emu.framecount())
     if(playstate ~= 1 or backtrack) then
       -- First active frame for piece. This is where board state/input sequence is calculated
       onFirstFrameOfNewPiece()
@@ -322,6 +327,7 @@ function runGameFrame()
 
     -- Execute input sequence
     executeInputs()
+    frameIndex = frameIndex + 1
 
   -- Do stuff right when the piece locks. If you want to check that the piece went to the correct spot/send an API request early here is probably good.
   elseif(memory.readbyte(0x0048) == 2 and playstate == 1) then     
@@ -388,7 +394,6 @@ function beforeEachFrame()
   --Game ends, clean up data
   if(gameState == 4 and memory.readbyte(0x00C0) == 3) then
   gameOver = false
-  framesUntilNextShift = 0
   if movie.active() then
       movie.stop()
       end

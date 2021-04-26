@@ -1,3 +1,5 @@
+import { logBoard } from "./utils";
+
 const http = require("http");
 const hostname = "127.0.0.1";
 const port = 3000;
@@ -15,7 +17,7 @@ let asyncResult = null;
  * Parses and validates the inputs
  * @returns {Object} an object with all the parsed arguments
  */
-function parseArguments(requestArgs): SearchState {
+function parseArguments(requestArgs): [SearchState, Array<number>] {
   // Parse and validate inputs
   let [
     boardStr,
@@ -25,15 +27,18 @@ function parseArguments(requestArgs): SearchState {
     lines,
     existingXOffset,
     existingYOffset,
-    firstShiftDelay,
     existingRotation,
+    framesAlreadyElapsed,
+    inputFrameTimeline,
+    isAdjustment
   ] = requestArgs;
   level = parseInt(level);
   lines = parseInt(lines);
   existingXOffset = parseInt(existingXOffset) || 0;
   existingYOffset = parseInt(existingYOffset) || 0;
-  firstShiftDelay = parseInt(firstShiftDelay) || 0;
+  framesAlreadyElapsed = parseInt(framesAlreadyElapsed) || 0;
   existingRotation = parseInt(existingRotation) || 0;
+  isAdjustment = isAdjustment.toLowerCase() === "true"
 
   // Validate pieces
   currentPieceId = currentPieceId.toUpperCase();
@@ -56,23 +61,33 @@ function parseArguments(requestArgs): SearchState {
   if (level < 18 || level > 30) {
     console.log("WARNING - Unusual level:", level);
   }
+  for (const char of inputFrameTimeline) {
+    if (char !== "X" && char !== ".") {
+      throw new Error("Invalid input frame timeline: " + inputFrameTimeline);
+    }
+  }
 
   // Decode the board
   const board = boardStr
     .match(/.{1,10}/g) // Select groups of 10 characters
     .map((rowSerialized) => rowSerialized.split("").map((x) => parseInt(x)));
 
-  return {
-    board,
-    currentPieceId,
-    nextPieceId,
-    level,
-    lines,
-    existingXOffset,
-    existingYOffset,
-    firstShiftDelay,
-    existingRotation,
-  };
+  logBoard(board);
+  return [
+    {
+      board,
+      currentPieceId,
+      nextPieceId,
+      level,
+      lines,
+      existingXOffset,
+      existingYOffset,
+      existingRotation,
+      framesAlreadyElapsed,
+      isAdjustment
+    },
+    inputFrameTimeline,
+  ];
 }
 
 /**
@@ -105,33 +120,15 @@ function handleRequestAsyncWithNextBox(requestArgs): [string, number] {
  * @returns {string} the API response
  */
 function handleRequestSyncNoNextBox(requestArgs) {
-  let {
-    board,
-    currentPieceId,
-    level,
-    lines,
-    existingXOffset,
-    existingYOffset,
-    firstShiftDelay,
-    existingRotation,
-  } = parseArguments(requestArgs);
+  let [searchState, inputDelaySequence] = parseArguments(requestArgs);
 
   // Get the best move
   const bestMove = mainApp.getBestMove(
-    {
-      board,
-      currentPieceId,
-      nextPieceId: null,
-      level,
-      lines,
-      existingXOffset,
-      existingYOffset,
-      firstShiftDelay,
-      existingRotation,
-    },
+    searchState,
     /* shouldLog= */ true,
     params.getParams(),
     params.getParamMods(),
+    inputDelaySequence,
     /* searchDepth= */ 1,
     /* hypotheticalSearchDepth= */ 0
   );
@@ -147,34 +144,15 @@ function handleRequestSyncNoNextBox(requestArgs) {
  * @returns {string} the API response
  */
 function handleRequestSyncWithNextBox(requestArgs) {
-  let {
-    board,
-    currentPieceId,
-    nextPieceId,
-    level,
-    lines,
-    existingXOffset,
-    existingYOffset,
-    firstShiftDelay,
-    existingRotation,
-  } = parseArguments(requestArgs);
+  let [searchState, inputDelaySequence] = parseArguments(requestArgs);
 
   // Get the best move
   const bestMove = mainApp.getBestMove(
-    {
-      board,
-      currentPieceId,
-      nextPieceId,
-      level,
-      lines,
-      existingXOffset,
-      existingYOffset,
-      firstShiftDelay,
-      existingRotation,
-    },
+    searchState,
     /* shouldLog= */ true,
     params.getParams(),
     params.getParamMods(),
+    inputDelaySequence,
     /* searchDepth= */ 2,
     /* hypotheticalSearchDepth= */ 1
   );

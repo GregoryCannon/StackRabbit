@@ -10,18 +10,17 @@ interface SimParams {
   board: Board;
   initialX: number;
   initialY: number;
-  firstShiftDelay: number;
-  maxGravity: number;
-  maxArr: number;
+  framesAlreadyElapsed: number;
+  gravity: number;
   rotationsList: Array<PieceArray>;
   existingRotation: number;
+  inputFrameTimeline: string;
 }
 
 interface SimState {
   x: number;
   y: number;
-  gravityCounter: number;
-  arrCounter: number;
+  frameIndex: number;
   rotationIndex: number;
 }
 
@@ -60,10 +59,11 @@ interface SearchState {
   nextPieceId: PieceId;
   level: number;
   lines: number;
+  framesAlreadyElapsed: number;
   existingXOffset: number;
   existingYOffset: number;
-  firstShiftDelay: number;
   existingRotation: number;
+  isAdjustment: boolean;
 }
 
 const enum AiMode {
@@ -71,35 +71,39 @@ const enum AiMode {
   DIG,
   NEAR_KILLSCREEN,
   KILLSCREEN,
+  KILLSCREEN_RIGHT_WELL,
 }
 
-interface AiParams {
+interface InitialAiParams {
   AVG_HEIGHT_EXPONENT: number;
   AVG_HEIGHT_COEF: number;
   BURN_COEF: number;
   COL_10_COEF: number;
+  COL_10_HEIGHT_MULTIPLIER_EXP: number;
   MAX_DIRTY_TETRIS_HEIGHT: number;
   EXTREME_GAP_COEF: number;
   BUILT_OUT_LEFT_COEF: number;
   BUILT_OUT_RIGHT_COEF: number;
   HOLE_COEF: number;
   HOLE_WEIGHT_COEF: number;
+  SCARE_HEIGHT_OFFSET: number;
   SPIRE_HEIGHT_EXPONENT: number;
   SPIRE_HEIGHT_COEF: number;
-  SCARE_HEIGHT_18: number;
-  SCARE_HEIGHT_19: number;
-  SCARE_HEIGHT_29: number;
+  UNABLE_TO_BURN_COEF: number;
   HIGH_COL_9_COEF: number;
+  HIGH_COL_9_EXP: number;
   SURFACE_COEF: number;
   LEFT_SURFACE_COEF: number;
   TETRIS_BONUS: number;
   TETRIS_READY_BONUS: number;
   INACCESSIBLE_LEFT_COEF: number;
   INACCESSIBLE_RIGHT_COEF: number;
-  TAP_ARR: number;
-  FIRST_TAP_DELAY: number;
-  MAX_5_TAP_LOOKUP?: Object;
-  MAX_4_TAP_LOOKUP?: Object;
+}
+
+interface AiParams extends InitialAiParams {
+  INPUT_FRAME_TIMELINE: string;
+  MAX_5_TAP_LOOKUP: Object;
+  MAX_4_TAP_LOOKUP: Object;
 }
 
 interface ParamMods {

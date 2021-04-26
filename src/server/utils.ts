@@ -48,6 +48,39 @@ export function GetGravity(level) {
   }
 }
 
+const FRAME_WITH_INPUT = "X";
+const FRAME_WAITING = ".";
+
+/** Check whether a given frame is an input frame in the frame timeline.
+ * @param frameNum - the index of the current frame (0-INDEXED)!
+ */
+export function shouldPerformInputsThisFrame(
+  inputFrameTimeline: string,
+  frameNum: number
+) {
+  const len = inputFrameTimeline.length;
+  const index = frameNum % len;
+  return inputFrameTimeline[index] === FRAME_WITH_INPUT;
+}
+
+/** Given an array specifying the number of frames to wait between shifts, generate a string of which frames will contain shifts and which ones are waiting in between.
+ * The string, like itself, will be assumed to be repeated. So "X..X." indicates that the behavior will be "X..X.X..X.X.." and so on.
+ * e.g. [2,1] -> X..X.
+ */
+export function generateInputFrameTimeline(delaySequence: Array<number>) {
+  if (delaySequence.length == 0) {
+    throw new Error("Empty delay sequence");
+  }
+  let inputFrameTimeline = "";
+  for (const delayLength of delaySequence) {
+    inputFrameTimeline += FRAME_WITH_INPUT;
+    for (let i = 0; i < delayLength; i++) {
+      inputFrameTimeline += FRAME_WAITING;
+    }
+  }
+  return inputFrameTimeline;
+}
+
 export function generateDigPracticeBoard(garbageHeight, numHoles) {
   const randomIntLessThan = (n) => Math.floor(Math.random() * n);
 
@@ -107,15 +140,6 @@ export function getSurfaceArrayAndHoleCount(
   return [heights, numHoles];
 }
 
-export function hasInvalidHeightDifferences(surfaceArray) {
-  for (let i = 1; i < surfaceArray.length; i++) {
-    if (Math.abs(surfaceArray[i] - surfaceArray[i - 1]) > 4) {
-      return true;
-    }
-  }
-  return false;
-}
-
 /**
  * Makes a copy of a surface that's corrected for height gaps that are to high.
  * e.g. an increase of 7 between two columns would be treated as an increase of 4
@@ -161,12 +185,12 @@ export function getLevelAfterLineClears(level, lines, numLinesCleared) {
   return level;
 }
 
-export function getScareHeight(level: number, aiParams: AiParams){
-  if (!aiParams.MAX_5_TAP_LOOKUP){
+export function getScareHeight(level: number, aiParams: AiParams) {
+  if (!aiParams.MAX_5_TAP_LOOKUP) {
     throw new Error("No tap heights calculated when looking up scare height");
   }
   const max5TapHeight = aiParams.MAX_5_TAP_LOOKUP[level];
-  return Math.max(0, max5TapHeight - 3);
+  return Math.max(0, max5TapHeight + aiParams.SCARE_HEIGHT_OFFSET);
 }
 
 export function logBoard(board) {

@@ -17,16 +17,21 @@ import { POSSIBLE_NEXT_PIECES } from "./utils";
  *        placements for all 7 theoretical next pieces that could occur.
  */
 
-function getBestMove(
+export function getBestMove(
   searchState: SearchState,
   shouldLog: boolean,
-  initialAiParams: AiParams,
+  initialAiParams: InitialAiParams,
   paramMods: ParamMods,
+  inputFrameTimeline: string,
   searchDepth: number,
   hypotheticalSearchDepth: number
 ) {
   // Get the AI mode (e.g. digging, scoring)
-  let aiParams = addTapLimitsToAiMode(initialAiParams, searchState.level);
+  let aiParams = addTapInfoToAiParams(
+    initialAiParams,
+    searchState.level,
+    inputFrameTimeline
+  );
   const aiMode = aiModeManager.getAiMode(
     searchState.board,
     searchState.lines,
@@ -34,6 +39,7 @@ function getBestMove(
     aiParams
   );
   aiParams = modifyParamsForAiMode(aiParams, aiMode, paramMods);
+  console.log(aiParams);
 
   const concretePossibilities = searchConcretely(
     searchState,
@@ -94,9 +100,13 @@ function searchConcretely(
 
   if (shouldLog) {
     console.log("Num promising moves:", depth1Possibilities.length);
+    console.log("Promising moves");
     console.log(
-      "Promising moves",
-      depth1Possibilities.map((x) => [x.placement, x.fastEvalScore, x.evalExplanation])
+      depth1Possibilities.map((x) => [
+        x.placement,
+        x.fastEvalScore || "no fast eval",
+        x.evalExplanation,
+      ])
     );
     console.log("\n\n--------------------------------------------");
   }
@@ -123,16 +133,15 @@ function searchConcretely(
 }
 
 /** Normalizes a weight vector to an average value of 1 per cell (in-place). */
-function normalize(weightVector){
+function normalize(weightVector) {
   const normalizedWeights = [];
   const len = weightVector.length;
-  let total = weightVector.reduce((x,y) => x + y);
-  for (let i = 0; i < len; i++){
-    normalizedWeights.push(weightVector[i] * len / total);
+  let total = weightVector.reduce((x, y) => x + y);
+  for (let i = 0; i < len; i++) {
+    normalizedWeights.push((weightVector[i] * len) / total);
   }
   return normalizedWeights;
 }
-
 
 function searchHypothetically(
   possibilityChains: Array<PossibilityChain>,
@@ -181,7 +190,7 @@ function searchHypothetically(
     hypotheticalResults;
   }
 
-  return hypotheticalResults.map(x => x.possibilityChain);
+  return hypotheticalResults.map((x) => x.possibilityChain);
 }
 
 /**
@@ -202,16 +211,17 @@ function searchDepth1(
     searchState.level,
     searchState.existingXOffset,
     searchState.existingYOffset,
-    searchState.firstShiftDelay,
+    searchState.framesAlreadyElapsed,
+    aiParams.INPUT_FRAME_TIMELINE,
     searchState.existingRotation,
-    aiParams.TAP_ARR,
+    searchState.isAdjustment,
     /* shouldLog= */ false && shouldLog
   );
 
   // If there are more moves than we plan on evaluating, do a fast-eval and prune based on that
   if (possibilityList.length > evalBreadth) {
     for (const possibility of possibilityList) {
-      const [value, explanation] = evaluator.fastEval(
+      const [value, _] = evaluator.fastEval(
         possibility,
         searchState.nextPieceId,
         searchState.level,
@@ -388,31 +398,34 @@ function getSearchStateAfter(
     nextPieceId: null,
     level: levelAfter,
     lines: prevSearchState.lines + possibility.numLinesCleared,
+    framesAlreadyElapsed: 0,
     existingXOffset: 0,
     existingYOffset: 0,
-    firstShiftDelay: aiParams.FIRST_TAP_DELAY,
     existingRotation: 0,
+    isAdjustment: false
   };
 }
 
-export function addTapLimitsToAiMode(
-  aiParams: AiParams,
-  level: number
+export function addTapInfoToAiParams(
+  initialAiParams: InitialAiParams,
+  level: number,
+  inputFrameTimeline: string
 ): AiParams {
-  const newParams = JSON.parse(JSON.stringify(aiParams));
+  const newParams = JSON.parse(JSON.stringify(initialAiParams));
+  // Save the input frame timeline
+  newParams.INPUT_FRAME_TIMELINE = inputFrameTimeline;
+
   // Look up the 4/5 tap height for the current and maybe next level
   newParams.MAX_5_TAP_LOOKUP = {};
   newParams.MAX_5_TAP_LOOKUP[level] = boardHelper.calculateTapHeight(
     level,
-    newParams.TAP_ARR,
-    newParams.FIRST_TAP_DELAY,
+    inputFrameTimeline,
     5
   );
   newParams.MAX_4_TAP_LOOKUP = {};
   newParams.MAX_4_TAP_LOOKUP[level] = boardHelper.calculateTapHeight(
     level,
-    newParams.TAP_ARR,
-    newParams.FIRST_TAP_DELAY,
+    inputFrameTimeline,
     4
   );
   const nextLevel = level + 1;
@@ -420,18 +433,14 @@ export function addTapLimitsToAiMode(
     // Also look up the tap ranges for the next level, in case we evaluate possibilites after the transition
     newParams.MAX_5_TAP_LOOKUP[nextLevel] = boardHelper.calculateTapHeight(
       nextLevel,
-      newParams.TAP_ARR,
-      newParams.FIRST_TAP_DELAY,
+      inputFrameTimeline,
       5
     );
     newParams.MAX_4_TAP_LOOKUP[nextLevel] = boardHelper.calculateTapHeight(
       nextLevel,
-      newParams.TAP_ARR,
-      newParams.FIRST_TAP_DELAY,
+      inputFrameTimeline,
       4
     );
   }
   return newParams;
 }
-
-module.exports = { getBestMove };
