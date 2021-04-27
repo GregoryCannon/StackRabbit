@@ -39,7 +39,6 @@ export function getBestMove(
     aiParams
   );
   aiParams = modifyParamsForAiMode(aiParams, aiMode, paramMods);
-  console.log(aiParams);
 
   const concretePossibilities = searchConcretely(
     searchState,
@@ -82,7 +81,7 @@ function searchConcretely(
     shouldLog,
     aiParams,
     aiMode,
-    EVALUATION_BREADTH[3]
+    EVALUATION_BREADTH[1]
   );
 
   // If the search depth was 1, we're done

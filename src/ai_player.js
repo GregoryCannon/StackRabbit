@@ -64,7 +64,7 @@ AIPlayer.prototype.placeCurrentPiece = async function (
   // Shift the piece, with intermittent sleeps to slow it down.
   // Note that the piece range it's allowed to attempt is hardcoded in hang_checker.js, so its actual DAS speed is irrelevant
   const targetX = 3 + bestXOffset;
-  const sleepDelay = level >= 29 ? 20 : 70;
+  const sleepDelay = level >= 29 ? 20 : 50;
   if (targetX > piece.getX()) {
     const numShifts = targetX - piece.getX();
     for (let i = 0; i < numShifts; i++) {

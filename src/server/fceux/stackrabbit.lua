@@ -11,8 +11,8 @@ TIMELINE_20_HZ = "X..";
 TIMELINE_30_HZ = "X.";
 
 -- Config constants
-REACTION_TIME_FRAMES = 12
-INPUT_TIMELINE = TIMELINE_12_HZ;
+REACTION_TIME_FRAMES = 15
+INPUT_TIMELINE = TIMELINE_13_HZ;
 SHOULD_RECORD_GAMES = true
 MOVIE_PATH = "C:\\Users\\Greg\\Desktop\\VODs\\" -- Where to store the fm2 VODS (absolute path)
 
@@ -165,6 +165,7 @@ end
 
 
 function makeHttpRequest(requestUrl)
+  print(requestUrl)
   -- Helper function to compile the body of the web response
   local data = ""
   local function collect(chunk)
@@ -252,7 +253,7 @@ function executeInputs()
     -- local stuckAgainstWall = shiftsExecuted == -5 or shiftsExecuted == 4 -- Can't rotate due to NES's lack of kick functionality
     local stuckAgainstWall = false;
 
-    print(emu.framecount() .. "   " .. arrFrameIndex .. "   " .. tostring(isInputFrame(arrFrameIndex)))
+    -- print(emu.framecount() .. "   " .. arrFrameIndex .. "   " .. tostring(isInputFrame(arrFrameIndex)))
     if isInputFrame(arrFrameIndex) then
       local function execute(inputName)
         inputsThisFrame[inputName] = true

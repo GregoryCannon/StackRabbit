@@ -96,9 +96,10 @@ function countCol10Holes(board) {
 }
 
 /** Calculates the number of lines that need to be cleared for all the holes to be resolved. */
-function getRowsNeedingToBurn(board, maxDirtyTetrisHeight): Set<number> {
+function getRowsNeedingToBurn(board, maxDirtyTetrisHeight, aiMode): Set<number> {
   const linesNeededToClear: Set<number> = new Set();
-  for (let col = 0; col < NUM_COLUMN; col++) {
+  const rightColBoundary = aiMode === AiMode.DIG ? NUM_COLUMN - 1 : NUM_COLUMN - 2;
+  for (let col = 0; col < rightColBoundary; col++) {
     // Go down to the top of the stack in that column
     let row = 0;
     while (row < NUM_ROW && board[row][col] == SquareState.EMPTY) {
@@ -218,6 +219,14 @@ function isTetrisReadyRightWell(board) {
   return true;
 }
 
+function getSurfaceValue(surfaceArray: Array<number>, nextPieceId: PieceId) {
+  let rawValue = rankLookup.getValueOfBoardSurface(surfaceArray, nextPieceId);
+  const A = 150;
+  const B = A / 30;
+  // console.log(surfaceArray, nextPieceId, rawValue);
+  return rawValue + B - A / Math.max(1, rawValue);
+}
+
 export function getLineClearValue(numLinesCleared, aiParams) {
   return numLinesCleared == 4
     ? aiParams.TETRIS_BONUS
@@ -261,18 +270,13 @@ export function rateSurface(surfaceArray): string {
     correctedSurface,
     null
   );
-  let result =
-    "No next box: " +
-    (aiParams.SURFACE_COEF * surfaceFactorNoNextBox).toFixed(2);
+  let result = "No next box: " + surfaceFactorNoNextBox.toFixed(2);
   for (const pieceId of utils.POSSIBLE_NEXT_PIECES) {
     result +=
       "\n" +
       pieceId +
       ": " +
-      (
-        aiParams.SURFACE_COEF *
-        rankLookup.getValueOfBoardSurface(correctedSurface, pieceId)
-      ).toFixed(2);
+      rankLookup.getValueOfBoardSurface(correctedSurface, pieceId).toFixed(2);
   }
   return result;
 }
@@ -314,12 +318,13 @@ export function fastEval(
 
   let extremeGapFactor = totalHeightCorrected * aiParams.EXTREME_GAP_COEF;
   let surfaceFactor =
-    aiParams.SURFACE_COEF *
-    rankLookup.getValueOfBoardSurface(correctedSurface, nextPieceId);
+    aiParams.SURFACE_COEF * getSurfaceValue(correctedSurface, nextPieceId);
   let killscreenSurfaceLeftFactor =
     aiParams.LEFT_SURFACE_COEF *
     getLeftSurfaceValue(boardAfter, aiParams, level);
   const holeFactor = adjustedNumHoles * aiParams.HOLE_COEF;
+  const estimatedHoleWeightBurnFactor =
+    adjustedNumHoles * (aiParams.BURN_COEF * 3);
   const lineClearFactor = getLineClearValue(numLinesCleared, aiParams);
   const spireHeightFactor =
     aiParams.SPIRE_HEIGHT_COEF *
@@ -335,6 +340,7 @@ export function fastEval(
     killscreenSurfaceLeftFactor,
     extremeGapFactor,
     holeFactor,
+    estimatedHoleWeightBurnFactor,
     lineClearFactor,
     spireHeightFactor,
     avgHeightFactor,
@@ -400,7 +406,8 @@ export function getValueOfPossibility(
   const tetrisReady = isTetrisReadyRightWell(boardAfter);
   const rowsNeedingToBurn = getRowsNeedingToBurn(
     boardAfter,
-    aiParams.MAX_DIRTY_TETRIS_HEIGHT * scareHeight
+    aiParams.MAX_DIRTY_TETRIS_HEIGHT * scareHeight,
+    aiMode
   );
 
   const leftIsInaccessible = boardHelper.boardHasInaccessibileLeft(
@@ -417,8 +424,7 @@ export function getValueOfPossibility(
 
   let extremeGapFactor = totalHeightCorrected * aiParams.EXTREME_GAP_COEF;
   let surfaceFactor =
-    aiParams.SURFACE_COEF *
-    rankLookup.getValueOfBoardSurface(correctedSurface, nextPieceId);
+    aiParams.SURFACE_COEF * getSurfaceValue(correctedSurface, nextPieceId);
   let killscreenSurfaceLeftFactor =
     aiParams.LEFT_SURFACE_COEF *
     getLeftSurfaceValue(boardAfter, aiParams, level);

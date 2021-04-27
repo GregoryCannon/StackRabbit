@@ -56,16 +56,17 @@ function lookUpRankInString(lookupStr, index) {
 
 function getValueOfBoardSurfaceNoNextBox(surfaceArray) {
   const index = surfaceHeightsToNoNBIndex(surfaceArray);
-  const rangeAdjustmentFactor = 3.6; // Scale up values to be comparable to NB ranks
-  return 3.6 * lookUpRankInString(ranks_NoNextBox_NoBars, index); //
+  return lookUpRankInString(ranks_NoNextBox_NoBars, index) - 1; // All ranks get 1 by default, so cancel that out
 }
 
 function getValueOfBoardSurfaceWithNextBox(surfaceArray, nextPieceId) {
   const index = surfaceHeightsToNBIndex(surfaceArray, nextPieceId);
-  if (index < CUTOFF) {
-    return lookUpRankInString(ranks_NextBox_NoBars_1, index);
-  }
-  return lookUpRankInString(ranks_NextBox_NoBars_2, index - CUTOFF);
+  let rank =
+    index < CUTOFF
+      ? lookUpRankInString(ranks_NextBox_NoBars_1, index)
+      : lookUpRankInString(ranks_NextBox_NoBars_2, index - CUTOFF);
+  // Transform rank to make it comparable to NNB ranks
+  return (rank - 1) / 2.95;
 }
 
 function getValueOfBoardSurface(surfaceArray, nextPieceId) {

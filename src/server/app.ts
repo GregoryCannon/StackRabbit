@@ -67,6 +67,9 @@ function parseArguments(requestArgs): [SearchState, Array<number>] {
       throw new Error("Invalid input frame timeline: " + inputFrameTimeline);
     }
   }
+  if (nextPieceId === "NULL"){
+    nextPieceId = null;
+  }
 
   // Decode the board
   const board = boardStr
