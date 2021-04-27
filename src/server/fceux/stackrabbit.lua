@@ -11,8 +11,8 @@ TIMELINE_20_HZ = "X..";
 TIMELINE_30_HZ = "X.";
 
 -- Config constants
-REACTION_TIME_FRAMES = 5
-INPUT_TIMELINE = TIMELINE_30_HZ;
+REACTION_TIME_FRAMES = 12
+INPUT_TIMELINE = TIMELINE_12_HZ;
 SHOULD_RECORD_GAMES = true
 MOVIE_PATH = "C:\\Users\\Greg\\Desktop\\VODs\\" -- Where to store the fm2 VODS (absolute path)
 
@@ -29,6 +29,7 @@ pnext = 0
 function resetPieceScopedVars()
   adjustmentApiResult = nil
   frameIndex = 0
+  arrFrameIndex = 0
   pendingInputs = { left=0, right=0, A=0, B=0 }
   shiftsExecuted = 0
   rotationsExecuted = 0
@@ -89,12 +90,12 @@ end
 
 -- Based on the current placement, predict exactly where the piece will be when it's time to adjust it
 function predictPieceOffsetAtAdjustmentTime()
-  local shiftsCompletedByAdjTime = 0
+  local inputsPossibleByAdjTime = 0
   offsetXAtAdjustmentTime = 0
   offsetYAtAdjustmentTime = 0
   for i = 0, REACTION_TIME_FRAMES-1 do
     if (isInputFrame(i)) then
-      shiftsCompletedByAdjTime = shiftsCompletedByAdjTime + 1
+      inputsPossibleByAdjTime = inputsPossibleByAdjTime + 1
     end
   end
 
@@ -103,18 +104,24 @@ function predictPieceOffsetAtAdjustmentTime()
   -- Calculate how many of the pending shifts it will have completed by that point
   offsetXAtAdjustmentTime = 0
   if pendingInputs.left > 0 then
-    offsetXAtAdjustmentTime = -1 * math.min(shiftsCompletedByAdjTime, pendingInputs.left)
+    offsetXAtAdjustmentTime = -1 * math.min(inputsPossibleByAdjTime, pendingInputs.left)
   elseif pendingInputs.right > 0 then
-    offsetXAtAdjustmentTime = math.min(shiftsCompletedByAdjTime, pendingInputs.right)
+    offsetXAtAdjustmentTime = math.min(inputsPossibleByAdjTime, pendingInputs.right)
   end
 
   -- Calculate how many of the pending rotations it will have completed by that point
   rotationAtAdjustmentTime = 0
-  if pendingInputs.B == 1 and shiftsCompletedByAdjTime >= 1 then
+  if pendingInputs.B == 1 and inputsPossibleByAdjTime >= 1 then
     rotationAtAdjustmentTime = 3
   elseif pendingInputs.A > 0 then
-    rotationAtAdjustmentTime = math.min(shiftsCompletedByAdjTime, pendingInputs.A)
+    rotationAtAdjustmentTime = math.min(inputsPossibleByAdjTime, pendingInputs.A)
   end
+
+  -- Calculate if it can first-frame shift at adjustment time
+  local rotationsNeeded = math.max(pendingInputs.A, pendingInputs.B)
+  local shiftsNeeded = math.max(pendingInputs.left, pendingInputs.right)
+  local inputsNeeded = math.max(rotationsNeeded, shiftsNeeded)
+  canFirstFrameShiftAtAdjustmentTime = inputsNeeded < inputsPossibleByAdjTime
 end
 
 
@@ -128,7 +135,7 @@ function requestPlacementAsync()
   local requestStr = "http://localhost:3000/async-nb/" .. getEncodedBoard()
   requestStr = requestStr .. "/" .. orientToPiece[pcur] .. "/" .. orientToPiece[pnext] .. "/" .. level .. "/" .. numLines
   requestStr = requestStr .. "/" .. offsetXAtAdjustmentTime .. "/" .. offsetYAtAdjustmentTime .. "/" .. rotationAtAdjustmentTime
-  requestStr = requestStr .. "/" .. REACTION_TIME_FRAMES .. "/" .. INPUT_TIMELINE .. "/true"
+  requestStr = requestStr .. "/" .. REACTION_TIME_FRAMES .. "/" .. INPUT_TIMELINE .. "/" .. tostring(canFirstFrameShiftAtAdjustmentTime)
 
   waitingOnAsyncRequest = true
   return makeHttpRequest(requestStr).data
@@ -191,7 +198,7 @@ end
 ---------- Handling Input -------------- 
 ------------------------------------]]--
 
-function calculateInputs(apiResult)
+function calculateInputs(apiResult, isAdjustment)
   if apiResult == "No legal moves" then
     return
   end
@@ -217,6 +224,11 @@ function calculateInputs(apiResult)
     pendingInputs.A = numRightRotations
   end
 
+  -- Reset ARR counter if is an adjustment and can first-frame shift
+  if isAdjustment and canFirstFrameShiftAtAdjustmentTime then
+    arrFrameIndex = 0
+  end
+
   print(pendingInputs)
 end
 
@@ -233,15 +245,15 @@ function executeInputs()
       if shiftsExecuted ~= offsetXAtAdjustmentTime then
         print("Actual X offset: " .. shiftsExecuted .. " predicted: " .. offsetXAtAdjustmentTime .. " Diff: " .. offsetXAtAdjustmentTime - shiftsExecuted)
       end
-      calculateInputs(adjustmentApiResult)
+      calculateInputs(adjustmentApiResult, true)
     end
 
     local inputsThisFrame = {A=false, B=false, left=false, right=false, up=false, down=false, select=false, start=false}
     -- local stuckAgainstWall = shiftsExecuted == -5 or shiftsExecuted == 4 -- Can't rotate due to NES's lack of kick functionality
     local stuckAgainstWall = false;
 
-    -- print(emu.framecount() .. "   " .. frameIndex .. "   " .. tostring(isInputFrame(frameIndex)))
-    if isInputFrame(frameIndex) then
+    print(emu.framecount() .. "   " .. arrFrameIndex .. "   " .. tostring(isInputFrame(arrFrameIndex)))
+    if isInputFrame(arrFrameIndex) then
       local function execute(inputName)
         inputsThisFrame[inputName] = true
         pendingInputs[inputName] = pendingInputs[inputName] - 1  -- Imagine having a decrement operator in your language
@@ -328,6 +340,7 @@ function runGameFrame()
     -- Execute input sequence
     executeInputs()
     frameIndex = frameIndex + 1
+    arrFrameIndex = arrFrameIndex + 1
 
   -- Do stuff right when the piece locks. If you want to check that the piece went to the correct spot/send an API request early here is probably good.
   elseif(memory.readbyte(0x0048) == 2 and playstate == 1) then     
@@ -364,7 +377,7 @@ function onFirstFrameOfNewPiece()
       print("ERROR - backend not connected!")
     end
     print("Initial placement: " .. apiResult)
-    calculateInputs(apiResult)
+    calculateInputs(apiResult, false)
   end
 end
 

@@ -79,7 +79,7 @@ export const DEFAULT_PARAM_MODS = {
 export const DEFAULT_PARAMS: InitialAiParams = {
   AVG_HEIGHT_EXPONENT: 1.56000000000004,
   AVG_HEIGHT_COEF: -5.50624,
-  SCARE_HEIGHT_OFFSET: -3,
+  SCARE_HEIGHT_OFFSET: -4,
   BURN_COEF: -3,
   COL_10_COEF: -2, // changed due to feature changing
   COL_10_HEIGHT_MULTIPLIER_EXP: 3,
