@@ -15,12 +15,14 @@ interface SimParams {
   rotationsList: Array<PieceArray>;
   existingRotation: number;
   inputFrameTimeline: string;
+  canFirstFrameShift: boolean;
 }
 
 interface SimState {
   x: number;
   y: number;
   frameIndex: number;
+  arrFrameIndex: number; // Sometimes differs from overall frame index (during adjustments)
   rotationIndex: number;
 }
 
@@ -63,7 +65,7 @@ interface SearchState {
   existingXOffset: number;
   existingYOffset: number;
   existingRotation: number;
-  isAdjustment: boolean;
+  canFirstFrameShift: boolean;
 }
 
 const enum AiMode {

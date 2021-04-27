@@ -129,7 +129,7 @@ export function getPossibleMoves(
   framesAlreadyElapsed: number,
   inputFrameTimeline: string,
   existingRotation: number,
-  isAdjustment: boolean,
+  canFirstFrameShift: boolean,
   shouldLog: boolean
 ) {
   _validateIntParam(level, 0, 999);
@@ -152,6 +152,7 @@ export function getPossibleMoves(
     inputFrameTimeline,
     rotationsList,
     existingRotation,
+    canFirstFrameShift
   };
 
   const { rangesLeft, rangesRight } = getPieceRanges(currentPieceId, simParams);
@@ -346,7 +347,8 @@ export function canDoPlacement(
     gravity,
     rotationsList,
     existingRotation: 0,
-    inputFrameTimeline: inputFrameTimeline,
+    inputFrameTimeline,
+    canFirstFrameShift: false // This function refers to doing a placement from the start, not starting from an adjustment or anything
   };
   return placementIsLegal(rotationIndex, xOffset, simParams);
 }
@@ -448,6 +450,7 @@ function placementIsLegal(
     rotationsList,
     existingRotation,
     inputFrameTimeline,
+    canFirstFrameShift
   } = simulationParams;
 
   // Get initial sim state
@@ -456,6 +459,7 @@ function placementIsLegal(
     x: initialX,
     y: initialY,
     frameIndex: framesAlreadyElapsed,
+    arrFrameIndex: canFirstFrameShift ? 0 : framesAlreadyElapsed,
     rotationIndex: existingRotation,
   };
 
@@ -479,7 +483,7 @@ function placementIsLegal(
     // We simulate shifts and rotations on the ARR triggers, just like the Lua script does
     const isInputFrame = utils.shouldPerformInputsThisFrame(
       inputFrameTimeline,
-      simState.frameIndex
+      simState.arrFrameIndex
     );
     const isGravityFrame = simState.frameIndex % gravity === gravity - 1; // Returns true every Nth frame, where N = gravity
 
@@ -548,6 +552,7 @@ function placementIsLegal(
       );
     }
     simState.frameIndex += 1;
+    simState.arrFrameIndex += 1;
   }
   return true;
 }
@@ -647,6 +652,7 @@ function repeatedlyShiftPiece(
     gravity,
     rotationsList,
     existingRotation,
+    canFirstFrameShift,
   } = simulationParams;
 
   // Get initial sim state
@@ -654,6 +660,7 @@ function repeatedlyShiftPiece(
     x: initialX,
     y: initialY,
     frameIndex: framesAlreadyElapsed,
+    arrFrameIndex: canFirstFrameShift ? 0 : framesAlreadyElapsed,
     rotationIndex: existingRotation,
   };
   let rangeCurrent = 0;
@@ -675,7 +682,7 @@ function repeatedlyShiftPiece(
     // We simulate shifts and rotations on the ARR triggers, just like the Lua script does
     const isInputFrame = utils.shouldPerformInputsThisFrame(
       inputFrameTimeline,
-      simState.frameIndex
+      simState.arrFrameIndex
     );
     const isGravityFrame = simState.frameIndex % gravity === gravity - 1; // Returns true every Nth frame, where N = gravity
 
@@ -738,6 +745,7 @@ function repeatedlyShiftPiece(
     // );
 
     simState.frameIndex += 1;
+    simState.arrFrameIndex += 1;
   }
 }
 
@@ -912,6 +920,7 @@ function lastMinuteRotationsTest() {
       inputFrameTimeline: "X...",
       rotationsList: PIECE_LOOKUP["J"][0],
       existingRotation: 0,
+      canFirstFrameShift: false
     }) !== expected1
   ) {
     console.log(`Failed: double rotate J 14 high 29. Expected ${expected1}`);
@@ -928,6 +937,7 @@ function lastMinuteRotationsTest() {
       inputFrameTimeline: "X...",
       rotationsList: PIECE_LOOKUP["J"][0],
       existingRotation: 0,
+      canFirstFrameShift: false
     }) !== expected2
   ) {
     console.log(`Failed: double rotate J 15 high 29. Expected ${expected2}`);

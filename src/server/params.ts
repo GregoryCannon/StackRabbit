@@ -130,7 +130,7 @@ const DROUGHT_CODE_PARAMS = applyModsToParams(
 export function getParams(): InitialAiParams {
   // Uncomment when using the AI to practice digging
   // return V5_NO_DIRTIES;
-  return DEFAULT_PARAMS;
+  return AGGRO_PARAMS;
 }
 
 const V3_CUSTOM = {

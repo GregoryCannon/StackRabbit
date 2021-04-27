@@ -30,7 +30,7 @@ function parseArguments(requestArgs): [SearchState, Array<number>] {
     existingRotation,
     framesAlreadyElapsed,
     inputFrameTimeline,
-    isAdjustment
+    canFirstFrameShift
   ] = requestArgs;
   level = parseInt(level);
   lines = parseInt(lines);
@@ -38,7 +38,7 @@ function parseArguments(requestArgs): [SearchState, Array<number>] {
   existingYOffset = parseInt(existingYOffset) || 0;
   framesAlreadyElapsed = parseInt(framesAlreadyElapsed) || 0;
   existingRotation = parseInt(existingRotation) || 0;
-  isAdjustment = isAdjustment.toLowerCase() === "true"
+  canFirstFrameShift = canFirstFrameShift.toLowerCase() === "true"
 
   // Validate pieces
   currentPieceId = currentPieceId.toUpperCase();
@@ -84,7 +84,7 @@ function parseArguments(requestArgs): [SearchState, Array<number>] {
       existingYOffset,
       existingRotation,
       framesAlreadyElapsed,
-      isAdjustment
+      canFirstFrameShift
     },
     inputFrameTimeline,
   ];

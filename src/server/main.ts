@@ -214,7 +214,7 @@ function searchDepth1(
     searchState.framesAlreadyElapsed,
     aiParams.INPUT_FRAME_TIMELINE,
     searchState.existingRotation,
-    searchState.isAdjustment,
+    searchState.canFirstFrameShift,
     /* shouldLog= */ false && shouldLog
   );
 
@@ -402,7 +402,7 @@ function getSearchStateAfter(
     existingXOffset: 0,
     existingYOffset: 0,
     existingRotation: 0,
-    isAdjustment: false
+    canFirstFrameShift: false
   };
 }
 
