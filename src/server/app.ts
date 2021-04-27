@@ -1,4 +1,5 @@
-import { logBoard } from "./utils";
+import { rateSurface } from "./evaluator";
+import { getSurfaceArrayAndHoleCount, logBoard } from "./utils";
 
 const http = require("http");
 const hostname = "127.0.0.1";
@@ -30,7 +31,7 @@ function parseArguments(requestArgs): [SearchState, Array<number>] {
     existingRotation,
     framesAlreadyElapsed,
     inputFrameTimeline,
-    canFirstFrameShift
+    canFirstFrameShift,
   ] = requestArgs;
   level = parseInt(level);
   lines = parseInt(lines);
@@ -38,7 +39,7 @@ function parseArguments(requestArgs): [SearchState, Array<number>] {
   existingYOffset = parseInt(existingYOffset) || 0;
   framesAlreadyElapsed = parseInt(framesAlreadyElapsed) || 0;
   existingRotation = parseInt(existingRotation) || 0;
-  canFirstFrameShift = canFirstFrameShift.toLowerCase() === "true"
+  canFirstFrameShift = canFirstFrameShift.toLowerCase() === "true";
 
   // Validate pieces
   currentPieceId = currentPieceId.toUpperCase();
@@ -84,7 +85,7 @@ function parseArguments(requestArgs): [SearchState, Array<number>] {
       existingYOffset,
       existingRotation,
       framesAlreadyElapsed,
-      canFirstFrameShift
+      canFirstFrameShift,
     },
     inputFrameTimeline,
   ];
@@ -163,6 +164,18 @@ function handleRequestSyncWithNextBox(requestArgs) {
   return bestMove.placement[0] + "," + bestMove.placement[1];
 }
 
+function handleRankLookup(requestArgs: Array<string>) {
+  const [boardStr] = requestArgs;
+  // Decode the board
+  const board = boardStr
+    .match(/.{1,10}/g) // Select groups of 10 characters
+    .map((rowSerialized) => rowSerialized.split("").map((x) => parseInt(x)));
+  logBoard(board);
+  const surfaceArray = getSurfaceArrayAndHoleCount(board)[0];
+  console.log(surfaceArray);
+  return rateSurface(surfaceArray);
+}
+
 /**
  * Create HTTP server for the frontend to request
  */
@@ -192,6 +205,8 @@ const server = http.createServer((req, res) => {
       responseCode = 404; // Not found
       response = "No previous async request has been made";
     }
+  } else if (requestType === "lookup") {
+    response = handleRankLookup(requestArgs);
   } else if (requestType === "async-nb") {
     [response, responseCode] = handleRequestAsyncWithNextBox(requestArgs);
   } else if (requestType === "sync-nb") {

@@ -152,7 +152,7 @@ export function getPossibleMoves(
     inputFrameTimeline,
     rotationsList,
     existingRotation,
-    canFirstFrameShift
+    canFirstFrameShift,
   };
 
   const { rangesLeft, rangesRight } = getPieceRanges(currentPieceId, simParams);
@@ -348,7 +348,7 @@ export function canDoPlacement(
     rotationsList,
     existingRotation: 0,
     inputFrameTimeline,
-    canFirstFrameShift: false // This function refers to doing a placement from the start, not starting from an adjustment or anything
+    canFirstFrameShift: false, // This function refers to doing a placement from the start, not starting from an adjustment or anything
   };
   return placementIsLegal(rotationIndex, xOffset, simParams);
 }
@@ -450,7 +450,7 @@ function placementIsLegal(
     rotationsList,
     existingRotation,
     inputFrameTimeline,
-    canFirstFrameShift
+    canFirstFrameShift,
   } = simulationParams;
 
   // Get initial sim state
@@ -920,7 +920,7 @@ function lastMinuteRotationsTest() {
       inputFrameTimeline: "X...",
       rotationsList: PIECE_LOOKUP["J"][0],
       existingRotation: 0,
-      canFirstFrameShift: false
+      canFirstFrameShift: false,
     }) !== expected1
   ) {
     console.log(`Failed: double rotate J 14 high 29. Expected ${expected1}`);
@@ -937,7 +937,7 @@ function lastMinuteRotationsTest() {
       inputFrameTimeline: "X...",
       rotationsList: PIECE_LOOKUP["J"][0],
       existingRotation: 0,
-      canFirstFrameShift: false
+      canFirstFrameShift: false,
     }) !== expected2
   ) {
     console.log(`Failed: double rotate J 15 high 29. Expected ${expected2}`);

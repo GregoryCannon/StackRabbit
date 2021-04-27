@@ -41,6 +41,7 @@ BoardEditManager.prototype.toggleCell = function (r, c) {
       : SquareState.EMPTY;
   this.canvas.drawBoard();
   this.canvas.drawCurrentPiece();
+  logRank(this.board);
 };
 
 BoardEditManager.prototype.onMouseDown = function (event) {
@@ -70,4 +71,13 @@ BoardEditManager.prototype.onMouseDrag = function (event) {
 BoardEditManager.prototype.onMouseUp = function (event) {
   this.mouseIsDown = false;
   this.squaresToggled = new Set();
+};
+
+const logRank = async function (board) {
+  const encodedBoard = board
+    .map((row) => row.slice(0, 10).join(""))
+    .join("")
+    .replace(/2|3/g, "1");
+  const result = await fetch(`http://127.0.0.1:3000/lookup/${encodedBoard}`);
+  console.log(await result.text());
 };

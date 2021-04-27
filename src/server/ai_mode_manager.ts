@@ -4,20 +4,20 @@ const NUM_ROW = utils.NUM_ROW;
 const NUM_COLUMN = utils.NUM_COLUMN;
 
 export function getAiMode(board, lines, level, aiParams) {
-  if (level >= 29 && aiParams.MAX_5_TAP_LOOKUP[level] <= 4){
-    return AiMode.KILLSCREEN
+  if (level >= 29 && aiParams.MAX_5_TAP_LOOKUP[level] <= 4) {
+    return AiMode.KILLSCREEN;
   }
   if (shouldUseDigMode(board, level, aiParams)) {
     return AiMode.DIG;
   }
-  if (level >= 29){
+  if (level >= 29) {
     // This is checked after dig mode so that right well killscreen AI can still dig
     return AiMode.KILLSCREEN_RIGHT_WELL;
   }
   if (lines >= 220 && level === 28) {
     return AiMode.NEAR_KILLSCREEN;
   }
-  
+
   return AiMode.STANDARD;
 }
 

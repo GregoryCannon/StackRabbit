@@ -1,6 +1,7 @@
 const rankLookup = require("./rank-lookup");
 const killscreenRanks = require("../../docs/killscreen_ranks");
 import * as boardHelper from "./board_helper";
+import { getParams } from "./params";
 import * as utils from "./utils";
 const SquareState = utils.SquareState;
 const NUM_ROW = utils.NUM_ROW;
@@ -248,6 +249,32 @@ function getBuiltOutRightFactor(boardAfter, scareHeight) {
     NUM_COLUMN - 1
   );
   return Math.max(0, col10Height - scareHeight);
+}
+
+export function rateSurface(surfaceArray): string {
+  // Correct the inputs for certain conditions
+  const aiParams = getParams();
+  let [correctedSurface, _] = utils.correctSurfaceForExtremeGaps(
+    surfaceArray.slice(0, 9)
+  );
+  let surfaceFactorNoNextBox = rankLookup.getValueOfBoardSurface(
+    correctedSurface,
+    null
+  );
+  let result =
+    "No next box: " +
+    (aiParams.SURFACE_COEF * surfaceFactorNoNextBox).toFixed(2);
+  for (const pieceId of utils.POSSIBLE_NEXT_PIECES) {
+    result +=
+      "\n" +
+      pieceId +
+      ": " +
+      (
+        aiParams.SURFACE_COEF *
+        rankLookup.getValueOfBoardSurface(correctedSurface, pieceId)
+      ).toFixed(2);
+  }
+  return result;
 }
 
 /** An evaluation function that only includes the factors that are super fast to calculate */

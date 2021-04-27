@@ -69,6 +69,9 @@ function getValueOfBoardSurfaceWithNextBox(surfaceArray, nextPieceId) {
 }
 
 function getValueOfBoardSurface(surfaceArray, nextPieceId) {
+  if (surfaceArray.length == 10) {
+    throw new Error("Expected surface of length 9");
+  }
   return nextPieceId == null
     ? getValueOfBoardSurfaceNoNextBox(surfaceArray)
     : getValueOfBoardSurfaceWithNextBox(surfaceArray, nextPieceId);

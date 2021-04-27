@@ -402,7 +402,7 @@ function getSearchStateAfter(
     existingXOffset: 0,
     existingYOffset: 0,
     existingRotation: 0,
-    canFirstFrameShift: false
+    canFirstFrameShift: false,
   };
 }
 
