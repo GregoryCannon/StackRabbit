@@ -118,7 +118,7 @@ export const V5_NO_DIRTIES = applyModsToParams(
 );
 
 const AGGRO_MODIFICATIONS = {
-  BURN_COEF: -10,
+  BURN_COEF: -14,
   UNABLE_TO_BURN_COEF: -0.3,
 };
 const AGGRO_PARAMS = applyModsToParams(DEFAULT_PARAMS, AGGRO_MODIFICATIONS);
@@ -146,6 +146,61 @@ const V3_CUSTOM = {
   KILLSCREEN: DEFAULT_PARAM_MODS.KILLSCREEN,
   KILLSCREEN_RIGHT_WELL: DEFAULT_PARAM_MODS.NEAR_KILLSCREEN,
 };
+
+
+export const TRAINED_A0: InitialAiParams = {
+  BURN_COEF: -5,
+  SURFACE_COEF: 1,
+  AVG_HEIGHT_EXPONENT: 1.36000000000004,
+  AVG_HEIGHT_COEF: -4.50624,
+  SCARE_HEIGHT_OFFSET: -3,
+  HOLE_COEF: -30,
+  COL_10_COEF: -2, // changed due to feature changing
+  COL_10_HEIGHT_MULTIPLIER_EXP: 3,
+  MAX_DIRTY_TETRIS_HEIGHT: 0.15, // (As a multiple of the scare height) Added manually since didn't exist at time of training
+  EXTREME_GAP_COEF: -3,
+  BUILT_OUT_LEFT_COEF: 1.5, // changed due to feature changing
+  BUILT_OUT_RIGHT_COEF: 0, // Added manually since didn't exist at time of training
+  HOLE_WEIGHT_COEF: 0,
+  SPIRE_HEIGHT_EXPONENT: 1.215999999999999, // changed due to feature changing
+  SPIRE_HEIGHT_COEF: -1.1556000000000002, // changed due to feature changing
+  UNABLE_TO_BURN_COEF: -1, // changed due to feature changing
+  HIGH_COL_9_COEF: -1.5,
+  HIGH_COL_9_EXP: 2,
+  LEFT_SURFACE_COEF: 0,
+  TETRIS_BONUS: 28.248,
+  TETRIS_READY_BONUS: 5.909760000000001,
+  INACCESSIBLE_LEFT_COEF: -30, // Added manually since didn't exist at time of training
+  INACCESSIBLE_RIGHT_COEF: -100, // Added manually since didn't exist at time of training
+};
+
+const TRAINED_A1: InitialAiParams = {
+  AVG_HEIGHT_EXPONENT: 1.4960000000000442,
+  AVG_HEIGHT_COEF: -2.25312,
+  SCARE_HEIGHT_OFFSET: -2.7,
+  BURN_COEF: -5,
+  COL_10_COEF: -1.8,
+  COL_10_HEIGHT_MULTIPLIER_EXP: 1.5,
+  MAX_DIRTY_TETRIS_HEIGHT: 0.22499999999999998,
+  EXTREME_GAP_COEF: -1.5,
+  BUILT_OUT_LEFT_COEF: 2.25,
+  BUILT_OUT_RIGHT_COEF: 0,
+  HOLE_COEF: -33,
+  HOLE_WEIGHT_COEF: 0,
+  SPIRE_HEIGHT_EXPONENT: 1.337599999999999,
+  SPIRE_HEIGHT_COEF: -1.0400400000000003,
+  UNABLE_TO_BURN_COEF: -0.9,
+  HIGH_COL_9_COEF: -1.5,
+  HIGH_COL_9_EXP: 2,
+  SURFACE_COEF: 1.1,
+  LEFT_SURFACE_COEF: 0,
+  TETRIS_BONUS: 25.4232,
+  TETRIS_READY_BONUS: 5.318784000000001,
+  INACCESSIBLE_LEFT_COEF: -33,
+  INACCESSIBLE_RIGHT_COEF: -150
+}
+
+
 
 export function getParamMods(): ParamMods {
   return V3_CUSTOM;

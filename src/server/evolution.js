@@ -3,22 +3,22 @@
  */
 
 const liteGameSimulator = require("./lite_game_simulator");
-const { getParams } = require("./params");
+const { getParams, getParamMods } = require("./params");
 
 // Hyperparameters
-const DELTA = 0.07; // Small step used to calculate slope (Represents a % of the existing number)
-const STEP_SIZE = 1; // Size of step taken after determining the slope (As a multiple of delta)
-const NUM_ITERATIONS = 20;
+const DELTA = 0.1; // Small step used to calculate slope (Represents a % of the existing number)
+// const STEP_SIZE = 1; // Size of step taken after determining the slope (As a multiple of delta)
+// const NUM_ITERATIONS = 20;
 const GAMES_PER_TEST = 100;
 
 let startParams = getParams();
-const KEY_LIST = Object.keys(startParams).sort();
+const KEY_LIST = Object.keys(startParams);
 
 /**
  * Fitness function: the median score
  * @param {Array of [score, lines, level] subarrays} - simulationResult
  */
-function fitnessFunction(simulationResult) {
+function fitnessFunctionMedian(simulationResult) {
   console.log(simulationResult);
   const sortedScores = simulationResult
     .map(([score, lines, level]) => parseInt(score))
@@ -27,13 +27,26 @@ function fitnessFunction(simulationResult) {
 }
 
 /**
+ * Fitness function: the mean score
+ * @param {Array of [score, lines, level] subarrays} - simulationResult
+ */
+ function fitnessFunctionMean(simulationResult) {
+  console.log(simulationResult);
+  let total = 0;
+  for (const [score, lines, level] of simulationResult){
+    total += score;
+  }
+  return total / GAMES_PER_TEST;
+}
+
+/**
  * Runs a simulation suite on a theta value
  * @param {Array<number>} multiplierArray - scaling factors for the DEFAUL_PARAMS values
  */
 function testThetaValue(theta) {
   const modifiedParameters = getCustomParams(theta, startParams);
-  return fitnessFunction(
-    liteGameSimulator.simulateManyGames(GAMES_PER_TEST, 18, modifiedParameters)
+  return fitnessFunctionMean(
+    liteGameSimulator.simulateManyGames(GAMES_PER_TEST, 18, modifiedParameters, getParamMods())
   );
 }
 
@@ -75,11 +88,11 @@ function gridSearch() {
 
     // Small grid search
     for (const individualDelta of [
-      -2 * DELTA,
+      -5 * DELTA,
       -1 * DELTA,
       0,
       DELTA,
-      2 * DELTA,
+      5 * DELTA,
     ]) {
       const testTheta = JSON.parse(JSON.stringify(theta));
       testTheta[i] = 1 + individualDelta;
@@ -114,4 +127,4 @@ function gridSearch() {
   console.log("params:", getCustomParams(theta, startParams));
 }
 
-// gridSearch();
+gridSearch();

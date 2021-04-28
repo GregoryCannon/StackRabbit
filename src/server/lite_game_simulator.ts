@@ -1,3 +1,5 @@
+import { getBestMove } from "./main";
+
 const main = require("./main");
 const utils = require("./utils");
 const boardHelper = require("./board_helper");
@@ -10,6 +12,7 @@ const REWARDS = {
   3: 300,
   4: 1200,
 };
+const INPUT_SEQUENCE_12_HZ = "X...."; 
 const paramsManager = require("./params");
 export const DIG_LINE_CAP = 25;
 
@@ -33,6 +36,7 @@ export function simulateManyGames(
         getEmptyBoard(),
         aiParams,
         paramMods,
+        INPUT_SEQUENCE_12_HZ,
         /* predefinedPieceSequence= */ null,
         /* isDig= */ false,
         /* onPlacementCallback= */ null,
@@ -63,6 +67,7 @@ export function simulateDigPractice(
         utils.generateDigPracticeBoard(5, 6),
         aiParams,
         paramMods,
+        INPUT_SEQUENCE_12_HZ,
         /* predefinedPieceSequence= */ null,
         /* isDig= */ true,
         /* onPlacementCallback= */ null,
@@ -106,6 +111,7 @@ function simulateKillscreenTraining(numIterations) {
       getEmptyBoard(),
       paramsManager.getParams(),
       paramsManager.getParamMods(),
+      INPUT_SEQUENCE_12_HZ,
       /* presetSequence= */ null,
       /* isDig= */ false,
       afterPlacementCallback,
@@ -163,6 +169,7 @@ function simulateGame(
   startingBoard,
   aiParams,
   paramMods,
+  inputFrameTimeline: string,
   presetPieceSequence,
   isDig,
   afterPlacementCallback,
@@ -189,21 +196,23 @@ function simulateGame(
     // await sleep(1000);
 
     // Place one piece
-    const bestMove: Possibility = main.getBestMove(
+    const bestMove: Possibility = getBestMove(
       {
         board: board,
         currentPieceId,
         nextPieceId,
         level,
         lines,
+        framesAlreadyElapsed: 0,
+        canFirstFrameShift: false,
         existingXOffset: 0,
         existingYOffset: 0,
-        firstShiftDelay: 0,
         existingRotation: 0,
       },
       /* shouldLog= */ false,
       aiParams,
       paramMods,
+      inputFrameTimeline,
       /* searchDepth= */ 2,
       /* hypotheticalSearchDepth= */ 0
     );
@@ -329,6 +338,7 @@ function regressionTest() {
     getEmptyBoard(),
     paramsManager.getParams(),
     paramsManager.getParamMods(),
+    INPUT_SEQUENCE_12_HZ,
     regressionTestPieceSequence,
     /* isDig= */ false,
     null,
