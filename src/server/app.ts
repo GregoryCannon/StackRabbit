@@ -67,7 +67,7 @@ function parseArguments(requestArgs): [SearchState, Array<number>] {
       throw new Error("Invalid input frame timeline: " + inputFrameTimeline);
     }
   }
-  if (nextPieceId === "NULL"){
+  if (nextPieceId === "NULL") {
     nextPieceId = null;
   }
 

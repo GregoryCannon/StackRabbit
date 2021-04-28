@@ -2,6 +2,7 @@ local http = require("socket.http")
 local os = require("os")
 require "socket"
 
+TIMELINE_10_HZ = "X.....";
 TIMELINE_12_HZ = "X....";
 TIMELINE_13_HZ = "X....X...";
 TIMELINE_13_5_HZ = "X....X...X...";
@@ -12,7 +13,7 @@ TIMELINE_30_HZ = "X.";
 
 -- Config constants
 REACTION_TIME_FRAMES = 15
-INPUT_TIMELINE = TIMELINE_13_HZ;
+INPUT_TIMELINE = TIMELINE_12_HZ;
 SHOULD_RECORD_GAMES = true
 MOVIE_PATH = "C:\\Users\\Greg\\Desktop\\VODs\\" -- Where to store the fm2 VODS (absolute path)
 

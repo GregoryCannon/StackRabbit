@@ -20,7 +20,24 @@ function correctSurfaceForDoubleWell(
   ) {
     surfaceArray[8] = surfaceArray[7] - 1;
   }
+  // Otherwise for lower down double wells, pretend it's 2 lower than col 8 (not great but not disastrous like a bar dep)
+  else if (surfaceArray[8] + 2 < surfaceArray[7]) {
+    surfaceArray[8] = surfaceArray[7] - 2;
+  }
   return surfaceArray;
+}
+
+function getEarlyDoubleWellFactor(surfaceArray){
+  // If col8 is high, return the number of burns needed just to get tetris ready.
+  // Otherwise return the number of burns to match col8.
+  const col9 = surfaceArray[8];
+  const col8 = surfaceArray[7];
+  const rowsBelowTetrisReady = 4 - col9;
+  const rowsBelowCol8 = col8 - col9;
+  if (rowsBelowTetrisReady < 3 || rowsBelowCol8 === 3){
+    return 1;
+  }
+  return 2;
 }
 
 /** Get the rank of the left-3-column surface (killscreen-only) */
@@ -96,9 +113,14 @@ function countCol10Holes(board) {
 }
 
 /** Calculates the number of lines that need to be cleared for all the holes to be resolved. */
-function getRowsNeedingToBurn(board, maxDirtyTetrisHeight, aiMode): Set<number> {
+function getRowsNeedingToBurn(
+  board,
+  maxDirtyTetrisHeight,
+  aiMode
+): Set<number> {
   const linesNeededToClear: Set<number> = new Set();
-  const rightColBoundary = aiMode === AiMode.DIG ? NUM_COLUMN - 1 : NUM_COLUMN - 2;
+  const rightColBoundary =
+    aiMode === AiMode.DIG ? NUM_COLUMN - 1 : NUM_COLUMN - 2;
   for (let col = 0; col < rightColBoundary; col++) {
     // Go down to the top of the stack in that column
     let row = 0;
@@ -297,18 +319,26 @@ export function fastEval(
   }
 
   // Preliminary calculations
-  const [
+  let [
     correctedSurface,
     totalHeightCorrected,
   ] = utils.correctSurfaceForExtremeGaps(surfaceArray);
-  const adjustedNumHoles =
-    numHoles +
-    (aiMode === AiMode.KILLSCREEN && countCol10Holes(boardAfter) * 0.7);
   const levelAfterPlacement = utils.getLevelAfterLineClears(
     level,
     lines,
     numLinesCleared
   );
+  const maxSafeCol9Height = Math.max(
+    4,
+    aiParams.MAX_4_TAP_LOOKUP[levelAfterPlacement] - 5
+  );
+  correctedSurface = correctSurfaceForDoubleWell(
+    correctedSurface,
+    maxSafeCol9Height
+  );
+  const adjustedNumHoles =
+    numHoles +
+    (aiMode === AiMode.KILLSCREEN && countCol10Holes(boardAfter) * 0.7);
   const scareHeight = utils.getScareHeight(levelAfterPlacement, aiParams);
   const spireHeight = getSpireHeight(surfaceArray, scareHeight);
   const avgHeightAboveScareLine = getAverageHeightAboveScareLine(
@@ -388,6 +418,7 @@ export function getValueOfPossibility(
     4,
     aiParams.MAX_4_TAP_LOOKUP[levelAfterPlacement] - 5
   );
+  const estimatedBurnsDueToEarlyDoubleWell = getEarlyDoubleWellFactor(correctedSurface);
   correctedSurface = correctSurfaceForDoubleWell(
     correctedSurface,
     maxSafeCol9Height
@@ -423,6 +454,7 @@ export function getValueOfPossibility(
   );
 
   let extremeGapFactor = totalHeightCorrected * aiParams.EXTREME_GAP_COEF;
+  const earlyDoubleWellFactor = aiParams.BURN_COEF * estimatedBurnsDueToEarlyDoubleWell;
   let surfaceFactor =
     aiParams.SURFACE_COEF * getSurfaceValue(correctedSurface, nextPieceId);
   let killscreenSurfaceLeftFactor =
@@ -469,6 +501,7 @@ export function getValueOfPossibility(
     surfaceFactor,
     killscreenSurfaceLeftFactor,
     extremeGapFactor,
+    earlyDoubleWellFactor,
     holeFactor,
     holeWeightFactor,
     holeWeightBurnFactor,

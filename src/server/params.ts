@@ -15,7 +15,6 @@ export const EVALUATION_BREADTH = {
 
 function applyModsToParams(aiParams, modObject) {
   const modifiedParams = JSON.parse(JSON.stringify(aiParams));
-  console.log("DEBUG: BURN:", modObject.BURN_COEF);
   for (const key in modObject) {
     modifiedParams[key] = modObject[key];
   }
