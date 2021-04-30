@@ -6,13 +6,13 @@ const boardHelper = require("./board_helper");
 const NUM_ROW = utils.NUM_ROW;
 const NUM_COLUMN = utils.NUM_COLUMN;
 const SquareState = utils.SquareState;
-const REWARDS = {
+export const REWARDS = {
   1: 40,
   2: 100,
   3: 300,
   4: 1200,
 };
-const INPUT_SEQUENCE_12_HZ = "X...."; 
+const INPUT_SEQUENCE_12_HZ = "X....";
 const paramsManager = require("./params");
 export const DIG_LINE_CAP = 25;
 
@@ -213,7 +213,7 @@ function simulateGame(
       aiParams,
       paramMods,
       inputFrameTimeline,
-      /* searchDepth= */ 2,
+      /* searchDepth= */ 1,
       /* hypotheticalSearchDepth= */ 0
     );
 
@@ -270,7 +270,7 @@ function simulateGame(
  * area for filled blocks.
  * @param {Array<Array<number>>} board
  */
-function hasToppedOut(board) {
+export function hasToppedOut(board) {
   for (let row = 0; row < 1; row++) {
     for (let col = 3; col < 7; col++) {
       if (board[row][col]) {
@@ -281,7 +281,7 @@ function hasToppedOut(board) {
   return false;
 }
 
-function getEmptyBoard() {
+export function getEmptyBoard() {
   const board = []; // All board changes are in-place, so it is a const
   for (let r = 0; r < NUM_ROW; r++) {
     board[r] = [];
@@ -292,7 +292,7 @@ function getEmptyBoard() {
   return board;
 }
 
-function getPieceSequence() {
+export function getPieceSequence() {
   let sequence = [];
   for (let writeIndex = 0; writeIndex < 2000; writeIndex++) {
     const prevPieceId = writeIndex == 0 ? null : sequence[writeIndex - 1];
@@ -321,11 +321,13 @@ function runScoreExperiment(numTrials) {
     paramsManager.getParams(),
     paramsManager.getParamMods()
   );
-  const only1_3s = resultList.filter((x) => x[0] > 1300000);
+  const scores = resultList.map(x => x[0]);
+  const only1_3s = scores.filter((x) => x > 1300000);
   console.log(resultList);
-  console.log("1.3 count:", only1_3s.length);
-  console.log("\n1.3s:", only1_3s);
-  console.log("\nScores:\n" + resultList.map((x) => x[0]).join("\n"));
+  // console.log("1.3 count:", only1_3s.length);
+  // console.log("\n1.3s:", only1_3s);
+  console.log("Average: ", scores.reduce((a,b) => a+b) / scores.length);
+  // console.log("\nScores:\n" + resultList.map((x) => x[0]).join("\n"));
 }
 
 function regressionTest() {
@@ -352,11 +354,5 @@ if (typeof require !== "undefined" && require.main === module) {
   // regressionTest();
   // runScoreExperiment(100);
   // simulateKillscreenTraining(500);
-  runScoreExperiment(100);
+  runScoreExperiment(1000);
 }
-
-module.exports = {
-  simulateManyGames,
-  simulateDigPractice,
-  DIG_LINE_CAP,
-};

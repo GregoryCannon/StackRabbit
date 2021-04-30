@@ -13,7 +13,12 @@ const GAMES_PER_TEST = 100;
 
 let startParams = getParams();
 // const KEY_LIST = Object.keys(startParams);
-const KEY_LIST = ["BUILT_OUT_LEFT_COEF", "SURFACE_COEF", "AVG_HEIGHT_COEF", "SPIRE_HEIGHT_COEF"];
+const KEY_LIST = [
+  "BUILT_OUT_LEFT_COEF",
+  "SURFACE_COEF",
+  "AVG_HEIGHT_COEF",
+  "SPIRE_HEIGHT_COEF",
+];
 
 /**
  * Fitness function: the median score
@@ -31,10 +36,10 @@ function fitnessFunctionMedian(simulationResult) {
  * Fitness function: the mean score
  * @param {Array of [score, lines, level] subarrays} - simulationResult
  */
- function fitnessFunctionMean(simulationResult) {
+function fitnessFunctionMean(simulationResult) {
   console.log(simulationResult);
   let total = 0;
-  for (const [score, lines, level] of simulationResult){
+  for (const [score, lines, level] of simulationResult) {
     total += score;
   }
   return total / GAMES_PER_TEST;
@@ -47,7 +52,12 @@ function fitnessFunctionMedian(simulationResult) {
 function testThetaValue(theta) {
   const modifiedParameters = getCustomParams(theta, startParams);
   return fitnessFunctionMean(
-    liteGameSimulator.simulateManyGames(GAMES_PER_TEST, 18, modifiedParameters, getParamMods())
+    liteGameSimulator.simulateManyGames(
+      GAMES_PER_TEST,
+      18,
+      modifiedParameters,
+      getParamMods()
+    )
   );
 }
 
