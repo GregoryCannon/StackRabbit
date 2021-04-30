@@ -26,6 +26,18 @@ interface SimState {
   rotationIndex: number;
 }
 
+interface LiteGameState {
+  board: Board;
+  score: number;
+  lines: number;
+  level: number;
+  numHoles: number;
+  nextTransitionLineCount: number;
+  pieceSequence: Array<PieceId>;
+  pieceIndex: number;
+  gameOver: boolean;
+}
+
 interface Possibility {
   placement: Placement;
   surfaceArray: Array<number>;

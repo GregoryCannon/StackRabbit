@@ -27,14 +27,17 @@ function correctSurfaceForDoubleWell(
   return surfaceArray;
 }
 
-function getEarlyDoubleWellFactor(surfaceArray){
+function getEarlyDoubleWellFactor(surfaceArray) {
   // If col8 is high, return the number of burns needed just to get tetris ready.
   // Otherwise return the number of burns to match col8.
   const col9 = surfaceArray[8];
   const col8 = surfaceArray[7];
+  if (col9 + 2 >= col8){
+    return 0;
+  }
   const rowsBelowTetrisReady = 4 - col9;
   const rowsBelowCol8 = col8 - col9;
-  if (rowsBelowTetrisReady < 3 || rowsBelowCol8 === 3){
+  if (rowsBelowTetrisReady < 3 || rowsBelowCol8 === 3) {
     return 1;
   }
   return 2;
@@ -418,7 +421,9 @@ export function getValueOfPossibility(
     4,
     aiParams.MAX_4_TAP_LOOKUP[levelAfterPlacement] - 5
   );
-  const estimatedBurnsDueToEarlyDoubleWell = getEarlyDoubleWellFactor(correctedSurface);
+  const estimatedBurnsDueToEarlyDoubleWell = getEarlyDoubleWellFactor(
+    correctedSurface
+  );
   correctedSurface = correctSurfaceForDoubleWell(
     correctedSurface,
     maxSafeCol9Height
@@ -454,7 +459,8 @@ export function getValueOfPossibility(
   );
 
   let extremeGapFactor = totalHeightCorrected * aiParams.EXTREME_GAP_COEF;
-  const earlyDoubleWellFactor = aiParams.BURN_COEF * estimatedBurnsDueToEarlyDoubleWell;
+  const earlyDoubleWellFactor =
+    aiParams.BURN_COEF * estimatedBurnsDueToEarlyDoubleWell;
   let surfaceFactor =
     aiParams.SURFACE_COEF * getSurfaceValue(correctedSurface, nextPieceId);
   let killscreenSurfaceLeftFactor =
