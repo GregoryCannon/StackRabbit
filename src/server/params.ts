@@ -130,7 +130,7 @@ const DROUGHT_CODE_PARAMS = applyModsToParams(
 export function getParams(): InitialAiParams {
   // Uncomment when using the AI to practice digging
   // return V5_NO_DIRTIES;
-  return DEFAULT_PARAMS;
+  return TRAINED_A0;
 }
 
 const V3_CUSTOM = {
@@ -157,6 +157,8 @@ export const TRAINED_A0: InitialAiParams = {
   HOLE_COEF: -30,
   COL_10_COEF: -2, // changed due to feature changing
   COL_10_HEIGHT_MULTIPLIER_EXP: 3,
+  TETRIS_BONUS: 28.248,
+  TETRIS_READY_BONUS: 5.909760000000001,
   MAX_DIRTY_TETRIS_HEIGHT: 0.15, // (As a multiple of the scare height) Added manually since didn't exist at time of training
   EXTREME_GAP_COEF: -3,
   BUILT_OUT_LEFT_COEF: 1.5, // changed due to feature changing
@@ -168,8 +170,6 @@ export const TRAINED_A0: InitialAiParams = {
   HIGH_COL_9_COEF: -1.5,
   HIGH_COL_9_EXP: 2,
   LEFT_SURFACE_COEF: 0,
-  TETRIS_BONUS: 28.248,
-  TETRIS_READY_BONUS: 5.909760000000001,
   INACCESSIBLE_LEFT_COEF: -30, // Added manually since didn't exist at time of training
   INACCESSIBLE_RIGHT_COEF: -100, // Added manually since didn't exist at time of training
 };
@@ -200,7 +200,44 @@ const TRAINED_A1: InitialAiParams = {
   INACCESSIBLE_RIGHT_COEF: -150
 }
 
+/*
+[
+    1, 0.9, 0.9, 0.9, 1.1, 1.1,
+  0.5, 1.5, 1.1, 0.9, 0.9, 0.5,
+  0.5, 1.5,   1, 1.5, 1.1, 1.1,
+  1.1,   1,   1, 1.5, 0.5
+]
+*/
+const TRAINED_NNB_A1: InitialAiParams = {
+  BURN_COEF: -5,
+  SURFACE_COEF: 0.9,
+  AVG_HEIGHT_EXPONENT: 1.2240000000000362,
+  AVG_HEIGHT_COEF: -4.0556160000000006,
+  SCARE_HEIGHT_OFFSET: -3.3000000000000003,
+  HOLE_COEF: -33,
+  COL_10_COEF: -1,
+  COL_10_HEIGHT_MULTIPLIER_EXP: 4.5,
+  TETRIS_BONUS: 31.072800000000004,
+  TETRIS_READY_BONUS: 5.318784000000001,
+  MAX_DIRTY_TETRIS_HEIGHT: 0.135,
+  EXTREME_GAP_COEF: -1.5,
+  BUILT_OUT_LEFT_COEF: 0.75,
+  BUILT_OUT_RIGHT_COEF: 0,
+  HOLE_WEIGHT_COEF: 0,
+  SPIRE_HEIGHT_EXPONENT: 1.8239999999999985,
+  SPIRE_HEIGHT_COEF: -1.2711600000000003,
+  UNABLE_TO_BURN_COEF: -1.1,
+  HIGH_COL_9_COEF: -1.6500000000000001,
+  HIGH_COL_9_EXP: 2,
+  LEFT_SURFACE_COEF: 0,
+  INACCESSIBLE_LEFT_COEF: -45,
+  INACCESSIBLE_RIGHT_COEF: -50
+}
 
+/*
+BEST:
+[ 1, 0.5, 0.5, 1.5 ] fitness: 440707.76
+*/
 
 export function getParamMods(): ParamMods {
   return V3_CUSTOM;

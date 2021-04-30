@@ -1070,5 +1070,6 @@ function normalize(ranksObj){
 
 module.exports = {
   RANKS_12HZ_5K,
-  RANKS_15HZ_2DELAY
+  RANKS_15HZ_2DELAY,
+  NORMALIZED_15HZ_0DELAY
 }

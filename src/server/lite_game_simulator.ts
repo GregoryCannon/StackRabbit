@@ -352,6 +352,7 @@ if (typeof require !== "undefined" && require.main === module) {
   // regressionTest();
   // runScoreExperiment(100);
   // simulateKillscreenTraining(500);
+  runScoreExperiment(100);
 }
 
 module.exports = {

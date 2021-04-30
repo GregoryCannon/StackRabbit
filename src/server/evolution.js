@@ -12,7 +12,8 @@ const DELTA = 0.1; // Small step used to calculate slope (Represents a % of the 
 const GAMES_PER_TEST = 100;
 
 let startParams = getParams();
-const KEY_LIST = Object.keys(startParams);
+// const KEY_LIST = Object.keys(startParams);
+const KEY_LIST = ["BUILT_OUT_LEFT_COEF", "SURFACE_COEF", "AVG_HEIGHT_COEF", "SPIRE_HEIGHT_COEF"];
 
 /**
  * Fitness function: the median score
@@ -51,7 +52,7 @@ function testThetaValue(theta) {
 }
 
 function getCustomParams(theta, existingParams) {
-  const modifiedParameters = {};
+  const modifiedParameters = JSON.parse(JSON.stringify(existingParams));
   for (const [index, key] of KEY_LIST.entries()) {
     modifiedParameters[key] = existingParams[key] * theta[index];
   }
@@ -120,6 +121,7 @@ function gridSearch() {
     theta = localMaxTheta;
     fitnessHistory.push(currentFitness);
     console.log(`Fitness history: ${fitnessHistory}`);
+    console.log("params:", getCustomParams(theta, startParams));
   }
 
   console.log("\n\n\n\n\nBEST:");
