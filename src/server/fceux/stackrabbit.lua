@@ -150,22 +150,6 @@ function predictPieceOffsetAtAdjustmentTime()
   rotationAtAdjustmentTime = (rotationAtAdjustmentTime + 4) % 4 -- Modulus -1 to 3, etc.
   offsetYAtAdjustmentTime = math.floor((REACTION_TIME_FRAMES) / getGravity(level))
 
-  -- -- Calculate how many of the pending shifts it will have completed by that point
-  -- offsetXAtAdjustmentTime = 0
-  -- if pendingInputs.left > 0 then
-  --   offsetXAtAdjustmentTime = -1 * math.min(inputsPossibleByAdjTime, pendingInputs.left)
-  -- elseif pendingInputs.right > 0 then
-  --   offsetXAtAdjustmentTime = math.min(inputsPossibleByAdjTime, pendingInputs.right)
-  -- end
-
-  -- -- Calculate how many of the pending rotations it will have completed by that point
-  -- rotationAtAdjustmentTime = 0
-  -- if pendingInputs.B == 1 and inputsPossibleByAdjTime >= 1 then
-  --   rotationAtAdjustmentTime = 3
-  -- elseif pendingInputs.A > 0 then
-  --   rotationAtAdjustmentTime = math.min(inputsPossibleByAdjTime, pendingInputs.A)
-  -- end
-
   -- Calculate if it can first-frame shift at adjustment time
   canFirstFrameShiftAtAdjustmentTime = inputsUsedByAdjTime < inputsPossibleByAdjTime
 end
@@ -258,25 +242,6 @@ function calculateInputs(apiResult, isAdjustment)
     inputSequence = ""
   end
 
-  -- -- Offset by the amount of any existing inputs
-  -- local numShifts = tonumber(split[2])
-  -- local numRightRotations = (tonumber(split[1]) - rotationsExecuted) % 4
-
-  -- pendingInputs = { left = 0, right = 0, A = 0, B = 0 }
-  -- -- Shifts
-  -- if numShifts < 0 then
-  --   pendingInputs.left = -1 * numShifts
-  -- elseif numShifts > 0 then
-  --   pendingInputs.right = numShifts
-  -- end
-
-  -- -- Rotations
-  -- if numRightRotations == 3 then
-  --   pendingInputs.B = 1
-  -- else
-  --   pendingInputs.A = numRightRotations
-  -- end
-
   -- Reset ARR counter if is an adjustment and can first-frame shift
   if isAdjustment then
     arrFrameIndex = 0
@@ -347,40 +312,10 @@ function executeInputs()
       shiftsExecuted = shiftsExecuted + 1
     end
 
-    -- -- print(emu.framecount() .. "   " .. arrFrameIndex .. "   " .. tostring(isInputFrame(arrFrameIndex)))
-    -- if isInputFrame(arrFrameIndex) then
-    --   local function execute(inputName)
-    --     inputsThisFrame[inputName] = true
-    --     pendingInputs[inputName] = pendingInputs[inputName] - 1  -- Imagine having a decrement operator in your language
-    --   end
-
-    --   -- Execute one rotation if any pending
-    --   if pendingInputs.A > 0 then
-    --     execute("A")
-    --     rotationsExecuted = (rotationsExecuted + 1) % 4
-    --   elseif pendingInputs.B > 0 then
-    --     execute("B")
-    --     rotationsExecuted = (rotationsExecuted - 1) % 4
-    --   end
-    --   -- Execute one shift if any pending
-    --   if pendingInputs.left > 0 then
-    --     execute("left")
-    --     shiftsExecuted = shiftsExecuted - 1
-    --   elseif pendingInputs.right > 0 then
-    --     execute("right")
-    --     shiftsExecuted = shiftsExecuted + 1
-    --   end
-    -- end
-
     -- Debug logs
     if inputsThisFrame.left or inputsThisFrame.right then
       print("SHIFT" .. emu.framecount())
-    else
-      -- print("..." .. emu.framecount())
     end
-    -- elseif pendingInputs.left > 0 or pendingInputs.right > 0 or pendingInputs.A > 0 or pendingInputs.B > 0 then
-    --   print("has pending inputs: " .. pendingInputs.left .. pendingInputs.right .. pendingInputs.B .. pendingInputs.A)
-    -- end
 
     -- Send our computed inputs to the controller
     joypad.set(1, inputsThisFrame)
