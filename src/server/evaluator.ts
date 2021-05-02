@@ -32,7 +32,7 @@ function getEarlyDoubleWellFactor(surfaceArray) {
   // Otherwise return the number of burns to match col8.
   const col9 = surfaceArray[8];
   const col8 = surfaceArray[7];
-  if (col9 + 2 >= col8){
+  if (col9 + 2 >= col8) {
     return 0;
   }
   const rowsBelowTetrisReady = 4 - col9;
@@ -156,7 +156,7 @@ function getColumn9Factor(
   surfaceArray: Array<number>,
   maxSafeCol9Height: number
 ) {
-  if (aiParams.HIGH_COL_9_COEF === 0) {
+  if (aiParams.HIGH_COL_9_COEF === 0 || surfaceArray[8] <= 4) {
     return 0;
   }
   const col9HeightAboveComfort = Math.max(

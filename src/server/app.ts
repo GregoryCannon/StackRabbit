@@ -119,6 +119,10 @@ function handleRequestAsyncWithNextBox(requestArgs): [string, number] {
   return ["Request accepted.", 200];
 }
 
+function formatResponse(possibility: Possibility){
+  return possibility.placement[0] + "," + possibility.placement[1] + "|" + possibility.inputSequence;
+}
+
 /**
  * Synchronously choose the best placement, with no next box and no search.
  * @returns {string} the API response
@@ -140,7 +144,7 @@ function handleRequestSyncNoNextBox(requestArgs) {
   if (!bestMove) {
     return "No legal moves";
   }
-  return bestMove.placement[0] + "," + bestMove.placement[1];
+  return formatResponse(bestMove);
 }
 
 /**
@@ -164,7 +168,7 @@ function handleRequestSyncWithNextBox(requestArgs) {
   if (!bestMove) {
     return "No legal moves";
   }
-  return bestMove.placement[0] + "," + bestMove.placement[1];
+  return formatResponse(bestMove);
 }
 
 function handleRankLookup(requestArgs: Array<string>) {

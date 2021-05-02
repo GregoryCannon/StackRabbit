@@ -40,6 +40,7 @@ interface LiteGameState {
 
 interface Possibility {
   placement: Placement;
+  inputSequence: string;
   surfaceArray: Array<number>;
   numHoles: number;
   numLinesCleared: number;

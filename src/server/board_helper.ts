@@ -194,6 +194,7 @@ export function getPossibleMoves(
     currentPieceId,
     initialX,
     initialY,
+    inputFrameTimeline,
     shouldLog
   );
 }
@@ -204,6 +205,7 @@ function _generatePossibilityList(
   currentPieceId: string,
   startingX: number,
   startingY: number,
+  inputFrameTime: string,
   shouldLog: boolean
 ): Array<Possibility> {
   const possibilityList = [];
@@ -238,6 +240,7 @@ function _generatePossibilityList(
     }
     possibilityList.push({
       placement: [rotationIndex, xOffset],
+      inputSequence: generateInputSequence(rotationIndex, xOffset, inputFrameTime),
       surfaceArray,
       numHoles,
       numLinesCleared,
@@ -251,6 +254,67 @@ function _generatePossibilityList(
     );
   }
   return possibilityList;
+}
+
+function generateInputSequence(rotationIndex, xOffset, inputFrameTimeline) {
+  let inputsLeft = xOffset < 0 && Math.abs(xOffset);
+  let inputsRight = xOffset > 0 && xOffset;
+  let rotationsLeft = rotationIndex === 3 && 1;
+  let rotationsRight = rotationIndex < 3 && rotationIndex;
+
+  if (inputsLeft > 0 && inputsRight > 0) {
+    throw new Error("Invalid shift parsing");
+  }
+  if (rotationsLeft > 0 && rotationsRight > 0) {
+    throw new Error("Invalid rotation parsing");
+  }
+
+  let inputSequence = "";
+  for (
+    let i = 0;
+    inputsLeft + inputsRight + rotationsLeft + rotationsRight > 0;
+    i++
+  ) {
+    if (utils.shouldPerformInputsThisFrame(inputFrameTimeline, i)) {
+      if (inputsLeft > 0) {
+        // Do a left shift, possibly with a rotation
+        if (rotationsRight > 0) {
+          inputSequence += "e";
+          rotationsRight--;
+        } else if (rotationsLeft > 0) {
+          inputSequence += "f";
+          rotationsLeft--;
+        } else {
+          inputSequence += "L";
+        }
+        inputsLeft--;
+      } else if (inputsRight > 0) {
+        // Do a right shift, possibly with a rotation
+        if (rotationsRight > 0) {
+          inputSequence += "i";
+          rotationsRight--;
+        } else if (rotationsLeft > 0) {
+          inputSequence += "g";
+          rotationsLeft--;
+        } else {
+          inputSequence += "R";
+        }
+        inputsRight--;
+      } else {
+        // Do a rotation
+        if (rotationsLeft > 0) {
+          inputSequence += "A";
+          rotationsLeft--;
+        } else {
+          inputSequence += "B";
+          rotationsRight--;
+        }
+      }
+    } else {
+      inputSequence += ".";
+    }
+  }
+  return inputSequence;
 }
 
 /**

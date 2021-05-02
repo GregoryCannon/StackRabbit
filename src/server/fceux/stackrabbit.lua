@@ -206,7 +206,7 @@ function calculateInputs(apiResult, isAdjustment)
   end
 
   -- Parse the shifts and rotations from the API result
-  local split = splitString(apiResult, ",")
+  local split = splitString(apiResult, ",|\\")
   -- Offset by the amount of any existing inputs
   local numShifts = tonumber(split[2])
   local numRightRotations = (tonumber(split[1]) - rotationsExecuted) % 4
