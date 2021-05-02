@@ -256,6 +256,18 @@ function _generatePossibilityList(
   return possibilityList;
 }
 
+/** Generates a string representing the inputs to perform, frame-by-frame. It uses the following encoding:
+ * A = press A
+ * B = press B
+ * L = press L
+ * R = press R
+ * e = L + B (2nd letter of 'left')
+ * f = L + A (3rd letter of 'left')
+ * i = R + B (2nd letter of 'right')
+ * g = R + A (3rd letter of 'right')
+ * 
+ * e.g. L piece 5-tap left, 12Hz tapping: f....L....L....L....L
+ */
 function generateInputSequence(rotationIndex, xOffset, inputFrameTimeline) {
   let inputsLeft = xOffset < 0 && Math.abs(xOffset);
   let inputsRight = xOffset > 0 && xOffset;
