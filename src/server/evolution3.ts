@@ -91,7 +91,7 @@ function calculateReward(
   numHoles: number,
   isGameOver: boolean
 ) {
-  if (isGameOver){
+  if (isGameOver) {
     return -300000 + numBurns * 5000 + numTetrises * 20000;
   }
   return numHoles * -10000 + numBurns * -5000 + numTetrises * 20000;
@@ -110,13 +110,13 @@ function continueGame(startState: LiteGameState, aiParams: InitialAiParams) {
     advanceState(state, baseMove);
 
     // Track the Tetrises and burns for the reward
-    if (baseMove.numLinesCleared === 4){
+    if (baseMove.numLinesCleared === 4) {
       numTetrises += 1;
-    } else if (baseMove.numLinesCleared > 0){
+    } else if (baseMove.numLinesCleared > 0) {
       numBurns += baseMove.numLinesCleared;
     }
 
-    if (state.lines - initialLines >= TEST_MAX_LINES || state.gameOver){
+    if (state.lines - initialLines >= TEST_MAX_LINES || state.gameOver) {
       break;
     }
   }
@@ -150,7 +150,9 @@ function abTest(baseParams: InitialAiParams, expParams: InitialAiParams) {
       const baseMove: PossibilityChain = getMove(state, baseParams);
 
       if (expParams !== null) {
-        const expMove: PossibilityChain = expParams ? getMove(state, expParams) : null;
+        const expMove: PossibilityChain = expParams
+          ? getMove(state, expParams)
+          : null;
         if (expMove.placement.toString() !== baseMove.placement.toString()) {
           // Add to the set of differing states
           differingStates.add(cloneState(state));
@@ -163,58 +165,57 @@ function abTest(baseParams: InitialAiParams, expParams: InitialAiParams) {
           // console.log(expMove.evalExplanation);
         }
 
-        if (differingStates.size >= NUM_DIFFERING_STATES){
+        if (differingStates.size >= NUM_DIFFERING_STATES) {
           break;
         }
       }
 
       advanceState(state, baseMove);
     }
-    console.log(`Game over: score ${state.score}, lines ${state.lines}, level ${state.level}`);
+    console.log(
+      `Game over: score ${state.score}, lines ${state.lines}, level ${state.level}`
+    );
   }
-
 
   // Now play out the differing states
   let baseTotal = 0;
   let expTotal = 0;
-  for (const differingState of differingStates){
+  for (const differingState of differingStates) {
     const rewardBase = continueGame(differingState, baseParams);
     const rewardExp = continueGame(differingState, expParams);
     baseTotal += rewardBase;
     expTotal += rewardExp;
-    console.log("EXP - BASE:", (rewardExp - rewardBase)/1000);
+    console.log("EXP - BASE:", (rewardExp - rewardBase) / 1000);
   }
   console.log(`Base average: ${baseTotal / NUM_DIFFERING_STATES}`);
   console.log(`Exp average: ${expTotal / NUM_DIFFERING_STATES}`);
   console.log(`Diff: ${(expTotal - baseTotal) / NUM_DIFFERING_STATES}`);
 }
 
-  const EXP_PARAMS = {
-    BURN_COEF: -5,
-    SURFACE_COEF: 1,
-    AVG_HEIGHT_EXPONENT: 1.36000000000004,
-    AVG_HEIGHT_COEF: -4.50624,
-    SCARE_HEIGHT_OFFSET: -2,
-    HOLE_COEF: -30,
-    COL_10_COEF: -2, // changed due to feature changing
-    COL_10_HEIGHT_MULTIPLIER_EXP: 3,
-    TETRIS_BONUS: 28.248,
-    TETRIS_READY_BONUS: 5.909760000000001,
-    MAX_DIRTY_TETRIS_HEIGHT: 0.15, // (As a multiple of the scare height) Added manually since didn't exist at time of training
-    EXTREME_GAP_COEF: -3,
-    BUILT_OUT_LEFT_COEF: 1.5, // changed due to feature changing
-    BUILT_OUT_RIGHT_COEF: 0, // Added manually since didn't exist at time of training
-    HOLE_WEIGHT_COEF: 0,
-    SPIRE_HEIGHT_EXPONENT: 1.215999999999999, // changed due to feature changing
-    SPIRE_HEIGHT_COEF: -1.1556000000000002, // changed due to feature changing
-    UNABLE_TO_BURN_COEF: -1, // changed due to feature changing
-    HIGH_COL_9_COEF: -1.5,
-    HIGH_COL_9_EXP: 2,
-    LEFT_SURFACE_COEF: 0,
-    INACCESSIBLE_LEFT_COEF: -30, // Added manually since didn't exist at time of training
-    INACCESSIBLE_RIGHT_COEF: -100, // Added manually since didn't exist at time of training
-  };
+const EXP_PARAMS = {
+  BURN_COEF: -5,
+  SURFACE_COEF: 1,
+  AVG_HEIGHT_EXPONENT: 1.36000000000004,
+  AVG_HEIGHT_COEF: -4.50624,
+  SCARE_HEIGHT_OFFSET: -2,
+  HOLE_COEF: -30,
+  COL_10_COEF: -2, // changed due to feature changing
+  COL_10_HEIGHT_MULTIPLIER_EXP: 3,
+  TETRIS_BONUS: 28.248,
+  TETRIS_READY_BONUS: 5.909760000000001,
+  MAX_DIRTY_TETRIS_HEIGHT: 0.15, // (As a multiple of the scare height) Added manually since didn't exist at time of training
+  EXTREME_GAP_COEF: -3,
+  BUILT_OUT_LEFT_COEF: 1.5, // changed due to feature changing
+  BUILT_OUT_RIGHT_COEF: 0, // Added manually since didn't exist at time of training
+  HOLE_WEIGHT_COEF: 0,
+  SPIRE_HEIGHT_EXPONENT: 1.215999999999999, // changed due to feature changing
+  SPIRE_HEIGHT_COEF: -1.1556000000000002, // changed due to feature changing
+  UNABLE_TO_BURN_COEF: -1, // changed due to feature changing
+  HIGH_COL_9_COEF: -1.5,
+  HIGH_COL_9_EXP: 2,
+  LEFT_SURFACE_COEF: 0,
+  INACCESSIBLE_LEFT_COEF: -30, // Added manually since didn't exist at time of training
+  INACCESSIBLE_RIGHT_COEF: -100, // Added manually since didn't exist at time of training
+};
 
 abTest(getParams(), EXP_PARAMS);
-
-

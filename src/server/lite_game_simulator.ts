@@ -321,12 +321,12 @@ function runScoreExperiment(numTrials) {
     paramsManager.getParams(),
     paramsManager.getParamMods()
   );
-  const scores = resultList.map(x => x[0]);
+  const scores = resultList.map((x) => x[0]);
   const only1_3s = scores.filter((x) => x > 1300000);
   console.log(resultList);
   // console.log("1.3 count:", only1_3s.length);
   // console.log("\n1.3s:", only1_3s);
-  console.log("Average: ", scores.reduce((a,b) => a+b) / scores.length);
+  console.log("Average: ", scores.reduce((a, b) => a + b) / scores.length);
   // console.log("\nScores:\n" + resultList.map((x) => x[0]).join("\n"));
 }
 
