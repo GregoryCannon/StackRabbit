@@ -50,7 +50,7 @@ AIPlayer.prototype.placeCurrentPiece = async function (
     );
   }
 
-  const resultArray = (await result.text()).split(",");
+  const resultArray = (await result.text()).split(/,|\|/g);
   const bestRotationIndex = parseInt(resultArray[0]);
   const bestXOffset = parseInt(resultArray[1]);
 
