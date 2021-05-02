@@ -1,5 +1,5 @@
 import { rateSurface } from "./evaluator";
-import { getSurfaceArrayAndHoleCount, logBoard } from "./utils";
+import { getSurfaceArrayAndHoles, logBoard } from "./utils";
 
 const http = require("http");
 const hostname = "127.0.0.1";
@@ -184,7 +184,7 @@ function handleRankLookup(requestArgs: Array<string>) {
     .match(/.{1,10}/g) // Select groups of 10 characters
     .map((rowSerialized) => rowSerialized.split("").map((x) => parseInt(x)));
   logBoard(board);
-  const surfaceArray = getSurfaceArrayAndHoleCount(board)[0];
+  const surfaceArray = getSurfaceArrayAndHoles(board)[0];
   console.log(surfaceArray);
   return rateSurface(surfaceArray);
 }

@@ -222,6 +222,24 @@ function countBlocksInColumn10(board) {
   return sum;
 }
 
+function hasHoleInTetrisZone(board, holeCells) {
+  // Calculate where the next Tetris will be built
+  let row = 0;
+  while (row < NUM_ROW && board[row][9] == SquareState.EMPTY) {
+    row++;
+  }
+  // Both inclusive
+  const tetrisZoneStart = row - 4;
+  const tetrisZoneEnd = row - 1;
+
+  for (const [row, col] of holeCells) {
+    if (row <= tetrisZoneEnd && row >= tetrisZoneStart) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function isTetrisReadyRightWell(board) {
   // Move the imaginary long bar down column 10
   let row = 0;
@@ -254,7 +272,7 @@ function getSurfaceValue(surfaceArray: Array<number>, nextPieceId: PieceId) {
 
 export function getLineClearValue(numLinesCleared, aiParams) {
   return numLinesCleared == 4
-    ? aiParams.TETRIS_BONUS
+    ? aiParams.TETRIS_COEF
     : numLinesCleared > 0
     ? aiParams.BURN_COEF * numLinesCleared
     : 0;
@@ -401,7 +419,13 @@ export function getValueOfPossibility(
   shouldLog,
   aiParams
 ) {
-  const { surfaceArray, numHoles, numLinesCleared, boardAfter } = possibility;
+  const {
+    surfaceArray,
+    numHoles,
+    holeCells,
+    numLinesCleared,
+    boardAfter,
+  } = possibility;
 
   if (!aiParams) {
     throw new Error("No AI Params provided: " + aiParams);
@@ -440,6 +464,7 @@ export function getValueOfPossibility(
     scareHeight
   );
   const tetrisReady = isTetrisReadyRightWell(boardAfter);
+  const holeInTetrisZone = hasHoleInTetrisZone(boardAfter, holeCells);
   const rowsNeedingToBurn = getRowsNeedingToBurn(
     boardAfter,
     aiParams.MAX_DIRTY_TETRIS_HEIGHT * scareHeight,
@@ -466,7 +491,8 @@ export function getValueOfPossibility(
   let killscreenSurfaceLeftFactor =
     aiParams.LEFT_SURFACE_COEF *
     getLeftSurfaceValue(boardAfter, aiParams, level);
-  const tetrisReadyFactor = tetrisReady ? aiParams.TETRIS_READY_BONUS : 0;
+  const tetrisReadyFactor =
+    aiParams.TETRIS_READY_COEF * (holeInTetrisZone ? -1 : tetrisReady ? 1 : 0);
   const holeFactor = adjustedNumHoles * aiParams.HOLE_COEF;
   const holeWeightFactor = rowsNeedingToBurn.size * aiParams.HOLE_WEIGHT_COEF;
   const holeWeightBurnFactor = rowsNeedingToBurn.size * aiParams.BURN_COEF;

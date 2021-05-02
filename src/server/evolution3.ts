@@ -201,8 +201,8 @@ const EXP_PARAMS = {
   HOLE_COEF: -30,
   COL_10_COEF: -2, // changed due to feature changing
   COL_10_HEIGHT_MULTIPLIER_EXP: 3,
-  TETRIS_BONUS: 28.248,
-  TETRIS_READY_BONUS: 5.909760000000001,
+  TETRIS_COEF: 28.248,
+  TETRIS_READY_COEF: 5.909760000000001,
   MAX_DIRTY_TETRIS_HEIGHT: 0.15, // (As a multiple of the scare height) Added manually since didn't exist at time of training
   EXTREME_GAP_COEF: -3,
   BUILT_OUT_LEFT_COEF: 1.5, // changed due to feature changing

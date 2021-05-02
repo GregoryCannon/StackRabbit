@@ -231,7 +231,7 @@ function _generatePossibilityList(
       x,
       y
     );
-    let [surfaceArray, numHoles] = utils.getSurfaceArrayAndHoleCount(
+    let [surfaceArray, numHoles, holeCells] = utils.getSurfaceArrayAndHoles(
       boardAfter
     );
     surfaceArray = surfaceArray.slice(0, 9);
@@ -252,6 +252,7 @@ function _generatePossibilityList(
       ),
       surfaceArray,
       numHoles,
+      holeCells,
       numLinesCleared,
       boardAfter,
     });

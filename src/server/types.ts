@@ -1,6 +1,8 @@
 type Board = Array<Array<number>>;
 
-type Placement = [number, number];
+type CellLocation = [number, number]; // [row, col]
+
+type Placement = [number, number]; // [numRightRotations, numShifts]
 
 type PieceArray = Array<Array<number>>;
 
@@ -43,6 +45,7 @@ interface Possibility {
   inputSequence: string;
   surfaceArray: Array<number>;
   numHoles: number;
+  holeCells: Array<CellLocation>;
   numLinesCleared: number;
   boardAfter: Board;
   fastEvalScore?: number;
@@ -109,8 +112,8 @@ interface InitialAiParams {
   HIGH_COL_9_EXP: number;
   SURFACE_COEF: number;
   LEFT_SURFACE_COEF: number;
-  TETRIS_BONUS: number;
-  TETRIS_READY_BONUS: number;
+  TETRIS_COEF: number;
+  TETRIS_READY_COEF: number;
   INACCESSIBLE_LEFT_COEF: number;
   INACCESSIBLE_RIGHT_COEF: number;
 }

@@ -112,11 +112,12 @@ export function generateDigPracticeBoard(garbageHeight, numHoles) {
   return board;
 }
 
-export function getSurfaceArrayAndHoleCount(
+export function getSurfaceArrayAndHoles(
   board: Board
-): [Array<number>, number] {
+): [Array<number>, number, Array<CellLocation>] {
   const heights = [];
   let numHoles = 0;
+  let holeCells: Array<CellLocation> = [];
   for (let col = 0; col < NUM_COLUMN; col++) {
     let row = 0;
     while (row < NUM_ROW && board[row][col] == 0) {
@@ -128,16 +129,18 @@ export function getSurfaceArrayAndHoleCount(
       if (board[row][col] === SquareState.EMPTY && col < NUM_COLUMN - 1) {
         // Add a hole if it's anywhere other than column 10
         numHoles++;
+        holeCells.push([row, col]);
         row++;
         // Add fractional holes for subsequent cells within a tall hole
         while (row < NUM_ROW && board[row][col] === SquareState.EMPTY) {
           numHoles += 0.2;
+          holeCells.push([row, col]);
           row++;
         }
       }
     }
   }
-  return [heights, numHoles];
+  return [heights, numHoles, holeCells];
 }
 
 /**
@@ -171,7 +174,7 @@ export function correctSurfaceForExtremeGaps(
 }
 
 export function getHoleCount(board) {
-  return getSurfaceArrayAndHoleCount(board)[1];
+  return getSurfaceArrayAndHoles(board)[1];
 }
 
 /** Checks if clearing a certain number of lines will increase the level, and if so what that level is. */

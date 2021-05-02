@@ -46,8 +46,8 @@ export const DEFAULT_PARAM_MODS = {
   },
   NEAR_KILLSCREEN: {
     BURN_COEF: -15,
-    TETRIS_READY_BONUS: 10,
-    TETRIS_BONUS: 200, // has to be more than INACCESSIBLE_RIGHT, so that it'll take a tetris on 229 lines
+    TETRIS_READY_COEF: 10,
+    TETRIS_COEF: 200, // has to be more than INACCESSIBLE_RIGHT, so that it'll take a tetris on 229 lines
   },
   KILLSCREEN: {
     COL_10_COEF: 0,
@@ -96,8 +96,8 @@ export const DEFAULT_PARAMS: InitialAiParams = {
   HIGH_COL_9_EXP: 2,
   SURFACE_COEF: 1,
   LEFT_SURFACE_COEF: 0,
-  TETRIS_BONUS: 28.248,
-  TETRIS_READY_BONUS: 5.909760000000001,
+  TETRIS_COEF: 28.248,
+  TETRIS_READY_COEF: 5.909760000000001,
   INACCESSIBLE_LEFT_COEF: -30, // Added manually since didn't exist at time of training
   INACCESSIBLE_RIGHT_COEF: -100, // Added manually since didn't exist at time of training
 };
@@ -156,8 +156,8 @@ export const TRAINED_A0: InitialAiParams = {
   HOLE_COEF: -30,
   COL_10_COEF: -2, // changed due to feature changing
   COL_10_HEIGHT_MULTIPLIER_EXP: 3,
-  TETRIS_BONUS: 28.248,
-  TETRIS_READY_BONUS: 5.909760000000001,
+  TETRIS_COEF: 28.248,
+  TETRIS_READY_COEF: 5.909760000000001,
   MAX_DIRTY_TETRIS_HEIGHT: 0.15, // (As a multiple of the scare height) Added manually since didn't exist at time of training
   EXTREME_GAP_COEF: -3,
   BUILT_OUT_LEFT_COEF: 1.5, // changed due to feature changing
@@ -193,8 +193,8 @@ const TRAINED_A1: InitialAiParams = {
   HIGH_COL_9_EXP: 2,
   SURFACE_COEF: 1.1,
   LEFT_SURFACE_COEF: 0,
-  TETRIS_BONUS: 25.4232,
-  TETRIS_READY_BONUS: 5.318784000000001,
+  TETRIS_COEF: 25.4232,
+  TETRIS_READY_COEF: 5.318784000000001,
   INACCESSIBLE_LEFT_COEF: -33,
   INACCESSIBLE_RIGHT_COEF: -150,
 };
@@ -216,8 +216,8 @@ const TRAINED_NNB_A1: InitialAiParams = {
   HOLE_COEF: -33,
   COL_10_COEF: -1,
   COL_10_HEIGHT_MULTIPLIER_EXP: 4.5,
-  TETRIS_BONUS: 31.072800000000004,
-  TETRIS_READY_BONUS: 5.318784000000001,
+  TETRIS_COEF: 31.072800000000004,
+  TETRIS_READY_COEF: 5.318784000000001,
   MAX_DIRTY_TETRIS_HEIGHT: 0.135,
   EXTREME_GAP_COEF: -1.5,
   BUILT_OUT_LEFT_COEF: 0.75,
@@ -242,8 +242,8 @@ export const TRAINED_B1: InitialAiParams = {
   HOLE_COEF: -30,
   COL_10_COEF: -2, // changed due to feature changing
   COL_10_HEIGHT_MULTIPLIER_EXP: 3,
-  TETRIS_BONUS: 28.248,
-  TETRIS_READY_BONUS: 5.909760000000001,
+  TETRIS_COEF: 28.248,
+  TETRIS_READY_COEF: 5.909760000000001,
   MAX_DIRTY_TETRIS_HEIGHT: 0.15, // (As a multiple of the scare height) Added manually since didn't exist at time of training
   EXTREME_GAP_COEF: -3,
   BUILT_OUT_LEFT_COEF: 1.5, // changed due to feature changing
