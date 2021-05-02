@@ -119,8 +119,14 @@ function handleRequestAsyncWithNextBox(requestArgs): [string, number] {
   return ["Request accepted.", 200];
 }
 
-function formatResponse(possibility: Possibility){
-  return possibility.placement[0] + "," + possibility.placement[1] + "|" + possibility.inputSequence;
+function formatResponse(possibility: Possibility) {
+  return (
+    possibility.placement[0] +
+    "," +
+    possibility.placement[1] +
+    "|" +
+    possibility.inputSequence
+  );
 }
 
 /**

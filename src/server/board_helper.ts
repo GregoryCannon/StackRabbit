@@ -195,6 +195,8 @@ export function getPossibleMoves(
     initialX,
     initialY,
     inputFrameTimeline,
+    framesAlreadyElapsed,
+    existingRotation,
     shouldLog
   );
 }
@@ -205,7 +207,9 @@ function _generatePossibilityList(
   currentPieceId: string,
   startingX: number,
   startingY: number,
-  inputFrameTime: string,
+  inputFrameTimeline: string,
+  framesAlreadyElapsed: number,
+  existingRotation: number,
   shouldLog: boolean
 ): Array<Possibility> {
   const possibilityList = [];
@@ -240,7 +244,12 @@ function _generatePossibilityList(
     }
     possibilityList.push({
       placement: [rotationIndex, xOffset],
-      inputSequence: generateInputSequence(rotationIndex, xOffset, inputFrameTime),
+      inputSequence: generateInputSequence(
+        _modulus(rotationIndex - existingRotation, 4),
+        xOffset,
+        inputFrameTimeline,
+        framesAlreadyElapsed
+      ),
       surfaceArray,
       numHoles,
       numLinesCleared,
@@ -265,10 +274,15 @@ function _generatePossibilityList(
  * f = L + A (3rd letter of 'left')
  * i = R + B (2nd letter of 'right')
  * g = R + A (3rd letter of 'right')
- * 
+ *
  * e.g. L piece 5-tap left, 12Hz tapping: f....L....L....L....L
  */
-function generateInputSequence(rotationIndex, xOffset, inputFrameTimeline) {
+function generateInputSequence(
+  rotationIndex,
+  xOffset,
+  inputFrameTimeline,
+  framesAlreadyElapsed = 0
+) {
   let inputsLeft = xOffset < 0 && Math.abs(xOffset);
   let inputsRight = xOffset > 0 && xOffset;
   let rotationsLeft = rotationIndex === 3 && 1;
@@ -283,7 +297,7 @@ function generateInputSequence(rotationIndex, xOffset, inputFrameTimeline) {
 
   let inputSequence = "";
   for (
-    let i = 0;
+    let i = framesAlreadyElapsed;
     inputsLeft + inputsRight + rotationsLeft + rotationsRight > 0;
     i++
   ) {
@@ -315,10 +329,10 @@ function generateInputSequence(rotationIndex, xOffset, inputFrameTimeline) {
       } else {
         // Do a rotation
         if (rotationsLeft > 0) {
-          inputSequence += "A";
+          inputSequence += "B";
           rotationsLeft--;
         } else {
-          inputSequence += "B";
+          inputSequence += "A";
           rotationsRight--;
         }
       }

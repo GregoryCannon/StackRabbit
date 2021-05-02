@@ -31,7 +31,7 @@ function resetPieceScopedVars()
   adjustmentApiResult = nil
   frameIndex = 0
   arrFrameIndex = 0
-  pendingInputs = { left=0, right=0, A=0, B=0 }
+  inputSequence = ""
   shiftsExecuted = 0
   rotationsExecuted = 0
 end
@@ -72,57 +72,102 @@ function getEncodedBoard()
 end
 
 function getGravity(level)
-  if level <= 8 then
-    return 8 -- We don't really care about hyper-optimizing low levels
+  if level >= 29 then
+    return 1
+  elseif level >= 19 then
+    return 2
+  elseif level >= 16 then
+    return 3
+  elseif level >= 13 then
+    return 4
+  elseif level >= 10 then
+    return 5
   elseif level == 9 then
     return 6
-  elseif level <= 12 then
-    return 5
-  elseif level <= 15 then
-    return 4
-  elseif level <= 18 then
-    return 3
-  elseif level <= 28 then
-    return 2
+  elseif level == 8 then
+    return 8
+  elseif level == 7 then
+    return 13
+  elseif level == 6 then
+    return 18
+  elseif level == 5 then
+    return 23
+  elseif level == 4 then
+    return 28
+  elseif level == 3 then
+    return 33
+  elseif level == 2 then
+    return 38
+  elseif level == 1 then
+    return 43
+  elseif level == 0 then
+    return 48
   else
-    return 1
+    error("Unknown level" .. level)
   end
+end
+
+-- Query into the input sequence based on (0-indexed) arrFrameIndex
+function getInputForFrame(index)
+  return string.sub(inputSequence, index + 1, index + 1)
 end
 
 -- Based on the current placement, predict exactly where the piece will be when it's time to adjust it
 function predictPieceOffsetAtAdjustmentTime()
   local inputsPossibleByAdjTime = 0
+  local inputsUsedByAdjTime = 0
   offsetXAtAdjustmentTime = 0
-  offsetYAtAdjustmentTime = 0
+  rotationAtAdjustmentTime = 0
+
+  -- Loop through the frames until adjustment time and track the input sequence, gravity, and possible number of shifts
   for i = 0, REACTION_TIME_FRAMES-1 do
     if (isInputFrame(i)) then
       inputsPossibleByAdjTime = inputsPossibleByAdjTime + 1
     end
+    
+    -- Track shifts
+    local thisFrameStr = getInputForFrame(i)
+    -- print("thisFrameStr " .. thisFrameStr)
+    if thisFrameStr == "L" or thisFrameStr == "e" or thisFrameStr == "f" then
+      offsetXAtAdjustmentTime = offsetXAtAdjustmentTime - 1
+    elseif thisFrameStr == "R" or thisFrameStr == "i" or thisFrameStr == "g" then
+      offsetXAtAdjustmentTime = offsetXAtAdjustmentTime + 1
+    end
+
+    -- Track rotations
+    if thisFrameStr == "A" or thisFrameStr == "e" or thisFrameStr == "i" then
+      rotationAtAdjustmentTime = rotationAtAdjustmentTime + 1
+    elseif thisFrameStr == "B" or thisFrameStr == "f" or thisFrameStr == "g" then
+      rotationAtAdjustmentTime = rotationAtAdjustmentTime - 1
+    end
+
+    -- Track inputs used
+    if thisFrameStr ~= "." then
+      inputsUsedByAdjTime = inputsUsedByAdjTime + 1
+    end
   end
 
+  rotationAtAdjustmentTime = (rotationAtAdjustmentTime + 4) % 4 -- Modulus -1 to 3, etc.
   offsetYAtAdjustmentTime = math.floor((REACTION_TIME_FRAMES) / getGravity(level))
 
-  -- Calculate how many of the pending shifts it will have completed by that point
-  offsetXAtAdjustmentTime = 0
-  if pendingInputs.left > 0 then
-    offsetXAtAdjustmentTime = -1 * math.min(inputsPossibleByAdjTime, pendingInputs.left)
-  elseif pendingInputs.right > 0 then
-    offsetXAtAdjustmentTime = math.min(inputsPossibleByAdjTime, pendingInputs.right)
-  end
+  -- -- Calculate how many of the pending shifts it will have completed by that point
+  -- offsetXAtAdjustmentTime = 0
+  -- if pendingInputs.left > 0 then
+  --   offsetXAtAdjustmentTime = -1 * math.min(inputsPossibleByAdjTime, pendingInputs.left)
+  -- elseif pendingInputs.right > 0 then
+  --   offsetXAtAdjustmentTime = math.min(inputsPossibleByAdjTime, pendingInputs.right)
+  -- end
 
-  -- Calculate how many of the pending rotations it will have completed by that point
-  rotationAtAdjustmentTime = 0
-  if pendingInputs.B == 1 and inputsPossibleByAdjTime >= 1 then
-    rotationAtAdjustmentTime = 3
-  elseif pendingInputs.A > 0 then
-    rotationAtAdjustmentTime = math.min(inputsPossibleByAdjTime, pendingInputs.A)
-  end
+  -- -- Calculate how many of the pending rotations it will have completed by that point
+  -- rotationAtAdjustmentTime = 0
+  -- if pendingInputs.B == 1 and inputsPossibleByAdjTime >= 1 then
+  --   rotationAtAdjustmentTime = 3
+  -- elseif pendingInputs.A > 0 then
+  --   rotationAtAdjustmentTime = math.min(inputsPossibleByAdjTime, pendingInputs.A)
+  -- end
 
   -- Calculate if it can first-frame shift at adjustment time
-  local rotationsNeeded = math.max(pendingInputs.A, pendingInputs.B)
-  local shiftsNeeded = math.max(pendingInputs.left, pendingInputs.right)
-  local inputsNeeded = math.max(rotationsNeeded, shiftsNeeded)
-  canFirstFrameShiftAtAdjustmentTime = inputsNeeded < inputsPossibleByAdjTime
+  canFirstFrameShiftAtAdjustmentTime = inputsUsedByAdjTime < inputsPossibleByAdjTime
 end
 
 
@@ -207,31 +252,37 @@ function calculateInputs(apiResult, isAdjustment)
 
   -- Parse the shifts and rotations from the API result
   local split = splitString(apiResult, ",|\\")
-  -- Offset by the amount of any existing inputs
-  local numShifts = tonumber(split[2])
-  local numRightRotations = (tonumber(split[1]) - rotationsExecuted) % 4
-
-  pendingInputs = { left = 0, right = 0, A = 0, B = 0 }
-  -- Shifts
-  if numShifts < 0 then
-    pendingInputs.left = -1 * numShifts
-  elseif numShifts > 0 then
-    pendingInputs.right = numShifts
+  inputSequence = split[3]
+  print(inputSequence)
+  if inputSequence == nil then
+    inputSequence = ""
   end
 
-  -- Rotations
-  if numRightRotations == 3 then
-    pendingInputs.B = 1
-  else
-    pendingInputs.A = numRightRotations
-  end
+  -- -- Offset by the amount of any existing inputs
+  -- local numShifts = tonumber(split[2])
+  -- local numRightRotations = (tonumber(split[1]) - rotationsExecuted) % 4
+
+  -- pendingInputs = { left = 0, right = 0, A = 0, B = 0 }
+  -- -- Shifts
+  -- if numShifts < 0 then
+  --   pendingInputs.left = -1 * numShifts
+  -- elseif numShifts > 0 then
+  --   pendingInputs.right = numShifts
+  -- end
+
+  -- -- Rotations
+  -- if numRightRotations == 3 then
+  --   pendingInputs.B = 1
+  -- else
+  --   pendingInputs.A = numRightRotations
+  -- end
 
   -- Reset ARR counter if is an adjustment and can first-frame shift
-  if isAdjustment and canFirstFrameShiftAtAdjustmentTime then
+  if isAdjustment then
     arrFrameIndex = 0
   end
 
-  print(pendingInputs)
+  -- print(pendingInputs)
 end
 
 function isInputFrame(index)
@@ -247,46 +298,89 @@ function executeInputs()
       if shiftsExecuted ~= offsetXAtAdjustmentTime then
         print("Actual X offset: " .. shiftsExecuted .. " predicted: " .. offsetXAtAdjustmentTime .. " Diff: " .. offsetXAtAdjustmentTime - shiftsExecuted)
       end
+      print("Time for adjustment" .. frameIndex .. ", " .. arrFrameIndex)
       calculateInputs(adjustmentApiResult, true)
     end
 
     local inputsThisFrame = {A=false, B=false, left=false, right=false, up=false, down=false, select=false, start=false}
-    -- local stuckAgainstWall = shiftsExecuted == -5 or shiftsExecuted == 4 -- Can't rotate due to NES's lack of kick functionality
-    local stuckAgainstWall = false;
 
-    -- print(emu.framecount() .. "   " .. arrFrameIndex .. "   " .. tostring(isInputFrame(arrFrameIndex)))
-    if isInputFrame(arrFrameIndex) then
-      local function execute(inputName)
-        inputsThisFrame[inputName] = true
-        pendingInputs[inputName] = pendingInputs[inputName] - 1  -- Imagine having a decrement operator in your language
-      end
-
-      -- Execute one rotation if any pending
-      if pendingInputs.A > 0 and not stuckAgainstWall then
-        execute("A")
-        rotationsExecuted = (rotationsExecuted + 1) % 4
-      elseif pendingInputs.B > 0 and not stuckAgainstWall then
-        execute("B")
-        rotationsExecuted = (rotationsExecuted - 1) % 4
-      end
-      -- Execute one shift if any pending
-      if pendingInputs.left > 0 then
-        inputsThisFrame.left = true
-        pendingInputs.left = pendingInputs.left - 1
-        shiftsExecuted = shiftsExecuted - 1
-      elseif pendingInputs.right > 0 then
-        inputsThisFrame.right = true
-        pendingInputs.right = pendingInputs.right - 1
-        shiftsExecuted = shiftsExecuted + 1
-      end
+    if inputSequence == null or arrFrameIndex + 1 > string.len(inputSequence) then
+      -- print("Input sequence null or frame index out of bounds" .. arrFrameIndex)
+      -- print(inputSequence)
+      return
     end
+
+    local thisFrameStr = getInputForFrame(arrFrameIndex);
+    print(arrFrameIndex .. thisFrameStr)
+    -- Simple cases
+    if thisFrameStr == "A" then
+      inputsThisFrame.A = true;
+    elseif thisFrameStr == "B" then
+      inputsThisFrame.B = true;
+    elseif thisFrameStr == "L" then
+      inputsThisFrame.left = true;
+    elseif thisFrameStr == "R" then
+      inputsThisFrame.right = true;
+    -- Combo cases
+    elseif thisFrameStr == "e" then
+      inputsThisFrame.left = true;
+      inputsThisFrame.A = true;
+    elseif thisFrameStr == "f" then
+      inputsThisFrame.left = true;
+      inputsThisFrame.B = true;
+    elseif thisFrameStr == "i" then
+      inputsThisFrame.right = true;
+      inputsThisFrame.A = true;
+    elseif thisFrameStr == "g" then
+      inputsThisFrame.right = true;
+      inputsThisFrame.B = true;
+    elseif thisFrameStr == "." then
+      -- Do nothing
+    else
+      print("Unknown character in input sequence" .. arrFrameIndex + 1)
+      print(thisFrameStr)
+    end
+
+    if inputsThisFrame.left then
+      shiftsExecuted = shiftsExecuted - 1
+    elseif inputsThisFrame.right then
+      shiftsExecuted = shiftsExecuted + 1
+    end
+
+    -- -- print(emu.framecount() .. "   " .. arrFrameIndex .. "   " .. tostring(isInputFrame(arrFrameIndex)))
+    -- if isInputFrame(arrFrameIndex) then
+    --   local function execute(inputName)
+    --     inputsThisFrame[inputName] = true
+    --     pendingInputs[inputName] = pendingInputs[inputName] - 1  -- Imagine having a decrement operator in your language
+    --   end
+
+    --   -- Execute one rotation if any pending
+    --   if pendingInputs.A > 0 then
+    --     execute("A")
+    --     rotationsExecuted = (rotationsExecuted + 1) % 4
+    --   elseif pendingInputs.B > 0 then
+    --     execute("B")
+    --     rotationsExecuted = (rotationsExecuted - 1) % 4
+    --   end
+    --   -- Execute one shift if any pending
+    --   if pendingInputs.left > 0 then
+    --     execute("left")
+    --     shiftsExecuted = shiftsExecuted - 1
+    --   elseif pendingInputs.right > 0 then
+    --     execute("right")
+    --     shiftsExecuted = shiftsExecuted + 1
+    --   end
+    -- end
 
     -- Debug logs
     if inputsThisFrame.left or inputsThisFrame.right then
       print("SHIFT" .. emu.framecount())
-    elseif pendingInputs.left > 0 or pendingInputs.right > 0 or pendingInputs.A > 0 or pendingInputs.B > 0 then
-      print("has pending inputs: " .. pendingInputs.left .. pendingInputs.right .. pendingInputs.B .. pendingInputs.A)
+    else
+      -- print("..." .. emu.framecount())
     end
+    -- elseif pendingInputs.left > 0 or pendingInputs.right > 0 or pendingInputs.A > 0 or pendingInputs.B > 0 then
+    --   print("has pending inputs: " .. pendingInputs.left .. pendingInputs.right .. pendingInputs.B .. pendingInputs.A)
+    -- end
 
     -- Send our computed inputs to the controller
     joypad.set(1, inputsThisFrame)
@@ -353,7 +447,7 @@ function runGameFrame()
 
   -- Resets the index for the next piece. Disables user input when the game is not over.
   elseif not gameOver or recording then
-    pendingInputs = { left=0, right=0, A=0, B=0 }
+    -- pendingInputs = { left=0, right=0, A=0, B=0 }
     joypad.set(1, {A=false,B=false,left=false,right=false,up=false,down=false,select=false,start=false})
   end
 end
@@ -368,10 +462,11 @@ function onFirstFrameOfNewPiece()
   numLines = bcdToDecimal(memory.readbyte(0x0051)) * 100 + bcdToDecimal(memory.readbyte(0x0050))
   level = memory.readbyte(0x0044)
   
-  print("------" .. orientToPiece[pcur] .. "------")
-
   resetPieceScopedVars()
   
+  print("--------------------")
+  print(orientToPiece[pcur])
+
   if not gameOver then
     -- Make a synchronous request to the server for the inital placement
     local apiResult = requestPlacementSyncNoNextBox()
