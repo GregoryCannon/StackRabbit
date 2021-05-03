@@ -8,6 +8,8 @@ type PieceArray = Array<Array<number>>;
 
 type PieceId = "I" | "O" | "L" | "J" | "T" | "S" | "Z" | null;
 
+type Direction = "L" | "R" | "";
+
 interface SimParams {
   board: Board;
   initialX: number;
@@ -26,6 +28,15 @@ interface SimState {
   frameIndex: number;
   arrFrameIndex: number; // Sometimes differs from overall frame index (during adjustments)
   rotationIndex: number;
+}
+
+interface BFSState extends SimState {
+  canInputImmediately: boolean; // If the agent has already waited past the ARR time without inputs, it can do adjustments/tucks immediately
+  hasPassedOnInput: boolean;
+  hasTuckOrSpin: boolean;
+  inputSequence: string; // Tracks the sequence up to this state
+  initialDirection: string; // Each piece must choose a primary direction to avoid alternating L/R/L/R for no reason
+  rotationsRemaining: number; // Each piece has a quota for rotations to avoid uneccessary rotations
 }
 
 interface LiteGameState {

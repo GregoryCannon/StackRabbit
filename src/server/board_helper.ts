@@ -104,7 +104,7 @@ export function getBoardAndLinesClearedAfterPlacement(
   return [tempBoard, numLinesCleared];
 }
 
-function _validateIntParam(value: number, min: number, max: number) {
+export function _validateIntParam(value: number, min: number, max: number) {
   if (isNaN(value)) {
     throw new Error("Expected a number, but got NaN:" + value);
   }
@@ -267,14 +267,15 @@ function _generatePossibilityList(
 }
 
 /** Generates a string representing the inputs to perform, frame-by-frame. It uses the following encoding:
+ * . = do nothing
  * A = press A
  * B = press B
  * L = press L
  * R = press R
- * e = L + B (2nd letter of 'left')
- * f = L + A (3rd letter of 'left')
- * i = R + B (2nd letter of 'right')
- * g = R + A (3rd letter of 'right')
+ * e = press L + B (2nd letter of 'left')
+ * f = press L + A (3rd letter of 'left')
+ * i = press R + B (2nd letter of 'right')
+ * g = press R + A (3rd letter of 'right')
  *
  * e.g. L piece 5-tap left, 12Hz tapping: f....L....L....L....L
  */
@@ -522,7 +523,7 @@ export function boardHasInaccessibileRight(
 }
 
 /** A modulus function that correctly handles negatives. */
-function _modulus(n: number, m: number) {
+export function _modulus(n: number, m: number) {
   return (n + m) % m;
 }
 
@@ -648,7 +649,7 @@ function placementIsLegal(
   return true;
 }
 
-function performSimulationShift(
+export function performSimulationShift(
   xIncrement: number,
   simState: SimState,
   board: Board,
@@ -841,7 +842,7 @@ function repeatedlyShiftPiece(
 }
 
 /** Helper method for testing. */
-function getTestBoardWithHeight(height: number) {
+export function getTestBoardWithHeight(height: number) {
   const board = [];
   for (let i = 0; i < NUM_ROW; i++) {
     board.push(
@@ -1072,15 +1073,3 @@ tapRangeTest();
 //   rotationsList: PIECE_LOOKUP["I"][0],
 //   existingRotation: 0,
 // }));
-
-module.exports = {
-  calculateTapHeight,
-  getPossibleMoves,
-  getLeftSurface,
-  getBoardAndLinesClearedAfterPlacement,
-  getBoardHeightAtColumn,
-  hasHoleInColumn,
-  pieceCollision,
-  boardHasInaccessibileLeft,
-  boardHasInaccessibileRight,
-};
