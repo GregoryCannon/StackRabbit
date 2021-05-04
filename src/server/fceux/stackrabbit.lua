@@ -128,16 +128,16 @@ function predictPieceOffsetAtAdjustmentTime()
     -- Track shifts
     local thisFrameStr = getInputForFrame(i)
     -- print("thisFrameStr " .. thisFrameStr)
-    if thisFrameStr == "L" or thisFrameStr == "e" or thisFrameStr == "f" then
+    if thisFrameStr == "L" or thisFrameStr == "E" or thisFrameStr == "F" then
       offsetXAtAdjustmentTime = offsetXAtAdjustmentTime - 1
-    elseif thisFrameStr == "R" or thisFrameStr == "i" or thisFrameStr == "g" then
+    elseif thisFrameStr == "R" or thisFrameStr == "I" or thisFrameStr == "G" then
       offsetXAtAdjustmentTime = offsetXAtAdjustmentTime + 1
     end
 
     -- Track rotations
-    if thisFrameStr == "A" or thisFrameStr == "e" or thisFrameStr == "i" then
+    if thisFrameStr == "A" or thisFrameStr == "E" or thisFrameStr == "I" then
       rotationAtAdjustmentTime = rotationAtAdjustmentTime + 1
-    elseif thisFrameStr == "B" or thisFrameStr == "f" or thisFrameStr == "g" then
+    elseif thisFrameStr == "B" or thisFrameStr == "F" or thisFrameStr == "G" then
       rotationAtAdjustmentTime = rotationAtAdjustmentTime - 1
     end
 
@@ -287,16 +287,16 @@ function executeInputs()
     elseif thisFrameStr == "R" then
       inputsThisFrame.right = true;
     -- Combo cases
-    elseif thisFrameStr == "e" then
+    elseif thisFrameStr == "E" then
       inputsThisFrame.left = true;
       inputsThisFrame.A = true;
-    elseif thisFrameStr == "f" then
+    elseif thisFrameStr == "F" then
       inputsThisFrame.left = true;
       inputsThisFrame.B = true;
-    elseif thisFrameStr == "i" then
+    elseif thisFrameStr == "I" then
       inputsThisFrame.right = true;
       inputsThisFrame.A = true;
-    elseif thisFrameStr == "g" then
+    elseif thisFrameStr == "G" then
       inputsThisFrame.right = true;
       inputsThisFrame.B = true;
     elseif thisFrameStr == "." then
@@ -361,11 +361,8 @@ function runGameFrame()
       predictPieceOffsetAtAdjustmentTime()
       requestPlacementAsync()
       waitingOnAsyncRequest = true
-    else
-      -- Subsequent frames where the piece is active
-      if waitingOnAsyncRequest then
+    elseif frameIndex == REACTION_TIME_FRAMES - 1 and waitingOnAsyncRequest then
         checkForAsyncResult()
-      end
     end
 
     -- Execute input sequence
