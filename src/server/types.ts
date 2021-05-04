@@ -31,12 +31,9 @@ interface SimState {
 }
 
 interface BFSState extends SimState {
-  canInputImmediately: boolean; // If the agent has already waited past the ARR time without inputs, it can do adjustments/tucks immediately
   hasPassedOnInput: boolean;
-  hasTuckOrSpin: boolean;
+  grammarToken: string;
   inputSequence: string; // Tracks the sequence up to this state
-  initialDirection: string; // Each piece must choose a primary direction to avoid alternating L/R/L/R for no reason
-  rotationsRemaining: number; // Each piece has a quota for rotations to avoid uneccessary rotations
 }
 
 interface LiteGameState {

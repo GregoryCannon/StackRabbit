@@ -6,25 +6,48 @@ import {
   _modulus,
   _validateIntParam,
 } from "./board_helper";
-import { GetGravity, logBoard, shouldPerformInputsThisFrame } from "./utils";
+import {
+  GetGravity,
+  getSurfaceArrayAndHoles,
+  logBoard,
+  shouldPerformInputsThisFrame,
+} from "./utils";
 
 // Determine the x increment to apply based on the encoded input
 const X_INCREMENT_LOOKUP = {
   L: -1,
-  e: -1, // L + A
-  f: -1, // L + B
+  E: -1, // L + A
+  F: -1, // L + B
   R: 1,
-  i: 1, // R + A
-  g: 1, // R + B
+  I: 1, // R + A
+  G: 1, // R + B
 };
 // Determine the rotation to apply based on the encoded input
 const ROTATION_LOOKUP = {
   A: 1,
-  e: 1, // A + L
-  i: 1, // A + R
+  E: 1, // A + L
+  I: 1, // A + R
   B: -1,
-  f: -1, // B + L
-  g: -1, // B + R
+  F: -1, // B + L
+  G: -1, // B + R
+};
+
+const INPUT_GRAMMAR = {
+  ".": ".",
+  L: "L.",
+  R: "R.",
+  a: ".",
+  b: ".",
+  A: "a.",
+  e: "L.",
+  i: "R.",
+  f: "L.",
+  g: "R.",
+  E: "eLa.",
+  I: "iRa.",
+  PIECE1: "LR.",
+  PIECE2: "eiLRab.",
+  PIECE4: "EIfgLRAb.",
 };
 
 export function getPossibleMovesBfs(
@@ -37,7 +60,8 @@ export function getPossibleMovesBfs(
   inputFrameTimeline: string,
   existingRotation: number,
   canFirstFrameShift: boolean
-) {
+): Array<PossibilityChain> {
+  console.time("BFS setup");
   _validateIntParam(level, 0, 999);
   _validateIntParam(existingXOffset, -5, 4);
   _validateIntParam(existingYOffset, 0, 20);
@@ -67,12 +91,9 @@ export function getPossibleMovesBfs(
     rotationIndex: existingRotation,
     arrFrameIndex: canFirstFrameShift ? 0 : framesAlreadyElapsed,
     frameIndex: framesAlreadyElapsed,
-    hasTuckOrSpin: false,
     hasPassedOnInput: false,
-    canInputImmediately: false,
-    initialDirection: "",
-    rotationsRemaining: getNumAllowedRotations(simParams),
     inputSequence: "",
+    grammarToken: "PIECE" + rotationsList.length,
   };
 
   // Check for immediate collisions
@@ -84,7 +105,7 @@ export function getPossibleMovesBfs(
       rotationsList[startingState.rotationIndex]
     )
   ) {
-    return false;
+    return [];
   }
 
   let activeList = [startingState];
@@ -92,15 +113,12 @@ export function getPossibleMovesBfs(
   let finalStates: Array<BFSState> = [];
   visitedStates.add(encodeState(startingState));
 
+  console.timeEnd("BFS setup");
+  console.time("BFS Main");
+
   while (activeList.length > 0) {
     // Dequeue a state from the list and add its neighbors to the new list
     const activeState = activeList.shift();
-    // console.log(
-    //   "\nSearching from: ",
-    //   activeState.inputSequence,
-    //   "      ",
-    //   encodeState(activeState)
-    // );
     addNeighbors(
       activeState,
       simParams,
@@ -110,10 +128,26 @@ export function getPossibleMovesBfs(
     );
   }
 
-  console.log("FINAL STATES:");
-  console.log(finalStates.map((x) => x.inputSequence + " | " + encodeState(x)));
+  console.timeEnd("BFS Main");
+  console.time("BFS generate");
+
+  // console.log("FINAL STATES:");
+  // console.log(finalStates.map((x) => x.inputSequence + " | " + encodeState(x)));
+  // console.log(finalStates.length);
+  const res = generatePossibilityList(finalStates, simParams);
+  console.timeEnd("BFS generate");
+  return res;
 }
 
+/**
+ * Adds all successors for an input state to the active list.
+ * Successor calculation follows the input grammar defined at the top of the file.
+ * @param simState
+ * @param simParams
+ * @param activeList
+ * @param finalStates
+ * @param visitedStates
+ */
 function addNeighbors(
   simState: BFSState,
   simParams: SimParams,
@@ -130,36 +164,17 @@ function addNeighbors(
 
   // If it's an input frame, we can do any input. Otherwise we still check the 'do nothing' case
   // The possible inputs are ordered strategically such that the final sequences will mimic human inputs
-  let possibleInputs = "";
-  if (isInputFrame) {
-    const numOrientations = simParams.rotationsList.length;
-    if (numOrientations == 2 && simState.rotationsRemaining > 0) {
-      possibleInputs += "ei";
-    }
-    if (numOrientations == 4 && simState.rotationsRemaining > 0) {
-      possibleInputs += "fg";
-    }
-    if (numOrientations == 2 && simState.rotationsRemaining > 0) {
-      possibleInputs += "A";
-    }
-    if (numOrientations == 4 && simState.rotationsRemaining > 0) {
-      possibleInputs += "B";
-    }
-    if (simState.initialDirection !== "L") {
-      possibleInputs += "R";
-    }
-    if (simState.initialDirection !== "R") {
-      possibleInputs += "L";
-    }
-  }
-
-  possibleInputs += ".";
-  // const possibleInputs = isInputFrame ? "eifgLRAB." : ".";
+  const possibleInputs = isInputFrame
+    ? INPUT_GRAMMAR[simState.grammarToken]
+    : ".";
 
   for (const input of possibleInputs) {
     tryInput(
-      input,
-      simState,
+      input.toUpperCase(),
+      {
+        ...simState,
+        grammarToken: isInputFrame ? input : simState.grammarToken, // Maybe update grammar token
+      },
       simParams,
       activeList,
       finalStates,
@@ -175,58 +190,40 @@ function addNeighbors(
  */
 function tryInput(
   inputChar: string,
-  parentState: BFSState,
+  simState: BFSState,
   simParams: SimParams,
   activeList: Array<BFSState>,
   finalStates: Array<BFSState>,
   visitedStates: Set<string>,
   isInputFrame: boolean
-): BFSState | null {
-  // Make sure we don't modify the parent state
-  const simState = cloneState(parentState);
-
+): void {
   // Check if the resulting state has been visited
   const xDelta = X_INCREMENT_LOOKUP[inputChar] || 0;
   const rotDelta = ROTATION_LOOKUP[inputChar] || 0;
-  const potentialNextState = {
-    ...simState,
-    x: simState.x + xDelta,
-    rotationIndex: _modulus(
-      simState.rotationIndex + rotDelta,
-      simParams.rotationsList.length
-    ),
-    frameIndex: simState.frameIndex + 1,
-  };
-  const potentialNextEncoded = encodeState(potentialNextState);
-  // console.log(inputChar, "\tTrying to get to " + potentialNextEncoded);
+  const newRot = _modulus(
+    simState.rotationIndex + rotDelta,
+    simParams.rotationsList.length
+  );
+  const potentialNextEncoded = encode(simState.x + xDelta, simState.y, newRot, simState.frameIndex + 1);
   if (visitedStates.has(potentialNextEncoded)) {
-    // console.log("\tVISITED:", potentialNextEncoded);
+    console.log(
+      "VISITED:",
+      simState.inputSequence + inputChar,
+    );
     return;
-  } else {
-    // console.log("\tNOVEL:", potentialNextEncoded);
   }
 
   // Run a simulated 'frame' of gravity, shifting, and collision checking
   const isGravityFrame =
     simState.frameIndex % simParams.gravity === simParams.gravity - 1; // Returns true every Nth frame, where N = gravity
 
-  // Update other properties of the state
+  // Update other properties of the state (doesn't affect frame simulation)
   simState.inputSequence += inputChar;
   if (inputChar == "." && isInputFrame) {
-    simState.canInputImmediately = true; // If the agent passed up on the ability to perform inputs, it can do the next one at any time
     simState.hasPassedOnInput = true;
     simState.arrFrameIndex = 0;
   } else {
-    simState.canInputImmediately = false;
     simState.arrFrameIndex += 1;
-  }
-  if (xDelta === -1) {
-    simState.initialDirection = "L";
-  } else if (xDelta == 1) {
-    simState.initialDirection = "R";
-  }
-  if (rotDelta !== 0) {
-    simState.rotationsRemaining--;
   }
   simState.frameIndex += 1;
 
@@ -299,9 +296,42 @@ function tryInput(
     simState.y++;
   }
 
-  // console.log("\tADDING:", encodeState(simState));
   visitedStates.add(encodeState(simState)); // Don't look for other inputs that get to this state
   activeList.push(simState);
+}
+
+function generatePossibilityList(
+  finalStates: Array<BFSState>,
+  simParams: SimParams
+): Array<PossibilityChain> {
+  const possibilityList = [];
+
+  for (const simState of finalStates) {
+    // Make a new board with that piece locked in
+    const [boardAfter, numLinesCleared] = getBoardAndLinesClearedAfterPlacement(
+      simParams.board,
+      simParams.rotationsList[simState.rotationIndex],
+      simState.x,
+      simState.y
+    );
+    let [surfaceArray, numHoles, holeCells] = getSurfaceArrayAndHoles(
+      boardAfter
+    );
+    surfaceArray = surfaceArray.slice(0, 9);
+
+    // Add the possibility to the list
+    possibilityList.push({
+      placement: [simState.rotationIndex, simState.x - simParams.initialX],
+      inputSequence: simState.inputSequence,
+      surfaceArray,
+      numHoles,
+      holeCells,
+      numLinesCleared,
+      boardAfter,
+    });
+  }
+
+  return possibilityList;
 }
 
 function debugLog(simState: SimState, simParams: SimParams, reason: string) {
@@ -322,7 +352,7 @@ function encodeState(state: BFSState): string {
     state.x -
     3 +
     "," +
-    (state.y + 2) +
+    (state.y + 1) +
     "," +
     state.rotationIndex +
     "," +
@@ -330,36 +360,42 @@ function encodeState(state: BFSState): string {
   );
 }
 
-/** Shallow clone a state to avoid pass-by-reference bugs */
-function cloneState(state: BFSState) {
-  return {
-    ...state,
-  };
+function encode(x, y, rot, frameIndex){
+  return (x-3) + "," + (y+1) + "," + rot + "," + frameIndex;
 }
 
-function getNumAllowedRotations(simParams: SimParams) {
-  switch (simParams.rotationsList.length) {
-    case 4:
-      return 2;
-    case 2:
-      return 1;
-    case 1:
-      return 0;
-    default:
-      throw Error("Rotationlist had unexpected length!");
+
+// console.log("T");
+// logBoard(getTestBoardWithHeight(10));
+// getPossibleMovesBfs(
+//   getTestBoardWithHeight(10),
+//   "L",
+//   18,
+//   0,
+//   0,
+//   0,
+//   "X...",
+//   0,
+//   false
+// );
+
+function speedTest(x) {
+  // console.time("\nspeedtest");
+  for (let i = 0; i < 1; i++) {
+    getPossibleMovesBfs(
+      getTestBoardWithHeight(x),
+      "L",
+      18,
+      0,
+      0,
+      0,
+      "X...",
+      0,
+      false
+    );
   }
+  // console.timeEnd("\nspeedtest");
 }
-
-console.log("I");
-logBoard(getTestBoardWithHeight(10));
-getPossibleMovesBfs(
-  getTestBoardWithHeight(10),
-  "I",
-  18,
-  0,
-  0,
-  0,
-  "X...",
-  0,
-  false
-);
+for (let i = 0; i < 30; i++){
+speedTest(0);
+}

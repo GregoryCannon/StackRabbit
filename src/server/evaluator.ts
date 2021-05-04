@@ -353,10 +353,12 @@ export function fastEval(
     4,
     aiParams.MAX_4_TAP_LOOKUP[levelAfterPlacement] - 5
   );
-  correctedSurface = correctSurfaceForDoubleWell(
-    correctedSurface,
-    maxSafeCol9Height
-  );
+  if (aiMode !== AiMode.DIG) {
+    correctedSurface = correctSurfaceForDoubleWell(
+      correctedSurface,
+      maxSafeCol9Height
+    );
+  }
   const adjustedNumHoles =
     numHoles +
     (aiMode === AiMode.KILLSCREEN && countCol10Holes(boardAfter) * 0.7);

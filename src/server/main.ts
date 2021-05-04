@@ -2,6 +2,8 @@ const evaluator = require("./evaluator");
 const aiModeManager = require("./ai_mode_manager");
 const boardHelper = require("./board_helper");
 const { SEARCH_BREADTH, modifyParamsForAiMode } = require("./params");
+import { getPossibleMovesBfs } from "./bfs";
+import { getPossibleMoves } from "./board_helper";
 import { EVALUATION_BREADTH } from "./params";
 import * as utils from "./utils";
 import { POSSIBLE_NEXT_PIECES } from "./utils";
@@ -204,18 +206,36 @@ function searchDepth1(
   evalBreadth: number
 ): Array<PossibilityChain> {
   // Get the possible moves
-  let possibilityList = boardHelper.getPossibleMoves(
-    searchState.board,
-    searchState.currentPieceId,
-    searchState.level,
-    searchState.existingXOffset,
-    searchState.existingYOffset,
-    searchState.framesAlreadyElapsed,
-    aiParams.INPUT_FRAME_TIMELINE,
-    searchState.existingRotation,
-    searchState.canFirstFrameShift,
-    /* shouldLog= */ false && shouldLog
-  );
+  let possibilityList = [];
+  for (let i = 0; i < 0; i++) {
+    possibilityList = getPossibleMoves(
+      searchState.board,
+      searchState.currentPieceId,
+      searchState.level,
+      searchState.existingXOffset,
+      searchState.existingYOffset,
+      searchState.framesAlreadyElapsed,
+      aiParams.INPUT_FRAME_TIMELINE,
+      searchState.existingRotation,
+      searchState.canFirstFrameShift,
+      false
+    );
+  }
+  for (let i = 0; i < 1; i++) {
+    possibilityList = getPossibleMovesBfs(
+      searchState.board,
+      searchState.currentPieceId,
+      searchState.level,
+      searchState.existingXOffset,
+      searchState.existingYOffset,
+      searchState.framesAlreadyElapsed,
+      aiParams.INPUT_FRAME_TIMELINE,
+      searchState.existingRotation,
+      searchState.canFirstFrameShift
+    );
+  }
+
+  // console.log(possibilitiesBfs.length, possibilityList.length);
 
   // If there are more moves than we plan on evaluating, do a fast-eval and prune based on that
   if (possibilityList.length > evalBreadth) {
@@ -252,7 +272,7 @@ function searchDepth1(
     possibility.evalExplanation = explanation as string;
 
     // Convert to a 1-chain
-    possibility.totalScore = value as number;
+    possibility.totalValue = value as number;
     possibility.partialValue = evaluator.getLineClearValue(
       possibility.numLinesCleared,
       aiParams

@@ -131,7 +131,8 @@ export function getPossibleMoves(
   existingRotation: number,
   canFirstFrameShift: boolean,
   shouldLog: boolean
-) {
+): Array<PossibilityChain> {
+  console.time("OG setup");
   _validateIntParam(level, 0, 999);
   _validateIntParam(existingXOffset, -5, 4);
   _validateIntParam(existingYOffset, 0, 20);
@@ -155,8 +156,14 @@ export function getPossibleMoves(
     canFirstFrameShift,
   };
 
+  console.timeEnd("OG setup");
+  console.time("OG main");
+
   const { rangesLeft, rangesRight } = getPieceRanges(currentPieceId, simParams);
   const NUM_ROTATIONS_FOR_PIECE = rangesLeft.length;
+
+  // console.timeEnd("BHPR");
+  // console.time("BHmain");
 
   const legalPlacements = [];
 
@@ -188,7 +195,9 @@ export function getPossibleMoves(
     }
   }
 
-  return _generatePossibilityList(
+  console.timeEnd("OG main");
+  console.time("OG generate possibilities");
+  const res = _generatePossibilityList(
     legalPlacements,
     startingBoard,
     currentPieceId,
@@ -199,6 +208,8 @@ export function getPossibleMoves(
     existingRotation,
     shouldLog
   );
+  console.timeEnd("OG generate possibilities");
+  return res;
 }
 
 function _generatePossibilityList(
@@ -211,7 +222,7 @@ function _generatePossibilityList(
   framesAlreadyElapsed: number,
   existingRotation: number,
   shouldLog: boolean
-): Array<Possibility> {
+): Array<PossibilityChain> {
   const possibilityList = [];
 
   for (const [rotationIndex, xOffset] of legalPlacements) {
@@ -272,10 +283,10 @@ function _generatePossibilityList(
  * B = press B
  * L = press L
  * R = press R
- * e = press L + B (2nd letter of 'left')
- * f = press L + A (3rd letter of 'left')
- * i = press R + B (2nd letter of 'right')
- * g = press R + A (3rd letter of 'right')
+ * E = press L + B (2nd letter of 'left')
+ * F = press L + A (3rd letter of 'left')
+ * I = press R + B (2nd letter of 'right')
+ * G = press R + A (3rd letter of 'right')
  *
  * e.g. L piece 5-tap left, 12Hz tapping: f....L....L....L....L
  */
@@ -307,10 +318,10 @@ function generateInputSequence(
       if (inputsLeft > 0) {
         // Do a left shift, possibly with a rotation
         if (rotationsRight > 0) {
-          inputSequence += "e";
+          inputSequence += "E";
           rotationsRight--;
         } else if (rotationsLeft > 0) {
-          inputSequence += "f";
+          inputSequence += "F";
           rotationsLeft--;
         } else {
           inputSequence += "L";
@@ -319,10 +330,10 @@ function generateInputSequence(
       } else if (inputsRight > 0) {
         // Do a right shift, possibly with a rotation
         if (rotationsRight > 0) {
-          inputSequence += "i";
+          inputSequence += "I";
           rotationsRight--;
         } else if (rotationsLeft > 0) {
-          inputSequence += "g";
+          inputSequence += "G";
           rotationsLeft--;
         } else {
           inputSequence += "R";
@@ -1039,37 +1050,25 @@ function lastMinuteRotationsTest() {
 tapRangeTest();
 // lastMinuteRotationsTest();
 
-// const simParams = {
-//   board: getTestBoardWithHeight(11),
-//   initialX: 3,
-//   initialY: -2,
-//   firstShiftDelay: 0,
-//   maxGravity: 1,
-//   maxArr: 4,
-//   rotationsList: PIECE_LOOKUP["O"][0],
-//   existingRotation: 0,
-// }
-// console.log("11 right 19 = ", repeatedlyShiftPiece(1, 0, simParams));
-// console.log(canDoPlacement(getTestBoardWithHeight(11), 19, "I", 1, 4, 5, 0));
+function speedTest(x) {
+  // console.time("\nspeedtest");
+  for (let i = 0; i < 1; i++) {
+    getPossibleMoves(
+      getTestBoardWithHeight(x),
+      "L",
+      18,
+      0,
+      0,
+      0,
+      "X...",
+      0,
+      false,
+      false
+    );
+  }
+  // console.timeEnd("\nspeedtest");
+}
+for (let i = 0; i < 100; i++){
+speedTest(i % 15);
+}
 
-// console.log(placementIsLegal(2, 0, {
-//   board: getTestBoardWithHeight(14),
-//   initialX: 3,
-//   initialY: -1,
-//   firstShiftDelay: 0,
-//   maxGravity: 0,
-//   maxArr: 3,
-//   rotationsList: PIECE_LOOKUP["J"][0],
-//   existingRotation: 0,
-// }));
-// console.log(canDoPlacement(getTestBoardWithHeight(8), 19, "I", 1, -5, 4, 2));
-// console.log(getPieceRanges("I", {
-//   board: getTestBoardWithHeight(9),
-//   initialX: 3,
-//   initialY: -2,
-//   firstShiftDelay: 0,
-//   maxGravity: 1,
-//   maxArr: 4,
-//   rotationsList: PIECE_LOOKUP["I"][0],
-//   existingRotation: 0,
-// }));
