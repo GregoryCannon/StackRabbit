@@ -1,3 +1,5 @@
+import { PIECE_LOOKUP } from "../tetrominoes";
+import { getBoardAndLinesClearedAfterPlacement } from "./board_helper";
 import { rateSurface } from "./evaluator";
 import { getSurfaceArrayAndHoles, logBoard } from "./utils";
 
@@ -76,7 +78,16 @@ function parseArguments(requestArgs): [SearchState, Array<number>] {
     .match(/.{1,10}/g) // Select groups of 10 characters
     .map((rowSerialized) => rowSerialized.split("").map((x) => parseInt(x)));
 
-  logBoard(board);
+  // logBoard(board);
+  logBoard(
+    getBoardAndLinesClearedAfterPlacement(
+      board,
+      PIECE_LOOKUP[currentPieceId][0][existingRotation],
+      existingXOffset + 3,
+      existingYOffset + (currentPieceId === "I" ? -2 : -1)
+    )[0]
+  );
+
   return [
     {
       board,
