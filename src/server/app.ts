@@ -139,7 +139,7 @@ function handleRequestSyncNoNextBox(requestArgs) {
   // Get the best move
   const bestMove = mainApp.getBestMove(
     searchState,
-    /* shouldLog= */ true,
+    /* shouldLog= */ false,
     params.getParams(),
     params.getParamMods(),
     inputDelaySequence,
@@ -163,7 +163,7 @@ function handleRequestSyncWithNextBox(requestArgs) {
   // Get the best move
   const bestMove = mainApp.getBestMove(
     searchState,
-    /* shouldLog= */ true,
+    /* shouldLog= */ false,
     params.getParams(),
     params.getParamMods(),
     inputDelaySequence,

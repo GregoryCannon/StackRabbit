@@ -206,36 +206,18 @@ function searchDepth1(
   evalBreadth: number
 ): Array<PossibilityChain> {
   // Get the possible moves
-  let possibilityList = [];
-  for (let i = 0; i < 0; i++) {
-    possibilityList = getPossibleMoves(
-      searchState.board,
-      searchState.currentPieceId,
-      searchState.level,
-      searchState.existingXOffset,
-      searchState.existingYOffset,
-      searchState.framesAlreadyElapsed,
-      aiParams.INPUT_FRAME_TIMELINE,
-      searchState.existingRotation,
-      searchState.canFirstFrameShift,
-      false
-    );
-  }
-  for (let i = 0; i < 1; i++) {
-    possibilityList = getPossibleMovesBfs(
-      searchState.board,
-      searchState.currentPieceId,
-      searchState.level,
-      searchState.existingXOffset,
-      searchState.existingYOffset,
-      searchState.framesAlreadyElapsed,
-      aiParams.INPUT_FRAME_TIMELINE,
-      searchState.existingRotation,
-      searchState.canFirstFrameShift
-    );
-  }
-
-  // console.log(possibilitiesBfs.length, possibilityList.length);
+  let possibilityList = getPossibleMoves(
+    searchState.board,
+    searchState.currentPieceId,
+    searchState.level,
+    searchState.existingXOffset,
+    searchState.existingYOffset,
+    searchState.framesAlreadyElapsed,
+    aiParams.INPUT_FRAME_TIMELINE,
+    searchState.existingRotation,
+    searchState.canFirstFrameShift,
+    false
+  );
 
   // If there are more moves than we plan on evaluating, do a fast-eval and prune based on that
   if (possibilityList.length > evalBreadth) {

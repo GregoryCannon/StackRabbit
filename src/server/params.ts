@@ -130,7 +130,7 @@ const DROUGHT_CODE_PARAMS = applyModsToParams(
 export function getParams(): InitialAiParams {
   // Uncomment when using the AI to practice digging
   // return V5_NO_DIRTIES;
-  return TRAINED_A0;
+  return AGGRO_PARAMS;
 }
 
 const V3_CUSTOM = {
@@ -139,7 +139,6 @@ const V3_CUSTOM = {
     COL_10_COEF: 0,
     HOLE_WEIGHT_COEF: -5.338196782641227,
     HOLE_COEF: -100,
-    SURFACE_COEF: 0.5,
     BUILT_OUT_LEFT_COEF: 0.6664592319119086,
   },
   NEAR_KILLSCREEN: DEFAULT_PARAM_MODS.NEAR_KILLSCREEN,

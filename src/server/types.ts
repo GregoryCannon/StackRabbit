@@ -4,6 +4,8 @@ type CellLocation = [number, number]; // [row, col]
 
 type Placement = [number, number]; // [numRightRotations, numShifts]
 
+type LockPlacement = [number, number, number, string]; // [numRightRotations, x, y, inputSequence, arrFrameIndex]
+
 type PieceArray = Array<Array<number>>;
 
 type PieceId = "I" | "O" | "L" | "J" | "T" | "S" | "Z" | null;

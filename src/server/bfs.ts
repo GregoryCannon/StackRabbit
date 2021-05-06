@@ -204,12 +204,14 @@ function tryInput(
     simState.rotationIndex + rotDelta,
     simParams.rotationsList.length
   );
-  const potentialNextEncoded = encode(simState.x + xDelta, simState.y, newRot, simState.frameIndex + 1);
+  const potentialNextEncoded = encode(
+    simState.x + xDelta,
+    simState.y,
+    newRot,
+    simState.frameIndex + 1
+  );
   if (visitedStates.has(potentialNextEncoded)) {
-    console.log(
-      "VISITED:",
-      simState.inputSequence + inputChar,
-    );
+    console.log("VISITED:", simState.inputSequence + inputChar);
     return;
   }
 
@@ -360,10 +362,9 @@ function encodeState(state: BFSState): string {
   );
 }
 
-function encode(x, y, rot, frameIndex){
-  return (x-3) + "," + (y+1) + "," + rot + "," + frameIndex;
+function encode(x, y, rot, frameIndex) {
+  return x - 3 + "," + (y + 1) + "," + rot + "," + frameIndex;
 }
-
 
 // console.log("T");
 // logBoard(getTestBoardWithHeight(10));
@@ -396,6 +397,6 @@ function speedTest(x) {
   }
   // console.timeEnd("\nspeedtest");
 }
-for (let i = 0; i < 30; i++){
-speedTest(0);
+for (let i = 0; i < 30; i++) {
+  speedTest(0);
 }
