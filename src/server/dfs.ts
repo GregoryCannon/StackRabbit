@@ -1,4 +1,5 @@
 import {
+  getBoardAndLinesClearedAfterPlacement,
   pieceCollision,
   _modulus,
   _validateIntParam,
@@ -32,7 +33,7 @@ export function searchForTucksOrSpins(
 ): Array<PossibilityChain> {
   const novelPossibilities = [];
   for (const simState of potentialTuckSpinStates) {
-    for (const inputChar of "eifgLRab") {
+    for (const inputChar of "EIFGLRAB") {
       const xDelta = X_INCREMENT_LOOKUP[inputChar] || 0;
       const rotDelta = ROTATION_LOOKUP[inputChar] || 0;
       const newRot = _modulus(
@@ -60,7 +61,7 @@ function hasBeenVisited(
   lockHeightLookup
 ): boolean {
   
-  const highestYSeen = lockHeightLookup.get(newRot + "," + newX);
+  const highestYSeen = lockHeightLookup.get(newRot + "," + newX) || 999;
   // If we've already reached this Y value by just placing it in this column normally (or with another tuck), it's been visited
   return simState.y <= highestYSeen;
 }
@@ -80,6 +81,7 @@ function tryInput(
 ): void {
   let hasDoneInput = false;
   let simState = {...parentSimState}
+  // console.log("TRYING:", parentSimState.inputSequence + inputChar);
 
   while (true) {
     // Run a simulated 'frame' of gravity, shifting, and collision checking
@@ -102,6 +104,7 @@ function tryInput(
         // Failed to perform input, don't add this state
         return;
       }
+      simState.x = newX
 
       // Try rotating if needed
       if (
@@ -118,11 +121,10 @@ function tryInput(
         // Failed to perform input, don't add this state
         return;
       }
+      simState.rotationIndex = newRotationIndex
 
       // It worked!
       simState.inputSequence += inputChar;
-      simState.x = newX;
-      simState.rotationIndex = newRotationIndex;
       hasDoneInput = true;
     }
 
@@ -143,11 +145,9 @@ function tryInput(
           simState.rotationIndex + "," + simState.x,
           simState.y
         );
-        const newposs=  getPossibilityFromSimState(simState, simParams, simState.inputSequence);
         novelPossibilities.push(
           getPossibilityFromSimState(simState, simParams, simState.inputSequence)
         );
-        logBoard(newposs.boardAfter);
         return;
       }
       // Otherwise it shifts down and we keep searching
