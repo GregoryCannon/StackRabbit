@@ -125,7 +125,6 @@ function getRowsNeedingToBurn(
   const rightColBoundary =
     aiMode === AiMode.DIG ? NUM_COLUMN - 1 : NUM_COLUMN - 2;
   for (let col = 0; col <= rightColBoundary; col++) {
-    console.log(`Checking col ${col + 1}`);
     // Go down to the top of the stack in that column
     let row = 0;
     while (row < NUM_ROW && board[row][col] == SquareState.EMPTY) {
