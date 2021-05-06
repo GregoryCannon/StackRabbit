@@ -2,8 +2,7 @@ const evaluator = require("./evaluator");
 const aiModeManager = require("./ai_mode_manager");
 const boardHelper = require("./board_helper");
 const { SEARCH_BREADTH, modifyParamsForAiMode } = require("./params");
-import { getPossibleMovesBfs } from "./bfs";
-import { getPossibleMoves } from "./board_helper";
+import { getPossibleMoves } from "./move_search";
 import { EVALUATION_BREADTH } from "./params";
 import * as utils from "./utils";
 import { POSSIBLE_NEXT_PIECES } from "./utils";
@@ -90,9 +89,7 @@ function searchConcretely(
   if (searchDepth == 1) {
     if (shouldLog) {
       depth1Possibilities.forEach((x) => {
-        console.log(
-          `${x.placement} : surface ${x.surfaceArray}, holes ${x.numHoles}, score ${x.evalScore}`
-        );
+        console.log(x.placement);
         console.log(x.evalExplanation);
       });
     }
@@ -239,7 +236,7 @@ function searchDepth1(
   }
 
   // Evaluate each promising possibility and convert it to a 1-chain
-  for (const possibility of possibilityList) {
+  for (const possibility of possibilityList as Array<PossibilityChain>) {
     // Evaluate
     const [value, explanation] = evaluator.getValueOfPossibility(
       possibility,
@@ -266,7 +263,9 @@ function searchDepth1(
     );
   }
   // Sort by value
-  return possibilityList.sort((x, y) => y.evalScore - x.evalScore);
+  return possibilityList.sort((x, y) => y.evalScore - x.evalScore) as Array<
+    PossibilityChain
+  >;
 }
 
 function searchDepth2(
@@ -342,7 +341,9 @@ function searchDepthNPlusOne(
           aiMode,
           EVALUATION_BREADTH[3]
         )[0] || null;
-      bestMove.totalValue = bestMove.evalScore + totalPartialValue;
+      if (bestMove !== null) {
+        bestMove.totalValue = bestMove.evalScore + totalPartialValue;
+      }
       bestMovesList.push({
         hypotheticalPiece,
         ...bestMove,

@@ -1,6 +1,40 @@
 import { PIECE_LOOKUP } from "../tetrominoes";
-import { canDoPlacement, getPossibleMoves, getTestBoardWithHeight, placementIsLegal } from "./board_helper";
-import { generateInputFrameTimeline } from "./utils";
+import { canDoPlacement, getTestBoardWithHeight } from "./board_helper";
+import { getPossibleMoves, placementIsLegal } from "./move_search";
+import { generateInputFrameTimeline, GetGravity } from "./utils";
+
+function legalMovesTest() {
+  const BOARD_3 = getTestBoardWithHeight(3);
+  const verifyNumMoves = (pieceId, expectedLength) => {
+    const possibilites = getPossibleMoves(
+      BOARD_3,
+      pieceId,
+      18,
+      0,
+      0,
+      0,
+      "X...",
+      0,
+      false,
+      false
+    );
+    if (possibilites.length !== expectedLength) {
+      throw new Error(
+        `Expected ${expectedLength} moves for ${pieceId} piece, instead got ${possibilites.length}`
+      );
+    }
+  };
+
+  verifyNumMoves("O", 9);
+
+  verifyNumMoves("I", 17);
+  verifyNumMoves("S", 17);
+  verifyNumMoves("Z", 17);
+
+  verifyNumMoves("L", 34);
+  verifyNumMoves("J", 34);
+  verifyNumMoves("T", 34);
+}
 
 function tapRangeTest() {
   const timeline10Hz = generateInputFrameTimeline([5]);
@@ -136,7 +170,7 @@ function lastMinuteRotationsTest() {
       board: getTestBoardWithHeight(14),
       initialX: 3,
       initialY: -1,
-      gravity: 0,
+      gravity: GetGravity(29),
       framesAlreadyElapsed: 0,
       inputFrameTimeline: "X...",
       rotationsList: PIECE_LOOKUP["J"][0] as Array<PieceArray>,
@@ -153,7 +187,7 @@ function lastMinuteRotationsTest() {
       board: getTestBoardWithHeight(15),
       initialX: 3,
       initialY: -1,
-      gravity: 0,
+      gravity: GetGravity(29),
       framesAlreadyElapsed: 0,
       inputFrameTimeline: "X...",
       rotationsList: PIECE_LOOKUP["J"][0] as Array<PieceArray>,
@@ -165,11 +199,8 @@ function lastMinuteRotationsTest() {
   }
 }
 
-tapRangeTest();
-// lastMinuteRotationsTest();
-
 function speedTest(x) {
-  // console.time("\nspeedtest");
+  console.time("\nspeedtest");
   for (let i = 0; i < 1; i++) {
     getPossibleMoves(
       getTestBoardWithHeight(x),
@@ -184,8 +215,14 @@ function speedTest(x) {
       false
     );
   }
-  // console.timeEnd("\nspeedtest");
+  console.timeEnd("\nspeedtest");
 }
-for (let i = 0; i < 100; i++) {
-  speedTest(i % 15);
-}
+
+// MAIN
+
+// for (let i = 0; i < 100; i++) {
+//   speedTest(i % 15);
+// }
+tapRangeTest();
+lastMinuteRotationsTest();
+legalMovesTest();
