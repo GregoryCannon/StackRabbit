@@ -57,15 +57,15 @@ export function getPossibleMoves(
   const legalPlacements: Array<Placement> = [];
   const legalPlacementSimStates: Array<SimState> = [];
 
-  // The spawn placement is always legal
-  const spawnState: SimState = {
-    x: initialX,
-    y: initialY,
-    frameIndex: framesAlreadyElapsed,
-    arrFrameIndex: canFirstFrameShift ? 0 : framesAlreadyElapsed,
-    rotationIndex: existingRotation,
-  };
-  legalPlacementSimStates.push(spawnState);
+  // // The spawn placement is always legal
+  // const spawnState: SimState = {
+  //   x: initialX,
+  //   y: initialY,
+  //   frameIndex: framesAlreadyElapsed,
+  //   arrFrameIndex: canFirstFrameShift ? 0 : framesAlreadyElapsed,
+  //   rotationIndex: existingRotation,
+  // };
+  // legalPlacementSimStates.push(spawnState);
 
   const NUM_ROTATIONS_FOR_PIECE = rotationsList.length;
   explorePlacementsHorizontally(
@@ -75,39 +75,34 @@ export function getPossibleMoves(
   );
 
   // Loop over the range and validate the moves with more rotations than shifts
-  if (NUM_ROTATIONS_FOR_PIECE > 1) {
-    for (
-      let rotationIndex = 0;
-      rotationIndex < NUM_ROTATIONS_FOR_PIECE;
-      rotationIndex++
-    ) {
-      const rotationDifference = _modulus(
-        rotationIndex - existingRotation,
-        NUM_ROTATIONS_FOR_PIECE
+  for (
+    let rotationIndex = 0;
+    rotationIndex < NUM_ROTATIONS_FOR_PIECE;
+    rotationIndex++
+  ) {
+    const rotationDifference = _modulus(
+      rotationIndex - existingRotation,
+      NUM_ROTATIONS_FOR_PIECE
+    );
+    const numRotationInputs =
+      rotationDifference === 3 ? 1 : rotationDifference;
+
+    const rangeStart = numRotationInputs == 2 ? -1 : 0;
+    const rangeEnd = numRotationInputs == 2 ? 1 : 0;
+
+    for (let xOffset = rangeStart; xOffset <= rangeEnd; xOffset++) {
+      // Check if the placement is legal
+      // (if it is, it will be added to the set of legal sim states as a side effect)
+      placementIsLegal(
+        rotationIndex,
+        xOffset,
+        simParams,
+        /* shouldLog= */ false,
+        legalPlacementSimStates
       );
-      const numRotationInputs =
-        rotationDifference === 3 ? 1 : rotationDifference;
-
-      const rangeStart = numRotationInputs == 2 ? -1 : 0;
-      const rangeEnd = numRotationInputs == 2 ? 1 : 0;
-
-      for (let xOffset = rangeStart; xOffset <= rangeEnd; xOffset++) {
-        // Don't double count the spawn state
-        if (rotationIndex == 0) {
-          continue;
-        }
-        // Check if the placement is legal
-        // (if it is, it will be added to the set of legal sim states as a side effect)
-        placementIsLegal(
-          rotationIndex,
-          xOffset,
-          simParams,
-          /* shouldLog= */ false,
-          legalPlacementSimStates
-        );
-      }
     }
   }
+
 
   const [
     basicPossibilities,

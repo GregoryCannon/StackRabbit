@@ -65,7 +65,7 @@ export const DEFAULT_PARAM_MODS = {
     LEFT_SURFACE_COEF: 1,
   },
   KILLSCREEN_RIGHT_WELL: {
-    SCARE_HEIGHT_OFFSET: -3,
+    SCARE_HEIGHT_OFFSET: -5,
   },
 };
 
@@ -127,10 +127,34 @@ const DROUGHT_CODE_PARAMS = applyModsToParams(
   DROUGHT_MODIFICATIONS
 );
 
+const PLAY_PERFECT_PARAMS = {
+  AVG_HEIGHT_EXPONENT: 0,
+  AVG_HEIGHT_COEF: 0,
+  SCARE_HEIGHT_OFFSET: 50,
+  BURN_COEF: -1000,
+  COL_10_COEF: 0, // changed due to feature changing
+  COL_10_HEIGHT_MULTIPLIER_EXP: 0,
+  MAX_DIRTY_TETRIS_HEIGHT: 0, // (As a multiple of the scare height) Added manually since didn't exist at time of training
+  EXTREME_GAP_COEF: -3,
+  BUILT_OUT_LEFT_COEF: 0, // changed due to feature changing
+  BUILT_OUT_RIGHT_COEF: 0, // Added manually since didn't exist at time of training
+  HOLE_COEF: 0,
+  HOLE_WEIGHT_COEF: 0,
+  SPIRE_HEIGHT_EXPONENT: 1.215999999999999, // changed due to feature changing
+  SPIRE_HEIGHT_COEF: -1.1556000000000002, // changed due to feature changing
+  UNABLE_TO_BURN_COEF: 0, // changed due to feature changing
+  HIGH_COL_9_COEF: 0,
+  HIGH_COL_9_EXP: 0,
+  SURFACE_COEF: 1,
+  LEFT_SURFACE_COEF: 0,
+  TETRIS_COEF: 28.248,
+  TETRIS_READY_COEF: 5.909760000000001,
+  INACCESSIBLE_LEFT_COEF: -30, // Added manually since didn't exist at time of training
+  INACCESSIBLE_RIGHT_COEF: -10000, // The only thing it cares about more than not burning is keeping the right well open
+}
+
 export function getParams(): InitialAiParams {
-  // Uncomment when using the AI to practice digging
-  // return V5_NO_DIRTIES;
-  return AGGRO_PARAMS;
+  return PLAY_PERFECT_PARAMS;
 }
 
 const V3_CUSTOM = {
@@ -196,40 +220,6 @@ const TRAINED_A1: InitialAiParams = {
   TETRIS_READY_COEF: 5.318784000000001,
   INACCESSIBLE_LEFT_COEF: -33,
   INACCESSIBLE_RIGHT_COEF: -150,
-};
-
-/*
-[
-    1, 0.9, 0.9, 0.9, 1.1, 1.1,
-  0.5, 1.5, 1.1, 0.9, 0.9, 0.5,
-  0.5, 1.5,   1, 1.5, 1.1, 1.1,
-  1.1,   1,   1, 1.5, 0.5
-]
-*/
-const TRAINED_NNB_A1: InitialAiParams = {
-  BURN_COEF: -5,
-  SURFACE_COEF: 0.9,
-  AVG_HEIGHT_EXPONENT: 1.2240000000000362,
-  AVG_HEIGHT_COEF: -4.0556160000000006,
-  SCARE_HEIGHT_OFFSET: -3.3000000000000003,
-  HOLE_COEF: -33,
-  COL_10_COEF: -1,
-  COL_10_HEIGHT_MULTIPLIER_EXP: 4.5,
-  TETRIS_COEF: 31.072800000000004,
-  TETRIS_READY_COEF: 5.318784000000001,
-  MAX_DIRTY_TETRIS_HEIGHT: 0.135,
-  EXTREME_GAP_COEF: -1.5,
-  BUILT_OUT_LEFT_COEF: 0.75,
-  BUILT_OUT_RIGHT_COEF: 0,
-  HOLE_WEIGHT_COEF: 0,
-  SPIRE_HEIGHT_EXPONENT: 1.8239999999999985,
-  SPIRE_HEIGHT_COEF: -1.2711600000000003,
-  UNABLE_TO_BURN_COEF: -1.1,
-  HIGH_COL_9_COEF: -1.6500000000000001,
-  HIGH_COL_9_EXP: 2,
-  LEFT_SURFACE_COEF: 0,
-  INACCESSIBLE_LEFT_COEF: -45,
-  INACCESSIBLE_RIGHT_COEF: -50,
 };
 
 export const TRAINED_B1: InitialAiParams = {

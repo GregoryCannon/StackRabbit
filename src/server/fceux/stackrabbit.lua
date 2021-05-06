@@ -263,7 +263,7 @@ function executeInputs()
       if shiftsExecuted ~= offsetXAtAdjustmentTime then
         print("Actual X offset: " .. shiftsExecuted .. " predicted: " .. offsetXAtAdjustmentTime .. " Diff: " .. offsetXAtAdjustmentTime - shiftsExecuted)
       end
-      print("Time for adjustment" .. frameIndex .. ", " .. arrFrameIndex)
+      print("Time for adjustment " .. frameIndex .. ", " .. arrFrameIndex)
       calculateInputs(adjustmentApiResult, true)
     end
 

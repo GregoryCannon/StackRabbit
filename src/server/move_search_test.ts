@@ -18,9 +18,34 @@ function legalMovesTest() {
       false,
       false
     );
+    const adjustmentPossibilites = getPossibleMoves(
+      BOARD_3,
+      pieceId,
+      18,
+      0,
+      2,
+      1,
+      "X...",
+      pieceId == "O" ? 0 : 1,
+      false,
+      false
+    );
+    if (new Set(possibilites).size !== expectedLength){
+      console.log(possibilites.map(x => x.placement));
+      throw new Error(`Found duplicate possibilities for ${pieceId} piece`);
+    }
     if (possibilites.length !== expectedLength) {
       throw new Error(
         `Expected ${expectedLength} moves for ${pieceId} piece, instead got ${possibilites.length}`
+      );
+    }
+    if (new Set(possibilites).size !== expectedLength){
+      console.log(possibilites.map(x => x.placement));
+      throw new Error(`Found duplicate adjustment possibilities for ${pieceId} piece`);
+    }
+    if (possibilites.length !== expectedLength) {
+      throw new Error(
+        `Expected ${expectedLength} adjustment moves for ${pieceId} piece, instead got ${possibilites.length}`
       );
     }
   };
