@@ -124,7 +124,8 @@ function getRowsNeedingToBurn(
   const linesNeededToClear: Set<number> = new Set();
   const rightColBoundary =
     aiMode === AiMode.DIG ? NUM_COLUMN - 1 : NUM_COLUMN - 2;
-  for (let col = 0; col < rightColBoundary; col++) {
+  for (let col = 0; col <= rightColBoundary; col++) {
+    console.log(`Checking col ${col + 1}`);
     // Go down to the top of the stack in that column
     let row = 0;
     while (row < NUM_ROW && board[row][col] == SquareState.EMPTY) {
@@ -139,8 +140,7 @@ function getRowsNeedingToBurn(
         board[row][col] === SquareState.EMPTY &&
         NUM_ROW - row > maxDirtyTetrisHeight
       ) {
-        // We found a hole. This row and all the full rows above it will need to be cleared
-        linesNeededToClear.add(row);
+        // We found a hole. All the full rows above it will need to be cleared
         for (const line of rowsInStackPassedThrough) {
           linesNeededToClear.add(line);
         }
