@@ -38,6 +38,10 @@ interface BFSState extends SimState {
   inputSequence: string; // Tracks the sequence up to this state
 }
 
+interface DFSState extends SimState {
+  inputSequence: string;
+}
+
 interface LiteGameState {
   board: Board;
   score: number;

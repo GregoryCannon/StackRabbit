@@ -6,6 +6,7 @@ import {
   _modulus,
   _validateIntParam,
 } from "./board_helper";
+import { searchForTucksOrSpins } from "./dfs";
 import {
   GetGravity,
   getSurfaceArrayAndHoles,
@@ -84,8 +85,7 @@ export function getPossibleMoves(
       rotationIndex - existingRotation,
       NUM_ROTATIONS_FOR_PIECE
     );
-    const numRotationInputs =
-      rotationDifference === 3 ? 1 : rotationDifference;
+    const numRotationInputs = rotationDifference === 3 ? 1 : rotationDifference;
 
     const rangeStart = numRotationInputs == 2 ? -1 : 0;
     const rangeEnd = numRotationInputs == 2 ? 1 : 0;
@@ -103,13 +103,13 @@ export function getPossibleMoves(
     }
   }
 
-
   const [
     basicPossibilities,
     lockHeightLookup,
     potentialTuckSpinStates,
   ] = exploreLegalPlacementsUntilLock(legalPlacementSimStates, simParams);
 
+  const tuckSpinPossibilites = searchForTucksOrSpins(potentialTuckSpinStates, simParams, lockHeightLookup);
   // const res = _generatePossibilityList(
   //   legalPlacements,
   //   startingBoard,
@@ -121,7 +121,10 @@ export function getPossibleMoves(
   //   existingRotation,
   //   shouldLog
   // );
-  return basicPossibilities;
+  // if (tuckSpinPossibilites.length == 0){
+  //   throw new Error("No tucks found " + simParams.rotationsList.length);
+  // }
+  return basicPossibilities.concat(tuckSpinPossibilites);
 }
 
 /** Starts with a set of states that are legal placements, but still have the piece hovering in the air.
@@ -141,15 +144,22 @@ export function getPossibleMoves(
 function exploreLegalPlacementsUntilLock(
   legalPlacementSimStates: Array<SimState>,
   simParams: SimParams
-): [Array<Possibility>, Map<string, number>, Array<SimState>] {
+): [Array<Possibility>, Map<string, number>, Array<DFSState>] {
   const lockPossibilities = [];
   const lockHeightLookup: Map<string, number> = new Map();
-  const potentialTuckSpinStates: Array<SimState> = [];
+  const potentialTuckSpinStates: Array<DFSState> = [];
 
   for (const simState of legalPlacementSimStates) {
     const currentRotationPiece =
       simParams.rotationsList[simState.rotationIndex];
     let y = simState.y;
+    const inputSequence = generateInputSequence(
+      _modulus(simState.rotationIndex - simParams.existingRotation, 4),
+      simState.x - simParams.initialX,
+      simParams.inputFrameTimeline,
+      simParams.framesAlreadyElapsed
+    );
+    let inputSequenceWithWait = inputSequence;
 
     // Move the piece down until it hits the stack
     while (
@@ -158,18 +168,31 @@ function exploreLegalPlacementsUntilLock(
       y++;
     }
 
+    let startedLookingForTuckSpins = false;
+    let highestRegisteredY = -1; // Tracks the Y values already registered to avoid duplicates
     while (true) {
-      // Run a simulated 'frame' of gravity, shifting, and collision checking
-      // We simulate shifts and rotations on the ARR triggers, just like the Lua script does
-      const isInputFrame = shouldPerformInputsThisFrame(
-        simParams.inputFrameTimeline,
-        simState.arrFrameIndex
-      );
+      // Run simulated frames of only gravity
       const isGravityFrame =
         simState.frameIndex % simParams.gravity === simParams.gravity - 1; // Returns true every Nth frame, where N = gravity
 
-      if (isInputFrame) {
-        potentialTuckSpinStates.push({ ...simState });
+      // Start looking for tucks/spins as soon as it's allowed to submit inputs
+      if (
+        !startedLookingForTuckSpins &&
+        shouldPerformInputsThisFrame(
+          simParams.inputFrameTimeline,
+          simState.arrFrameIndex
+        )
+      ) {
+        startedLookingForTuckSpins = true;
+      }
+
+      // If we're ready to input and at a new Y value, then we're good to go!
+      if (startedLookingForTuckSpins && simState.y > highestRegisteredY) {
+        potentialTuckSpinStates.push({
+          ...simState,
+          inputSequence: inputSequenceWithWait,
+        });
+        highestRegisteredY = simState.y;
       }
 
       if (isGravityFrame) {
@@ -181,15 +204,21 @@ function exploreLegalPlacementsUntilLock(
             currentRotationPiece
           )
         ) {
-          // Piece would lock in! Generate the lock possibility now
+          // Piece would lock in!
+          // Do some housekeeping and then generate the possibility
+          lockHeightLookup.set(
+            simState.rotationIndex + "," + simState.x,
+            simState.y
+          );
           lockPossibilities.push(
-            getPossibilityFromSimState(simState, simParams)
+            getPossibilityFromSimState(simState, simParams, inputSequence)
           );
           break;
         }
         simState.y++;
       }
 
+      inputSequenceWithWait += ".";
       simState.frameIndex += 1;
       simState.arrFrameIndex += 1;
     }
@@ -198,9 +227,10 @@ function exploreLegalPlacementsUntilLock(
   return [lockPossibilities, lockHeightLookup, potentialTuckSpinStates];
 }
 
-function getPossibilityFromSimState(
+export function getPossibilityFromSimState(
   simState: SimState,
-  simParams: SimParams
+  simParams: SimParams,
+  inputSequence: string
 ): Possibility {
   // Make a new board with that piece locked in
   const [boardAfter, numLinesCleared] = getBoardAndLinesClearedAfterPlacement(
@@ -213,15 +243,9 @@ function getPossibilityFromSimState(
   surfaceArray = surfaceArray.slice(0, 9);
 
   // Add the possibility to the list
-  const xOffset = simState.x - simParams.initialX;
   return {
-    placement: [simState.rotationIndex, xOffset],
-    inputSequence: generateInputSequence(
-      _modulus(simState.rotationIndex - simParams.existingRotation, 4),
-      xOffset,
-      simParams.inputFrameTimeline,
-      simParams.framesAlreadyElapsed
-    ),
+    placement: [simState.rotationIndex, simState.x - simParams.initialX],
+    inputSequence,
     surfaceArray,
     numHoles,
     holeCells,

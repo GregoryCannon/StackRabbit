@@ -151,7 +151,7 @@ const PLAY_PERFECT_PARAMS = {
   TETRIS_READY_COEF: 5.909760000000001,
   INACCESSIBLE_LEFT_COEF: -30, // Added manually since didn't exist at time of training
   INACCESSIBLE_RIGHT_COEF: -10000, // The only thing it cares about more than not burning is keeping the right well open
-}
+};
 
 export function getParams(): InitialAiParams {
   return PLAY_PERFECT_PARAMS;

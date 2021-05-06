@@ -30,8 +30,8 @@ function legalMovesTest() {
       false,
       false
     );
-    if (new Set(possibilites).size !== expectedLength){
-      console.log(possibilites.map(x => x.placement));
+    if (new Set(possibilites).size !== expectedLength) {
+      console.log(possibilites.map((x) => x.placement));
       throw new Error(`Found duplicate possibilities for ${pieceId} piece`);
     }
     if (possibilites.length !== expectedLength) {
@@ -39,9 +39,11 @@ function legalMovesTest() {
         `Expected ${expectedLength} moves for ${pieceId} piece, instead got ${possibilites.length}`
       );
     }
-    if (new Set(possibilites).size !== expectedLength){
-      console.log(possibilites.map(x => x.placement));
-      throw new Error(`Found duplicate adjustment possibilities for ${pieceId} piece`);
+    if (new Set(possibilites).size !== expectedLength) {
+      console.log(possibilites.map((x) => x.placement));
+      throw new Error(
+        `Found duplicate adjustment possibilities for ${pieceId} piece`
+      );
     }
     if (possibilites.length !== expectedLength) {
       throw new Error(

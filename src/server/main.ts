@@ -90,6 +90,7 @@ function searchConcretely(
     if (shouldLog) {
       depth1Possibilities.forEach((x) => {
         console.log(x.placement);
+        console.log(x.inputSequence);
         console.log(x.evalExplanation);
       });
     }
