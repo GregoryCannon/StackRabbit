@@ -14,7 +14,7 @@ let asyncCallInProgress = false;
 let asyncResult = null;
 
 const SHOULD_LOG_NB = false;
-const SHOULD_LOG_NNB = false;
+const SHOULD_LOG_NO_NB = false;
 
 /**
  * Parses and validates the inputs
@@ -42,6 +42,20 @@ function parseArguments(requestArgs): [SearchState, Array<number>] {
   framesAlreadyElapsed = parseInt(framesAlreadyElapsed) || 0;
   existingRotation = parseInt(existingRotation) || 0;
   canFirstFrameShift = canFirstFrameShift.toLowerCase() === "true";
+
+  console.log({
+    boardStr,
+    currentPieceId,
+    nextPieceId,
+    level,
+    lines,
+    existingXOffset,
+    existingYOffset,
+    existingRotation,
+    framesAlreadyElapsed,
+    inputFrameTimeline,
+    canFirstFrameShift,
+  });
 
   // Validate pieces
   currentPieceId = currentPieceId.toUpperCase();
@@ -108,7 +122,6 @@ function parseArguments(requestArgs): [SearchState, Array<number>] {
 /**
  * Asynchronously chooses the best placement, with next box and 1-depth search.
  * Doesn't block the thread while computing, and returns the API response that should be sent in the meantime.
- * @param {function} callbackFunction called on completion
  * @returns {string} the *initial* API response - i.e. whether the request was accepted and started
  */
 function handleRequestAsyncWithNextBox(requestArgs): [string, number] {
@@ -130,13 +143,42 @@ function handleRequestAsyncWithNextBox(requestArgs): [string, number] {
   return ["Request accepted.", 200];
 }
 
+/**
+ * Asynchronously chooses the best placement, with no next box and 1-depth search.
+ * Doesn't block the thread while computing, and returns the API response that should be sent in the meantime.
+ * @returns {string} the *initial* API response - i.e. whether the request was accepted and started
+ */
+function handleRequestAsyncNoNextBox(requestArgs): [string, number] {
+  if (asyncCallInProgress) {
+    throw new Error(
+      "Async call made when previous calculation wasn't complete"
+    );
+    // return ["Error - already handling an async call", 500];
+  }
+
+  // Async wrapper around the synchronous handler
+  async function processRequest(requestArgs) {
+    // Wait 1ms to ensure that this is called async
+    await new Promise((resolve) => setTimeout(resolve, 1));
+    asyncResult = handleRequestSyncNoNextBox(requestArgs);
+    asyncCallInProgress = false;
+  }
+
+  asyncCallInProgress = true;
+  asyncResult = null;
+  processRequest(requestArgs);
+  return ["Request accepted.", 200];
+}
+
 function formatResponse(possibility: Possibility) {
   return (
     possibility.placement[0] +
     "," +
     possibility.placement[1] +
     "|" +
-    possibility.inputSequence
+    (possibility.inputSequence || "none") +
+    "|" +
+    possibility.boardAfter.map((row) => row.join("")).join("")
   );
 }
 
@@ -150,12 +192,12 @@ function handleRequestSyncNoNextBox(requestArgs) {
   // Get the best move
   const bestMove = mainApp.getBestMove(
     searchState,
-    SHOULD_LOG_NNB,
+    SHOULD_LOG_NO_NB,
     params.getParams(),
     params.getParamMods(),
     inputDelaySequence,
     /* searchDepth= */ 1,
-    /* hypotheticalSearchDepth= */ 0
+    /* hypotheticalSearchDepth= */ 1
   );
 
   if (!bestMove) {
@@ -233,6 +275,8 @@ const server = http.createServer((req, res) => {
     response = handleRankLookup(requestArgs);
   } else if (requestType === "async-nb") {
     [response, responseCode] = handleRequestAsyncWithNextBox(requestArgs);
+  } else if (requestType === "async-nnb") {
+    [response, responseCode] = handleRequestAsyncNoNextBox(requestArgs);
   } else if (requestType === "sync-nb") {
     response = handleRequestSyncWithNextBox(requestArgs);
   } else if (requestType === "sync-nnb") {
