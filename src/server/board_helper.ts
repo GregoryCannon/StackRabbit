@@ -269,12 +269,14 @@ export function canDoPlacement(
 /** Returns true if the board needs a 5 tap to resolve, and the tap speed is not sufficient to get a piece there. */
 export function boardHasInaccessibileLeft(
   board: Board,
+  surfaceArray: Array<number>,
   level: number,
   aiParams: AiParams,
   aiMode: AiMode
 ) {
-  const col1Height = getBoardHeightAtColumn(board, 0);
-  const col2Height = getBoardHeightAtColumn(board, 1);
+  const col1Height = surfaceArray[0];
+  const col2Height = surfaceArray[1];
+  const col3Height = surfaceArray[2];
 
   if (aiMode === AiMode.KILLSCREEN) {
     // On killscreen, we mainly access the left with 4-taps. So we need either
@@ -304,6 +306,17 @@ export function boardHasInaccessibileLeft(
     col1Height >= col2Height &&
     col1Height > aiParams.MAX_5_TAP_LOOKUP[level]
   ) {
+    return false;
+  }
+  // If an L can reach the left, then we're fine
+  if (col1Height === col2Height - 1 && col2Height == col3Height && canDoPlacement(
+    board,
+    level,
+    "L",
+    0,
+    -4,
+    aiParams.INPUT_FRAME_TIMELINE
+  )){
     return false;
   }
   return !canDoPlacement(
