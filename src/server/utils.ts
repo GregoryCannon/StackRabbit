@@ -112,7 +112,7 @@ export function generateDigPracticeBoard(garbageHeight, numHoles) {
   return board;
 }
 
-function isTuckSetup(row, col, board){}
+function isTuckSetup(row, col, board) {}
 
 export function getSurfaceArrayAndHoles(
   board: Board

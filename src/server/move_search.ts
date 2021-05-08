@@ -98,7 +98,11 @@ export function getPossibleMoves(
     potentialTuckSpinStates,
   ] = exploreLegalPlacementsUntilLock(legalPlacementSimStates, simParams);
 
-  const tuckSpinPossibilites = searchForTucksOrSpins(potentialTuckSpinStates, simParams, lockHeightLookup);
+  const tuckSpinPossibilites = searchForTucksOrSpins(
+    potentialTuckSpinStates,
+    simParams,
+    lockHeightLookup
+  );
   // const res = _generatePossibilityList(
   //   legalPlacements,
   //   startingBoard,
@@ -242,7 +246,6 @@ export function getPossibilityFromSimState(
     boardAfter,
   };
 }
-
 
 /**
  * Calculates how far in each direction a hypothetical piece can be tapped (for each rotation), given the AI's tap speed and

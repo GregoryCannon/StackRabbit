@@ -34,7 +34,8 @@ export function searchForTucksOrSpins(
   const novelPossibilities = [];
   for (const simState of potentialTuckSpinStates) {
     const numOrientations = simParams.rotationsList.length;
-    const possibleInputs = numOrientations == 1 ? "LR" : numOrientations == 2 ? "EILRA" : "EIFGLRAB";
+    const possibleInputs =
+      numOrientations == 1 ? "LR" : numOrientations == 2 ? "EILRA" : "EIFGLRAB";
     for (const inputChar of possibleInputs) {
       const xDelta = X_INCREMENT_LOOKUP[inputChar] || 0;
       const rotDelta = ROTATION_LOOKUP[inputChar] || 0;
@@ -44,11 +45,17 @@ export function searchForTucksOrSpins(
       );
       const newX = simState.x + xDelta;
 
-      if (
-        !hasBeenVisited(newX, newRot, simState, lockHeightLookup)
-      ) {
+      if (!hasBeenVisited(newX, newRot, simState, lockHeightLookup)) {
         // Potential new state! (If it's legal)
-        tryInput(inputChar, newX, newRot, simState, simParams, lockHeightLookup, novelPossibilities);
+        tryInput(
+          inputChar,
+          newX,
+          newRot,
+          simState,
+          simParams,
+          lockHeightLookup,
+          novelPossibilities
+        );
       }
     }
   }
@@ -62,8 +69,7 @@ function hasBeenVisited(
   simState: SimState,
   lockHeightLookup
 ): boolean {
-  
-  const highestYSeen = lockHeightLookup.get(newRot + "," + newX) || 999;
+  const highestYSeen = lockHeightLookup.get(newRot + "," + newX) || 0;
   // If we've already reached this Y value by just placing it in this column normally (or with another tuck), it's been visited
   return simState.y <= highestYSeen;
 }
@@ -82,7 +88,7 @@ function tryInput(
   novelPossibilities: Array<Possibility>
 ): void {
   let hasDoneInput = false;
-  let simState = {...parentSimState}
+  let simState = { ...parentSimState };
   // console.log("TRYING:", parentSimState.inputSequence + inputChar);
 
   while (true) {
@@ -106,7 +112,7 @@ function tryInput(
         // Failed to perform input, don't add this state
         return;
       }
-      simState.x = newX
+      simState.x = newX;
 
       // Try rotating if needed
       if (
@@ -123,7 +129,7 @@ function tryInput(
         // Failed to perform input, don't add this state
         return;
       }
-      simState.rotationIndex = newRotationIndex
+      simState.rotationIndex = newRotationIndex;
 
       // It worked!
       simState.inputSequence += inputChar;
@@ -148,7 +154,11 @@ function tryInput(
         //   simState.y
         // );
         novelPossibilities.push(
-          getPossibilityFromSimState(simState, simParams, simState.inputSequence)
+          getPossibilityFromSimState(
+            simState,
+            simParams,
+            simState.inputSequence
+          )
         );
         return;
       }
@@ -170,7 +180,6 @@ function debugLog(simState: SimState, simParams: SimParams, reason: string) {
   //   )[0]
   // );
 }
-
 
 // function speedTest(x) {
 //   // console.time("\nspeedtest");

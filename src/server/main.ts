@@ -40,6 +40,7 @@ export function getBestMove(
     aiParams
   );
   aiParams = modifyParamsForAiMode(aiParams, aiMode, paramMods);
+  console.log(aiParams);
 
   const concretePossibilities = searchConcretely(
     searchState,
@@ -175,7 +176,9 @@ function searchHypothetically(
         }`
       );
       console.log(
-        `Expected Value: ${result.expectedValue}, Original Value: ${chain.totalValue}`
+        `Expected Value: ${result.expectedValue.toFixed(
+          2
+        )}, Original Value: ${chain.totalValue.toFixed(2)}`
       );
       for (const hypotheticalBestMove of result.bestMoves) {
         console.log(

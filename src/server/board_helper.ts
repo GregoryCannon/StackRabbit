@@ -309,14 +309,11 @@ export function boardHasInaccessibileLeft(
     return false;
   }
   // If an L can reach the left, then we're fine
-  if (col1Height === col2Height - 1 && col2Height == col3Height && canDoPlacement(
-    board,
-    level,
-    "L",
-    0,
-    -4,
-    aiParams.INPUT_FRAME_TIMELINE
-  )){
+  if (
+    col1Height === col2Height - 1 &&
+    col2Height == col3Height &&
+    canDoPlacement(board, level, "L", 0, -4, aiParams.INPUT_FRAME_TIMELINE)
+  ) {
     return false;
   }
   return !canDoPlacement(
