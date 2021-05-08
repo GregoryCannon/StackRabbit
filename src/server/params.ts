@@ -99,7 +99,7 @@ export const DEFAULT_PARAMS: InitialAiParams = {
   TETRIS_COEF: 28.248,
   TETRIS_READY_COEF: 5.909760000000001,
   INACCESSIBLE_LEFT_COEF: -30, // Added manually since didn't exist at time of training
-  INACCESSIBLE_RIGHT_COEF: -100, // Added manually since didn't exist at time of training
+  INACCESSIBLE_RIGHT_COEF: -300, // Added manually since didn't exist at time of training
 };
 
 const DROUGHT_MODIFICATIONS = {
@@ -117,25 +117,36 @@ export const V5_NO_DIRTIES = applyModsToParams(
   NO_DIRTIES_MODIFICATIONS
 );
 
-const AGGRO_MODIFICATIONS = {
+const SEMI_AGGRO_MODIFICATIONS = {
   BURN_COEF: -14,
-  UNABLE_TO_BURN_COEF: -0.3,
+  UNABLE_TO_BURN_COEF: -0.1,
+  AVG_HEIGHT_EXPONENT: 1.5
 };
+
+const AGGRO_MODIFICATIONS = {
+  BURN_COEF: -20,
+  MAX_DIRTY_TETRIS_HEIGHT: 0.25,
+  UNABLE_TO_BURN_COEF: -0.3,
+  AVG_HEIGHT_EXPONENT: 1.5,
+  AVG_HEIGHT_COEF: -10
+};
+
 const AGGRO_PARAMS = applyModsToParams(DEFAULT_PARAMS, AGGRO_MODIFICATIONS);
+const SEMI_AGGRO_PARAMS = applyModsToParams(DEFAULT_PARAMS, SEMI_AGGRO_MODIFICATIONS);
 const DROUGHT_CODE_PARAMS = applyModsToParams(
   DEFAULT_PARAMS,
   DROUGHT_MODIFICATIONS
 );
 
 const PLAY_PERFECT_PARAMS = {
-  AVG_HEIGHT_EXPONENT: 0,
-  AVG_HEIGHT_COEF: 0,
-  SCARE_HEIGHT_OFFSET: 50,
+  AVG_HEIGHT_EXPONENT: 1.36000000000004,
+  AVG_HEIGHT_COEF: -4.5,
+  SCARE_HEIGHT_OFFSET: -3,
   BURN_COEF: -1000,
   COL_10_COEF: 0, // changed due to feature changing
   COL_10_HEIGHT_MULTIPLIER_EXP: 0,
   MAX_DIRTY_TETRIS_HEIGHT: 0, // (As a multiple of the scare height) Added manually since didn't exist at time of training
-  EXTREME_GAP_COEF: -3,
+  EXTREME_GAP_COEF: -2,
   BUILT_OUT_LEFT_COEF: 0, // changed due to feature changing
   BUILT_OUT_RIGHT_COEF: 0, // Added manually since didn't exist at time of training
   HOLE_COEF: 0,
@@ -147,14 +158,14 @@ const PLAY_PERFECT_PARAMS = {
   HIGH_COL_9_EXP: 0,
   SURFACE_COEF: 1,
   LEFT_SURFACE_COEF: 0,
-  TETRIS_COEF: 28.248,
+  TETRIS_COEF: 500,
   TETRIS_READY_COEF: 5.909760000000001,
   INACCESSIBLE_LEFT_COEF: -30, // Added manually since didn't exist at time of training
   INACCESSIBLE_RIGHT_COEF: -10000, // The only thing it cares about more than not burning is keeping the right well open
 };
 
 export function getParams(): InitialAiParams {
-  return PLAY_PERFECT_PARAMS;
+  return DEFAULT_PARAMS;
 }
 
 const V3_CUSTOM = {
