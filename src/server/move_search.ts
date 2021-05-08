@@ -55,18 +55,7 @@ export function getPossibleMoves(
     canFirstFrameShift,
   };
 
-  const legalPlacements: Array<Placement> = [];
   const legalPlacementSimStates: Array<SimState> = [];
-
-  // // The spawn placement is always legal
-  // const spawnState: SimState = {
-  //   x: initialX,
-  //   y: initialY,
-  //   frameIndex: framesAlreadyElapsed,
-  //   arrFrameIndex: canFirstFrameShift ? 0 : framesAlreadyElapsed,
-  //   rotationIndex: existingRotation,
-  // };
-  // legalPlacementSimStates.push(spawnState);
 
   const NUM_ROTATIONS_FOR_PIECE = rotationsList.length;
   explorePlacementsHorizontally(
@@ -157,7 +146,7 @@ function exploreLegalPlacementsUntilLock(
       _modulus(simState.rotationIndex - simParams.existingRotation, 4),
       simState.x - simParams.initialX,
       simParams.inputFrameTimeline,
-      simParams.framesAlreadyElapsed
+      simParams.canFirstFrameShift ? 0 : simParams.framesAlreadyElapsed
     );
     let inputSequenceWithWait = inputSequence;
 
