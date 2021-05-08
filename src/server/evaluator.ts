@@ -121,6 +121,14 @@ function getRowsNeedingToBurn(
   maxDirtyTetrisHeight,
   aiMode
 ): Set<number> {
+  // Calculate where the next Tetris will be built
+  let row = 0;
+  while (row < NUM_ROW && board[row][9] == SquareState.EMPTY) {
+    row++;
+  }
+  // Inclusive
+  const tetrisZoneEnd = row - 1;
+
   const linesNeededToClear: Set<number> = new Set();
   const rightColBoundary =
     aiMode === AiMode.DIG ? NUM_COLUMN - 1 : NUM_COLUMN - 2;
@@ -136,10 +144,13 @@ function getRowsNeedingToBurn(
       rowsInStackPassedThrough.add(row);
       row++;
       if (
-        board[row][col] === SquareState.EMPTY &&
-        NUM_ROW - row > maxDirtyTetrisHeight
+        board[row][col] === SquareState.EMPTY
       ) {
-        // We found a hole. All the full rows above it will need to be cleared
+        // Ignore holes that are under the dirty tetris line and not in the Tetris zone
+        if (NUM_ROW - row <= maxDirtyTetrisHeight && row > tetrisZoneEnd){
+          break;
+        }
+        // Otherwise, We found a hole. All the full rows above it will need to be cleared
         for (const line of rowsInStackPassedThrough) {
           linesNeededToClear.add(line);
         }
@@ -261,8 +272,10 @@ function isTetrisReadyRightWell(board) {
   return true;
 }
 
-function getSurfaceValue(surfaceArray: Array<number>, nextPieceId: PieceId) {
+function getSurfaceValue(surfaceArray: Array<number>, totalHeightCorrected: number, nextPieceId: PieceId, aiParams: AiParams) {
   let rawValue = rankLookup.getValueOfBoardSurface(surfaceArray, nextPieceId);
+  // Add in the extreme gap penalty prior to transforming the rank
+  rawValue += totalHeightCorrected * aiParams.EXTREME_GAP_COEF;
   const A = 150;
   const B = A / 30;
   // console.log(surfaceArray, nextPieceId, rawValue);
@@ -368,9 +381,9 @@ export function fastEval(
     scareHeight
   );
 
-  let extremeGapFactor = totalHeightCorrected * aiParams.EXTREME_GAP_COEF;
+  // let extremeGapFactor = totalHeightCorrected * aiParams.EXTREME_GAP_COEF;
   let surfaceFactor =
-    aiParams.SURFACE_COEF * getSurfaceValue(correctedSurface, nextPieceId);
+    aiParams.SURFACE_COEF * getSurfaceValue(correctedSurface, totalHeightCorrected, nextPieceId, aiParams);
   let killscreenSurfaceLeftFactor =
     aiParams.LEFT_SURFACE_COEF *
     getLeftSurfaceValue(boardAfter, aiParams, level);
@@ -390,7 +403,7 @@ export function fastEval(
   const factors = {
     surfaceFactor,
     killscreenSurfaceLeftFactor,
-    extremeGapFactor,
+    // extremeGapFactor,
     holeFactor,
     estimatedHoleWeightBurnFactor,
     lineClearFactor,
@@ -474,6 +487,7 @@ export function getValueOfPossibility(
 
   const leftIsInaccessible = boardHelper.boardHasInaccessibileLeft(
     boardAfter,
+    surfaceArray,
     levelAfterPlacement,
     aiParams,
     aiMode
@@ -489,7 +503,7 @@ export function getValueOfPossibility(
   const earlyDoubleWellFactor =
     aiParams.BURN_COEF * estimatedBurnsDueToEarlyDoubleWell;
   let surfaceFactor =
-    aiParams.SURFACE_COEF * getSurfaceValue(correctedSurface, nextPieceId);
+    aiParams.SURFACE_COEF * getSurfaceValue(correctedSurface, totalHeightCorrected, nextPieceId, aiParams);
   let killscreenSurfaceLeftFactor =
     aiParams.LEFT_SURFACE_COEF *
     getLeftSurfaceValue(boardAfter, aiParams, level);
