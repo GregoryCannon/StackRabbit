@@ -33,7 +33,9 @@ export function searchForTucksOrSpins(
 ): Array<PossibilityChain> {
   const novelPossibilities = [];
   for (const simState of potentialTuckSpinStates) {
-    for (const inputChar of "EIFGLRAB") {
+    const numOrientations = simParams.rotationsList.length;
+    const possibleInputs = numOrientations == 1 ? "LR" : numOrientations == 2 ? "EILRA" : "EIFGLRAB";
+    for (const inputChar of possibleInputs) {
       const xDelta = X_INCREMENT_LOOKUP[inputChar] || 0;
       const rotDelta = ROTATION_LOOKUP[inputChar] || 0;
       const newRot = _modulus(
@@ -138,13 +140,13 @@ function tryInput(
           simParams.rotationsList[simState.rotationIndex]
         )
       ) {
-        debugLog(simState, simParams, "GRAVITY");
+        debugLog(simState, simParams, "SUCCESS - GRAVITY");
 
         // Piece locked into the stack, so register the new highest Y and make a possibility for it!
-        lockHeightLookup.set(
-          simState.rotationIndex + "," + simState.x,
-          simState.y
-        );
+        // lockHeightLookup.set(
+        //   simState.rotationIndex + "," + simState.x,
+        //   simState.y
+        // );
         novelPossibilities.push(
           getPossibilityFromSimState(simState, simParams, simState.inputSequence)
         );
