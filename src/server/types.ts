@@ -122,6 +122,7 @@ interface InitialAiParams {
   SPIRE_HEIGHT_EXPONENT: number;
   SPIRE_HEIGHT_COEF: number;
   UNABLE_TO_BURN_COEF: number;
+  UNABLE_TO_BURN_DIFF_EXP: number;
   HIGH_COL_9_COEF: number;
   HIGH_COL_9_EXP: number;
   SURFACE_COEF: number;

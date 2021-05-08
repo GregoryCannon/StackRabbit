@@ -2,7 +2,11 @@ local http = require("socket.http")
 local os = require("os")
 require "socket"
 
+TIMELINE_6_HZ = "X........";
+TIMELINE_7_HZ = "X.......";
+TIMELINE_8_HZ = "X......";
 TIMELINE_10_HZ = "X.....";
+TIMELINE_11_HZ = "X.....X....X....";
 TIMELINE_12_HZ = "X....";
 TIMELINE_13_HZ = "X....X...";
 TIMELINE_13_5_HZ = "X....X...X...";
@@ -12,8 +16,8 @@ TIMELINE_20_HZ = "X..";
 TIMELINE_30_HZ = "X.";
 
 -- Config constants
-REACTION_TIME_FRAMES = 5
-INPUT_TIMELINE = TIMELINE_30_HZ;
+REACTION_TIME_FRAMES = 12
+INPUT_TIMELINE = TIMELINE_13_5_HZ;
 SHOULD_RECORD_GAMES = true
 MOVIE_PATH = "C:\\Users\\Greg\\Desktop\\VODs\\" -- Where to store the fm2 VODS (absolute path)
 
@@ -26,6 +30,17 @@ gameOver = false
 pcur = 0
 pnext = 0
 
+function resetGameScopedVariables()
+  gameState = 0
+  playstate = 0
+  numLines = 0
+  waitingOnAsyncRequest = false
+  gameOver = false
+  pcur = 0
+  pnext = 0
+end
+resetGameScopedVariables();
+
 -- Reset all variables whose values are tied to one piece
 function resetPieceScopedVars()
   adjustmentApiResult = nil
@@ -34,6 +49,7 @@ function resetPieceScopedVars()
   inputSequence = ""
   shiftsExecuted = 0
   rotationsExecuted = 0
+  boardAfterStr = "" -- A string to store the resulting board after the current placement (from the server)
 end
 
 --[[--------------------------------------- 
@@ -159,8 +175,8 @@ end
 ----------- HTTP Requests -------------- 
 ------------------------------------]]--
 
--- Make a request that will kick off a longer calculation. Subsequent frames will call checkForAsyncResult() to get the result.
-function requestPlacementAsync()
+-- Make a request that will kick off a longer calculation. Subsequent frames will ping the server again for the result.
+function requestAdjustmentAsync()
   -- Format URL arguments
   local requestStr = "http://localhost:3000/async-nb/" .. getEncodedBoard()
   requestStr = requestStr .. "/" .. orientToPiece[pcur] .. "/" .. orientToPiece[pnext] .. "/" .. level .. "/" .. numLines
@@ -171,28 +187,34 @@ function requestPlacementAsync()
   return makeHttpRequest(requestStr).data
 end
 
+-- Synchronously get a placement from the server, with no next piece data
+function requestPlacementAsyncNoNextBox()
+  -- Format URL arguments
+  if boardAfterStr == nil then
+    gameOver = true
+    return
+  end
+  local requestStr = "http://localhost:3000/async-nnb/" .. boardAfterStr
+  local requestStr = requestStr .. "/" .. orientToPiece[pnext] .. "/null/" .. level .. "/" .. numLines
+  local requestStr = requestStr .. "/0/0/0/0/" .. INPUT_TIMELINE .. "/false"
+
+  waitingOnAsyncRequest = true;
+  return makeHttpRequest(requestStr).data
+end
+
 -- Check if the async computation has finished, and if so make the adjustment based on it
 function checkForAsyncResult()
   local response = makeHttpRequest("http://localhost:3000/async-result")
 
   -- Only use the response if the server indicated that it sent the async result
-  if response.code == 200 then
-    adjustmentApiResult = response.data
-    print("Adjustment: " .. adjustmentApiResult)
-    waitingOnAsyncRequest = false
+  if response.code ~= 200 then
+    print("RECEIVED BAD RESPONSE CODE:" .. response.code)
+    return ""
   end
+    
+  waitingOnAsyncRequest = false;
+  return response.data
 end
-
--- Synchronously get a placement from the server, with no next piece data
-function requestPlacementSyncNoNextBox()
-  -- Format URL arguments
-  local requestStr = "http://localhost:3000/sync-nnb/" .. getEncodedBoard()
-  local requestStr = requestStr .. "/" .. orientToPiece[pcur] .. "/null/" .. level .. "/" .. numLines
-  requestStr = requestStr .. "/0/0/0/0/" .. INPUT_TIMELINE .. "/false"
-
-  return makeHttpRequest(requestStr).data
-end
-
 
 function makeHttpRequest(requestUrl)
   print(requestUrl)
@@ -237,8 +259,8 @@ function calculateInputs(apiResult, isAdjustment)
   -- Parse the shifts and rotations from the API result
   local split = splitString(apiResult, ",|\\")
   inputSequence = split[3]
-  print(inputSequence)
-  if inputSequence == nil then
+  boardAfterStr = split[4]
+  if inputSequence == nil or inputSequence == "none" then
     inputSequence = ""
   end
 
@@ -258,20 +280,13 @@ end
 
 function executeInputs()
   if not gameOver then
-    -- Either perform adjustment or decrement the adjustment countdown
-    if frameIndex == REACTION_TIME_FRAMES and adjustmentApiResult ~= nil then
-      if shiftsExecuted ~= offsetXAtAdjustmentTime then
-        print("Actual X offset: " .. shiftsExecuted .. " predicted: " .. offsetXAtAdjustmentTime .. " Diff: " .. offsetXAtAdjustmentTime - shiftsExecuted)
-      end
-      print("Time for adjustment " .. frameIndex .. ", " .. arrFrameIndex)
-      calculateInputs(adjustmentApiResult, true)
-    end
 
     local inputsThisFrame = {A=false, B=false, left=false, right=false, up=false, down=false, select=false, start=false}
 
     if inputSequence == null or arrFrameIndex + 1 > string.len(inputSequence) then
       -- print("Input sequence null or frame index out of bounds" .. arrFrameIndex)
       -- print(inputSequence)
+      joypad.set(1, inputsThisFrame)
       return
     end
 
@@ -352,17 +367,25 @@ end
 ------------------------------------]]--
 
 function runGameFrame()
-  if(memory.readbyte(0x0048) == 1) then
-    if(playstate ~= 1 or backtrack) then
+  local gamePhase = memory.readbyte(0x0048)
+  if(gamePhase == 1) then
+    if(playstate ~= 1) then
       -- First active frame for piece. This is where board state/input sequence is calculated
       onFirstFrameOfNewPiece()
 
       -- Initiate a request for good adjustments
       predictPieceOffsetAtAdjustmentTime()
-      requestPlacementAsync()
-      waitingOnAsyncRequest = true
-    elseif frameIndex == REACTION_TIME_FRAMES - 1 and waitingOnAsyncRequest then
-        checkForAsyncResult()
+      requestAdjustmentAsync()
+    elseif frameIndex == REACTION_TIME_FRAMES and waitingOnAsyncRequest then
+      -- Once reaction time is over, fetch the async result        
+      adjustmentApiResult = checkForAsyncResult()
+      if adjustmentApiResult ~= nil then
+        if shiftsExecuted ~= offsetXAtAdjustmentTime then
+          print("Actual X offset: " .. shiftsExecuted .. " predicted: " .. offsetXAtAdjustmentTime .. " Diff: " .. offsetXAtAdjustmentTime - shiftsExecuted)
+        end
+        print("Time for adjustment " .. frameIndex .. ", " .. arrFrameIndex)
+        calculateInputs(adjustmentApiResult, true)
+      end
     end
 
     -- Execute input sequence
@@ -371,18 +394,30 @@ function runGameFrame()
     arrFrameIndex = arrFrameIndex + 1
 
   -- Do stuff right when the piece locks. If you want to check that the piece went to the correct spot/send an API request early here is probably good.
-  elseif(memory.readbyte(0x0048) == 2 and playstate == 1) then     
-    print("pieceLock" .. emu.framecount())
+  elseif gamePhase >= 2 and gamePhase <= 8 then
+    -- If it's the frame the piece locks, then the board isn't updated yet. Also don't duplicate requests
+    if playstate == 1 then
+      print("Piece locked" .. emu.framecount())
+
+      -- If it hasn't hit its reaction time yet, collect the adjustment result anyway so the server is ready for the next one
+      local unused = checkForAsyncResult()
+      return
+    end
+    if waitingOnAsyncRequest then
+      return
+    end
+    afterPieceLock()
   -- Detects when the game is over.
-  elseif memory.readbyte(0x0048) == 10 then
+  elseif gamePhase == 10 then
       gameOver = true
 
   -- Resets the index for the next piece. Disables user input when the game is not over.
   elseif not gameOver or recording then
-    -- pendingInputs = { left=0, right=0, A=0, B=0 }
     joypad.set(1, {A=false,B=false,left=false,right=false,up=false,down=false,select=false,start=false})
   end
 end
+
+
 
 function onFirstFrameOfNewPiece()
   -- Read values from memory
@@ -399,9 +434,9 @@ function onFirstFrameOfNewPiece()
   print("--------------------")
   print(orientToPiece[pcur])
 
-  if not gameOver then
+  if not gameOver and waitingOnAsyncRequest then
     -- Make a synchronous request to the server for the inital placement
-    local apiResult = requestPlacementSyncNoNextBox()
+    local apiResult = checkForAsyncResult()
     if apiResult == "" then
       print("ERROR - backend not connected!")
     end
@@ -410,6 +445,18 @@ function onFirstFrameOfNewPiece()
   end
 end
 
+
+function afterPieceLock()
+  print("AFTERPIECELOCK")
+  -- Make a synchronous request to the server for the inital placement
+  local apiResult = requestPlacementAsyncNoNextBox()
+  if apiResult == "" then
+    print("ERROR - backend not connected!")
+  end
+  print("Initial placement: ")
+  print(apiResult)
+  calculateInputs(apiResult, false)
+end
 
 --[[-------------------------------------------------------- 
 ---------- Non-Gameplay Per-Frame Calculations ------------- 
@@ -435,7 +482,7 @@ function beforeEachFrame()
 
   --Game ends, clean up data
   if(gameState == 4 and memory.readbyte(0x00C0) == 3) then
-  gameOver = false
+  resetGameScopedVariables()
   if movie.active() then
       movie.stop()
       end

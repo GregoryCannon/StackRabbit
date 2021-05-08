@@ -83,13 +83,20 @@ function getAverageHeightAboveScareLine(surfaceArray, scareHeight) {
  * These cells indicate cells that would need to be filled in before burning is possible.
  * @param {Array<number>} surfaceArray
  */
-function getUnableToBurnFactor(surfaceArray, scareHeight) {
+function getUnableToBurnFactor(board, surfaceArray, scareHeight, aiParams: AiParams) {
   let totalBlocks = 0;
   const surfaceWithoutCol9 = surfaceArray.slice(0, 8);
-  const col9Height = surfaceArray[8];
+  let col9Height = surfaceArray[8];
+  // If col 10 is also filled in that row, it's not bad to have c9 filled
+  while (col9Height > 0 && board[NUM_ROW - col9Height][9] === SquareState.FULL){
+    col9Height--;
+  }
   for (const height of surfaceWithoutCol9) {
     if (height < col9Height) {
-      totalBlocks += col9Height - height;
+      totalBlocks += Math.pow(
+        col9Height - height,
+        aiParams.UNABLE_TO_BURN_DIFF_EXP
+      );
     }
   }
   // Scale the importance based on the height relative to scare height
@@ -143,11 +150,9 @@ function getRowsNeedingToBurn(
     while (row < NUM_ROW - 1) {
       rowsInStackPassedThrough.add(row);
       row++;
-      if (
-        board[row][col] === SquareState.EMPTY
-      ) {
+      if (board[row][col] === SquareState.EMPTY) {
         // Ignore holes that are under the dirty tetris line and not in the Tetris zone
-        if (NUM_ROW - row <= maxDirtyTetrisHeight && row > tetrisZoneEnd){
+        if (NUM_ROW - row <= maxDirtyTetrisHeight && row > tetrisZoneEnd) {
           break;
         }
         // Otherwise, We found a hole. All the full rows above it will need to be cleared
@@ -272,7 +277,12 @@ function isTetrisReadyRightWell(board) {
   return true;
 }
 
-function getSurfaceValue(surfaceArray: Array<number>, totalHeightCorrected: number, nextPieceId: PieceId, aiParams: AiParams) {
+function getSurfaceValue(
+  surfaceArray: Array<number>,
+  totalHeightCorrected: number,
+  nextPieceId: PieceId,
+  aiParams: AiParams
+) {
   let rawValue = rankLookup.getValueOfBoardSurface(surfaceArray, nextPieceId);
   // Add in the extreme gap penalty prior to transforming the rank
   rawValue += totalHeightCorrected * aiParams.EXTREME_GAP_COEF;
@@ -383,7 +393,13 @@ export function fastEval(
 
   // let extremeGapFactor = totalHeightCorrected * aiParams.EXTREME_GAP_COEF;
   let surfaceFactor =
-    aiParams.SURFACE_COEF * getSurfaceValue(correctedSurface, totalHeightCorrected, nextPieceId, aiParams);
+    aiParams.SURFACE_COEF *
+    getSurfaceValue(
+      correctedSurface,
+      totalHeightCorrected,
+      nextPieceId,
+      aiParams
+    );
   let killscreenSurfaceLeftFactor =
     aiParams.LEFT_SURFACE_COEF *
     getLeftSurfaceValue(boardAfter, aiParams, level);
@@ -503,7 +519,13 @@ export function getValueOfPossibility(
   const earlyDoubleWellFactor =
     aiParams.BURN_COEF * estimatedBurnsDueToEarlyDoubleWell;
   let surfaceFactor =
-    aiParams.SURFACE_COEF * getSurfaceValue(correctedSurface, totalHeightCorrected, nextPieceId, aiParams);
+    aiParams.SURFACE_COEF *
+    getSurfaceValue(
+      correctedSurface,
+      totalHeightCorrected,
+      nextPieceId,
+      aiParams
+    );
   let killscreenSurfaceLeftFactor =
     aiParams.LEFT_SURFACE_COEF *
     getLeftSurfaceValue(boardAfter, aiParams, level);
@@ -531,7 +553,7 @@ export function getValueOfPossibility(
   );
   const unableToBurnFactor =
     aiParams.UNABLE_TO_BURN_COEF *
-    getUnableToBurnFactor(surfaceArray, scareHeight);
+    getUnableToBurnFactor(boardAfter, surfaceArray, scareHeight, aiParams);
   const builtOutLeftFactor =
     aiParams.BUILT_OUT_LEFT_COEF *
     getBuiltOutLeftFactor(boardAfter, surfaceArray, scareHeight);

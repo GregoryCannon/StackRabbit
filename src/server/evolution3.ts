@@ -211,6 +211,7 @@ const EXP_PARAMS = {
   SPIRE_HEIGHT_EXPONENT: 1.215999999999999, // changed due to feature changing
   SPIRE_HEIGHT_COEF: -1.1556000000000002, // changed due to feature changing
   UNABLE_TO_BURN_COEF: -1, // changed due to feature changing
+  UNABLE_TO_BURN_DIFF_EXP: 1.5,
   HIGH_COL_9_COEF: -1.5,
   HIGH_COL_9_EXP: 2,
   LEFT_SURFACE_COEF: 0,

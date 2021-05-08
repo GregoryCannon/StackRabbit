@@ -16,6 +16,9 @@ export const EVALUATION_BREADTH = {
 function applyModsToParams(aiParams, modObject) {
   const modifiedParams = JSON.parse(JSON.stringify(aiParams));
   for (const key in modObject) {
+    if (aiParams[key] === undefined) {
+      throw new Error("Invalid key on mod object: " + key);
+    }
     modifiedParams[key] = modObject[key];
   }
   return modifiedParams;
@@ -38,16 +41,16 @@ export function modifyParamsForAiMode(aiParams, aiMode, paramMods) {
 
 export const DEFAULT_PARAM_MODS = {
   DIG: {
-    BURN_COEF: 0,
-    COL_10_COEF: -2,
-    HOLE_WEIGHT_COEF: -3,
-    HOLE_COEF: -100, // changed
-    SURFACE_COEF: 0.73,
+    BURN_COEF: -1,
+    COL_10_COEF: -1,
+    HOLE_WEIGHT_COEF: -4,
+    HOLE_COEF: -100,
+    BUILT_OUT_LEFT_COEF: 0.6664592319119086,
   },
   NEAR_KILLSCREEN: {
     BURN_COEF: -15,
     TETRIS_READY_COEF: 10,
-    TETRIS_COEF: 200, // has to be more than INACCESSIBLE_RIGHT, so that it'll take a tetris on 229 lines
+    TETRIS_COEF: 500, // has to be more than INACCESSIBLE_RIGHT, so that it'll take a tetris on 229 lines
   },
   KILLSCREEN: {
     COL_10_COEF: 0,
@@ -62,10 +65,12 @@ export const DEFAULT_PARAM_MODS = {
     INACCESSIBLE_LEFT_COEF: -100,
     INACCESSIBLE_RIGHT_COEF: -50,
     SPIRE_HEIGHT_COEF: -1.2,
-    LEFT_SURFACE_COEF: 1,
+    LEFT_SURFACE_COEF: 0,
+    SURFACE_COEF: 0.2
   },
   KILLSCREEN_RIGHT_WELL: {
-    SCARE_HEIGHT_OFFSET: -5,
+    SCARE_HEIGHT_OFFSET: -3,
+    BURN_COEF: -1
   },
 };
 
@@ -91,7 +96,8 @@ export const DEFAULT_PARAMS: InitialAiParams = {
   HOLE_WEIGHT_COEF: 0,
   SPIRE_HEIGHT_EXPONENT: 1.215999999999999, // changed due to feature changing
   SPIRE_HEIGHT_COEF: -1.1556000000000002, // changed due to feature changing
-  UNABLE_TO_BURN_COEF: -1, // changed due to feature changing
+  UNABLE_TO_BURN_COEF: -0.3, // changed due to feature changing
+  UNABLE_TO_BURN_DIFF_EXP: 1.5,
   HIGH_COL_9_COEF: -1.5,
   HIGH_COL_9_EXP: 2,
   SURFACE_COEF: 1,
@@ -120,22 +126,37 @@ export const V5_NO_DIRTIES = applyModsToParams(
 const SEMI_AGGRO_MODIFICATIONS = {
   BURN_COEF: -14,
   UNABLE_TO_BURN_COEF: -0.1,
-  AVG_HEIGHT_EXPONENT: 1.5
+  AVG_HEIGHT_EXPONENT: 1.5,
 };
 
 const AGGRO_MODIFICATIONS = {
   BURN_COEF: -20,
   MAX_DIRTY_TETRIS_HEIGHT: 0.25,
-  UNABLE_TO_BURN_COEF: -0.3,
+  UNABLE_TO_BURN_COEF: -0.1,
   AVG_HEIGHT_EXPONENT: 1.5,
-  AVG_HEIGHT_COEF: -10
+  AVG_HEIGHT_COEF: -10,
+};
+
+const LOW_TAP_SPEED_MODIFICATIONS = {
+  UNABLE_TO_BURN_COEF: -0.7,
+  BUILT_OUT_LEFT_COEF: 3,
+  SCARE_HEIGHT_OFFSET: -1,
+  BURN_COEF: -8,
+  INACCESSIBLE_LEFT_COEF: -200,
 };
 
 const AGGRO_PARAMS = applyModsToParams(DEFAULT_PARAMS, AGGRO_MODIFICATIONS);
-const SEMI_AGGRO_PARAMS = applyModsToParams(DEFAULT_PARAMS, SEMI_AGGRO_MODIFICATIONS);
+const SEMI_AGGRO_PARAMS = applyModsToParams(
+  DEFAULT_PARAMS,
+  SEMI_AGGRO_MODIFICATIONS
+);
 const DROUGHT_CODE_PARAMS = applyModsToParams(
   DEFAULT_PARAMS,
   DROUGHT_MODIFICATIONS
+);
+const LOW_TAP_SPEED_PARAMS = applyModsToParams(
+  DEFAULT_PARAMS,
+  LOW_TAP_SPEED_MODIFICATIONS
 );
 
 const PLAY_PERFECT_PARAMS = {
@@ -181,89 +202,6 @@ const V3_CUSTOM = {
   KILLSCREEN_RIGHT_WELL: DEFAULT_PARAM_MODS.NEAR_KILLSCREEN,
 };
 
-export const TRAINED_A0: InitialAiParams = {
-  BURN_COEF: -5,
-  SURFACE_COEF: 1,
-  AVG_HEIGHT_EXPONENT: 1.36000000000004,
-  AVG_HEIGHT_COEF: -4.50624,
-  SCARE_HEIGHT_OFFSET: -3,
-  HOLE_COEF: -30,
-  COL_10_COEF: -2, // changed due to feature changing
-  COL_10_HEIGHT_MULTIPLIER_EXP: 3,
-  TETRIS_COEF: 28.248,
-  TETRIS_READY_COEF: 5.909760000000001,
-  MAX_DIRTY_TETRIS_HEIGHT: 0.15, // (As a multiple of the scare height) Added manually since didn't exist at time of training
-  EXTREME_GAP_COEF: -3,
-  BUILT_OUT_LEFT_COEF: 1.5, // changed due to feature changing
-  BUILT_OUT_RIGHT_COEF: 0, // Added manually since didn't exist at time of training
-  HOLE_WEIGHT_COEF: 0,
-  SPIRE_HEIGHT_EXPONENT: 1.215999999999999, // changed due to feature changing
-  SPIRE_HEIGHT_COEF: -1.1556000000000002, // changed due to feature changing
-  UNABLE_TO_BURN_COEF: -1, // changed due to feature changing
-  HIGH_COL_9_COEF: -1.5,
-  HIGH_COL_9_EXP: 2,
-  LEFT_SURFACE_COEF: 0,
-  INACCESSIBLE_LEFT_COEF: -30, // Added manually since didn't exist at time of training
-  INACCESSIBLE_RIGHT_COEF: -100, // Added manually since didn't exist at time of training
-};
-
-const TRAINED_A1: InitialAiParams = {
-  AVG_HEIGHT_EXPONENT: 1.4960000000000442,
-  AVG_HEIGHT_COEF: -2.25312,
-  SCARE_HEIGHT_OFFSET: -2.7,
-  BURN_COEF: -5,
-  COL_10_COEF: -1.8,
-  COL_10_HEIGHT_MULTIPLIER_EXP: 1.5,
-  MAX_DIRTY_TETRIS_HEIGHT: 0.22499999999999998,
-  EXTREME_GAP_COEF: -1.5,
-  BUILT_OUT_LEFT_COEF: 2.25,
-  BUILT_OUT_RIGHT_COEF: 0,
-  HOLE_COEF: -33,
-  HOLE_WEIGHT_COEF: 0,
-  SPIRE_HEIGHT_EXPONENT: 1.337599999999999,
-  SPIRE_HEIGHT_COEF: -1.0400400000000003,
-  UNABLE_TO_BURN_COEF: -0.9,
-  HIGH_COL_9_COEF: -1.5,
-  HIGH_COL_9_EXP: 2,
-  SURFACE_COEF: 1.1,
-  LEFT_SURFACE_COEF: 0,
-  TETRIS_COEF: 25.4232,
-  TETRIS_READY_COEF: 5.318784000000001,
-  INACCESSIBLE_LEFT_COEF: -33,
-  INACCESSIBLE_RIGHT_COEF: -150,
-};
-
-export const TRAINED_B1: InitialAiParams = {
-  BURN_COEF: -5,
-  SURFACE_COEF: 1,
-  AVG_HEIGHT_EXPONENT: 1.36000000000004,
-  AVG_HEIGHT_COEF: -4.50624,
-  SCARE_HEIGHT_OFFSET: -2,
-  HOLE_COEF: -30,
-  COL_10_COEF: -2, // changed due to feature changing
-  COL_10_HEIGHT_MULTIPLIER_EXP: 3,
-  TETRIS_COEF: 28.248,
-  TETRIS_READY_COEF: 5.909760000000001,
-  MAX_DIRTY_TETRIS_HEIGHT: 0.15, // (As a multiple of the scare height) Added manually since didn't exist at time of training
-  EXTREME_GAP_COEF: -3,
-  BUILT_OUT_LEFT_COEF: 1.5, // changed due to feature changing
-  BUILT_OUT_RIGHT_COEF: 0, // Added manually since didn't exist at time of training
-  HOLE_WEIGHT_COEF: 0,
-  SPIRE_HEIGHT_EXPONENT: 1.215999999999999, // changed due to feature changing
-  SPIRE_HEIGHT_COEF: -1.1556000000000002, // changed due to feature changing
-  UNABLE_TO_BURN_COEF: -1, // changed due to feature changing
-  HIGH_COL_9_COEF: -1.5,
-  HIGH_COL_9_EXP: 2,
-  LEFT_SURFACE_COEF: 0,
-  INACCESSIBLE_LEFT_COEF: -30, // Added manually since didn't exist at time of training
-  INACCESSIBLE_RIGHT_COEF: -100, // Added manually since didn't exist at time of training
-};
-
-/*
-BEST:
-[ 1, 0.5, 0.5, 1.5 ] fitness: 440707.76
-*/
-
 export function getParamMods(): ParamMods {
-  return V3_CUSTOM;
+  return DEFAULT_PARAM_MODS;
 }
