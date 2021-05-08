@@ -10,11 +10,11 @@ const port = 3000;
 const mainApp = require("./main");
 const params = require("./params");
 
-const cachedParams = params.getParams();
-const cachedParamMods = params.getParamMods();
-
 let asyncCallInProgress = false;
 let asyncResult = null;
+
+const SHOULD_LOG_NB = false;
+const SHOULD_LOG_NNB = false;
 
 /**
  * Parses and validates the inputs
@@ -150,7 +150,7 @@ function handleRequestSyncNoNextBox(requestArgs) {
   // Get the best move
   const bestMove = mainApp.getBestMove(
     searchState,
-    /* shouldLog= */ true,
+    SHOULD_LOG_NNB,
     params.getParams(),
     params.getParamMods(),
     inputDelaySequence,
@@ -174,7 +174,7 @@ function handleRequestSyncWithNextBox(requestArgs) {
   // Get the best move
   const bestMove = mainApp.getBestMove(
     searchState,
-    /* shouldLog= */ false,
+    SHOULD_LOG_NB,
     params.getParams(),
     params.getParamMods(),
     inputDelaySequence,
@@ -208,7 +208,7 @@ const server = http.createServer((req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Content-Type", "text/plain");
 
-  console.log("\n-------------------------\n" + req.url);
+  console.log("\n-------------------------\nlocalhost:3000" + req.url);
 
   let response,
     responseCode = 200;
