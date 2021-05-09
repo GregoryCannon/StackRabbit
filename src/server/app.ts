@@ -170,7 +170,7 @@ function handleRequestAsyncNoNextBox(requestArgs): [string, number] {
   return ["Request accepted.", 200];
 }
 
-function formatResponse(possibility: Possibility) {
+function formatResponse(possibility: PossibilityChain) {
   return (
     possibility.placement[0] +
     "," +
@@ -178,7 +178,11 @@ function formatResponse(possibility: Possibility) {
     "|" +
     (possibility.inputSequence || "none") +
     "|" +
-    possibility.boardAfter.map((row) => row.join("")).join("")
+    possibility.boardAfter.map((row) => row.join("")).join("") +
+    "|" +
+    possibility.searchStateAfterMove.level +
+    "|" +
+    possibility.searchStateAfterMove.lines
   );
 }
 
@@ -289,6 +293,7 @@ const server = http.createServer((req, res) => {
 
   console.log("\tElapsed for full request (ms):", Date.now() - startTimeMs);
   console.log("Sending response:", response);
+  res.statusCode = responseCode;
   res.end(response);
 });
 
