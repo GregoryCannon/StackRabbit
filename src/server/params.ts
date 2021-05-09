@@ -65,12 +65,12 @@ export const DEFAULT_PARAM_MODS = {
     INACCESSIBLE_LEFT_COEF: -100,
     INACCESSIBLE_RIGHT_COEF: -50,
     SPIRE_HEIGHT_COEF: -1.2,
-    LEFT_SURFACE_COEF: 0,
-    SURFACE_COEF: 0.2
+    LEFT_SURFACE_COEF: 1,
+    SURFACE_COEF: 0.2,
   },
   KILLSCREEN_RIGHT_WELL: {
     SCARE_HEIGHT_OFFSET: -3,
-    BURN_COEF: -1
+    BURN_COEF: -1,
   },
 };
 
@@ -82,30 +82,30 @@ export const DEFAULT_PARAM_MODS = {
 
 // Trained using gradient descent and heavily modified
 export const DEFAULT_PARAMS: InitialAiParams = {
-  AVG_HEIGHT_EXPONENT: 1.36000000000004,
+  AVG_HEIGHT_EXPONENT: 1.5000000000004,
   AVG_HEIGHT_COEF: -4.50624,
   SCARE_HEIGHT_OFFSET: -3,
   BURN_COEF: -5,
-  COL_10_COEF: -2, // changed due to feature changing
+  COL_10_COEF: -3,
   COL_10_HEIGHT_MULTIPLIER_EXP: 3,
-  MAX_DIRTY_TETRIS_HEIGHT: 0.15, // (As a multiple of the scare height) Added manually since didn't exist at time of training
+  MAX_DIRTY_TETRIS_HEIGHT: 0.15, // (As a multiple of the scare height)
   EXTREME_GAP_COEF: -3,
-  BUILT_OUT_LEFT_COEF: 1.5, // changed due to feature changing
-  BUILT_OUT_RIGHT_COEF: 0, // Added manually since didn't exist at time of training
+  BUILT_OUT_LEFT_COEF: 1.5,
+  BUILT_OUT_RIGHT_COEF: 0,
   HOLE_COEF: -30,
   HOLE_WEIGHT_COEF: 0,
-  SPIRE_HEIGHT_EXPONENT: 1.215999999999999, // changed due to feature changing
-  SPIRE_HEIGHT_COEF: -1.1556000000000002, // changed due to feature changing
-  UNABLE_TO_BURN_COEF: -0.3, // changed due to feature changing
+  SPIRE_HEIGHT_EXPONENT: 1.215999999999999,
+  SPIRE_HEIGHT_COEF: -1.1556000000000002,
+  UNABLE_TO_BURN_COEF: -0.3,
   UNABLE_TO_BURN_DIFF_EXP: 1.5,
-  HIGH_COL_9_COEF: -1.5,
+  HIGH_COL_9_COEF: -3,
   HIGH_COL_9_EXP: 2,
   SURFACE_COEF: 1,
   LEFT_SURFACE_COEF: 0,
   TETRIS_COEF: 28.248,
   TETRIS_READY_COEF: 5.909760000000001,
-  INACCESSIBLE_LEFT_COEF: -30, // Added manually since didn't exist at time of training
-  INACCESSIBLE_RIGHT_COEF: -300, // Added manually since didn't exist at time of training
+  INACCESSIBLE_LEFT_COEF: -30,
+  INACCESSIBLE_RIGHT_COEF: -300,
 };
 
 const DROUGHT_MODIFICATIONS = {
@@ -125,15 +125,15 @@ export const V5_NO_DIRTIES = applyModsToParams(
 
 const SEMI_AGGRO_MODIFICATIONS = {
   BURN_COEF: -14,
+  HIGH_COL_9_COEF: -1.5,
   UNABLE_TO_BURN_COEF: -0.1,
-  AVG_HEIGHT_EXPONENT: 1.5,
 };
 
 const AGGRO_MODIFICATIONS = {
   BURN_COEF: -20,
   MAX_DIRTY_TETRIS_HEIGHT: 0.25,
   UNABLE_TO_BURN_COEF: -0.1,
-  AVG_HEIGHT_EXPONENT: 1.5,
+  HIGH_COL_9_COEF: -1.5,
   AVG_HEIGHT_COEF: -10,
 };
 
@@ -175,6 +175,7 @@ const PLAY_PERFECT_PARAMS = {
   SPIRE_HEIGHT_EXPONENT: 1.215999999999999, // changed due to feature changing
   SPIRE_HEIGHT_COEF: -1.1556000000000002, // changed due to feature changing
   UNABLE_TO_BURN_COEF: 0, // changed due to feature changing
+  UNABLE_TO_BURN_DIFF_EXP: 0,
   HIGH_COL_9_COEF: 0,
   HIGH_COL_9_EXP: 0,
   SURFACE_COEF: 1,
