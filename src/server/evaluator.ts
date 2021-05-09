@@ -1,5 +1,10 @@
 const rankLookup = require("./rank-lookup");
 const killscreenRanks = require("../../docs/killscreen_ranks");
+import {
+  RANKS_15_HZ,
+  RANKS_12HZ_5K,
+  RANKS_13_5_HZ,
+} from "../../docs/killscreen_ranks";
 import * as boardHelper from "./board_helper";
 import { getParams } from "./params";
 import * as utils from "./utils";
@@ -45,11 +50,19 @@ function getEarlyDoubleWellFactor(surfaceArray) {
 
 /** Get the rank of the left-3-column surface (killscreen-only) */
 function getLeftSurfaceValue(board, aiParams, level) {
-  const leftSurface = boardHelper.getLeftSurface(
-    board,
-    aiParams.MAX_4_TAP_LOOKUP[level] + 3
-  );
-  return killscreenRanks.RANKS_12HZ_5K[leftSurface] || 0;
+  const max4Tap = aiParams.MAX_4_TAP_LOOKUP[level];
+  const max5Tap = aiParams.MAX_5_TAP_LOOKUP[level];
+
+  const leftSurface = boardHelper.getLeftSurface(board, max4Tap + 3);
+
+  if (max4Tap == 3 && max5Tap == -1) {
+    return RANKS_12HZ_5K[leftSurface] || 0;
+  } else if (max4Tap == 5 && max5Tap == 0) {
+    return RANKS_13_5_HZ[leftSurface] || 0;
+  } else if (max4Tap == 6 && max5Tap == 2) {
+    return RANKS_15_HZ[leftSurface] || 0;
+  }
+  return 0;
 }
 
 /** If there is a spire in the middle of the board, return its height above the scare line. Otherwise, return 0. */
@@ -83,12 +96,20 @@ function getAverageHeightAboveScareLine(surfaceArray, scareHeight) {
  * These cells indicate cells that would need to be filled in before burning is possible.
  * @param {Array<number>} surfaceArray
  */
-function getUnableToBurnFactor(board, surfaceArray, scareHeight, aiParams: AiParams) {
+function getUnableToBurnFactor(
+  board,
+  surfaceArray,
+  scareHeight,
+  aiParams: AiParams
+) {
   let totalBlocks = 0;
   const surfaceWithoutCol9 = surfaceArray.slice(0, 8);
   let col9Height = surfaceArray[8];
   // If col 10 is also filled in that row, it's not bad to have c9 filled
-  while (col9Height > 0 && board[NUM_ROW - col9Height][9] === SquareState.FULL){
+  while (
+    col9Height > 0 &&
+    board[NUM_ROW - col9Height][9] === SquareState.FULL
+  ) {
     col9Height--;
   }
   for (const height of surfaceWithoutCol9) {

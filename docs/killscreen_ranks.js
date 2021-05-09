@@ -714,7 +714,7 @@ export const RANKS_15HZ_2DELAY = {
   '065': 15
 }
 
-export const NORMALIZED_15HZ_0DELAY = {
+export const RANKS_15_HZ = {
   '100': 26.020167225202677,
   '101': 24.174304619756267,
   '102': 23.195405192417144,
