@@ -189,7 +189,7 @@ const ranks_12hz = {
   '039': 0
 }
 
-const RANKS_12HZ_5K = 
+export const RANKS_12HZ_5K = 
 {
   '100': 51.70579981290926,
   '101': 43.77614138438881,
@@ -374,7 +374,7 @@ const RANKS_12HZ_5K =
   '016': 0
 }
 
-const RANKS_15HZ_2DELAY = {
+export const RANKS_15HZ_2DELAY = {
   '100': 522.4849578820698,
   '101': 485.42003676470586,
   '102': 465.7637362637363,
@@ -714,7 +714,7 @@ const RANKS_15HZ_2DELAY = {
   '065': 15
 }
 
-const NORMALIZED_15HZ_0DELAY = {
+export const NORMALIZED_15HZ_0DELAY = {
   '100': 26.020167225202677,
   '101': 24.174304619756267,
   '102': 23.195405192417144,
@@ -1066,10 +1066,5 @@ function normalize(ranksObj){
   return ranksObj;
 }
 
+export const RANKS_13_5_HZ = normalize(RANKS_15HZ_2DELAY);
 // console.log(normalize(RANKS_15HZ_2DELAY));
-
-module.exports = {
-  RANKS_12HZ_5K,
-  RANKS_15HZ_2DELAY,
-  NORMALIZED_15HZ_0DELAY
-}
