@@ -31,7 +31,11 @@ export function getPossibleMoves(
   canFirstFrameShift: boolean,
   shouldLog: boolean
 ): Array<Possibility> {
-  // console.time("OG setup");
+  // If the piece has already fallen off the bottom of the board, there are no legal moves
+  if (existingYOffset >= 20) {
+    return [];
+  }
+
   _validateIntParam(level, 0, 999);
   _validateIntParam(existingXOffset, -5, 4);
   _validateIntParam(existingYOffset, 0, 20);

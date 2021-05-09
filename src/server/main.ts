@@ -40,7 +40,6 @@ export function getBestMove(
     aiParams
   );
   aiParams = modifyParamsForAiMode(aiParams, aiMode, paramMods);
-  console.log(aiParams);
 
   const concretePossibilities = searchConcretely(
     searchState,
