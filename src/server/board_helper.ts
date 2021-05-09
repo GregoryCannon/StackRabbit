@@ -373,7 +373,9 @@ export function getTestBoardWithHeight(height: number) {
   return board;
 }
 
-/** Gets the max height that can be cleared, given a level, ARR, delay, and number of taps desired. */
+/** Gets the max height that can be cleared, given a level, ARR, delay, and number of taps desired.
+ * If no tap cannot be cleared, it returns -1.
+ */
 export function calculateTapHeight(level, inputFrameTimeline, numTaps) {
   let height = 0;
   while (
