@@ -1,4 +1,4 @@
-import { placementIsLegal } from "./move_search";
+import { canDoPlacement, placementIsLegal } from "./move_search";
 
 const PIECE_LOOKUP = require("../tetrominoes").PIECE_LOOKUP;
 const utils = require("./utils");
@@ -237,33 +237,6 @@ export function hasHoleInColumn(board: Board, col: number, heightFromTop = 20) {
     }
   }
   return false;
-}
-
-export function canDoPlacement(
-  board: Board,
-  level: number,
-  pieceId: string,
-  rotationIndex: number,
-  xOffset: number,
-  inputFrameTimeline: string
-) {
-  if (!inputFrameTimeline) {
-    throw new Error("Unknown input timeline when checking placement");
-  }
-  const gravity = utils.GetGravity(level); // 0-indexed, executes on the 0 frame. e.g. 2... 1... 0(shift).. 2... 1... 0(shift)
-  const rotationsList = PIECE_LOOKUP[pieceId][0];
-  const simParams: SimParams = {
-    board,
-    initialX: 3,
-    initialY: pieceId === "I" ? -2 : -1,
-    framesAlreadyElapsed: 0,
-    gravity,
-    rotationsList,
-    existingRotation: 0,
-    inputFrameTimeline,
-    canFirstFrameShift: false, // This function refers to doing a placement from the start, not starting from an adjustment or anything
-  };
-  return placementIsLegal(rotationIndex, xOffset, simParams);
 }
 
 /** Returns true if the board needs a 5 tap to resolve, and the tap speed is not sufficient to get a piece there. */

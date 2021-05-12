@@ -107,20 +107,6 @@ export function getPossibleMoves(
     simParams,
     lockHeightLookup
   );
-  // const res = _generatePossibilityList(
-  //   legalPlacements,
-  //   startingBoard,
-  //   currentPieceId,
-  //   initialX,
-  //   initialY,
-  //   inputFrameTimeline,
-  //   framesAlreadyElapsed,
-  //   existingRotation,
-  //   shouldLog
-  // );
-  // if (tuckSpinPossibilites.length == 0){
-  //   throw new Error("No tucks found " + simParams.rotationsList.length);
-  // }
   return basicPossibilities.concat(tuckSpinPossibilites);
 }
 
@@ -237,7 +223,6 @@ export function getPossibilityFromSimState(
     simState.y
   );
   let [surfaceArray, numHoles, holeCells] = getSurfaceArrayAndHoles(boardAfter);
-  surfaceArray = surfaceArray.slice(0, 9);
 
   // Add the possibility to the list
   return {
@@ -410,6 +395,33 @@ function repeatedlyShiftPiece(
       legalPlacementSimStates.push({ ...simState });
     }
   }
+}
+
+export function canDoPlacement(
+  board: Board,
+  level: number,
+  pieceId: string,
+  rotationIndex: number,
+  xOffset: number,
+  inputFrameTimeline: string
+) {
+  if (!inputFrameTimeline) {
+    throw new Error("Unknown input timeline when checking placement");
+  }
+  const gravity = GetGravity(level); // 0-indexed, executes on the 0 frame. e.g. 2... 1... 0(shift).. 2... 1... 0(shift)
+  const rotationsList = PIECE_LOOKUP[pieceId][0];
+  const simParams: SimParams = {
+    board,
+    initialX: 3,
+    initialY: pieceId === "I" ? -2 : -1,
+    framesAlreadyElapsed: 0,
+    gravity,
+    rotationsList,
+    existingRotation: 0,
+    inputFrameTimeline,
+    canFirstFrameShift: false, // This function refers to doing a placement from the start, not starting from an adjustment or anything
+  };
+  return placementIsLegal(rotationIndex, xOffset, simParams);
 }
 
 export function placementIsLegal(
