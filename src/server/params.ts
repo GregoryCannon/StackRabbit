@@ -50,14 +50,14 @@ export const DEFAULT_PARAM_MODS = {
   NEAR_KILLSCREEN: {
     BURN_COEF: -15,
     TETRIS_READY_COEF: 10,
-    TETRIS_COEF: 500, // has to be more than INACCESSIBLE_RIGHT, so that it'll take a tetris on 229 lines
+    TETRIS_COEF: 5000, // has to be more than INACCESSIBLE_RIGHT, so that it'll take a tetris on 229 lines
   },
   KILLSCREEN: {
     COL_10_COEF: 0,
-    BUILT_OUT_LEFT_COEF: 6,
-    BUILT_OUT_RIGHT_COEF: 2,
-    AVG_HEIGHT_COEF: -8,
-    HOLE_COEF: -20, // changed
+    BUILT_OUT_LEFT_COEF: 0,
+    BUILT_OUT_RIGHT_COEF: 1,
+    AVG_HEIGHT_COEF: -3,
+    HOLE_COEF: -40, // changed
     BURN_COEF: 0,
     UNABLE_TO_BURN_COEF: 0,
     HIGH_COL_9_COEF: 0,
@@ -66,7 +66,8 @@ export const DEFAULT_PARAM_MODS = {
     INACCESSIBLE_RIGHT_COEF: -50,
     SPIRE_HEIGHT_COEF: -1.2,
     LEFT_SURFACE_COEF: 1,
-    SURFACE_COEF: 0.2,
+    TETRIS_COEF: 100,
+    SURFACE_COEF: 0.5,
   },
   KILLSCREEN_RIGHT_WELL: {
     SCARE_HEIGHT_OFFSET: -3,
@@ -130,7 +131,7 @@ const SEMI_AGGRO_MODIFICATIONS = {
 };
 
 const AGGRO_MODIFICATIONS = {
-  BURN_COEF: -20,
+  BURN_COEF: -25,
   MAX_DIRTY_TETRIS_HEIGHT: 0.25,
   UNABLE_TO_BURN_COEF: -0.1,
   HIGH_COL_9_COEF: -1.5,
@@ -187,7 +188,7 @@ const PLAY_PERFECT_PARAMS = {
 };
 
 export function getParams(): InitialAiParams {
-  return DEFAULT_PARAMS;
+  return AGGRO_PARAMS;
 }
 
 const V3_CUSTOM = {

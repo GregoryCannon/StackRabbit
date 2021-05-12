@@ -4,6 +4,7 @@ import {
   RANKS_15_HZ,
   RANKS_12HZ_5K,
   RANKS_13_5_HZ,
+  VALUE_ITERATED_RANKS_13_5_HZ,
 } from "../../docs/killscreen_ranks";
 import * as boardHelper from "./board_helper";
 import { getParams } from "./params";
@@ -58,7 +59,7 @@ function getLeftSurfaceValue(board, aiParams, level) {
   if (max4Tap == 3 && max5Tap == -1) {
     return RANKS_12HZ_5K[leftSurface] || 0;
   } else if (max4Tap == 5 && max5Tap == 0) {
-    return RANKS_13_5_HZ[leftSurface] || 0;
+    return VALUE_ITERATED_RANKS_13_5_HZ[leftSurface] || 0;
   } else if (max4Tap == 6 && max5Tap == 2) {
     return RANKS_15_HZ[leftSurface] || 0;
   }
@@ -81,13 +82,13 @@ function getSpireHeight(surfaceArray, scareHeight) {
   return Math.max(0, spireHeight - scareHeight);
 }
 
-/** Gets the average height of the columns (excluding col 10) */
+/** Gets the average height of the columns (excluding col 10, except on killscreen) */
 function getAverageHeightAboveScareLine(surfaceArray, scareHeight) {
   let total = 0;
-  for (const height of surfaceArray.slice(0, NUM_COLUMN - 1)) {
+  for (const height of surfaceArray) {
     total += height;
   }
-  const averageHeight = total / 9;
+  const averageHeight = total / surfaceArray.length;
   return Math.max(0, averageHeight - scareHeight);
 }
 
@@ -149,14 +150,6 @@ function getRowsNeedingToBurn(
   maxDirtyTetrisHeight,
   aiMode
 ): Set<number> {
-  // Calculate where the next Tetris will be built
-  let row = 0;
-  while (row < NUM_ROW && board[row][9] == SquareState.EMPTY) {
-    row++;
-  }
-  // Inclusive
-  const tetrisZoneEnd = row - 1;
-
   const linesNeededToClear: Set<number> = new Set();
   const rightColBoundary =
     aiMode === AiMode.DIG ? NUM_COLUMN - 1 : NUM_COLUMN - 2;
@@ -173,7 +166,8 @@ function getRowsNeedingToBurn(
       row++;
       if (board[row][col] === SquareState.EMPTY) {
         // Ignore holes that are under the dirty tetris line and not in the Tetris zone
-        if (NUM_ROW - row <= maxDirtyTetrisHeight && row > tetrisZoneEnd) {
+        const canBeDirtyTetrisedOver = NUM_ROW - row <= maxDirtyTetrisHeight && board[row][NUM_COLUMN-1] == SquareState.FULL;
+        if (canBeDirtyTetrisedOver) {
           break;
         }
         // Otherwise, We found a hole. All the full rows above it will need to be cleared
@@ -376,7 +370,9 @@ export function fastEval(
   aiMode: AiMode,
   aiParams: AiParams
 ) {
-  const { surfaceArray, numHoles, numLinesCleared, boardAfter } = possibility;
+  let { surfaceArray, numHoles, numLinesCleared, boardAfter } = possibility;
+  const surfaceArrayWithCol10 = surfaceArray;
+  surfaceArray = surfaceArray.slice(0,9);
 
   if (!aiParams) {
     throw new Error("No AI Params provided: " + aiParams);
@@ -470,13 +466,9 @@ export function getValueOfPossibility(
   shouldLog,
   aiParams
 ) {
-  const {
-    surfaceArray,
-    numHoles,
-    holeCells,
-    numLinesCleared,
-    boardAfter,
-  } = possibility;
+  let { surfaceArray, numHoles, holeCells, numLinesCleared, boardAfter } = possibility;
+  const surfaceArrayWithCol10 = surfaceArray;
+  surfaceArray = surfaceArray.slice(0,9);
 
   if (!aiParams) {
     throw new Error("No AI Params provided: " + aiParams);
@@ -511,7 +503,7 @@ export function getValueOfPossibility(
   const scareHeight = utils.getScareHeight(levelAfterPlacement, aiParams);
   const spireHeight = getSpireHeight(surfaceArray, scareHeight);
   const avgHeightAboveScareLine = getAverageHeightAboveScareLine(
-    surfaceArray,
+    aiMode == AiMode.KILLSCREEN ? surfaceArrayWithCol10 : surfaceArray,
     scareHeight
   );
   const tetrisReady = isTetrisReadyRightWell(boardAfter);

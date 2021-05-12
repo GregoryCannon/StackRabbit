@@ -79,80 +79,6 @@ export function simulateDigPractice(
   return results;
 }
 
-/** Runs trials on the killscreen and logs down how good various surfaces are for the left-most 3 columns. */
-function simulateKillscreenTraining(numIterations) {
-  const ranks: Map<string, Array<number>> = new Map();
-
-  const aiParams = paramsManager.getParams();
-  const MAX_4_TAP_HEIGHT = boardHelper.calculateTapHeight(
-    29,
-    aiParams.TAP_ARR,
-    aiParams.FIRST_TAP_DELAY,
-    4
-  );
-  console.log("height: ", MAX_4_TAP_HEIGHT);
-
-  for (let i = 0; i < numIterations; i++) {
-    console.log(`Iteration ${i + 1} of ${numIterations}`);
-    const history = [];
-    const afterPlacementCallback = (board) => {
-      const leftSurface = boardHelper.getLeftSurface(
-        board,
-        MAX_4_TAP_HEIGHT + 3
-      );
-      if (leftSurface !== null) {
-        history.push(leftSurface);
-      }
-    };
-
-    // Play out one game
-    simulateGame(
-      29,
-      getEmptyBoard(),
-      paramsManager.getParams(),
-      paramsManager.getParamMods(),
-      INPUT_SEQUENCE_12_HZ,
-      /* presetSequence= */ null,
-      /* isDig= */ false,
-      afterPlacementCallback,
-      /* shouldLog= */ true
-    );
-
-    // Process the history
-    console.log(history);
-    if (history.length === 0) {
-      continue;
-    }
-    history.reverse(); // We'll work back to front
-    let lastAdded = null;
-    // Score each surface based on how many clean surfaces succeeded it
-    for (let t = 0; t < history.length; t++) {
-      const surface = history[t];
-      // Don't repeatedly add for long sequences of the same surface
-      if (surface === lastAdded) {
-        continue;
-      }
-      if (!ranks.has(surface)) {
-        ranks.set(surface, []);
-      }
-      // Add the score to the list of scores for that surface
-      ranks.get(surface).push(t);
-      lastAdded = surface;
-    }
-  }
-  console.log(ranks);
-  const avgRanks = {};
-  ranks.forEach((scoreList, surface) => {
-    if (scoreList.length == 0) {
-      return;
-    }
-    let total = scoreList.reduce((a, b) => a + b);
-    const avgScore = total / scoreList.length;
-    avgRanks[surface] = avgScore;
-  });
-  console.log(avgRanks);
-}
-
 function sleep(ms) {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
@@ -164,7 +90,7 @@ function sleep(ms) {
  * @param {function(lines, numHoles)} gameOverCondition - function to check custom game over conditions
  * @returns [score, lines, level]
  */
-function simulateGame(
+export function simulateGame(
   startingLevel,
   startingBoard,
   aiParams,
@@ -213,13 +139,14 @@ function simulateGame(
       aiParams,
       paramMods,
       inputFrameTimeline,
-      /* searchDepth= */ 1,
+      /* searchDepth= */ 2,
       /* hypotheticalSearchDepth= */ 0
     );
 
     // Set the board to the resulting board after making that move
     if (bestMove == null) {
       gameOver = true;
+      afterPlacementCallback(board, true);
       continue;
     }
     board = bestMove.boardAfter;
@@ -239,29 +166,34 @@ function simulateGame(
       score += REWARDS[numLinesCleared] * (level + 1);
     }
 
+    // Check for game over
+    gameOver =
+      hasToppedOut(board) ||
+      (isDig && (numHoles === 0 || lines >= DIG_LINE_CAP));
+
     // Call the post-placement callback if needed
     if (afterPlacementCallback !== null) {
-      afterPlacementCallback(board);
+      afterPlacementCallback(board, gameOver);
     }
 
+    // Maybe log per-piece stats
     if (false) {
       console.log(`Score: ${score}, Lines: ${lines}, Level: ${level}`);
       utils.logBoard(board);
     }
 
-    // Check for game over, or increment and loop
-    gameOver =
-      hasToppedOut(board) ||
-      (isDig && (numHoles === 0 || lines >= DIG_LINE_CAP));
     i++;
     pieceIndex++;
   }
+
+  // Maybe log post-game stats
   if (shouldLog) {
     console.log(
       `GAME OVER - Score: ${score}, Lines: ${lines}, Level: ${level}`
     );
     utils.logBoard(board);
   }
+
   return [score, lines, level, numHoles];
 }
 
