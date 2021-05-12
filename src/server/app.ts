@@ -13,7 +13,7 @@ const params = require("./params");
 let asyncCallInProgress = false;
 let asyncResult = null;
 
-const SHOULD_LOG_ALL = true;
+const SHOULD_LOG_ALL = false;
 
 const SHOULD_LOG_NB = SHOULD_LOG_ALL;
 const SHOULD_LOG_NO_NB = SHOULD_LOG_ALL;
