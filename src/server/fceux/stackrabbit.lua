@@ -171,7 +171,16 @@ function predictPieceOffsetAtAdjustmentTime()
     end
   end
 
-  rotationAtAdjustmentTime = (rotationAtAdjustmentTime + 4) % 4 -- Modulus -1 to 3, etc.
+  -- Correct the rotation to be within the modulus
+  local curPieceStr = orientToPiece[pcur]
+  local numOrientations = 1
+  if (curPieceStr == "T" or curPieceStr == "J" or curPieceStr == "L") then
+    numOrientations = 4
+  elseif curPieceStr == "I" or curPieceStr == "Z" or curPieceStr == "S" then
+    numOrientations = 2
+  end
+  rotationAtAdjustmentTime = (rotationAtAdjustmentTime + numOrientations) % numOrientations -- Modulus -1 to 3, etc.
+  
   offsetYAtAdjustmentTime = math.floor((REACTION_TIME_FRAMES) / getGravity(level))
 
   -- Calculate if it can first-frame shift at adjustment time
@@ -436,7 +445,6 @@ function runGameFrame()
     if waitingOnAsyncRequest then
       return
     end
-    afterPieceLock()
   -- Detects when the game is over.
   elseif gamePhase == 10 then
       gameOver = true
