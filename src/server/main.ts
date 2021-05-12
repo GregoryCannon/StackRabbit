@@ -183,7 +183,7 @@ function searchHypothetically(
         console.log(
           `If ${hypotheticalBestMove.hypotheticalPiece}, do ${
             hypotheticalBestMove.placement
-          }. Value: ${hypotheticalBestMove.totalValue.toFixed(2)}`
+          }. Value: ${(hypotheticalBestMove.totalValue || 0).toFixed(2)}`
         );
         // console.log(hypotheticalBestMove.evalExplanation);
       }
