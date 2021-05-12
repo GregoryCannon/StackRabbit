@@ -1,6 +1,10 @@
 import { PIECE_LOOKUP } from "../tetrominoes";
-import { canDoPlacement, getTestBoardWithHeight } from "./board_helper";
-import { getPossibleMoves, placementIsLegal } from "./move_search";
+import { getTestBoardWithHeight } from "./board_helper";
+import {
+  canDoPlacement,
+  getPossibleMoves,
+  placementIsLegal,
+} from "./move_search";
 import { generateInputFrameTimeline, GetGravity } from "./utils";
 
 function legalMovesTest() {
@@ -67,6 +71,7 @@ function tapRangeTest() {
   const timeline10Hz = generateInputFrameTimeline([5]);
   const timeline12Hz = generateInputFrameTimeline([4]);
   const timeline13Hz = generateInputFrameTimeline([4, 3]);
+  const timeline13_5Hz = generateInputFrameTimeline([4, 3, 3]);
   const timeline14Hz = generateInputFrameTimeline([4, 3, 3, 3]);
 
   let expected1 = true;
@@ -187,6 +192,14 @@ function tapRangeTest() {
     expected15
   ) {
     console.log(`Failed: 12 right 19 12Hz. Expected: ${expected15}`);
+  }
+
+  const expected16 = true;
+  if (
+    canDoPlacement(getTestBoardWithHeight(9), 29, "I", 1, 4, timeline13_5Hz) !==
+    expected16
+  ) {
+    console.log(`Failed: 9 high 3 tap 29 13.5 Hz. Expected: ${expected16}`);
   }
 }
 
