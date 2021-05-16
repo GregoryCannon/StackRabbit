@@ -35,7 +35,11 @@ function valueIterate(successors: SuccessorMap): Object {
 
   // Converge ranks
   let totalDelta = Number.MAX_SAFE_INTEGER;
-  for (let iteration = 0; iteration < MAX_VALUE_ITERATIONS && totalDelta > 1; iteration++) {
+  for (
+    let iteration = 0;
+    iteration < MAX_VALUE_ITERATIONS && totalDelta > 1;
+    iteration++
+  ) {
     totalDelta = 0;
 
     const newValues = {};

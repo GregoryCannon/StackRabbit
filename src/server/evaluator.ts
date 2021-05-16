@@ -33,16 +33,16 @@ function correctSurfaceForDoubleWell(
   return surfaceArray;
 }
 
-/** Estimates the number of burns needed to bring column 9 up to match column 8. 
+/** Estimates the number of burns needed to bring column 9 up to match column 8.
  * It can also do this with a long bar, so the burn penalty is later discounted a bit. */
 function estimateBurnsDueToEarlyDoubleWell(surfaceArray, maxSafeCol9Height) {
   const col9 = surfaceArray[8];
   const col8 = surfaceArray[7];
   const lowestGoodColumn9 = Math.min(maxSafeCol9Height, col8 - 2);
-  if (col9 >= lowestGoodColumn9){
+  if (col9 >= lowestGoodColumn9) {
     return 0;
   }
-  // Need a burn for every 2 cells below that. 
+  // Need a burn for every 2 cells below that.
   // E.g. 1 diff => 3 below col8 = 1 burn,
   //      2 diff => 4 below col8 = 1 burn
   //      3 diff => 5 below col8 = 2 burns
@@ -167,7 +167,9 @@ function getRowsNeedingToBurn(
       row++;
       if (board[row][col] === SquareState.EMPTY) {
         // Ignore holes that are under the dirty tetris line and not in the Tetris zone
-        const canBeDirtyTetrisedOver = NUM_ROW - row <= maxDirtyTetrisHeight && board[row][NUM_COLUMN-1] == SquareState.FULL;
+        const canBeDirtyTetrisedOver =
+          NUM_ROW - row <= maxDirtyTetrisHeight &&
+          board[row][NUM_COLUMN - 1] == SquareState.FULL;
         if (canBeDirtyTetrisedOver) {
           break;
         }
@@ -316,9 +318,7 @@ export function getLineClearValue(numLinesCleared, aiParams) {
     : 0;
 }
 
-function getLowLeftFactor(surfaceArray: Array<number>, averageHeight: number){
-  
-}
+function getLowLeftFactor(surfaceArray: Array<number>, averageHeight: number) {}
 
 function getBuiltOutLeftFactor(boardAfter, surfaceArray, scareHeight) {
   if (
@@ -377,7 +377,7 @@ export function fastEval(
 ) {
   let { surfaceArray, numHoles, numLinesCleared, boardAfter } = possibility;
   const surfaceArrayWithCol10 = surfaceArray;
-  surfaceArray = surfaceArray.slice(0,9);
+  surfaceArray = surfaceArray.slice(0, 9);
 
   if (!aiParams) {
     throw new Error("No AI Params provided: " + aiParams);
@@ -471,9 +471,15 @@ export function getValueOfPossibility(
   shouldLog,
   aiParams
 ) {
-  let { surfaceArray, numHoles, holeCells, numLinesCleared, boardAfter } = possibility;
+  let {
+    surfaceArray,
+    numHoles,
+    holeCells,
+    numLinesCleared,
+    boardAfter,
+  } = possibility;
   const surfaceArrayWithCol10 = surfaceArray;
-  surfaceArray = surfaceArray.slice(0,9);
+  surfaceArray = surfaceArray.slice(0, 9);
 
   if (!aiParams) {
     throw new Error("No AI Params provided: " + aiParams);
@@ -536,7 +542,7 @@ export function getValueOfPossibility(
 
   let extremeGapFactor = totalHeightCorrected * aiParams.EXTREME_GAP_COEF;
   const earlyDoubleWellFactor =
-    aiParams.BURN_COEF * estimatedBurnsDueToEarlyDoubleWell * .6;
+    aiParams.BURN_COEF * estimatedBurnsDueToEarlyDoubleWell * 0.6;
   let surfaceFactor =
     aiParams.SURFACE_COEF *
     getSurfaceValue(
