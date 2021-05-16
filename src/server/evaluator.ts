@@ -33,20 +33,21 @@ function correctSurfaceForDoubleWell(
   return surfaceArray;
 }
 
-function getEarlyDoubleWellFactor(surfaceArray) {
-  // If col8 is high, return the number of burns needed just to get tetris ready.
-  // Otherwise return the number of burns to match col8.
+/** Estimates the number of burns needed to bring column 9 up to match column 8. 
+ * It can also do this with a long bar, so the burn penalty is later discounted a bit. */
+function estimateBurnsDueToEarlyDoubleWell(surfaceArray, maxSafeCol9Height) {
   const col9 = surfaceArray[8];
   const col8 = surfaceArray[7];
-  if (col9 + 2 >= col8) {
+  const lowestGoodColumn9 = Math.min(maxSafeCol9Height, col8 - 2);
+  if (col9 >= lowestGoodColumn9){
     return 0;
   }
-  const rowsBelowTetrisReady = 4 - col9;
-  const rowsBelowCol8 = col8 - col9;
-  if (rowsBelowTetrisReady < 3 || rowsBelowCol8 === 3) {
-    return 1;
-  }
-  return 2;
+  // Need a burn for every 2 cells below that. 
+  // E.g. 1 diff => 3 below col8 = 1 burn,
+  //      2 diff => 4 below col8 = 1 burn
+  //      3 diff => 5 below col8 = 2 burns
+  const diff = lowestGoodColumn9 - col9;
+  return Math.ceil(diff / 2);
 }
 
 /** Get the rank of the left-3-column surface (killscreen-only) */
@@ -315,6 +316,10 @@ export function getLineClearValue(numLinesCleared, aiParams) {
     : 0;
 }
 
+function getLowLeftFactor(surfaceArray: Array<number>, averageHeight: number){
+  
+}
+
 function getBuiltOutLeftFactor(boardAfter, surfaceArray, scareHeight) {
   if (
     boardHelper.hasHoleInColumn(boardAfter, 0) ||
@@ -488,8 +493,9 @@ export function getValueOfPossibility(
     4,
     aiParams.MAX_4_TAP_LOOKUP[levelAfterPlacement] - 5
   );
-  const estimatedBurnsDueToEarlyDoubleWell = getEarlyDoubleWellFactor(
-    correctedSurface
+  const estimatedBurnsDueToEarlyDoubleWell = estimateBurnsDueToEarlyDoubleWell(
+    correctedSurface,
+    maxSafeCol9Height
   );
   correctedSurface = correctSurfaceForDoubleWell(
     correctedSurface,
@@ -530,7 +536,7 @@ export function getValueOfPossibility(
 
   let extremeGapFactor = totalHeightCorrected * aiParams.EXTREME_GAP_COEF;
   const earlyDoubleWellFactor =
-    aiParams.BURN_COEF * estimatedBurnsDueToEarlyDoubleWell;
+    aiParams.BURN_COEF * estimatedBurnsDueToEarlyDoubleWell * .6;
   let surfaceFactor =
     aiParams.SURFACE_COEF *
     getSurfaceValue(
