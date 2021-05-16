@@ -1,4 +1,5 @@
 import { getBestMove } from "./main";
+import { getParamMods, getParams } from "./params";
 
 const main = require("./main");
 const utils = require("./utils");
@@ -140,13 +141,15 @@ export function simulateGame(
       paramMods,
       inputFrameTimeline,
       /* searchDepth= */ 2,
-      /* hypotheticalSearchDepth= */ 0
+      /* hypotheticalSearchDepth= */ 1
     );
 
     // Set the board to the resulting board after making that move
     if (bestMove == null) {
       gameOver = true;
-      afterPlacementCallback(board, true);
+      if (afterPlacementCallback !== null) {
+        afterPlacementCallback(board, true);
+      }
       continue;
     }
     board = bestMove.boardAfter;
@@ -286,5 +289,8 @@ if (typeof require !== "undefined" && require.main === module) {
   // regressionTest();
   // runScoreExperiment(100);
   // simulateKillscreenTraining(500);
-  runScoreExperiment(1000);
+  // runScoreExperiment(1000);
+  const results = simulateManyGames(100, 18, getParams(), getParamMods());
+  console.log(results);
+  console.log(results.map((x) => x[1]));
 }

@@ -1,7 +1,7 @@
-import { calculateTapHeight, getLeftSurface } from "./board_helper";
-import { getEmptyBoard, simulateGame } from "./lite_game_simulator";
-import { addTapInfoToAiParams } from "./main";
-import { getParamMods, getParams } from "./params";
+import { calculateTapHeight, getLeftSurface } from "../board_helper";
+import { getEmptyBoard, simulateGame } from "../lite_game_simulator";
+import { addTapInfoToAiParams } from "../main";
+import { getParamMods, getParams } from "../params";
 
 const INPUT_TIMELINE = "X....X...X...";
 const MAX_4_TAP_HEIGHT = calculateTapHeight(29, INPUT_TIMELINE, 4);

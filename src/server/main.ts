@@ -103,6 +103,7 @@ function searchConcretely(
     console.log(
       depth1Possibilities.map((x) => [
         x.placement,
+        x.inputSequence,
         x.fastEvalScore || "no fast eval",
         x.evalExplanation,
       ])

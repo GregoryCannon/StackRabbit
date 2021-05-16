@@ -5,7 +5,7 @@ import { getSurfaceArrayAndHoles, logBoard } from "./utils";
 
 const http = require("http");
 const hostname = "127.0.0.1";
-const port = 3000;
+const port = 8080;
 
 const mainApp = require("./main");
 const params = require("./params");
@@ -256,7 +256,7 @@ const server = http.createServer((req, res) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Content-Type", "text/plain");
 
-  console.log("\n-------------------------\nlocalhost:3000" + req.url);
+  console.log("\n-------------------------\nlocalhost:" + port + req.url);
 
   let response,
     responseCode = 200;

@@ -28,7 +28,11 @@ export function getAiMode(board, lines, level, aiParams) {
  *  - If the hole doesn't have many filled lines above it, go dig it
  *  - Otherwise, play on and plan to play a few rows off the bottom
  */
-function shouldUseDigMode(board, level, aiParams) {
+function shouldUseDigMode(board, level, aiParams: AiParams) {
+  // Never dig while playing perfect
+  if (aiParams.BURN_COEF < -500) {
+    return false;
+  }
   // Calculate where the next Tetris will be built
   let row = 0;
   while (row < NUM_ROW && board[row][9] == SquareState.EMPTY) {

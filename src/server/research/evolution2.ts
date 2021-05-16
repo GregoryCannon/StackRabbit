@@ -2,8 +2,8 @@
  * A grid search / gradient descent algorithm for choosing the best parameter set.
  */
 
-import * as liteGameSimulator from "./lite_game_simulator";
-import { V5_NO_DIRTIES, getParams, DEFAULT_PARAM_MODS } from "./params";
+import * as liteGameSimulator from "../lite_game_simulator";
+import { V5_NO_DIRTIES, getParams, DEFAULT_PARAM_MODS } from "../params";
 
 const NOISE_THRESHOLD = 1000;
 const DOMAIN = "DIG";

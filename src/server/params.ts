@@ -175,31 +175,31 @@ const PLAY_PERFECT_PARAMS = {
   AVG_HEIGHT_EXPONENT: 1.36000000000004,
   AVG_HEIGHT_COEF: -4.5,
   SCARE_HEIGHT_OFFSET: -3,
-  BURN_COEF: -1000,
-  COL_10_COEF: 0, // changed due to feature changing
+  BURN_COEF: -100000,
+  COL_10_COEF: 0,
   COL_10_HEIGHT_MULTIPLIER_EXP: 0,
-  MAX_DIRTY_TETRIS_HEIGHT: 0, // (As a multiple of the scare height) Added manually since didn't exist at time of training
-  EXTREME_GAP_COEF: -2,
-  BUILT_OUT_LEFT_COEF: 0, // changed due to feature changing
-  BUILT_OUT_RIGHT_COEF: 0, // Added manually since didn't exist at time of training
+  MAX_DIRTY_TETRIS_HEIGHT: 0,
+  EXTREME_GAP_COEF: -3,
+  BUILT_OUT_LEFT_COEF: 0,
+  BUILT_OUT_RIGHT_COEF: 0,
   HOLE_COEF: 0,
   HOLE_WEIGHT_COEF: 0,
-  SPIRE_HEIGHT_EXPONENT: 1.215999999999999, // changed due to feature changing
-  SPIRE_HEIGHT_COEF: -1.1556000000000002, // changed due to feature changing
-  UNABLE_TO_BURN_COEF: 0, // changed due to feature changing
+  SPIRE_HEIGHT_EXPONENT: 1.215999999999999,
+  SPIRE_HEIGHT_COEF: -1.1556000000000002,
+  UNABLE_TO_BURN_COEF: 0,
   UNABLE_TO_BURN_DIFF_EXP: 0,
   HIGH_COL_9_COEF: 0,
   HIGH_COL_9_EXP: 0,
   SURFACE_COEF: 1,
   LEFT_SURFACE_COEF: 0,
-  TETRIS_COEF: 500,
+  TETRIS_COEF: 5000,
   TETRIS_READY_COEF: 5.909760000000001,
-  INACCESSIBLE_LEFT_COEF: -30, // Added manually since didn't exist at time of training
-  INACCESSIBLE_RIGHT_COEF: -10000, // The only thing it cares about more than not burning is keeping the right well open
+  INACCESSIBLE_LEFT_COEF: -30,
+  INACCESSIBLE_RIGHT_COEF: -10000,
 };
 
 export function getParams(): InitialAiParams {
-  return LOW_TAP_SPEED_PARAMS;
+  return PLAY_PERFECT_PARAMS;
 }
 
 const V3_CUSTOM = {

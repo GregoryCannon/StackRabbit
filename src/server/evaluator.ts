@@ -397,7 +397,7 @@ export function fastEval(
     4,
     aiParams.MAX_4_TAP_LOOKUP[levelAfterPlacement] - 5
   );
-  if (aiMode !== AiMode.DIG) {
+  if (aiParams.BURN_COEF > -500) {
     correctedSurface = correctSurfaceForDoubleWell(
       correctedSurface,
       maxSafeCol9Height
@@ -503,10 +503,12 @@ export function getValueOfPossibility(
     correctedSurface,
     maxSafeCol9Height
   );
-  correctedSurface = correctSurfaceForDoubleWell(
-    correctedSurface,
-    maxSafeCol9Height
-  );
+  if (aiParams.BURN_COEF > -500) {
+    correctedSurface = correctSurfaceForDoubleWell(
+      correctedSurface,
+      maxSafeCol9Height
+    );
+  }
   const adjustedNumHoles =
     numHoles +
     (aiMode === AiMode.KILLSCREEN && countCol10Holes(boardAfter) * 0.7);
@@ -542,7 +544,9 @@ export function getValueOfPossibility(
 
   let extremeGapFactor = totalHeightCorrected * aiParams.EXTREME_GAP_COEF;
   const earlyDoubleWellFactor =
-    aiParams.BURN_COEF * estimatedBurnsDueToEarlyDoubleWell * 0.6;
+    aiParams.BURN_COEF > -500
+      ? aiParams.BURN_COEF * estimatedBurnsDueToEarlyDoubleWell * 0.6
+      : 0;
   let surfaceFactor =
     aiParams.SURFACE_COEF *
     getSurfaceValue(
@@ -614,7 +618,11 @@ export function getValueOfPossibility(
     inaccessibleRightFactor,
   };
 
-  const [totalValue, explanation] = compileFactors(factors, aiMode);
+  let [totalValue, explanation] = compileFactors(factors, aiMode);
+
+  if (aiParams.BURN_COEF < -500) {
+    totalValue = Math.max(-20000, totalValue);
+  }
 
   if (shouldLog) {
     console.log(

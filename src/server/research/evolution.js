@@ -2,8 +2,8 @@
  * A grid search / gradient descent algorithm for choosing the best parameter set.
  */
 
-const liteGameSimulator = require("./lite_game_simulator");
-const { getParams, getParamMods } = require("./params");
+const liteGameSimulator = require("../lite_game_simulator");
+const { getParams, getParamMods } = require("../params");
 
 // Hyperparameters
 const DELTA = 0.1; // Small step used to calculate slope (Represents a % of the existing number)

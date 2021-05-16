@@ -7,9 +7,9 @@ import {
   getPieceSequence,
   hasToppedOut,
   REWARDS,
-} from "./lite_game_simulator";
-import { getBestMove } from "./main";
-import { cloneBoard, logBoard } from "./utils";
+} from "../lite_game_simulator";
+import { getBestMove } from "../main";
+import { cloneBoard, logBoard } from "../utils";
 
 const { getParams, getParamMods } = require("./params");
 
