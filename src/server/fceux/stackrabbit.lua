@@ -492,7 +492,9 @@ function asPieceLocks()
   isFirstPiece = false
 
   -- If it hasn't hit its reaction time yet, collect the adjustment result anyway so the server is ready for the next one
-  local unused = checkForAsyncResult()
+  if frameIndex < REACTION_TIME_FRAMES then
+    local unused = checkForAsyncResult()
+  end
 
   -- Make an asynx request to the server for the inital placement
   requestPlacementAsyncNoNextBox()
