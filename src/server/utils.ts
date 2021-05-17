@@ -112,7 +112,24 @@ export function generateDigPracticeBoard(garbageHeight, numHoles) {
   return board;
 }
 
-function isTuckSetup(row, col, board) {}
+/** Returns true if the specified cell 1) exists and 2) is empty */
+function isEmptyCell(row, col, board) {
+  if (col < 0 || col >= NUM_COLUMN || row < 0 || row >= NUM_ROW) {
+    return false;
+  }
+  return board[row][col] == SquareState.EMPTY;
+}
+
+/** Detects holes that could potentially be tucked into */
+export function isTuckSetup(row, col, board, heights) {
+  if (isEmptyCell(row, col + 1, board) && isEmptyCell(row, col + 2, board)) {
+    return true;
+  }
+  if (isEmptyCell(row, col - 1, board) && isEmptyCell(row, col - 2, board)) {
+    return true;
+  }
+  return false;
+}
 
 export function getSurfaceArrayAndHoles(
   board: Board
@@ -120,15 +137,26 @@ export function getSurfaceArrayAndHoles(
   const heights = [];
   let numHoles = 0;
   let holeCells: Array<CellLocation> = [];
+
+  // Get the column heights first
   for (let col = 0; col < NUM_COLUMN; col++) {
     let row = 0;
     while (row < NUM_ROW && board[row][col] == 0) {
       row++;
     }
     heights.push(20 - row);
+  }
+  // Then look for holes
+  for (let col = 0; col < NUM_COLUMN; col++) {
+    let row = 20 - heights[col];
     while (row < NUM_ROW - 1) {
       row++;
       if (board[row][col] === SquareState.EMPTY && col < NUM_COLUMN - 1) {
+        if (isTuckSetup(row, col, board, heights)) {
+          numHoles += 0.5;
+          holeCells.push([row, col]);
+        }
+
         // Add a hole if it's anywhere other than column 10
         numHoles++;
         holeCells.push([row, col]);

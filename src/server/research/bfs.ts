@@ -1,17 +1,17 @@
-import { PIECE_LOOKUP } from "../tetrominoes";
+import { PIECE_LOOKUP } from "../../tetrominoes";
 import {
   getBoardAndLinesClearedAfterPlacement,
   getTestBoardWithHeight,
   pieceCollision,
   _modulus,
   _validateIntParam,
-} from "./board_helper";
+} from "../board_helper";
 import {
   GetGravity,
   getSurfaceArrayAndHoles,
   logBoard,
   shouldPerformInputsThisFrame,
-} from "./utils";
+} from "../utils";
 
 // Determine the x increment to apply based on the encoded input
 const X_INCREMENT_LOOKUP = {

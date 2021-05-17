@@ -148,10 +148,12 @@ function countCol10Holes(board) {
 /** Calculates the number of lines that need to be cleared for all the holes to be resolved. */
 function getRowsNeedingToBurn(
   board,
+  surfaceArray,
   maxDirtyTetrisHeight,
   aiMode
-): Set<number> {
+): [Set<number>, Set<number>] {
   const linesNeededToClear: Set<number> = new Set();
+  const linesNeededToClearIfTucksFail: Set<number> = new Set();
   const rightColBoundary =
     aiMode === AiMode.DIG ? NUM_COLUMN - 1 : NUM_COLUMN - 2;
   for (let col = 0; col <= rightColBoundary; col++) {
@@ -166,6 +168,12 @@ function getRowsNeedingToBurn(
       rowsInStackPassedThrough.add(row);
       row++;
       if (board[row][col] === SquareState.EMPTY) {
+        if (utils.isTuckSetup(row, col, board, surfaceArray)) {
+          for (const line of rowsInStackPassedThrough) {
+            linesNeededToClearIfTucksFail.add(line);
+          }
+        }
+
         // Ignore holes that are under the dirty tetris line and not in the Tetris zone
         const canBeDirtyTetrisedOver =
           NUM_ROW - row <= maxDirtyTetrisHeight &&
@@ -181,7 +189,12 @@ function getRowsNeedingToBurn(
     }
   }
 
-  return linesNeededToClear;
+  // Don't double count between the two sets
+  let noTuckFiltered = new Set(
+    [...linesNeededToClearIfTucksFail].filter((x) => !linesNeededToClear.has(x))
+  );
+
+  return [linesNeededToClear, noTuckFiltered];
 }
 
 function getColumn9Factor(
@@ -522,8 +535,12 @@ export function getValueOfPossibility(
   );
   const tetrisReady = isTetrisReadyRightWell(boardAfter);
   const holeInTetrisZone = hasHoleInTetrisZone(boardAfter, holeCells);
-  const rowsNeedingToBurn = getRowsNeedingToBurn(
+  const [
+    rowsNeedingToBurn,
+    rowsNeedingToBurnIfTucksFail,
+  ] = getRowsNeedingToBurn(
     boardAfter,
+    surfaceArrayWithCol10,
     aiParams.MAX_DIRTY_TETRIS_HEIGHT * scareHeight,
     aiMode
   );
@@ -561,8 +578,12 @@ export function getValueOfPossibility(
   const tetrisReadyFactor =
     aiParams.TETRIS_READY_COEF * (holeInTetrisZone ? -1 : tetrisReady ? 1 : 0);
   const holeFactor = adjustedNumHoles * aiParams.HOLE_COEF;
-  const holeWeightFactor = rowsNeedingToBurn.size * aiParams.HOLE_WEIGHT_COEF;
-  const holeWeightBurnFactor = rowsNeedingToBurn.size * aiParams.BURN_COEF;
+  const holeWeightFactor =
+    (rowsNeedingToBurn.size + 0.5 * rowsNeedingToBurnIfTucksFail.size) *
+    aiParams.HOLE_WEIGHT_COEF;
+  const holeWeightBurnFactor =
+    (rowsNeedingToBurn.size + 0.5 * rowsNeedingToBurnIfTucksFail.size) *
+    aiParams.BURN_COEF;
   const lineClearFactor = getLineClearValue(numLinesCleared, aiParams);
   const spireHeightFactor =
     aiParams.SPIRE_HEIGHT_COEF *
@@ -621,7 +642,7 @@ export function getValueOfPossibility(
   let [totalValue, explanation] = compileFactors(factors, aiMode);
 
   if (aiParams.BURN_COEF < -500) {
-    totalValue = Math.max(-20000, totalValue);
+    totalValue = Math.max(-200000, totalValue);
   }
 
   if (shouldLog) {
