@@ -26,7 +26,7 @@ export function getBestMove(
   inputFrameTimeline: string,
   searchDepth: number,
   hypotheticalSearchDepth: number
-) {
+): PossibilityChain {
   // Get the AI mode (e.g. digging, scoring)
   let aiParams = addTapInfoToAiParams(
     initialAiParams,

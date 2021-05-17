@@ -1,6 +1,7 @@
 import { PIECE_LOOKUP } from "../tetrominoes";
 import { getBoardAndLinesClearedAfterPlacement } from "./board_helper";
 import { rateSurface } from "./evaluator";
+import { precomputePlacementAndAdjustments } from "./precompute";
 import { getSurfaceArrayAndHoles, logBoard } from "./utils";
 
 const http = require("http");
@@ -22,7 +23,7 @@ const SHOULD_LOG_NO_NB = SHOULD_LOG_ALL;
  * Parses and validates the inputs
  * @returns {Object} an object with all the parsed arguments
  */
-function parseArguments(requestArgs): [SearchState, Array<number>] {
+function parseArguments(requestArgs): [SearchState, string] {
   // Parse and validate inputs
   let [
     boardStr,
@@ -172,7 +173,7 @@ function handleRequestAsyncNoNextBox(requestArgs): [string, number] {
   return ["Request accepted.", 200];
 }
 
-function formatResponse(possibility: PossibilityChain) {
+export function formatResponse(possibility: PossibilityChain) {
   return (
     possibility.placement[0] +
     "," +
@@ -193,7 +194,7 @@ function formatResponse(possibility: PossibilityChain) {
  * @returns {string} the API response
  */
 function handleRequestSyncNoNextBox(requestArgs) {
-  let [searchState, inputDelaySequence] = parseArguments(requestArgs);
+  let [searchState, inputFrameTimeline] = parseArguments(requestArgs);
 
   // Get the best move
   const bestMove = mainApp.getBestMove(
@@ -201,7 +202,7 @@ function handleRequestSyncNoNextBox(requestArgs) {
     SHOULD_LOG_NO_NB,
     params.getParams(),
     params.getParamMods(),
-    inputDelaySequence,
+    inputFrameTimeline,
     /* searchDepth= */ 1,
     /* hypotheticalSearchDepth= */ 1
   );
@@ -217,7 +218,7 @@ function handleRequestSyncNoNextBox(requestArgs) {
  * @returns {string} the API response
  */
 function handleRequestSyncWithNextBox(requestArgs) {
-  let [searchState, inputDelaySequence] = parseArguments(requestArgs);
+  let [searchState, inputFrameTimeline] = parseArguments(requestArgs);
 
   // Get the best move
   const bestMove = mainApp.getBestMove(
@@ -225,7 +226,7 @@ function handleRequestSyncWithNextBox(requestArgs) {
     SHOULD_LOG_NB,
     params.getParams(),
     params.getParamMods(),
-    inputDelaySequence,
+    inputFrameTimeline,
     /* searchDepth= */ 2,
     /* hypotheticalSearchDepth= */ 1
   );
@@ -234,6 +235,24 @@ function handleRequestSyncWithNextBox(requestArgs) {
     return "No legal moves";
   }
   return formatResponse(bestMove);
+}
+
+/**
+ * Synchronously choose the best placement, with next piece & 1-depth search.
+ * @returns {string} the API response
+ */
+function handlePrecomputeRequest(requestArgs) {
+  let [searchState, inputFrameTimeline] = parseArguments(requestArgs);
+
+  return precomputePlacementAndAdjustments(
+    searchState,
+    SHOULD_LOG_NB,
+    params.getParams(),
+    params.getParamMods(),
+    inputFrameTimeline,
+    /* searchDepth= */ 2,
+    /* hypotheticalSearchDepth= */ 1
+  );
 }
 
 function handleRankLookup(requestArgs: Array<string>) {
@@ -287,6 +306,8 @@ const server = http.createServer((req, res) => {
     response = handleRequestSyncWithNextBox(requestArgs);
   } else if (requestType === "sync-nnb") {
     response = handleRequestSyncNoNextBox(requestArgs);
+  } else if (requestType === "precompute") {
+    response = handlePrecomputeRequest(requestArgs);
   } else {
     response =
       "Please specify the request type, e.g. 'sync-nnb' or 'async-nb'. Received: " +
