@@ -1,7 +1,7 @@
 import { PIECE_LOOKUP } from "../tetrominoes";
 import { getBoardAndLinesClearedAfterPlacement } from "./board_helper";
 import { rateSurface } from "./evaluator";
-import { precomputePlacementAndAdjustments } from "./precompute";
+import { computePlacementAndAdjustments } from "./precompute";
 import { getSurfaceArrayAndHoles, logBoard } from "./utils";
 
 const http = require("http");
@@ -244,14 +244,13 @@ function handleRequestSyncWithNextBox(requestArgs) {
 function handlePrecomputeRequest(requestArgs) {
   let [searchState, inputFrameTimeline] = parseArguments(requestArgs);
 
-  return precomputePlacementAndAdjustments(
+  return computePlacementAndAdjustments(
     searchState,
     SHOULD_LOG_NB,
     params.getParams(),
     params.getParamMods(),
     inputFrameTimeline,
-    /* searchDepth= */ 2,
-    /* hypotheticalSearchDepth= */ 1
+    searchState.framesAlreadyElapsed
   );
 }
 

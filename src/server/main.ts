@@ -63,6 +63,36 @@ export function getBestMove(
   }
 }
 
+export function evaluateFirstPlacements(
+  searchState,
+  shouldLog,
+  aiParams,
+  aiMode,
+  searchDepth,
+  hypotheticalSearchDepth
+) {
+  const concretePossibilities = searchConcretely(
+    searchState,
+    shouldLog,
+    aiParams,
+    aiMode,
+    searchDepth
+  );
+
+  if (hypotheticalSearchDepth == 0) {
+    return concretePossibilities[0] || null;
+  } else {
+    const sortedPossibilities = searchHypothetically(
+      concretePossibilities,
+      aiParams,
+      aiMode,
+      hypotheticalSearchDepth,
+      shouldLog
+    );
+    return sortedPossibilities[0] || null;
+  }
+}
+
 /** Does a full search of all possible placements given an board and maybe a next piece.
  * This concrete search is opposed to hypothetical search which looks over all possible next pieces.
  */
