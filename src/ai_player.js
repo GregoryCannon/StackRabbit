@@ -2,7 +2,6 @@ export function AIPlayer(moveLeftFunc, moveRightFunc, rotateRightFunc) {
   this.moveLeftFunc = moveLeftFunc;
   this.moveRightFunc = moveRightFunc;
   this.rotateRightFunc = rotateRightFunc;
-  this.linesArray = null; // The array of raw input text in the ranks text file.
   this.totalApiTime = 0;
   this.totalApiCalls = 0;
 }
