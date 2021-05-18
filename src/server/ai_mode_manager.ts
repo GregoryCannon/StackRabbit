@@ -3,7 +3,13 @@ const SquareState = utils.SquareState;
 const NUM_ROW = utils.NUM_ROW;
 const NUM_COLUMN = utils.NUM_COLUMN;
 
-export function getAiMode(board, lines, level, currentPieceId: PieceId, aiParams) {
+export function getAiMode(
+  board,
+  lines,
+  level,
+  currentPieceId: PieceId,
+  aiParams
+) {
   if (level >= 29 && aiParams.MAX_5_TAP_LOOKUP[level] <= 4) {
     return AiMode.KILLSCREEN;
   }
@@ -28,7 +34,12 @@ export function getAiMode(board, lines, level, currentPieceId: PieceId, aiParams
  *  - If the hole doesn't have many filled lines above it, go dig it
  *  - Otherwise, play on and plan to play a few rows off the bottom
  */
-function shouldUseDigMode(board, level, currentPieceId: PieceId, aiParams: AiParams) {
+function shouldUseDigMode(
+  board,
+  level,
+  currentPieceId: PieceId,
+  aiParams: AiParams
+) {
   // Never dig while playing perfect
   if (aiParams.BURN_COEF < -500) {
     return false;
@@ -49,7 +60,9 @@ function shouldUseDigMode(board, level, currentPieceId: PieceId, aiParams: AiPar
     const blockingWell = board[row][NUM_COLUMN - 1] === SquareState.FULL;
     return (
       (blockingWell && NUM_ROW - row > maxDirtyTetrisHeight) ||
-      (currentPieceId === "I" && row >= tetrisZoneStart && row <= tetrisZoneEnd) ||
+      (currentPieceId === "I" &&
+        row >= tetrisZoneStart &&
+        row <= tetrisZoneEnd) ||
       row - firstFullRow < 4
     );
   }
