@@ -37,6 +37,7 @@ export function getBestMove(
     searchState.board,
     searchState.lines,
     searchState.level,
+    searchState.currentPieceId,
     aiParams
   );
   aiParams = modifyParamsForAiMode(aiParams, aiMode, paramMods);
