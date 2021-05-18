@@ -18,8 +18,8 @@ TIMELINE_30_HZ = "X.";
 
 -- Config constants
 SHOULD_ADJUST = true
-REACTION_TIME_FRAMES = 5
-INPUT_TIMELINE = TIMELINE_15_HZ;
+REACTION_TIME_FRAMES = 15
+INPUT_TIMELINE = TIMELINE_12_HZ;
 SHOULD_RECORD_GAMES = true
 MOVIE_PATH = "C:\\Users\\Greg\\Desktop\\VODs\\" -- Where to store the fm2 VODS (absolute path)
 
