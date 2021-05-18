@@ -1,28 +1,27 @@
 import { PIECE_LOOKUP } from "../tetrominoes";
 import { getBoardAndLinesClearedAfterPlacement } from "./board_helper";
 import { rateSurface } from "./evaluator";
-import {
-  computePlacementAndAdjustments,
-  PrecomputeManager,
-} from "./precompute";
+import { PreComputeManager } from "./precompute";
 import { formatPossibility, getSurfaceArrayAndHoles, logBoard } from "./utils";
 
 const mainApp = require("./main");
 const params = require("./params");
 
-let asyncCallInProgress = false;
-let asyncResult = null;
+const REQUEST_ACCEPTED_STR = "Request accepted.";
 
 const SHOULD_LOG_ALL = false;
-
 const SHOULD_LOG_NB = SHOULD_LOG_ALL;
 const SHOULD_LOG_NO_NB = SHOULD_LOG_ALL;
 
 export class RequestHandler {
-  precomputeManager: any;
+  preComputeManager: PreComputeManager;
+  asyncCallInProgress: boolean;
+  asyncResult: string;
 
   constructor(precomputeManager) {
-    this.precomputeManager = precomputeManager;
+    this.preComputeManager = precomputeManager;
+    this.asyncCallInProgress = false;
+    this.asyncResult = null;
 
     this.routeRequest = this.routeRequest.bind(this);
   }
@@ -36,9 +35,9 @@ export class RequestHandler {
 
       case "async-result":
         // If a previous async request has now completed, send that.
-        if (asyncResult !== null) {
-          return [asyncResult, 200];
-        } else if (asyncCallInProgress) {
+        if (this.asyncResult !== null) {
+          return [this.asyncResult, 200];
+        } else if (this.asyncCallInProgress) {
           return ["Still calculating", 504]; // Gateway timeout
         } else {
           return ["No previous async request has been made", 404]; // Not found
@@ -180,7 +179,7 @@ export class RequestHandler {
    * @returns {string} the *initial* API response - i.e. whether the request was accepted and started
    */
   handleRequestAsyncWithNextBox(requestArgs): [string, number] {
-    if (asyncCallInProgress) {
+    if (this.asyncCallInProgress) {
       return ["Error - already handling an async call", 500];
     }
 
@@ -188,14 +187,14 @@ export class RequestHandler {
     const processRequest = async function (requestArgs) {
       // Wait 1ms to ensure that this is called async
       await new Promise((resolve) => setTimeout(resolve, 1));
-      asyncResult = this.handleRequestSyncWithNextBox(requestArgs);
-      asyncCallInProgress = false;
+      this.asyncResult = this.handleRequestSyncWithNextBox(requestArgs);
+      this.asyncCallInProgress = false;
     }.bind(this);
 
-    asyncCallInProgress = true;
-    asyncResult = null;
+    this.asyncCallInProgress = true;
+    this.asyncResult = null;
     processRequest(requestArgs);
-    return ["Request accepted.", 200];
+    return [REQUEST_ACCEPTED_STR, 200];
   }
 
   /**
@@ -204,7 +203,7 @@ export class RequestHandler {
    * @returns {string} the *initial* API response - i.e. whether the request was accepted and started
    */
   handleRequestAsyncNoNextBox(requestArgs): [string, number] {
-    if (asyncCallInProgress) {
+    if (this.asyncCallInProgress) {
       throw new Error(
         "Async call made when previous calculation wasn't complete"
       );
@@ -215,14 +214,14 @@ export class RequestHandler {
     const processRequest = async function (requestArgs) {
       // Wait 1ms to ensure that this is called async
       await new Promise((resolve) => setTimeout(resolve, 1));
-      asyncResult = this.handleRequestSyncNoNextBox(requestArgs);
-      asyncCallInProgress = false;
+      this.asyncResult = this.handleRequestSyncNoNextBox(requestArgs);
+      this.asyncCallInProgress = false;
     }.bind(this);
 
-    asyncCallInProgress = true;
-    asyncResult = null;
+    this.asyncCallInProgress = true;
+    this.asyncResult = null;
     processRequest(requestArgs);
-    return ["Request accepted.", 200];
+    return [REQUEST_ACCEPTED_STR, 200];
   }
 
   /**
@@ -276,20 +275,25 @@ export class RequestHandler {
   }
 
   /**
-   * Synchronously choose the best placement, with next piece & 1-depth search.
+   * Pre-compute both an initial placement and all possible adjustments for the upcoming piece.
    * @returns {string} the API response
    */
   handlePrecomputeRequest(requestArgs) {
     let [searchState, inputFrameTimeline] = this._parseArguments(requestArgs);
 
-    return computePlacementAndAdjustments(
+    this.preComputeManager.precompute(
       searchState,
       SHOULD_LOG_NB,
       params.getParams(),
       params.getParamMods(),
       inputFrameTimeline,
-      searchState.framesAlreadyElapsed
+      searchState.framesAlreadyElapsed,
+      function (result) {
+        this.asyncResult = result;
+        this.asyncCallInProgress = false;
+      }.bind(this)
     );
+    return REQUEST_ACCEPTED_STR;
   }
 
   handleRankLookup(requestArgs: Array<string>) {

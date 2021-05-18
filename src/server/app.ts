@@ -1,4 +1,4 @@
-import { PrecomputeManager } from "./precompute";
+import { PreComputeManager } from "./precompute";
 import { RequestHandler } from "./request_handler";
 
 const http = require("http");
@@ -33,7 +33,7 @@ function initServer(requestHandler) {
 }
 
 // Create an object to manage the worker threads involved in heavy placement computation
-const precomputer = new PrecomputeManager();
+const precomputer = new PreComputeManager();
 
 // Start the server once the precomputer is operational
 precomputer.initialize(() => {

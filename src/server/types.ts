@@ -24,6 +24,8 @@ interface SimParams {
   canFirstFrameShift: boolean;
 }
 
+/* ----------- Move Search-Related Types ------------ */
+
 interface SimState {
   x: number;
   y: number;
@@ -106,6 +108,8 @@ const enum AiMode {
   KILLSCREEN_RIGHT_WELL,
 }
 
+/* ----------- Evaluation Parameters ------------- */
+
 interface InitialAiParams {
   AVG_HEIGHT_EXPONENT: number;
   AVG_HEIGHT_COEF: number;
@@ -143,4 +147,20 @@ interface ParamMods {
   DIG: any;
   NEAR_KILLSCREEN: any;
   KILLSCREEN: any;
+}
+
+/* ------------ Messages for Worker Threads ------------ */
+
+interface WorkerDataArgs {
+  piece: PieceId;
+  newSearchState: SearchState;
+  initialAiParams: InitialAiParams;
+  paramMods: ParamMods;
+  inputFrameTimeline: string;
+}
+
+interface WorkerResponse {
+  type: string;
+  piece?: PieceId;
+  result?: PossibilityChain;
 }

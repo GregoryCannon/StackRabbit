@@ -8,40 +8,33 @@ import {
 
 const child_process = require("child_process");
 
-let workers = [];
-let pendingResults;
 const NUM_THREADS = 7;
 
-export class PrecomputeManager {
+/**
+ * This class is involved with precomputing adjustments for all possible next pieces, and choosing
+ * the initial placement based on the ability to reach those adjustments.
+ * */
+export class PreComputeManager {
   workers: any[];
   pendingResults: number;
   workersStillLoading: number;
-  resultCallback: Function;
+  onResultCallback: Function;
   onReadyCallback: Function;
+  results: {};
+  defaultPlacement: PossibilityChain;
 
   constructor() {
     this.workers = [];
     this.pendingResults = 0;
     this.workersStillLoading = 0;
-    this.resultCallback = null;
+    // Callbacks to notify parent
+    this.onResultCallback = null;
     this.onReadyCallback = null;
+    // The results to calculate
+    this.defaultPlacement = null;
+    this.results = {};
 
     this._onMessage = this._onMessage.bind(this);
-  }
-
-  _onMessage(message) {
-    if (message.type === "ready") {
-      this.workersStillLoading--;
-
-      if (this.workersStillLoading === 0) {
-        console.log("DONE LOADING WORKERS");
-        if (this.onReadyCallback !== null) {
-          this.onReadyCallback();
-        } else {
-          throw new Error("No on ready callback was provided");
-        }
-      }
-    }
   }
 
   initialize(callback) {
@@ -50,99 +43,108 @@ export class PrecomputeManager {
 
     // Create the worker threads
     for (let i = 0; i < NUM_THREADS; i++) {
-      this.workers[i] = child_process.fork(
-        "src/server/research/worker_thread_test_only.js"
+      const newWorker = child_process.fork(
+        "built/src/server/worker_thread.js"
       );
-      this.workers[i].addListener("message", this._onMessage);
+      newWorker.addListener("message", this._onMessage);
+      this.workers.push(newWorker);
     }
   }
 
-  // async handleRequest(){
-  //   workers[i].addListener("message", (message) => {
-  //     if (message.type === "ready"){
-  //       this.workersStillLoading--;
-  //     } else if (message.type === "result"){
-  //       console.log("Received response:", message.piece, formatPossibility(message.result));
-  //       pendingResults--;
-  //       // If all results are computed, kill the worker threads
-  //       if (pendingResults < 0) {
-  //         throw new Error("Uh oh boss. We got concurrency issues.");
-  //       }
-  //       if (pendingResults == 0) {
-  //         console.log("DONE");
-  //         console.timeEnd("async");
-  //         workers.forEach((x) => x.kill());
-  //       }
-  //     }
-}
+  precompute(
+    searchState: SearchState,
+    shouldLog: boolean,
+    initialAiParams: InitialAiParams,
+    paramMods: ParamMods,
+    inputFrameTimeline: string,
+    reactionTimeFrames: number,
+    onResultCallback: Function
+  ) {
+    console.time("PRECOMPUTE");
+    this.onResultCallback = onResultCallback;
+    this.results = {};
+    this.pendingResults = NUM_THREADS;
 
-/**
- * This class is involved with precomputing adjustments for all possible next pieces, and choosing
- * the initial placement based on the ability to reach those adjustments.
- * */
-
-export function computePlacementAndAdjustments(
-  searchState: SearchState,
-  shouldLog: boolean,
-  initialAiParams: InitialAiParams,
-  paramMods: ParamMods,
-  inputFrameTimeline: string,
-  reactionTimeFrames: number
-): string {
-  console.time("PRECOMPUTE");
-  // Get initial NNB placement
-  const defaultPlacement = getBestMove(
-    searchState,
-    shouldLog,
-    initialAiParams,
-    paramMods,
-    inputFrameTimeline,
-    /* searchDepth= */ 1,
-    /* hypotheticalSearchDepth= */ 1
-  );
-
-  // Get all the possible adjustments
-  let workers = [];
-  const results = {};
-  let pendingResults = 4;
-  console.time("async");
-  for (let i = 0; i < POSSIBLE_NEXT_PIECES.length; i++) {
-    const nextPieceId = POSSIBLE_NEXT_PIECES[i];
-    let newSearchState = { ...searchState, nextPieceId };
-    newSearchState = predictSearchStateAtAdjustmentTime(
-      newSearchState,
-      defaultPlacement.inputSequence,
-      inputFrameTimeline,
-      reactionTimeFrames
-    );
-    const argsData = {
-      newSearchState,
+    // Get initial NNB placement
+    this.defaultPlacement = getBestMove(
+      searchState,
       shouldLog,
       initialAiParams,
       paramMods,
       inputFrameTimeline,
-    };
+      /* searchDepth= */ 1,
+      /* hypotheticalSearchDepth= */ 1
+    );
 
-    if (i <= 4) {
-      console.time("create a worker");
-
-      workers[i].send({ data: argsData });
-      console.timeEnd("create a worker");
+    // Ping the worker threads to compute all possible adjustments
+    for (let i = 0; i < POSSIBLE_NEXT_PIECES.length; i++) {
+      const nextPieceId = POSSIBLE_NEXT_PIECES[i];
+      let newSearchState = { ...searchState, nextPieceId };
+      newSearchState = predictSearchStateAtAdjustmentTime(
+        newSearchState,
+        this.defaultPlacement.inputSequence,
+        inputFrameTimeline,
+        reactionTimeFrames
+      );
+      const argsData = {
+        piece: newSearchState.nextPieceId,
+        newSearchState,
+        shouldLog,
+        initialAiParams,
+        paramMods,
+        inputFrameTimeline,
+      };
+      // console.log(this.workers);
+      this.workers[i].send(argsData);
     }
-
-    results[nextPieceId] = defaultPlacement;
-    // results[nextPieceId] = getBestMove(
-    //   newSearchState,
-    //   shouldLog,
-    //   initialAiParams,
-    //   paramMods,
-    //   inputFrameTimeline,
-    //   /* searchDepth= */ 2,
-    //   /* hypotheticalSearchDepth= */ 1
-    // );
   }
-  console.timeEnd("PRECOMPUTE");
-  return formatPrecomputeResult(results, defaultPlacement);
+
+  _onMessage(message: WorkerResponse) {
+    switch (message.type) {
+      case "ready":
+        // Update the ready worker count, and notify the parent if all threads are ready
+        this.workersStillLoading--;
+        if (this.workersStillLoading === 0) {
+          console.log("DONE LOADING WORKERS");
+          if (this.onReadyCallback !== null) {
+            this.onReadyCallback();
+          }
+        }
+        break;
+
+      case "result":
+        console.log(
+          "Received response:",
+          message.piece,
+          formatPossibility(message.result)
+        );
+        // Save the partial result
+        this.results[message.piece] = message.result;
+        this.pendingResults--;
+        // If all results are in, compile them and send back to parent
+        if (this.pendingResults == 0) {
+          this._compileResponse();
+        }
+        break;
+
+      default:
+        throw new Error(
+          "Unrecognized message type received from worker: " + message.type
+        );
+    }
+  }
+
+  _compileResponse() {
+    console.timeEnd("PRECOMPUTE");
+    const formattedResult = formatPrecomputeResult(
+      this.results,
+      this.defaultPlacement
+    );
+    if (this.onResultCallback === null) {
+      throw new Error("No result callback provided");
+    }
+    this.onResultCallback(formattedResult);
+  }
 }
 
 function formatPrecomputeResult(results, defaultPlacement) {
