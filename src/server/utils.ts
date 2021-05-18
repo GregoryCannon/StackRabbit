@@ -48,6 +48,22 @@ export function GetGravity(level) {
   }
 }
 
+export function formatPossibility(possibility: PossibilityChain) {
+  return (
+    possibility.placement[0] +
+    "," +
+    possibility.placement[1] +
+    "|" +
+    (possibility.inputSequence || "none") +
+    "|" +
+    possibility.boardAfter.map((row) => row.join("")).join("") +
+    "|" +
+    possibility.searchStateAfterMove.level +
+    "|" +
+    possibility.searchStateAfterMove.lines
+  );
+}
+
 const FRAME_WITH_INPUT = "X";
 const FRAME_WAITING = ".";
 

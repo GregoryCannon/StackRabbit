@@ -1,19 +1,80 @@
-import { rejects } from "assert/strict";
-import { getAiMode } from "./ai_mode_manager";
-import { formatResponse } from "./app";
+import { getBestMove } from "./main";
 import {
-  addTapInfoToAiParams,
-  evaluateFirstPlacements,
-  getBestMove,
-} from "./main";
-import { modifyParamsForAiMode } from "./params";
-import {
+  formatPossibility,
   GetGravity,
   POSSIBLE_NEXT_PIECES,
   shouldPerformInputsThisFrame,
 } from "./utils";
 
 const child_process = require("child_process");
+
+let workers = [];
+let pendingResults;
+const NUM_THREADS = 7;
+
+export class PrecomputeManager {
+  workers: any[];
+  pendingResults: number;
+  workersStillLoading: number;
+  resultCallback: Function;
+  onReadyCallback: Function;
+
+  constructor() {
+    this.workers = [];
+    this.pendingResults = 0;
+    this.workersStillLoading = 0;
+    this.resultCallback = null;
+    this.onReadyCallback = null;
+
+    this._onMessage = this._onMessage.bind(this);
+  }
+
+  _onMessage(message) {
+    if (message.type === "ready") {
+      this.workersStillLoading--;
+
+      if (this.workersStillLoading === 0) {
+        console.log("DONE LOADING WORKERS");
+        if (this.onReadyCallback !== null) {
+          this.onReadyCallback();
+        } else {
+          throw new Error("No on ready callback was provided");
+        }
+      }
+    }
+  }
+
+  initialize(callback) {
+    this.onReadyCallback = callback;
+    this.workersStillLoading = NUM_THREADS;
+
+    // Create the worker threads
+    for (let i = 0; i < NUM_THREADS; i++) {
+      this.workers[i] = child_process.fork(
+        "src/server/research/worker_thread_test_only.js"
+      );
+      this.workers[i].addListener("message", this._onMessage);
+    }
+  }
+
+  // async handleRequest(){
+  //   workers[i].addListener("message", (message) => {
+  //     if (message.type === "ready"){
+  //       this.workersStillLoading--;
+  //     } else if (message.type === "result"){
+  //       console.log("Received response:", message.piece, formatPossibility(message.result));
+  //       pendingResults--;
+  //       // If all results are computed, kill the worker threads
+  //       if (pendingResults < 0) {
+  //         throw new Error("Uh oh boss. We got concurrency issues.");
+  //       }
+  //       if (pendingResults == 0) {
+  //         console.log("DONE");
+  //         console.timeEnd("async");
+  //         workers.forEach((x) => x.kill());
+  //       }
+  //     }
+}
 
 /**
  * This class is involved with precomputing adjustments for all possible next pieces, and choosing
@@ -41,8 +102,12 @@ export function computePlacementAndAdjustments(
   );
 
   // Get all the possible adjustments
+  let workers = [];
   const results = {};
-  for (const nextPieceId of POSSIBLE_NEXT_PIECES) {
+  let pendingResults = 4;
+  console.time("async");
+  for (let i = 0; i < POSSIBLE_NEXT_PIECES.length; i++) {
+    const nextPieceId = POSSIBLE_NEXT_PIECES[i];
     let newSearchState = { ...searchState, nextPieceId };
     newSearchState = predictSearchStateAtAdjustmentTime(
       newSearchState,
@@ -50,25 +115,40 @@ export function computePlacementAndAdjustments(
       inputFrameTimeline,
       reactionTimeFrames
     );
-    const bestMoveThisPiece = getBestMove(
+    const argsData = {
       newSearchState,
       shouldLog,
       initialAiParams,
       paramMods,
       inputFrameTimeline,
-      /* searchDepth= */ 2,
-      /* hypotheticalSearchDepth= */ 1
-    );
-    results[nextPieceId] = bestMoveThisPiece;
+    };
+
+    if (i <= 4) {
+      console.time("create a worker");
+
+      workers[i].send({ data: argsData });
+      console.timeEnd("create a worker");
+    }
+
+    results[nextPieceId] = defaultPlacement;
+    // results[nextPieceId] = getBestMove(
+    //   newSearchState,
+    //   shouldLog,
+    //   initialAiParams,
+    //   paramMods,
+    //   inputFrameTimeline,
+    //   /* searchDepth= */ 2,
+    //   /* hypotheticalSearchDepth= */ 1
+    // );
   }
   console.timeEnd("PRECOMPUTE");
   return formatPrecomputeResult(results, defaultPlacement);
 }
 
 function formatPrecomputeResult(results, defaultPlacement) {
-  let resultString = `Default:${formatResponse(defaultPlacement)}`;
+  let resultString = `Default:${formatPossibility(defaultPlacement)}`;
   for (const piece of POSSIBLE_NEXT_PIECES) {
-    const singlePieceFormatted = formatResponse(results[piece]);
+    const singlePieceFormatted = formatPossibility(results[piece]);
     resultString += `\n${piece}:${singlePieceFormatted}`;
   }
   return resultString;
