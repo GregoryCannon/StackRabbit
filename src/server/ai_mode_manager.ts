@@ -58,12 +58,13 @@ function shouldUseDigMode(
 
   function holeWarrantsDigging(row, firstFullRow) {
     const blockingWell = board[row][NUM_COLUMN - 1] === SquareState.FULL;
+    const numRowsOfGarbage = row - firstFullRow;
     return (
       (blockingWell && NUM_ROW - row > maxDirtyTetrisHeight) ||
       (currentPieceId === "I" &&
         row >= tetrisZoneStart &&
         row <= tetrisZoneEnd) ||
-      row - firstFullRow < 4
+        numRowsOfGarbage > 2
     );
   }
 
