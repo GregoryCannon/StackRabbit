@@ -117,6 +117,7 @@ interface InitialAiParams {
   BURN_COEF: number;
   COL_10_COEF: number;
   COL_10_HEIGHT_MULTIPLIER_EXP: number;
+  DEAD_COEF: number;
   MAX_DIRTY_TETRIS_HEIGHT: number;
   EXTREME_GAP_COEF: number;
   BUILT_OUT_LEFT_COEF: number;

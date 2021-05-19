@@ -9,6 +9,7 @@ import {
   REWARDS,
 } from "../lite_game_simulator";
 import { getBestMove } from "../main";
+import { applyModsToParams } from "../params";
 import { cloneBoard, logBoard } from "../utils";
 
 const { getParams, getParamMods } = require("./params");
@@ -192,31 +193,7 @@ function abTest(baseParams: InitialAiParams, expParams: InitialAiParams) {
   console.log(`Diff: ${(expTotal - baseTotal) / NUM_DIFFERING_STATES}`);
 }
 
-const EXP_PARAMS = {
-  BURN_COEF: -5,
-  SURFACE_COEF: 1,
-  AVG_HEIGHT_EXPONENT: 1.36000000000004,
-  AVG_HEIGHT_COEF: -4.50624,
-  SCARE_HEIGHT_OFFSET: -2,
-  HOLE_COEF: -30,
-  COL_10_COEF: -2, // changed due to feature changing
-  COL_10_HEIGHT_MULTIPLIER_EXP: 3,
-  TETRIS_COEF: 28.248,
-  TETRIS_READY_COEF: 5.909760000000001,
-  MAX_DIRTY_TETRIS_HEIGHT: 0.15, // (As a multiple of the scare height) Added manually since didn't exist at time of training
-  EXTREME_GAP_COEF: -3,
-  BUILT_OUT_LEFT_COEF: 1.5, // changed due to feature changing
-  BUILT_OUT_RIGHT_COEF: 0, // Added manually since didn't exist at time of training
-  HOLE_WEIGHT_COEF: 0,
-  SPIRE_HEIGHT_EXPONENT: 1.215999999999999, // changed due to feature changing
-  SPIRE_HEIGHT_COEF: -1.1556000000000002, // changed due to feature changing
-  UNABLE_TO_BURN_COEF: -1, // changed due to feature changing
-  UNABLE_TO_BURN_DIFF_EXP: 1.5,
-  HIGH_COL_9_COEF: -1.5,
-  HIGH_COL_9_EXP: 2,
-  LEFT_SURFACE_COEF: 0,
-  INACCESSIBLE_LEFT_COEF: -30, // Added manually since didn't exist at time of training
-  INACCESSIBLE_RIGHT_COEF: -100, // Added manually since didn't exist at time of training
-};
+const EXP_MODS = {}
+const EXP_PARAMS = applyModsToParams(getParams(), EXP_MODS);
 
 abTest(getParams(), EXP_PARAMS);

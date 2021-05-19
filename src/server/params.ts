@@ -13,7 +13,7 @@ export const EVALUATION_BREADTH = {
   State-based param modification
 ---------------------------------*/
 
-function applyModsToParams(aiParams, modObject) {
+export function applyModsToParams(aiParams, modObject) {
   const modifiedParams = JSON.parse(JSON.stringify(aiParams));
   for (const key in modObject) {
     if (aiParams[key] === undefined) {
@@ -89,6 +89,7 @@ export const DEFAULT_PARAMS: InitialAiParams = {
   BURN_COEF: -5,
   COL_10_COEF: -3,
   COL_10_HEIGHT_MULTIPLIER_EXP: 3,
+  DEAD_COEF: -10000,
   MAX_DIRTY_TETRIS_HEIGHT: 0.15, // (As a multiple of the scare height)
   EXTREME_GAP_COEF: -3,
   BUILT_OUT_LEFT_COEF: 1.5,
@@ -124,8 +125,14 @@ export const V5_NO_DIRTIES = applyModsToParams(
   NO_DIRTIES_MODIFICATIONS
 );
 
-const SEMI_AGGRO_MODIFICATIONS = {
+const TOURNEY_AGGRO_MODIFICATIONS = {
   BURN_COEF: -14,
+  HIGH_COL_9_COEF: -5,
+  UNABLE_TO_BURN_COEF: -0.5,
+};
+
+const TOURNEY_MEDIUM_AGGRO_MODIFICATIONS = {
+  BURN_COEF: -10,
   HIGH_COL_9_COEF: -5,
   UNABLE_TO_BURN_COEF: -0.5,
 };
@@ -161,15 +168,21 @@ const MEDIUM_LOW_TAP_SPEED_MODIFICATIONS = {
   INACCESSIBLE_LEFT_COEF: -200,
 };
 
+
+const TOURNEY_MEDIUM_AGGRO_PARAMS = applyModsToParams(
+  DEFAULT_PARAMS,
+  TOURNEY_MEDIUM_AGGRO_MODIFICATIONS
+);
+const TOURNEY_AGGRO_PARAMS = applyModsToParams(
+  DEFAULT_PARAMS,
+  TOURNEY_AGGRO_MODIFICATIONS
+);
+const AGGRO_PARAMS = applyModsToParams(DEFAULT_PARAMS, AGGRO_MODIFICATIONS);
 const FULL_AGGRO_PARAMS = applyModsToParams(
   DEFAULT_PARAMS,
   FULL_AGGRO_MODIFICATIONS
 );
-const AGGRO_PARAMS = applyModsToParams(DEFAULT_PARAMS, AGGRO_MODIFICATIONS);
-const SEMI_AGGRO_PARAMS = applyModsToParams(
-  DEFAULT_PARAMS,
-  SEMI_AGGRO_MODIFICATIONS
-);
+
 const DROUGHT_CODE_PARAMS = applyModsToParams(
   DEFAULT_PARAMS,
   DROUGHT_MODIFICATIONS
@@ -211,7 +224,7 @@ const PLAY_PERFECT_PARAMS = {
 };
 
 export function getParams(): InitialAiParams {
-  return SEMI_AGGRO_PARAMS;
+  return TOURNEY_MEDIUM_AGGRO_PARAMS;
 }
 
 const V3_CUSTOM = {

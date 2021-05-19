@@ -385,12 +385,10 @@ function searchDepthNPlusOne(
           aiMode,
           EVALUATION_BREADTH[3]
         )[0] || null;
-      if (bestMove !== null) {
-        bestMove.totalValue = bestMove.evalScore + totalPartialValue;
-      }
       bestMovesList.push({
-        hypotheticalPiece,
         ...bestMove,
+        hypotheticalPiece,
+        totalValue: bestMove === null ? aiParams.DEAD_COEF : bestMove.evalScore + totalPartialValue
       });
     }
 
