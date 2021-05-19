@@ -25,8 +25,8 @@ MOVIE_PATH = "C:\\Users\\Greg\\Desktop\\VODs\\" -- Where to store the fm2 VODS (
 
 function resetGameScopedVariables()
   isFirstPiece = true;
-  gameState = 0
-  playstate = 0
+  metaGameState = 0
+  gamePhase = 0
   numLines = 0
   waitingOnAsyncRequest = false
   gameOver = false
@@ -436,10 +436,8 @@ function processAdjustment()
     parseGameStateFromResponse(adjustmentApiResult)
   else 
     local adjustmentApiResult = adjustmentLookup[orientToPiece[pnext]]
-    if (SHOULD_ADJUST) then
-      calculateInputs(adjustmentApiResult, true)
-      parseGameStateFromResponse(adjustmentApiResult)
-    end
+    calculateInputs(adjustmentApiResult, true)
+    parseGameStateFromResponse(adjustmentApiResult)
   end 
 end
 
@@ -449,13 +447,14 @@ end
 ------------------------------------]]--
 
 function runGameFrame()
-  local gamePhase = memory.readbyte(0x0048)
+  local gamePhaseLastFrame = gamePhase
+  gamePhase = memory.readbyte(0x0048)
   if(gamePhase == 1) then
-    if(playstate ~= 1) then
+    if(gamePhaseLastFrame ~= 1) then
       -- First active frame for piece. This is where board state/input sequence is calculated
       onFirstFrameOfNewPiece()
     end
-    if frameIndex == REACTION_TIME_FRAMES then
+    if frameIndex == REACTION_TIME_FRAMES and (SHOULD_ADJUST or isFirstPiece)  then
       -- Once reaction time is over, handle adjustment     
       processAdjustment()
     elseif frameIndex == REACTION_TIME_FRAMES + 1 then
@@ -468,13 +467,17 @@ function runGameFrame()
     frameIndex = frameIndex + 1
     arrFrameIndex = arrFrameIndex + 1
 
-  -- Do stuff right when the piece locks. If you want to check that the piece went to the correct spot/send an API request early here is probably good.
+  -- Do stuff right when the piece locks.
   elseif gamePhase >= 2 and gamePhase <= 8 then
-    -- If it's the frame the piece locks, then the board isn't updated yet. Also don't duplicate requests
-    if playstate == 1 then
+    if gamePhaseLastFrame == 1 then
       asPieceLocks()
       return
     end
+    -- If the agent is mistaken about the board state, crash immediately so I can debug it
+    if gamePhase == 8 and not gameOver and getEncodedBoard() ~= stateForNextPiece.board then
+      error("Divergence")
+    end
+      
   -- Detects when the game is over.
   elseif gamePhase == 10 then
       gameOver = true
@@ -489,13 +492,17 @@ end
 
 
 --[[-------------------------------------------------------- 
----------- Non-Gameplay Per-Frame Calculations ------------- 
+--------------------- Main Frame Loop----------------------- 
 --------------------------------------------------------]]--
 
 
-function beforeEachFrame()
+function eachFrame()
+  --Update metaGameState
+  local metaGameStateLastFrame = metaGameState
+  metaGameState = memory.readbyte(0x00C0)
+
   --Game starts
-  if(gameState == 3 and memory.readbyte(0x00C0) == 4) then
+  if(metaGameStateLastFrame == 3 and memory.readbyte(0x00C0) == 4) then
     if(SHOULD_RECORD_GAMES) then
       local dateStr = os.date("%m-%d %H %M")
       print(dateStr)
@@ -506,31 +513,28 @@ function beforeEachFrame()
   end
 
   --Check if a reset, hard reset, save state(?) has been loaded.
-  if(gameState == 4 and memory.readbyte(0x00C0) < 3) then
-  -- Panic
+  if(metaGameStateLastFrame == 4 and memory.readbyte(0x00C0) < 3) then
+    -- Panic
+    error("Reset, hard reset, or save state detected")
   end
 
   --Game ends, clean up data
-  if(gameState == 4 and memory.readbyte(0x00C0) == 3) then
+  if(metaGameStateLastFrame == 4 and memory.readbyte(0x00C0) == 3) then
   resetGameScopedVariables()
   if movie.active() then
       movie.stop()
       end
   end
 
-  --Update gameState
-  gameState = memory.readbyte(0x00C0)
-
-  if(gameState < 4) then
+  if(metaGameState < 4) then
     -- Currently on menu
   end
 
-  if(gameState == 4) then
+  if(metaGameState == 4) then
     runGameFrame()
   end
 
-  playstate = memory.readbyte(0x0048)
   trackAndLogFps()
 end
 
-emu.registerafter(beforeEachFrame)
+emu.registerafter(eachFrame)
