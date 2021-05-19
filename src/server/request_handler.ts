@@ -10,8 +10,6 @@ const params = require("./params");
 const REQUEST_ACCEPTED_STR = "Request accepted.";
 
 const SHOULD_LOG_ALL = false;
-const SHOULD_LOG_NB = SHOULD_LOG_ALL;
-const SHOULD_LOG_NO_NB = SHOULD_LOG_ALL;
 
 export class RequestHandler {
   preComputeManager: PreComputeManager;
@@ -254,7 +252,7 @@ export class RequestHandler {
     // Get the best move
     const bestMove = mainApp.getBestMove(
       searchState,
-      SHOULD_LOG_NO_NB,
+      SHOULD_LOG_ALL,
       params.getParams(),
       params.getParamMods(),
       inputFrameTimeline,
@@ -279,7 +277,7 @@ export class RequestHandler {
     // Get the best move
     const bestMove = mainApp.getBestMove(
       searchState,
-      SHOULD_LOG_NB,
+      SHOULD_LOG_ALL,
       params.getParams(),
       params.getParamMods(),
       inputFrameTimeline,
@@ -302,7 +300,7 @@ export class RequestHandler {
 
     this.preComputeManager.precompute(
       searchState,
-      SHOULD_LOG_NB,
+      SHOULD_LOG_ALL,
       params.getParams(),
       params.getParamMods(),
       inputFrameTimeline,
