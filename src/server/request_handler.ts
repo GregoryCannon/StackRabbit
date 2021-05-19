@@ -7,19 +7,19 @@ import { formatPossibility, getSurfaceArrayAndHoles, logBoard } from "./utils";
 const mainApp = require("./main");
 const params = require("./params");
 
-const REQUEST_ACCEPTED_STR = "Request accepted.";
-
 const SHOULD_LOG_ALL = false;
 
 export class RequestHandler {
   preComputeManager: PreComputeManager;
   asyncCallInProgress: boolean;
   asyncResult: string;
+  partialResult: any;
 
   constructor(precomputeManager) {
     this.preComputeManager = precomputeManager;
     this.asyncCallInProgress = false;
     this.asyncResult = null;
+    this.partialResult = null;
 
     this.routeRequest = this.routeRequest.bind(this);
     this._wrapAsync = this._wrapAsync.bind(this);
@@ -36,6 +36,8 @@ export class RequestHandler {
         // If a previous async request has now completed, send that.
         if (this.asyncResult !== null) {
           return [this.asyncResult, 200];
+        } else if (this.partialResult !== null){
+          return [this.partialResult, 200];
         } else if (this.asyncCallInProgress) {
           return ["Still calculating", 504]; // Gateway timeout
         } else {
@@ -176,69 +178,22 @@ export class RequestHandler {
     ];
   }
 
-  /**
-   * Asynchronously chooses the best placement, with next box and 1-depth search.
-   * Doesn't block the thread while computing, and returns the API response that should be sent in the meantime.
-   * @returns {string} the *initial* API response - i.e. whether the request was accepted and started
-   */
-  handleRequestAsyncWithNextBox(requestArgs): [string, number] {
-    if (this.asyncCallInProgress) {
-      return ["Error - already handling an async call", 500];
-    }
-
-    // Async wrapper around the synchronous handler
-    const processRequest = async function (requestArgs) {
-      // Wait 1ms to ensure that this is called async
-      await new Promise((resolve) => setTimeout(resolve, 1));
-      this.asyncResult = this.handleRequestSyncWithNextBox(requestArgs);
-      this.asyncCallInProgress = false;
-    }.bind(this);
-
-    this.asyncCallInProgress = true;
-    this.asyncResult = null;
-    processRequest(requestArgs);
-    return [REQUEST_ACCEPTED_STR, 200];
-  }
-
   _wrapAsync(func): [string, number] {
     const execute = async function () {
       // Wait 1ms to ensure that this is called async
       await new Promise((resolve) => setTimeout(resolve, 1));
-      this.asyncResult = func();
-      this.asyncCallInProgress = false;
+      const result = func();
+      if (result !== undefined){
+        this.asyncResult = result;
+        this.asyncCallInProgress = false;
+      }
     }.bind(this);
 
     this.asyncCallInProgress = true;
     this.asyncResult = null;
+    this.partialResult = null;
     execute();
     return ["Request accepted.", 200];
-  }
-
-  /**
-   * Asynchronously chooses the best placement, with no next box and 1-depth search.
-   * Doesn't block the thread while computing, and returns the API response that should be sent in the meantime.
-   * @returns {string} the *initial* API response - i.e. whether the request was accepted and started
-   */
-  handleRequestAsyncNoNextBox(requestArgs): [string, number] {
-    if (this.asyncCallInProgress) {
-      throw new Error(
-        "Async call made when previous calculation wasn't complete"
-      );
-      // return ["Error - already handling an async call", 500];
-    }
-
-    // Async wrapper around the synchronous handler
-    const processRequest = async function (requestArgs) {
-      // Wait 1ms to ensure that this is called async
-      await new Promise((resolve) => setTimeout(resolve, 1));
-      this.asyncResult = this.handleRequestSyncNoNextBox(requestArgs);
-      this.asyncCallInProgress = false;
-    }.bind(this);
-
-    this.asyncCallInProgress = true;
-    this.asyncResult = null;
-    processRequest(requestArgs);
-    return [REQUEST_ACCEPTED_STR, 200];
   }
 
   /**
@@ -297,6 +252,9 @@ export class RequestHandler {
    */
   handlePrecomputeRequest(requestArgs) {
     let [searchState, inputFrameTimeline] = this._parseArguments(requestArgs);
+    // Parse the reaction time from the 'frames already elapsed' param
+    const reactionTimeFrames = searchState.framesAlreadyElapsed;
+    searchState.framesAlreadyElapsed = 0;
 
     this.preComputeManager.precompute(
       searchState,
@@ -304,13 +262,15 @@ export class RequestHandler {
       params.getParams(),
       params.getParamMods(),
       inputFrameTimeline,
-      searchState.framesAlreadyElapsed,
+      reactionTimeFrames,
+      function (result) {
+        this.partialResult = result;
+      }.bind(this),
       function (result) {
         this.asyncResult = result;
         this.asyncCallInProgress = false;
       }.bind(this)
     );
-    return REQUEST_ACCEPTED_STR;
   }
 
   handleRankLookup(requestArgs: Array<string>) {
