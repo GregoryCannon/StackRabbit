@@ -388,7 +388,10 @@ function searchDepthNPlusOne(
       bestMovesList.push({
         ...bestMove,
         hypotheticalPiece,
-        totalValue: bestMove === null ? aiParams.DEAD_COEF : bestMove.evalScore + totalPartialValue
+        totalValue:
+          bestMove === null
+            ? aiParams.DEAD_COEF
+            : bestMove.evalScore + totalPartialValue,
       });
     }
 

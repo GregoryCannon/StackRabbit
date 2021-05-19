@@ -193,7 +193,7 @@ function abTest(baseParams: InitialAiParams, expParams: InitialAiParams) {
   console.log(`Diff: ${(expTotal - baseTotal) / NUM_DIFFERING_STATES}`);
 }
 
-const EXP_MODS = {}
+const EXP_MODS = {};
 const EXP_PARAMS = applyModsToParams(getParams(), EXP_MODS);
 
 abTest(getParams(), EXP_PARAMS);
