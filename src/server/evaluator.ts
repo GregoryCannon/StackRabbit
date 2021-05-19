@@ -426,7 +426,6 @@ export function fastEval(
     scareHeight
   );
 
-  // let extremeGapFactor = totalHeightCorrected * aiParams.EXTREME_GAP_COEF;
   let surfaceFactor =
     aiParams.SURFACE_COEF *
     getSurfaceValue(
@@ -454,7 +453,6 @@ export function fastEval(
   const factors = {
     surfaceFactor,
     killscreenSurfaceLeftFactor,
-    // extremeGapFactor,
     holeFactor,
     estimatedHoleWeightBurnFactor,
     lineClearFactor,
@@ -559,7 +557,6 @@ export function getValueOfPossibility(
     aiMode
   );
 
-  let extremeGapFactor = totalHeightCorrected * aiParams.EXTREME_GAP_COEF;
   const earlyDoubleWellFactor =
     aiParams.BURN_COEF > -500
       ? aiParams.BURN_COEF * estimatedBurnsDueToEarlyDoubleWell * 0.6
@@ -616,11 +613,11 @@ export function getValueOfPossibility(
   const inaccessibleRightFactor = rightIsInaccessible
     ? aiParams.INACCESSIBLE_RIGHT_COEF
     : 0;
+  const inputCostFactor = possibility.inputCost;
 
   const factors = {
     surfaceFactor,
     killscreenSurfaceLeftFactor,
-    extremeGapFactor,
     earlyDoubleWellFactor,
     holeFactor,
     holeWeightFactor,
@@ -637,6 +634,7 @@ export function getValueOfPossibility(
     builtOutRightFactor,
     inaccessibleLeftFactor,
     inaccessibleRightFactor,
+    inputCostFactor
   };
 
   let [totalValue, explanation] = compileFactors(factors, aiMode);

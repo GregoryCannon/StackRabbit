@@ -64,6 +64,7 @@ interface Possibility {
   holeCells: Array<CellLocation>;
   numLinesCleared: number;
   boardAfter: Board;
+  inputCost: number;
   fastEvalScore?: number;
   evalScore?: number;
   evalExplanation?: string;

@@ -74,6 +74,19 @@ function hasBeenVisited(
   return simState.y <= highestYSeen;
 }
 
+function getInputCost(inputChar) {
+  // Apply a small penalty to spintucks so if there in an equivalent tuck it will be evalutated as better
+  if (
+    inputChar == "E" ||
+    inputChar == "I" ||
+    inputChar == "F" ||
+    inputChar == "G"
+  ) {
+    return 0.1;
+  }
+  return 0;
+}
+
 /**
  * Tries out an input from a given state, and if it's valid, adds it to the active list.
  * If the piece locks in after the input, it will also add that finished state to the final list.
@@ -157,7 +170,8 @@ function tryInput(
           getPossibilityFromSimState(
             simState,
             simParams,
-            simState.inputSequence
+            simState.inputSequence,
+            getInputCost(inputChar)
           )
         );
         return;

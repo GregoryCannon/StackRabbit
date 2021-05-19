@@ -194,7 +194,12 @@ function exploreLegalPlacementsUntilLock(
             simState.y
           );
           lockPossibilities.push(
-            getPossibilityFromSimState(simState, simParams, inputSequence)
+            getPossibilityFromSimState(
+              simState,
+              simParams,
+              inputSequence,
+              /* inputCost= */ 0
+            )
           );
           break;
         }
@@ -213,7 +218,8 @@ function exploreLegalPlacementsUntilLock(
 export function getPossibilityFromSimState(
   simState: SimState,
   simParams: SimParams,
-  inputSequence: string
+  inputSequence: string,
+  inputCost: number
 ): Possibility {
   // Make a new board with that piece locked in
   const [boardAfter, numLinesCleared] = getBoardAndLinesClearedAfterPlacement(
@@ -233,6 +239,7 @@ export function getPossibilityFromSimState(
     holeCells,
     numLinesCleared,
     boardAfter,
+    inputCost,
   };
 }
 
