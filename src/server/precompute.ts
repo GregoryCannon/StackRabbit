@@ -43,9 +43,7 @@ export class PreComputeManager {
 
     // Create the worker threads
     for (let i = 0; i < NUM_THREADS; i++) {
-      const newWorker = child_process.fork(
-        "built/src/server/worker_thread.js"
-      );
+      const newWorker = child_process.fork("built/src/server/worker_thread.js");
       newWorker.addListener("message", this._onMessage);
       this.workers.push(newWorker);
     }
@@ -66,35 +64,45 @@ export class PreComputeManager {
     this.pendingResults = NUM_THREADS;
 
     // Get initial NNB placement
-    this.defaultPlacement = getBestMove(
-      searchState,
-      shouldLog,
-      initialAiParams,
-      paramMods,
-      inputFrameTimeline,
-      /* searchDepth= */ 1,
-      /* hypotheticalSearchDepth= */ 1
-    );
-
-    // Ping the worker threads to compute all possible adjustments
-    for (let i = 0; i < POSSIBLE_NEXT_PIECES.length; i++) {
-      const nextPieceId = POSSIBLE_NEXT_PIECES[i];
-      let newSearchState = { ...searchState, nextPieceId };
-      newSearchState = predictSearchStateAtAdjustmentTime(
-        newSearchState,
-        this.defaultPlacement.inputSequence,
-        inputFrameTimeline,
-        reactionTimeFrames
-      );
-      const argsData = {
-        piece: newSearchState.nextPieceId,
-        newSearchState,
+    if (reactionTimeFrames > 0) {
+      this.defaultPlacement = getBestMove(
+        searchState,
         shouldLog,
         initialAiParams,
         paramMods,
         inputFrameTimeline,
+        /* searchDepth= */ 1,
+        /* hypotheticalSearchDepth= */ 1
+      );
+      if (this.defaultPlacement === null) {
+        onResultCallback("No legal moves");
+        return;
+      }
+    } else {
+      this.defaultPlacement = null;
+    }
+
+    // Ping the worker threads to compute all possible adjustments
+    const newSearchState =
+      reactionTimeFrames > 0
+        ? predictSearchStateAtAdjustmentTime(
+            searchState,
+            this.defaultPlacement.inputSequence,
+            inputFrameTimeline,
+            reactionTimeFrames
+          )
+        : searchState;
+
+    for (let i = 0; i < POSSIBLE_NEXT_PIECES.length; i++) {
+      const nextPieceId = POSSIBLE_NEXT_PIECES[i];
+
+      const argsData: WorkerDataArgs = {
+        piece: nextPieceId,
+        newSearchState: { ...newSearchState, nextPieceId },
+        initialAiParams,
+        paramMods,
+        inputFrameTimeline,
       };
-      // console.log(this.workers);
       this.workers[i].send(argsData);
     }
   }
@@ -105,7 +113,7 @@ export class PreComputeManager {
         // Update the ready worker count, and notify the parent if all threads are ready
         this.workersStillLoading--;
         if (this.workersStillLoading === 0) {
-          console.log("DONE LOADING WORKERS");
+          console.log("Done loading worker threads");
           if (this.onReadyCallback !== null) {
             this.onReadyCallback();
           }
@@ -113,11 +121,6 @@ export class PreComputeManager {
         break;
 
       case "result":
-        console.log(
-          "Received response:",
-          message.piece,
-          formatPossibility(message.result)
-        );
         // Save the partial result
         this.results[message.piece] = message.result;
         this.pendingResults--;
@@ -148,8 +151,12 @@ export class PreComputeManager {
 }
 
 function formatPrecomputeResult(results, defaultPlacement) {
-  let resultString = `Default:${formatPossibility(defaultPlacement)}`;
+  let resultString = `Default:${defaultPlacement ? formatPossibility(defaultPlacement) : "N/A"}`;
   for (const piece of POSSIBLE_NEXT_PIECES) {
+    if (!results[piece]) {
+      resultString += `\n${piece}:No legal moves`;
+      continue;
+    }
     const singlePieceFormatted = formatPossibility(results[piece]);
     resultString += `\n${piece}:${singlePieceFormatted}`;
   }
@@ -166,13 +173,11 @@ function isAnyOf(str, possible) {
 }
 
 function predictSearchStateAtAdjustmentTime(
-  searchState: SearchState,
+  initialState: SearchState,
   inputSequence: string,
   inputFrameTimeline: string,
   reactionTimeFrames
 ) {
-  const { board, currentPieceId, level } = searchState;
-
   let inputsPossibleByAdjTime = 0;
   let inputsUsedByAdjTime = 0;
   let offsetXAtAdjustmentTime = 0;
@@ -207,27 +212,27 @@ function predictSearchStateAtAdjustmentTime(
 
   // Correct the rotation to be in the modulus
   let numOrientations;
-  if (currentPieceId === "O") {
+  if (initialState.currentPieceId === "O") {
     numOrientations = 1;
-  } else if (isAnyOf(currentPieceId, "ISZ")) {
+  } else if (isAnyOf(initialState.currentPieceId, "ISZ")) {
     numOrientations = 2;
   } else {
-    numOrientations = 2;
+    numOrientations = 4;
   }
   rotationAtAdjustmentTime =
     (rotationAtAdjustmentTime + numOrientations) % numOrientations;
 
   // Calculate the y value from gravity
   let offsetYAtAdjustmentTime = Math.floor(
-    reactionTimeFrames / GetGravity(level)
+    reactionTimeFrames / GetGravity(initialState.level)
   );
 
   return {
-    board,
-    currentPieceId,
-    nextPieceId: searchState.nextPieceId,
-    level,
-    lines: searchState.lines,
+    board: initialState.board,
+    currentPieceId: initialState.currentPieceId,
+    nextPieceId: initialState.nextPieceId,
+    level: initialState.level,
+    lines: initialState.lines,
     existingXOffset: offsetXAtAdjustmentTime,
     existingYOffset: offsetYAtAdjustmentTime,
     existingRotation: rotationAtAdjustmentTime,

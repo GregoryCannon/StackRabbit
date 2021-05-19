@@ -24,6 +24,7 @@ export class RequestHandler {
     this.asyncResult = null;
 
     this.routeRequest = this.routeRequest.bind(this);
+    this._wrapAsync = this._wrapAsync.bind(this);
   }
 
   routeRequest(req): [string, number] {
@@ -47,10 +48,14 @@ export class RequestHandler {
         return [this.handleRankLookup(requestArgs), 200];
 
       case "async-nb":
-        return this.handleRequestAsyncWithNextBox(requestArgs);
+        return this._wrapAsync(() =>
+          this.handleRequestSyncWithNextBox(requestArgs)
+        );
 
       case "async-nnb":
-        return this.handleRequestAsyncNoNextBox(requestArgs);
+        return this._wrapAsync(() =>
+          this.handleRequestSyncNoNextBox(requestArgs)
+        );
 
       case "sync-nb":
         return [this.handleRequestSyncWithNextBox(requestArgs), 200];
@@ -59,7 +64,7 @@ export class RequestHandler {
         return [this.handleRequestSyncNoNextBox(requestArgs), 200];
 
       case "precompute":
-        return [this.handlePrecomputeRequest(requestArgs), 200];
+        return this._wrapAsync(() => this.handlePrecomputeRequest(requestArgs));
 
       default:
         return [
@@ -195,6 +200,20 @@ export class RequestHandler {
     this.asyncResult = null;
     processRequest(requestArgs);
     return [REQUEST_ACCEPTED_STR, 200];
+  }
+
+  _wrapAsync(func): [string, number] {
+    const execute = async function () {
+      // Wait 1ms to ensure that this is called async
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      this.asyncResult = func();
+      this.asyncCallInProgress = false;
+    }.bind(this);
+
+    this.asyncCallInProgress = true;
+    this.asyncResult = null;
+    execute();
+    return ["Request accepted.", 200];
   }
 
   /**

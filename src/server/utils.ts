@@ -223,15 +223,32 @@ export function getHoleCount(board) {
   return getSurfaceArrayAndHoles(board)[1];
 }
 
-/** Checks if clearing a certain number of lines will increase the level, and if so what that level is. */
-export function getLevelAfterLineClears(level, lines, numLinesCleared) {
-  if (level === 18 && lines + numLinesCleared >= 130) {
-    return 19;
+export function getLineCountOfFirstTransition(startingLevel) {
+  if (startingLevel < 10) {
+    return (startingLevel + 1) * 10;
+  } else if (startingLevel <= 15) {
+    return 100;
+  } else {
+    return (startingLevel - 5) * 10;
   }
-  if (level === 28 && lines + numLinesCleared >= 230) {
+}
+
+/** Checks if clearing a certain number of lines will increase the level, and if so what that level is.
+ * NOTE: This assumes level 18, 19, or 29 starts.
+ */
+export function getLevelAfterLineClears(level, lines, numLinesCleared) {
+  // Once you go killscreen you never go back
+  if (level >= 29) {
     return 29;
   }
-  return level;
+  const newLineCount = lines + numLinesCleared;
+  if (newLineCount < 130) {
+    return Math.max(level, 18);
+  } else if (newLineCount < 230) {
+    return 19 + Math.floor((newLineCount - 130) / 10);
+  } else {
+    return 29;
+  }
 }
 
 export function getScareHeight(level: number, aiParams: AiParams) {
