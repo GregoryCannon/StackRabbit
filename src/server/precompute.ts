@@ -151,7 +151,9 @@ export class PreComputeManager {
 }
 
 function formatPrecomputeResult(results, defaultPlacement) {
-  let resultString = `Default:${defaultPlacement ? formatPossibility(defaultPlacement) : "N/A"}`;
+  let resultString = `Default:${
+    defaultPlacement ? formatPossibility(defaultPlacement) : "N/A"
+  }`;
   for (const piece of POSSIBLE_NEXT_PIECES) {
     if (!results[piece]) {
       resultString += `\n${piece}:No legal moves`;
