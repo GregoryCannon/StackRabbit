@@ -331,17 +331,38 @@ export function getLineClearValue(numLinesCleared, aiParams) {
     : 0;
 }
 
-function getLowLeftFactor(surfaceArray: Array<number>, averageHeight: number) {}
+function getLowLeftFactor(surfaceArray: Array<number>, averageHeight: number) {
+  return Math.min(0, surfaceArray[0] - averageHeight);
+}
 
-function getBuiltOutLeftFactor(boardAfter, surfaceArray, scareHeight) {
+function getBuiltOutLeftFactor(
+  boardAfter: Board,
+  surfaceArray: Array<number>,
+  scareHeight: number,
+  aiParams: AiParams,
+  aiMode: AiMode
+) {
+  // Don't build out the left if there's a hole there
   if (
-    boardHelper.hasHoleInColumn(boardAfter, 0) ||
-    boardHelper.hasHoleInColumn(boardAfter, 1)
+    aiMode === AiMode.DIG ||
+    boardHelper.hasHoleInColumn(boardAfter, 0, /* numRowsFromTop= */ 5) ||
+    boardHelper.hasHoleInColumn(boardAfter, 1, /* numRowsFromTop= */ 5)
   ) {
     return 0;
   }
+
+  // Handle low left cases first
+  const averageHeight = surfaceArray.slice(2, 8).reduce((a, b) => a + b) / 7;
+  if (surfaceArray[0] < averageHeight) {
+    return (
+      -1 * aiParams.BUILT_OUT_LEFT_COEF *
+      Math.pow(averageHeight - surfaceArray[0], aiParams.LOW_LEFT_EXP)
+    );
+  }
+
+  // Otherwise reward building out the left
   const col1Height = surfaceArray[0];
-  return Math.max(0, col1Height - scareHeight);
+  return aiParams.BUILT_OUT_LEFT_COEF * Math.max(0, col1Height - scareHeight);
 }
 
 function getBuiltOutRightFactor(boardAfter, scareHeight) {
@@ -576,7 +597,7 @@ export function getValueOfPossibility(
     aiParams.TETRIS_READY_COEF * (holeInTetrisZone ? -1 : tetrisReady ? 1 : 0);
   const holeFactor = adjustedNumHoles * aiParams.HOLE_COEF;
   const holeWeightFactor =
-    (rowsNeedingToBurn.size + 0.5 * rowsNeedingToBurnIfTucksFail.size) *
+    (rowsNeedingToBurn.size + 0.1 * rowsNeedingToBurnIfTucksFail.size) *
     aiParams.HOLE_WEIGHT_COEF;
   const holeWeightBurnFactor =
     (rowsNeedingToBurn.size + 0.5 * rowsNeedingToBurnIfTucksFail.size) *
@@ -601,9 +622,13 @@ export function getValueOfPossibility(
   const unableToBurnFactor =
     aiParams.UNABLE_TO_BURN_COEF *
     getUnableToBurnFactor(boardAfter, surfaceArray, scareHeight, aiParams);
-  const builtOutLeftFactor =
-    aiParams.BUILT_OUT_LEFT_COEF *
-    getBuiltOutLeftFactor(boardAfter, surfaceArray, scareHeight);
+  const builtOutLeftFactor = getBuiltOutLeftFactor(
+    boardAfter,
+    surfaceArray,
+    scareHeight,
+    aiParams,
+    aiMode
+  );
   const builtOutRightFactor =
     aiParams.BUILT_OUT_RIGHT_COEF *
     getBuiltOutRightFactor(boardAfter, scareHeight);
@@ -634,7 +659,7 @@ export function getValueOfPossibility(
     builtOutRightFactor,
     inaccessibleLeftFactor,
     inaccessibleRightFactor,
-    inputCostFactor
+    inputCostFactor,
   };
 
   let [totalValue, explanation] = compileFactors(factors, aiMode);

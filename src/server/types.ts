@@ -122,6 +122,7 @@ interface InitialAiParams {
   EXTREME_GAP_COEF: number;
   BUILT_OUT_LEFT_COEF: number;
   BUILT_OUT_RIGHT_COEF: number;
+  LOW_LEFT_EXP: number;
   HOLE_COEF: number;
   HOLE_WEIGHT_COEF: number;
   SCARE_HEIGHT_OFFSET: number;

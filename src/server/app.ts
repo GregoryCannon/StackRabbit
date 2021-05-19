@@ -22,7 +22,7 @@ function initServer(requestHandler) {
     const [response, responseCode] = requestHandler.routeRequest(req);
 
     console.timeEnd("Full request");
-    console.log("Sending response:", response);
+    console.log("Sending response:", response, responseCode);
     res.statusCode = responseCode;
     res.end(response);
   });
