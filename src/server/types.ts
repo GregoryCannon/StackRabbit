@@ -144,6 +144,7 @@ interface AiParams extends InitialAiParams {
   INPUT_FRAME_TIMELINE: string;
   MAX_5_TAP_LOOKUP: Object;
   MAX_4_TAP_LOOKUP: Object;
+  BURN_QUOTA?: number; // Can optionally have a limit to the number of burns
 }
 
 interface ParamMods {

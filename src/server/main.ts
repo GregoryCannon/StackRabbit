@@ -27,7 +27,7 @@ export function getBestMove(
   searchDepth: number,
   hypotheticalSearchDepth: number
 ): PossibilityChain {
-  // Get the AI mode (e.g. digging, scoring)
+  // Add additional info to the base params (tap speed, dig/scoring mode, etc.)
   let aiParams = addTapInfoToAiParams(
     initialAiParams,
     searchState.level,
@@ -487,6 +487,11 @@ export function addTapInfoToAiParams(
     inputFrameTimeline,
     4
   );
+
+  // Add burn quota on 28 if not already present
+  if (level == 28){
+    //...
+  }
 
   return newParams;
 }
