@@ -325,10 +325,10 @@ function getSurfaceValue(
 
 export function getLineClearValue(numLinesCleared, aiParams) {
   return numLinesCleared == 4
-    ? aiParams.TETRIS_COEF
-    : numLinesCleared > 0
-    ? aiParams.BURN_COEF * numLinesCleared
-    : 0;
+  ? aiParams.TETRIS_COEF
+  : numLinesCleared > 0
+  ? aiParams.BURN_COEF * numLinesCleared
+  : 0;
 }
 
 function getLowLeftFactor(surfaceArray: Array<number>, averageHeight: number) {
