@@ -2,7 +2,7 @@ import { PIECE_LOOKUP } from "../tetrominoes";
 import { getBoardAndLinesClearedAfterPlacement } from "./board_helper";
 import { rateSurface } from "./evaluator";
 import { PreComputeManager } from "./precompute";
-import { formatPossibility, getSurfaceArrayAndHoles, logBoard } from "./utils";
+import { formatPossibility, getSurfaceArrayAndHoles, logBoard, parseBoard } from "./utils";
 
 const mainApp = require("./main");
 const params = require("./params");
@@ -147,11 +147,8 @@ export class RequestHandler {
     }
 
     // Decode the board
-    const board = boardStr
-      .match(/.{1,10}/g) // Select groups of 10 characters
-      .map((rowSerialized) => rowSerialized.split("").map((x) => parseInt(x)));
+    const board = parseBoard(boardStr);
 
-    // logBoard(board);
     logBoard(
       getBoardAndLinesClearedAfterPlacement(
         board,
