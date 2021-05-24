@@ -62,7 +62,7 @@ function clearLines(board: Board) {
   }
   for (const r of fullLines) {
     // Move down all the rows above it
-    for (let y = r; y > 1; y--) {
+    for (let y = r; y >= 1; y--) {
       for (let c = 0; c < NUM_COLUMN; c++) {
         board[y][c] = board[y - 1][c];
       }
