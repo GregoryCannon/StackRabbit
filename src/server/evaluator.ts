@@ -325,10 +325,10 @@ function getSurfaceValue(
 
 export function getLineClearValue(numLinesCleared, aiParams) {
   return numLinesCleared == 4
-  ? aiParams.TETRIS_COEF
-  : numLinesCleared > 0
-  ? aiParams.BURN_COEF * numLinesCleared
-  : 0;
+    ? aiParams.TETRIS_COEF
+    : numLinesCleared > 0
+    ? aiParams.BURN_COEF * numLinesCleared
+    : 0;
 }
 
 function getLowLeftFactor(surfaceArray: Array<number>, averageHeight: number) {
@@ -355,7 +355,8 @@ function getBuiltOutLeftFactor(
   const averageHeight = surfaceArray.slice(2, 8).reduce((a, b) => a + b) / 7;
   if (surfaceArray[0] < averageHeight) {
     return (
-      -1 * aiParams.BUILT_OUT_LEFT_COEF *
+      -1 *
+      aiParams.BUILT_OUT_LEFT_COEF *
       Math.pow(averageHeight - surfaceArray[0], aiParams.LOW_LEFT_EXP)
     );
   }

@@ -65,7 +65,7 @@ export class PreComputeManager {
     this.pendingResults = NUM_THREADS;
 
     // Get initial NNB placement
-    if (reactionTimeFrames === 0){
+    if (reactionTimeFrames === 0) {
       this.defaultPlacement = null;
     } else {
       this.defaultPlacement = getBestMove(
@@ -82,12 +82,12 @@ export class PreComputeManager {
         return;
       }
       // Send a response with just the default placement in case the other computation doesn't finish
-      const formattedResult = formatPrecomputeResult(
-        {},
-        this.defaultPlacement
+      const formattedResult = formatPrecomputeResult({}, this.defaultPlacement);
+      console.log(
+        "Sending partial result",
+        formatPossibility(this.defaultPlacement)
       );
-      console.log("Sending partial result", formatPossibility(this.defaultPlacement));
-      onPartialResultCallback(formattedResult)
+      onPartialResultCallback(formattedResult);
     }
 
     // Ping the worker threads to compute all possible adjustments

@@ -2,7 +2,12 @@ import { PIECE_LOOKUP } from "../../built/src/tetrominoes";
 import { getBoardAndLinesClearedAfterPlacement } from "./board_helper";
 import { rateSurface } from "./evaluator";
 import { PreComputeManager } from "./precompute";
-import { formatPossibility, getSurfaceArrayAndHoles, logBoard, parseBoard } from "./utils";
+import {
+  formatPossibility,
+  getSurfaceArrayAndHoles,
+  logBoard,
+  parseBoard,
+} from "./utils";
 
 const mainApp = require("./main");
 const params = require("./params");
@@ -36,7 +41,7 @@ export class RequestHandler {
         // If a previous async request has now completed, send that.
         if (this.asyncResult !== null) {
           return [this.asyncResult, 200];
-        } else if (this.partialResult !== null){
+        } else if (this.partialResult !== null) {
           return [this.partialResult, 200];
         } else if (this.asyncCallInProgress) {
           return ["Still calculating", 504]; // Gateway timeout
@@ -180,7 +185,7 @@ export class RequestHandler {
       // Wait 1ms to ensure that this is called async
       await new Promise((resolve) => setTimeout(resolve, 1));
       const result = func();
-      if (result !== undefined){
+      if (result !== undefined) {
         this.asyncResult = result;
         this.asyncCallInProgress = false;
       }

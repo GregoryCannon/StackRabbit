@@ -489,7 +489,7 @@ export function addTapInfoToAiParams(
   );
 
   // Add burn quota on 28 if not already present
-  if (level == 28){
+  if (level == 28) {
     //...
   }
 

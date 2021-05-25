@@ -251,10 +251,10 @@ export function getLevelAfterLineClears(level, lines, numLinesCleared) {
   }
 }
 
-export function parseBoard(boardStr: string): Board{
+export function parseBoard(boardStr: string): Board {
   return boardStr
-  .match(/.{1,10}/g) // Select groups of 10 characters
-  .map((rowSerialized) => rowSerialized.split("").map((x) => parseInt(x)));
+    .match(/.{1,10}/g) // Select groups of 10 characters
+    .map((rowSerialized) => rowSerialized.split("").map((x) => parseInt(x)));
 }
 
 export function getScareHeight(level: number, aiParams: AiParams) {
