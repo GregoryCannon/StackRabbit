@@ -166,6 +166,14 @@ const TOURNEY_MEDIUM_AGGRO_MODIFICATIONS = {
   BURN_COEF: -10,
   HIGH_COL_9_COEF: -5,
   UNABLE_TO_BURN_COEF: -0.5,
+  AVG_HEIGHT_COEF: -6
+};
+
+const TOURNEY_SMALL_AGGRO_MODIFICATIONS = {
+  BURN_COEF: -10,
+  HIGH_COL_9_COEF: -5,
+  UNABLE_TO_BURN_COEF: -0.5,
+  AVG_HEIGHT_COEF: -6
 };
 
 const AGGRO_MODIFICATIONS = {
@@ -225,7 +233,7 @@ const MEDIUM_LOW_TAP_SPEED_PARAMS = applyModsToParams(
 );
 
 export function getParams(): InitialAiParams {
-  return TOURNEY_MEDIUM_AGGRO_PARAMS;
+  return DEFAULT_PARAMS;
 }
 
 export function getParamMods(): ParamMods {
