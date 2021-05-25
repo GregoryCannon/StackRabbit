@@ -1,4 +1,4 @@
-import { PIECE_LOOKUP } from "../tetrominoes";
+import { PIECE_LOOKUP } from "../../built/src/tetrominoes";
 import { getBoardAndLinesClearedAfterPlacement } from "./board_helper";
 import { rateSurface } from "./evaluator";
 import { PreComputeManager } from "./precompute";
