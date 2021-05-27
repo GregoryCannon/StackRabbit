@@ -90,42 +90,6 @@ function getEncodedBoard()
   return encodedStr
 end
 
-function getGravity(level)
-  if level >= 29 then
-    return 1
-  elseif level >= 19 then
-    return 2
-  elseif level >= 16 then
-    return 3
-  elseif level >= 13 then
-    return 4
-  elseif level >= 10 then
-    return 5
-  elseif level == 9 then
-    return 6
-  elseif level == 8 then
-    return 8
-  elseif level == 7 then
-    return 13
-  elseif level == 6 then
-    return 18
-  elseif level == 5 then
-    return 23
-  elseif level == 4 then
-    return 28
-  elseif level == 3 then
-    return 33
-  elseif level == 2 then
-    return 38
-  elseif level == 1 then
-    return 43
-  elseif level == 0 then
-    return 48
-  else
-    error("Unknown level" .. level)
-  end
-end
-
 -- Query into the input sequence based on (0-indexed) arrFrameIndex
 function getInputForFrame(index)
   return string.sub(inputSequence, index + 1, index + 1)
@@ -142,7 +106,7 @@ function parsePrecompute(precomputeResult)
   if REACTION_TIME_FRAMES > 0 then
     local defaultPlacement = splitString(rows[1], ":")[2]
     if defaultPlacement == null then
-      print("GAME OVER")
+      print("GAME OVER - no default placement")
       gameOver = true
       return
     end
@@ -177,13 +141,12 @@ function requestAdjustmentAsync()
   return response.data
 end
 
--- Synchronously get a placement from the server, with no next piece data
 function requestPrecompute()
   print("requestprecompute")
   -- Format URL arguments
   if stateForNextPiece == nil or stateForNextPiece.board == nil
         or stateForNextPiece.lines == nil or stateForNextPiece.level == nil then
-    print("GAME OVER")
+    print("GAME OVER - unknown state")
     gameOver = true
     return
   end
@@ -280,15 +243,8 @@ function calculateInputs(apiResult, isAdjustment)
   if isAdjustment then
     arrFrameIndex = 0
   end
-
-  -- print(pendingInputs)
 end
 
-function isInputFrame(index)
-  local len = string.len(INPUT_TIMELINE)
-  local strIndex = index % len + 1; -- IMAGINE 1-indexing!
-  return string.sub(INPUT_TIMELINE, strIndex, strIndex) == "X"
-end
 
 function executeInputs()
   if not gameOver then
@@ -303,7 +259,7 @@ function executeInputs()
     end
 
     local thisFrameStr = getInputForFrame(arrFrameIndex);
-    print(arrFrameIndex .. thisFrameStr)
+    print(arrFrameIndex .. "  " .. thisFrameStr)
     -- Simple cases
     if thisFrameStr == "A" then
       inputsThisFrame.A = true;
@@ -471,6 +427,9 @@ function runGameFrame()
   -- Do stuff right when the piece locks.
   elseif gamePhase >= 2 and gamePhase <= 8 then
     if gamePhaseLastFrame == 1 then
+      if not isFirstPiece and not gameOver and getInputForFrame(arrFrameIndex + 1) ~= "*" then
+        error("Server mistimed lock delay")
+      end
       asPieceLocks()
       return
     end
@@ -478,10 +437,6 @@ function runGameFrame()
     if gamePhase == 8 and not gameOver and getEncodedBoard() ~= stateForNextPiece.board then
       error("Divergence")
     end
-      
-  -- Detects when the game is over.
-  elseif gamePhase == 10 then
-      gameOver = true
 
   -- Resets the index for the next piece. Disables user input when the game is not over.
   elseif not gameOver or recording then
@@ -503,7 +458,7 @@ function eachFrame()
   metaGameState = memory.readbyte(0x00C0)
 
   --Game starts
-  if(metaGameStateLastFrame == 3 and memory.readbyte(0x00C0) == 4) then
+  if(metaGameStateLastFrame == 3 and metaGameState == 4) then
     if(SHOULD_RECORD_GAMES) then
       local dateStr = os.date("%m-%d %H %M")
       print(dateStr)
@@ -513,14 +468,8 @@ function eachFrame()
     end
   end
 
-  --Check if a reset, hard reset, save state(?) has been loaded.
-  if(metaGameStateLastFrame == 4 and memory.readbyte(0x00C0) < 3) then
-    -- Panic
-    error("Reset, hard reset, or save state detected")
-  end
-
   --Game ends, clean up data
-  if(metaGameStateLastFrame == 4 and memory.readbyte(0x00C0) == 3) then
+  if(metaGameStateLastFrame == 4 and metaGameState == 3) then
   resetGameScopedVariables()
   if movie.active() then
       movie.stop()

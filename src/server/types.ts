@@ -19,6 +19,7 @@ interface SimParams {
   framesAlreadyElapsed: number;
   gravity: number;
   rotationsList: Array<PieceArray>;
+  pieceId: PieceId;
   existingRotation: number;
   inputFrameTimeline: string;
   canFirstFrameShift: boolean;

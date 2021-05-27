@@ -52,7 +52,7 @@ const INPUT_GRAMMAR = {
 
 export function getPossibleMovesBfs(
   startingBoard: Board,
-  currentPieceId: string,
+  currentPieceId: PieceId,
   level: number,
   existingXOffset: number,
   existingYOffset: number,
@@ -71,9 +71,9 @@ export function getPossibleMovesBfs(
   const initialX = 3 + existingXOffset;
   const initialY = (currentPieceId == "I" ? -2 : -1) + existingYOffset;
   const gravity = GetGravity(level);
-  const rotationsList = PIECE_LOOKUP[currentPieceId][0];
+  const rotationsList = PIECE_LOOKUP[currentPieceId][0] as Array<PieceArray>;
 
-  const simParams = {
+  const simParams : SimParams = {
     board: startingBoard,
     initialX,
     initialY,
@@ -81,6 +81,7 @@ export function getPossibleMovesBfs(
     gravity,
     inputFrameTimeline,
     rotationsList,
+    pieceId: currentPieceId,
     existingRotation,
     canFirstFrameShift,
   };

@@ -214,6 +214,7 @@ function lastMinuteRotationsTest() {
       framesAlreadyElapsed: 0,
       inputFrameTimeline: "X...",
       rotationsList: PIECE_LOOKUP["J"][0] as Array<PieceArray>,
+      pieceId: "J",
       existingRotation: 0,
       canFirstFrameShift: false,
     }) !== expected1
@@ -231,6 +232,7 @@ function lastMinuteRotationsTest() {
       framesAlreadyElapsed: 0,
       inputFrameTimeline: "X...",
       rotationsList: PIECE_LOOKUP["J"][0] as Array<PieceArray>,
+      pieceId: "J",
       existingRotation: 0,
       canFirstFrameShift: false,
     }) !== expected2

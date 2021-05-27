@@ -22,7 +22,7 @@ import {
  */
 export function getPossibleMoves(
   startingBoard: Board,
-  currentPieceId: string,
+  currentPieceId: PieceId,
   level: number,
   existingXOffset: number,
   existingYOffset: number,
@@ -46,9 +46,9 @@ export function getPossibleMoves(
   const initialX = 3 + existingXOffset;
   const initialY = (currentPieceId == "I" ? -2 : -1) + existingYOffset;
   const gravity = GetGravity(level);
-  const rotationsList = PIECE_LOOKUP[currentPieceId][0];
+  const rotationsList = PIECE_LOOKUP[currentPieceId][0] as Array<PieceArray>;
 
-  const simParams = {
+  const simParams : SimParams = {
     board: startingBoard,
     initialX,
     initialY,
@@ -56,6 +56,7 @@ export function getPossibleMoves(
     gravity,
     inputFrameTimeline,
     rotationsList,
+    pieceId: currentPieceId,
     existingRotation,
     canFirstFrameShift,
   };
@@ -226,11 +227,25 @@ export function getPossibilityFromSimState(
   );
   let [surfaceArray, numHoles, holeCells] = getSurfaceArrayAndHoles(boardAfter);
 
-  // Add ARE frames to the input sequence
   const numEntryDelayFrames = calculateEntryDelayFrames(simState, simParams);
-  for (let i = 0; i < numEntryDelayFrames; i++){
+
+  // Add pre-lineclear ARE frames to the input sequence
+  for (let i = 0; i < numEntryDelayFrames - 5; i++){
     inputSequence += "*";
   }
+
+  // Add line clear frames to the input sequence
+  if (numLinesCleared > 0){
+    for (let i = 0; i < 17; i++){
+      inputSequence += "^"
+    }
+  }
+
+  // Add post-lineclear ARE frames to the input sequence
+  for (let i = 0; i < 5; i++){
+    inputSequence += "*";
+  }
+
   // Add the possibility to the list
   return {
     placement: [simState.rotationIndex, simState.x - simParams.initialX],
@@ -246,21 +261,9 @@ export function getPossibilityFromSimState(
 
 /** Calculate the ARE as a function of the "lock height" (the height of the highest cell in the piece)  */
 function calculateEntryDelayFrames(simState: SimState, simParams: SimParams) : number{
-  const piece : PieceArray = simParams.rotationsList[simState.rotationIndex];
-  let minY = 20;
-  // Get the highest y value of any of the cells in the piece
-  for (let r = 0; r < piece.length; r++) {
-    for (let c = 0; c < piece[r].length; c++) {
-      // If the square is empty, we skip it
-      if (!piece[r][c]) {
-        continue;
-      }
-
-      minY = Math.min(minY, simState.y + r);
-    }
-  }
-
-  const lockHeight = NUM_ROW - minY;
+  const startingY = simParams.pieceId === "I" ? -2 : -1;
+  const yOffset = simState.y - startingY;
+  const lockHeight = NUM_ROW - yOffset;
   return Math.min(18, 10 + Math.floor((lockHeight + 1) / 4) * 2);
 }
 
@@ -445,6 +448,7 @@ export function canDoPlacement(
     framesAlreadyElapsed: 0,
     gravity,
     rotationsList,
+    pieceId: pieceId as PieceId,
     existingRotation: 0,
     inputFrameTimeline,
     canFirstFrameShift: false, // This function refers to doing a placement from the start, not starting from an adjustment or anything
