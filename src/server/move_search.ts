@@ -11,6 +11,7 @@ import {
   GetGravity,
   getSurfaceArrayAndHoles,
   logBoard,
+  NUM_ROW,
   shouldPerformInputsThisFrame,
 } from "./utils";
 
@@ -135,7 +136,6 @@ function exploreLegalPlacementsUntilLock(
   for (const simState of legalPlacementSimStates) {
     const currentRotationPiece =
       simParams.rotationsList[simState.rotationIndex];
-    let y = simState.y;
     const inputSequence = generateInputSequence(
       _modulus(simState.rotationIndex - simParams.existingRotation, 4),
       simState.x - simParams.initialX,
@@ -144,12 +144,6 @@ function exploreLegalPlacementsUntilLock(
     );
     let inputSequenceWithWait = inputSequence;
 
-    // Move the piece down until it hits the stack
-    while (
-      !pieceCollision(simParams.board, simState.x, y + 1, currentRotationPiece)
-    ) {
-      y++;
-    }
 
     let startedLookingForTuckSpins = false;
     let highestRegisteredY = -1; // Tracks the Y values already registered to avoid duplicates
@@ -178,6 +172,9 @@ function exploreLegalPlacementsUntilLock(
         highestRegisteredY = simState.y;
       }
 
+      // This kind of acts like an "else", since the paths where an input happened this frame branch off into the dfs file
+      inputSequenceWithWait += ".";
+
       if (isGravityFrame) {
         if (
           pieceCollision(
@@ -197,7 +194,7 @@ function exploreLegalPlacementsUntilLock(
             getPossibilityFromSimState(
               simState,
               simParams,
-              inputSequence,
+              inputSequenceWithWait,
               /* inputCost= */ 0
             )
           );
@@ -206,7 +203,6 @@ function exploreLegalPlacementsUntilLock(
         simState.y++;
       }
 
-      inputSequenceWithWait += ".";
       simState.frameIndex += 1;
       simState.arrFrameIndex += 1;
     }
@@ -230,6 +226,11 @@ export function getPossibilityFromSimState(
   );
   let [surfaceArray, numHoles, holeCells] = getSurfaceArrayAndHoles(boardAfter);
 
+  // Add ARE frames to the input sequence
+  const numEntryDelayFrames = calculateEntryDelayFrames(simState, simParams);
+  for (let i = 0; i < numEntryDelayFrames; i++){
+    inputSequence += "*";
+  }
   // Add the possibility to the list
   return {
     placement: [simState.rotationIndex, simState.x - simParams.initialX],
@@ -241,6 +242,26 @@ export function getPossibilityFromSimState(
     boardAfter,
     inputCost,
   };
+}
+
+/** Calculate the ARE as a function of the "lock height" (the height of the highest cell in the piece)  */
+function calculateEntryDelayFrames(simState: SimState, simParams: SimParams) : number{
+  const piece : PieceArray = simParams.rotationsList[simState.rotationIndex];
+  let minY = 20;
+  // Get the highest y value of any of the cells in the piece
+  for (let r = 0; r < piece.length; r++) {
+    for (let c = 0; c < piece[r].length; c++) {
+      // If the square is empty, we skip it
+      if (!piece[r][c]) {
+        continue;
+      }
+
+      minY = Math.min(minY, simState.y + r);
+    }
+  }
+
+  const lockHeight = NUM_ROW - minY;
+  return Math.min(18, 10 + Math.floor((lockHeight + 1) / 4) * 2);
 }
 
 /**

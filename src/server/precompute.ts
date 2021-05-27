@@ -84,7 +84,7 @@ export class PreComputeManager {
       // Send a response with just the default placement in case the other computation doesn't finish
       const formattedResult = formatPrecomputeResult({}, this.defaultPlacement);
       console.log(
-        "Sending partial result",
+        "Saving partial result",
         formatPossibility(this.defaultPlacement)
       );
       onPartialResultCallback(formattedResult);
