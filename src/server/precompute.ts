@@ -154,6 +154,7 @@ export class PreComputeManager {
     if (this.onResultCallback === null) {
       throw new Error("No result callback provided");
     }
+    console.log(formattedResult);
     this.onResultCallback(formattedResult);
   }
 }
