@@ -86,7 +86,7 @@ export const DEFAULT_PARAMS: InitialAiParams = {
   AVG_HEIGHT_COEF: -4.50624,
   SCARE_HEIGHT_OFFSET: -3,
   BURN_COEF: -5,
-  COL_10_COEF: -3,
+  COL_10_COEF: -5,
   COL_10_HEIGHT_MULTIPLIER_EXP: 3,
   DEAD_COEF: -10000,
   MAX_DIRTY_TETRIS_HEIGHT: 0.15, // (As a multiple of the scare height)
@@ -233,7 +233,7 @@ const MEDIUM_LOW_TAP_SPEED_PARAMS = applyModsToParams(
 );
 
 export function getParams(): InitialAiParams {
-  return DEFAULT_PARAMS;
+  return TOURNEY_MEDIUM_AGGRO_PARAMS;
 }
 
 export function getParamMods(): ParamMods {
