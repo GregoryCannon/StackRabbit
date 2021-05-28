@@ -3,10 +3,10 @@
   "name": "tetrisjs",
   "version": "1.0.0",
   "description": "tetris trainer",
-  "main": "src/webclient/index.js",
+  "main": "src/web_client/index.js",
   "scripts": {
     "deploy": "npm run make && gh-pages -d docs",
-    "start-ui": "prettier src/webclient/*.js --write && webpack --progress --mode=development && webpack-dev-server",
+    "start-ui": "prettier src/web_client/*.js --write && webpack --progress --mode=development && webpack-dev-server",
     "start-server": "tsc && node built/src/server/app.js",
     "start": "node built/src/server/app.js",
     "make": "prettier src/*.js --write && webpack --progress --mode=production",
