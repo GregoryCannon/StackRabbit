@@ -69,7 +69,11 @@ export class RequestHandler {
         return [this.handleRequestSyncNoNextBox(requestArgs), 200];
 
       case "precompute":
-        return this._wrapAsync(() => this.handlePrecomputeRequest(requestArgs));
+        return this._wrapAsync(() => this.handlePrecomputeRequest(requestArgs, /* isNaive= */ false));
+
+      case "precompute-naive":
+        return this._wrapAsync(() => this.handlePrecomputeRequest(requestArgs, /* isNaive= */ true));
+
 
       default:
         return [
@@ -252,11 +256,16 @@ export class RequestHandler {
    * Pre-compute both an initial placement and all possible adjustments for the upcoming piece.
    * @returns {string} the API response
    */
-  handlePrecomputeRequest(requestArgs) {
+  handlePrecomputeRequest(requestArgs, isNaive) {
     let [searchState, inputFrameTimeline] = this._parseArguments(requestArgs);
-    // Parse the reaction time from the 'frames already elapsed' param
-    const reactionTimeFrames = searchState.framesAlreadyElapsed;
-    searchState.framesAlreadyElapsed = 0;
+    let reactionTimeFrames;
+    if (isNaive){
+      reactionTimeFrames = 0
+    } else {
+      // Parse the reaction time from the 'frames already elapsed' param
+      reactionTimeFrames = searchState.framesAlreadyElapsed;
+      searchState.framesAlreadyElapsed = 0;
+    }
 
     this.preComputeManager.precompute(
       searchState,
