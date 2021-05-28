@@ -27,21 +27,21 @@ def startServer():
         print("Listening on port", PORT)
         serverReady = True
 
-    # Accept only one client
-    conn, addr = s.accept()
-    with conn: 
-        print('Connected to by', addr)
-        # Read messages synchronously forever
-        while True:
-            data = conn.recv(2048)
-            if not data:
-                break
-            frames = data.decode("utf-8")
-            # Add frames to queue
-            for c in frames:
-                frameQueue.put(c)
-            print(frames)
-            conn.send(b'Ack')
+        # Accept only one client
+        conn, addr = s.accept()
+        with conn: 
+            print('Connected to by', addr)
+            # Read messages synchronously forever
+            while True:
+                data = conn.recv(2048)
+                if not data:
+                    break
+                frames = data.decode("utf-8")
+                # Add frames to queue
+                for c in frames:
+                    frameQueue.put(c)
+                print(frames)
+                conn.send(b'Ack')
 
 
 def executeInput(inputChar):
@@ -56,7 +56,7 @@ def main():
     serverThread.daemon = True
     serverThread.start()
 
-    timeoutSecs = 20
+    timeoutSecs = 200000
     frameLength = .0166 # in seconds
     startTime = time.time()
 
@@ -65,11 +65,12 @@ def main():
 
     while time.time() < startTime + timeoutSecs:
         if frameQueue.empty():
-            executeInput("_")
+            # executeInput("_")
+            pass
         else:
             executeInput(frameQueue.get())
 
-    time.sleep(frameLength)
+        time.sleep(frameLength)
 
     print("Timeout reached - ending all threads")
 
