@@ -1,6 +1,7 @@
 import threading
 
 from numpy import False_
+import numpy
 import video_capture
 import socket
 import time
@@ -8,10 +9,11 @@ from threading import Thread
 import requests
 
 # -------------- Config Vars --------------
-STARTING_LEVEL = 19
+STARTING_LEVEL = 18
 FIRST_PIECE_PLACEMENT = "..........As......."
 INPUT_TIMELINE = "........X.X.X.X.X.X.X.X.X.X.X.X.X"
-DELAY_FRAMES = 8
+DELAY_FRAMES = len(INPUT_TIMELINE.split("X",1)[0])
+print("DELAY:", DELAY_FRAMES)
 MAX_INPUTS = 15
 
 # ---------- Stateful Vars ---------------
@@ -114,14 +116,15 @@ def socketThread():
 def hasNewlySpawnedPiece(newBoard):
   # Only possible if it's been a while since the last placement
   framesToWaitSinceLastNewPiece = 12 
-  if piecesPlaced == 0 and level < 28:
+  if piecesPlaced == 0 and level < 29:
     framesToWaitSinceLastNewPiece = 12
   elif piecesPlaced == 0:
     framesToWaitSinceLastNewPiece = 20
   elif level >= 29:
-    framesToWaitSinceLastNewPiece = 8
+    framesToWaitSinceLastNewPiece = 15
   else:
-    framesToWaitSinceLastNewPiece = 8
+    framesToWaitSinceLastNewPiece = 7
+
   if framesSinceLastPlacement < framesToWaitSinceLastNewPiece:
     print("Not ready")
     return False
@@ -134,7 +137,9 @@ def hasNewlySpawnedPiece(newBoard):
   for row in range(4):
     for col in range(3,7):
       if newBoard[row][col] != boardLastFrame[row][col]:
-        return True
+        for i in range(4):
+          print(newBoard[i])
+        return numpy.sum(newBoard[0:4]) > 0
   return False
 
 
@@ -148,18 +153,16 @@ def hasNewlySpawnedPiece(newBoard):
 def onFrameCallback(newBoard, newNextPieceId):
   global currentPiece, nextPiece, framesSinceLastPlacement, piecesPlaced, boardLastFrame
 
-  # for row in range(10):
-  #     rowStr = ""
-  #     for col in range(10):
-  #         rowStr += "X" if newBoard[row][col] == 1 else "."
-  #     print(rowStr)
-
   # Detect if a new piece has spawned
   newPieceFound = hasNewlySpawnedPiece(newBoard)
   print("onFrame", currentPiece, nextPiece, newNextPieceId, framesSinceLastPlacement, "newpiece:", newPieceFound, "placed", piecesPlaced)
 
-  if newPieceFound and not waitingOnAsync:
+  if newPieceFound:
     print("NEW NEXT PIECE", newNextPieceId)
+    if waitingOnAsync:
+      fetchPrecomputeResult()
+    elif piecesPlaced > 0:
+      raise Exception("Not waiting on async at start of piece")
 
     # Update current and next pieces
     if piecesPlaced > 0:
@@ -188,10 +191,6 @@ def onFrameCallback(newBoard, newNextPieceId):
     requestPrecompute(stateAfter)
     framesSinceLastPlacement = 0
     piecesPlaced += 1
-  
-  elif framesSinceLastPlacement > (15 if level < 29 else 7) and waitingOnAsync:
-    # Check for the async result
-    fetchPrecomputeResult()
 
   # Update state for next frame
   boardLastFrame = newBoard

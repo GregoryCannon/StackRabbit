@@ -11,6 +11,31 @@ def pixelIsBlack(frame, x, y):
     [r, g, b] = frame[y][x]
     return r < threshold and g < threshold and b < threshold
 
+def identifyStartingPiece(board):
+    L_PIECE = "00001110000000100000"
+    T_PIECE = "00001110000000010000"
+    I_PIECE = "00011110000000000000"
+    J_PIECE = "00001110000000001000"
+    Z_PIECE = "00001100000000011000"
+    S_PIECE = "00000110000000110000"
+    O_PIECE = "00001100000000110000"
+    pieces = [(I_PIECE, "I"), (O_PIECE, "O"), (L_PIECE, "L"), (J_PIECE, "J"), (T_PIECE, "T"), (S_PIECE, "S"), (Z_PIECE, "Z")]
+
+    print(board[0:2])
+
+    for piece, id in pieces:
+        # Get the 'distance' from each piece
+        distance = 0
+        for i in range(len(piece)):
+            pixelOn = board[math.floor(i / 10)][i % 10] == 1
+            referencePixelOn = piece[i] == "1"
+            if pixelOn != referencePixelOn:
+                distance += 1
+        if distance == 0:
+            return id
+
+    raise Exception("Couldn't read initial piece")
+
 def identifyPiece(nextBoxArray):
     L_PIECE = ".XXXXXX..XXXXXX..XX......XX....."
     T_PIECE = ".XXXXXX..XXXXXX....XX......XX..."
@@ -37,26 +62,6 @@ def identifyPiece(nextBoxArray):
             closestDist = distance
 
     return closestPiece[0]
-
-
-'''
-Clear out a floating piece if there is one.
-    (The piece will always be in cols 3-6.)
-'''
-def clearFloatingPiece(board):
-    startedClearing = False
-    for row in range(20):
-        if startedClearing:
-            for col in range(3,7):
-                board[row][col] = 0
-        else:
-            rowEmpty = True
-            for col in range(3,7):
-                if board[row][col] == 1:
-                    rowEmpty = False
-                    break
-            if rowEmpty:
-                startedClearing = True
 
 
 def parseNextBox(frame):
@@ -114,7 +119,7 @@ def processFrame(frame):
         nextPieceId = identifyPiece(nextBox[2:7])
     else:
         print("\nNo data this frame")
-        return
+        return (None, None)
 
     # # Print board
     # for row in range(20):
@@ -123,16 +128,16 @@ def processFrame(frame):
     #         rowStr += "." if board[row][col] == 0 else "X"
     #     print(rowStr)
 
-    # Print next box
-    for row in range(8):
-        rowStr = ""
-        for col in range(8):
-            rowStr += "." if nextBox[row][col] == 0 else "X"
-        print(rowStr)
-    print("Time elapsed:", round(time.time() - startTime, 4))
+    # # Print next box
+    # for row in range(8):
+    #     rowStr = ""
+    #     for col in range(8):
+    #         rowStr += "." if nextBox[row][col] == 0 else "X"
+    #     print(rowStr)
+    # print("Time elapsed:", round(time.time() - startTime, 4))
 
     # Print next piece ID
-    print("\nNext Piece identified as:", nextPieceId)
+    # print("\nNext Piece identified as:", nextPieceId)
 
     return (board, nextPieceId)
 
@@ -143,28 +148,37 @@ def startCapture(onFrameCallback):
         print("Cannot open camera")
         exit()
     # Define the codec and create VideoWriter object
-    # fourcc = cv.VideoWriter_fourcc(*'DIVX')
-    # out = cv.VideoWriter('output.avi', fourcc, 30.0, (640,  480))
+    fourcc = cv.VideoWriter_fourcc(*'DIVX')
+    out = cv.VideoWriter('output.avi', fourcc, 30.0, (640,  480))
     
-    for i in range(2000):
+    # lastFrameTime = time.time()
+
+    while True:
+        # immtime = time.time()
         ret, frame = cap.read()
+        # print("capture time", time.time() - immtime)
         if not ret:
             print("Can't receive frame (stream end?). Exiting ...")
             break
         
-        if i % 1 == 0:
-            (board, nextPieceId) = processFrame(frame)
-            onFrameCallback(board, nextPieceId)
-            # cv.imwrite("output image.png", frame[216:279])
+        # print("FRAME TIME:", time.time() - lastFrameTime)
+        # lastFrameTime = time.time()
 
-        # out.write(frame)
+        # comptime = time.time()
+        (board, nextPieceId) = processFrame(frame)
+        if board != None:
+            onFrameCallback(board, nextPieceId)
+            # print("COMP TIME", time.time() - comptime)
+        # cv.imwrite("output image.png", frame[216:279])
+
+        out.write(frame)
         # cv.imshow('frame', frame)
-        if cv.waitKey(1) == ord('q'):
-            break
+        # if cv.waitKey(1) == ord('q'):
+        #     break
     # When everything done, release the capture
     cap.release()
     cv.destroyAllWindows()
 
 if __name__ == '__main__':
-    startCapture()
+    startCapture(lambda x,y:0)
 
