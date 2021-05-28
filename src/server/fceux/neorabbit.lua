@@ -4,7 +4,6 @@ require "socket"
 
 -- Constants
 STARTUP_FRAMES = 16
-FIRST_PIECE_TOTAL_DELAY = 99
 GameState = {IN_GAME=1, MENU=2, GAME_OVER=3}
 MOVIE_PATH = "C:\\Users\\Greg\\Desktop\\VODs\\" -- Where to store the fm2 VODS (absolute path)
 TIMELINE_2_HZ = "X.............................";
@@ -23,11 +22,19 @@ TIMELINE_30_HZ = "X.";
 TIMELINE_KYROS = "......X.X.X.X.X.X.X.X.X"
 
 -- Configurable Params
-STARTING_LEVEL = 19
+STARTING_LEVEL = 18
 REACTION_TIME_FRAMES = 18
 REACTION_IS_ARTIFICIAL = true -- True if it's a handicap for adjustments, False if it's a hardware limitation
 INPUT_TIMELINE = TIMELINE_12_HZ;
 SHOULD_RECORD_GAMES = true
+
+-- Get initial delays
+FIRST_PIECE_TOTAL_DELAY = 99
+if STARTING_LEVEL == 18 then
+  FIRST_PIECE_TOTAL_DELAY = 98
+elseif STARTING_LEVEL == 29 then
+  FIRST_PIECE_TOTAL_DELAY = 98
+end
 
 -- Global Variables
 g_menuFrameIndex = 0
