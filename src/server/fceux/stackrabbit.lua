@@ -260,34 +260,12 @@ function executeInputs()
 
     local thisFrameStr = getInputForFrame(arrFrameIndex);
     print(arrFrameIndex .. "  " .. thisFrameStr)
-    -- Simple cases
-    if thisFrameStr == "A" then
-      inputsThisFrame.A = true;
-    elseif thisFrameStr == "B" then
-      inputsThisFrame.B = true;
-    elseif thisFrameStr == "L" then
-      inputsThisFrame.left = true;
-    elseif thisFrameStr == "R" then
-      inputsThisFrame.right = true;
-    -- Combo cases
-    elseif thisFrameStr == "E" then
-      inputsThisFrame.left = true;
-      inputsThisFrame.A = true;
-    elseif thisFrameStr == "F" then
-      inputsThisFrame.left = true;
-      inputsThisFrame.B = true;
-    elseif thisFrameStr == "I" then
-      inputsThisFrame.right = true;
-      inputsThisFrame.A = true;
-    elseif thisFrameStr == "G" then
-      inputsThisFrame.right = true;
-      inputsThisFrame.B = true;
-    elseif thisFrameStr == "." then
-      -- Do nothing
-    else
-      print("Unknown character in input sequence" .. arrFrameIndex + 1)
-      print(thisFrameStr)
-    end
+    
+    print(n_pieceFrameIndex .. "  " .. thisFrameStr)
+    controllerInputs.A = (thisFrameStr == "A" or thisFrameStr == "E" or thisFrameStr == "I")
+    controllerInputs.B = (thisFrameStr == "B" or thisFrameStr == "F" or thisFrameStr == "G")
+    controllerInputs.left = (thisFrameStr == "L" or thisFrameStr == "E" or thisFrameStr == "F")
+    controllerInputs.right = (thisFrameStr == "R" or thisFrameStr == "I" or thisFrameStr == "G")
 
     if inputsThisFrame.left then
       shiftsExecuted = shiftsExecuted - 1

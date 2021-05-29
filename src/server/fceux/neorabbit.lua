@@ -22,7 +22,7 @@ TIMELINE_30_HZ = "X.";
 TIMELINE_KYROS = "......X.X.X.X.X.X.X.X.X"
 
 -- Configurable Params
-STARTING_LEVEL = 18
+STARTING_LEVEL = 19
 REACTION_TIME_FRAMES = 18
 REACTION_IS_ARTIFICIAL = true -- True if it's a handicap for adjustments, False if it's a hardware limitation
 INPUT_TIMELINE = TIMELINE_12_HZ;
@@ -176,9 +176,6 @@ function queueUpInputs(apiResult, isAdjustment)
     return
   end
 
-  -- if not isAdjustment then
-  --   inputSequence = inputSequence:sub(1,REACTION_TIME_FRAMES)
-  -- end
   if isAdjustment then
     n_frameQueue = {} -- Wipe the previous placement
   end
@@ -198,33 +195,10 @@ function executeInputs(thisFrameStr)
   local controllerInputs = {A=false, B=false, left=false, right=false, up=false, down=false, select=false, start=false}
 
   print(n_pieceFrameIndex .. "  " .. thisFrameStr)
-  -- Simple cases
-  if thisFrameStr == "A" then
-    controllerInputs.A = true;
-  elseif thisFrameStr == "B" then
-    controllerInputs.B = true;
-  elseif thisFrameStr == "L" then
-    controllerInputs.left = true;
-  elseif thisFrameStr == "R" then
-    controllerInputs.right = true;
-  -- Combo cases
-  elseif thisFrameStr == "E" then
-    controllerInputs.left = true;
-    controllerInputs.A = true;
-  elseif thisFrameStr == "F" then
-    controllerInputs.left = true;
-    controllerInputs.B = true;
-  elseif thisFrameStr == "I" then
-    controllerInputs.right = true;
-    controllerInputs.A = true;
-  elseif thisFrameStr == "G" then
-    controllerInputs.right = true;
-    controllerInputs.B = true;
-  elseif thisFrameStr == "." or thisFrameStr == "*" or thisFrameStr == "^" then
-    -- Do nothing
-  else
-    error("Unknown character in input sequence" .. thisFrameStr)
-  end
+  controllerInputs.A = (thisFrameStr == "A" or thisFrameStr == "E" or thisFrameStr == "I")
+  controllerInputs.B = (thisFrameStr == "B" or thisFrameStr == "F" or thisFrameStr == "G")
+  controllerInputs.left = (thisFrameStr == "L" or thisFrameStr == "E" or thisFrameStr == "F")
+  controllerInputs.right = (thisFrameStr == "R" or thisFrameStr == "I" or thisFrameStr == "G")
 
   -- Send our computed inputs to the controller
   joypad.set(1, controllerInputs)
@@ -336,16 +310,7 @@ function runGameFrame()
       error("Bad frame prediction")
     end
 
-    gfc = predictedGfc % 4
-    extraFrames = 0
-    if gfc == 1 then
-      extraFrames = 3
-    elseif gfc == 2 then
-      extraFrames = 2
-    elseif gfc == 3 then
-      extraFrames = 1
-    end
-
+    extraFrames = (4 - (predictedGfc % 4)) % 4
     print("EXTRA FRAMES:", extraFrames)
     for i = 1,extraFrames do
       table.insert(n_frameQueue, 5, "^")
@@ -496,7 +461,6 @@ function startGame()
     lines = 0
   }
   n_gfcOffset = memory.readbyte(0x00B1) + 1
-  print("GFC OFFSET: ", n_gfcOffset)
   n_isFirstPiece = true
   n_adjustmentLookup = {}
 
