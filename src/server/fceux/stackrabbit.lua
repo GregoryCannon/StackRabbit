@@ -261,11 +261,10 @@ function executeInputs()
     local thisFrameStr = getInputForFrame(arrFrameIndex);
     print(arrFrameIndex .. "  " .. thisFrameStr)
     
-    print(n_pieceFrameIndex .. "  " .. thisFrameStr)
-    controllerInputs.A = (thisFrameStr == "A" or thisFrameStr == "E" or thisFrameStr == "I")
-    controllerInputs.B = (thisFrameStr == "B" or thisFrameStr == "F" or thisFrameStr == "G")
-    controllerInputs.left = (thisFrameStr == "L" or thisFrameStr == "E" or thisFrameStr == "F")
-    controllerInputs.right = (thisFrameStr == "R" or thisFrameStr == "I" or thisFrameStr == "G")
+    inputsThisFrame.A = (thisFrameStr == "A" or thisFrameStr == "E" or thisFrameStr == "I")
+    inputsThisFrame.B = (thisFrameStr == "B" or thisFrameStr == "F" or thisFrameStr == "G")
+    inputsThisFrame.left = (thisFrameStr == "L" or thisFrameStr == "E" or thisFrameStr == "F")
+    inputsThisFrame.right = (thisFrameStr == "R" or thisFrameStr == "I" or thisFrameStr == "G")
 
     if inputsThisFrame.left then
       shiftsExecuted = shiftsExecuted - 1

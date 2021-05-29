@@ -311,10 +311,9 @@ function isTetrisReadyRightWell(board) {
 function getSurfaceValue(
   surfaceArray: Array<number>,
   totalHeightCorrected: number,
-  nextPieceId: PieceId,
   aiParams: AiParams
 ) {
-  let rawValue = rankLookup.getValueOfBoardSurface(surfaceArray, nextPieceId);
+  let rawValue = rankLookup.getValueOfBoardSurface(surfaceArray);
   // Add in the extreme gap penalty prior to transforming the rank
   rawValue += totalHeightCorrected * aiParams.EXTREME_GAP_COEF;
   const A = 150;
@@ -388,7 +387,6 @@ export function rateSurface(surfaceArray): string {
   );
   let surfaceFactorNoNextBox = rankLookup.getValueOfBoardSurface(
     correctedSurface,
-    null
   );
   let result = "No next box: " + surfaceFactorNoNextBox.toFixed(2);
   for (const pieceId of utils.POSSIBLE_NEXT_PIECES) {
@@ -396,7 +394,7 @@ export function rateSurface(surfaceArray): string {
       "\n" +
       pieceId +
       ": " +
-      rankLookup.getValueOfBoardSurface(correctedSurface, pieceId).toFixed(2);
+      rankLookup.getValueOfBoardSurface(correctedSurface).toFixed(2);
   }
   return result;
 }
@@ -453,7 +451,6 @@ export function fastEval(
     getSurfaceValue(
       correctedSurface,
       totalHeightCorrected,
-      nextPieceId,
       aiParams
     );
   let killscreenSurfaceLeftFactor =
@@ -588,7 +585,6 @@ export function getValueOfPossibility(
     getSurfaceValue(
       correctedSurface,
       totalHeightCorrected,
-      nextPieceId,
       aiParams
     );
   let killscreenSurfaceLeftFactor =

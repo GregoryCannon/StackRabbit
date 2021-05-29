@@ -3,9 +3,6 @@ const ranks_NoNextBox_NoBars = fs.readFileSync(
   "docs/condensed_NoNextBox_NoBars.txt",
   "utf8"
 );
-const ranks_NextBox_NoBars_1 = fs.readFileSync("docs/2byte_NextBox_1.txt", "utf8");
-const ranks_NextBox_NoBars_2 = fs.readFileSync("docs/2byte_NextBox_2.txt", "utf8");
-const CUTOFF = 200000000;
 
 /**
  * Converts a list of board heights into the index into the ranks array.
@@ -59,23 +56,11 @@ function getValueOfBoardSurfaceNoNextBox(surfaceArray) {
   return lookUpRankInString(ranks_NoNextBox_NoBars, index) - 1; // All ranks get 1 by default, so cancel that out
 }
 
-function getValueOfBoardSurfaceWithNextBox(surfaceArray, nextPieceId) {
-  const index = surfaceHeightsToNBIndex(surfaceArray, nextPieceId);
-  let rank =
-    index < CUTOFF
-      ? lookUpRankInString(ranks_NextBox_NoBars_1, index)
-      : lookUpRankInString(ranks_NextBox_NoBars_2, index - CUTOFF);
-  // Transform rank to make it comparable to NNB ranks
-  return (rank - 1) / 2.95;
-}
-
-function getValueOfBoardSurface(surfaceArray, nextPieceId) {
+function getValueOfBoardSurface(surfaceArray) {
   if (surfaceArray.length == 10) {
     throw new Error("Expected surface of length 9");
   }
-  return nextPieceId == null
-    ? getValueOfBoardSurfaceNoNextBox(surfaceArray)
-    : getValueOfBoardSurfaceWithNextBox(surfaceArray, nextPieceId);
+  return getValueOfBoardSurfaceNoNextBox(surfaceArray);
 }
 
 module.exports = {
