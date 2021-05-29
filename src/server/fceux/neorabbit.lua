@@ -65,7 +65,7 @@ end
 
 -- Check if the async call has finished, and if so returns the computation result
 function fetchAsyncResult()
-  local response = makeHttpRequest("http://localhost:8080/async-result")
+  local response = makeHttpRequest("http://localhost:3000/async-result")
 
   -- Only use the response if the server indicated that it sent the async result
   if response.code ~= 200 then
@@ -90,7 +90,7 @@ function requestPrecompute(isForFirstPiece)
   local pieceStr = ternary(isForFirstPiece, n_currentPiece, n_nextPiece)
   local framesElapsed = ternary(isForFirstPiece, 0, REACTION_TIME_FRAMES)
 
-  local requestStr = "http://localhost:8080/precompute/" .. n_stateForNextPiece.board
+  local requestStr = "http://localhost:3000/precompute/" .. n_stateForNextPiece.board
   local requestStr = requestStr .. "/" .. pieceStr .. "/null/" .. n_stateForNextPiece.level
   local requestStr = requestStr .. "/" .. n_stateForNextPiece.lines .. "/0/0/0/"
   local requestStr = requestStr .. framesElapsed .. "/" .. INPUT_TIMELINE .. "/false" -- use the 'framesAlreadyElapsed' param to communicate reaction time

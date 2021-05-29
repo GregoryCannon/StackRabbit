@@ -3,7 +3,7 @@ import { RequestHandler } from "./request_handler";
 import * as http from "http";
 
 const hostname = "127.0.0.1";
-const port = 8080;
+const port = 3000;
 
 console.log("Starting server...");
 

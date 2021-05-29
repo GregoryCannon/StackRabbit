@@ -128,7 +128,7 @@ end
 -- Make a request that will kick off a longer calculation. Subsequent frames will ping the server again for the result.
 function requestAdjustmentAsync()
   -- Format URL arguments
-  local requestStr = "http://localhost:8080/async-nb/" .. getEncodedBoard()
+  local requestStr = "http://localhost:3000/async-nb/" .. getEncodedBoard()
   requestStr = requestStr .. "/" .. orientToPiece[pcur] .. "/" .. orientToPiece[pnext] .. "/" .. level .. "/" .. numLines
   requestStr = requestStr .. "/" .. offsetXAtAdjustmentTime .. "/" .. offsetYAtAdjustmentTime .. "/" .. rotationAtAdjustmentTime
   requestStr = requestStr .. "/" .. REACTION_TIME_FRAMES .. "/" .. INPUT_TIMELINE .. "/" .. tostring(canFirstFrameShiftAtAdjustmentTime)
@@ -150,7 +150,7 @@ function requestPrecompute()
     gameOver = true
     return
   end
-  local requestStr = "http://localhost:8080/precompute/" .. stateForNextPiece.board
+  local requestStr = "http://localhost:3000/precompute/" .. stateForNextPiece.board
   local requestStr = requestStr .. "/" .. orientToPiece[pnext] .. "/null/" .. stateForNextPiece.level
   local requestStr = requestStr .. "/" .. stateForNextPiece.lines .. "/0/0/0/"
   local requestStr = requestStr .. REACTION_TIME_FRAMES .. "/" .. INPUT_TIMELINE .. "/false" -- use the 'framesAlreadyElapsed' param to communicate reaction time
@@ -165,7 +165,7 @@ end
 
 -- Check if the async computation has finished, and if so make the adjustment based on it
 function fetchAsyncResult()
-  local response = makeHttpRequest("http://localhost:8080/async-result")
+  local response = makeHttpRequest("http://localhost:3000/async-result")
 
   -- Only use the response if the server indicated that it sent the async result
   if response.code ~= 200 then

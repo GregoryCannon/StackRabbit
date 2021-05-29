@@ -240,7 +240,7 @@ def debugLogResultBoard(resultBoard):
 
 def fetchPrecomputeResult():
   global placementLookup, resultStateLookup, waitingOnAsync
-  response = requests.get("http://127.0.0.1:8080/async-result")
+  response = requests.get("http://127.0.0.1:3000/async-result")
   if response.status_code != 200:
     print("Server not ready yet")
     return
@@ -267,7 +267,7 @@ def requestPrecompute(stateAfter):
   if nextPiece == None:
     raise Exception("No next piece")
   placementLookup = None
-  requestStr = "http://127.0.0.1:8080/precompute-naive/{boardSerialized}/{nextPiece}/null/{level}/{lines}/0/0/0/0/{INPUT_TIMELINE}/true".format(
+  requestStr = "http://127.0.0.1:3000/precompute-naive/{boardSerialized}/{nextPiece}/null/{level}/{lines}/0/0/0/0/{INPUT_TIMELINE}/true".format(
     boardSerialized = stateAfter["board"],
     nextPiece = nextPiece,
     level = stateAfter["level"],
@@ -327,7 +327,7 @@ def start():
 # for i in range(10):
 #   st = time.time()
 #   # sendFrames("A")
-#   kk = requests.get("http://127.0.0.1:8080/ping")
+#   kk = requests.get("http://127.0.0.1:3000/ping")
 #   print(time.time() - st)
 #   time.sleep(1)
 start()
