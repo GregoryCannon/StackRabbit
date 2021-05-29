@@ -69,11 +69,14 @@ export class RequestHandler {
         return [this.handleRequestSyncNoNextBox(requestArgs), 200];
 
       case "precompute":
-        return this._wrapAsync(() => this.handlePrecomputeRequest(requestArgs, /* isNaive= */ false));
+        return this._wrapAsync(() =>
+          this.handlePrecomputeRequest(requestArgs, /* isNaive= */ false)
+        );
 
       case "precompute-naive":
-        return this._wrapAsync(() => this.handlePrecomputeRequest(requestArgs, /* isNaive= */ true));
-
+        return this._wrapAsync(() =>
+          this.handlePrecomputeRequest(requestArgs, /* isNaive= */ true)
+        );
 
       default:
         return [
@@ -259,8 +262,8 @@ export class RequestHandler {
   handlePrecomputeRequest(requestArgs, isNaive) {
     let [searchState, inputFrameTimeline] = this._parseArguments(requestArgs);
     let reactionTimeFrames;
-    if (isNaive){
-      reactionTimeFrames = 0
+    if (isNaive) {
+      reactionTimeFrames = 0;
     } else {
       // Parse the reaction time from the 'frames already elapsed' param
       reactionTimeFrames = searchState.framesAlreadyElapsed;

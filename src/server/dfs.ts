@@ -148,7 +148,7 @@ function tryInput(
       simState.inputSequence += inputChar;
       hasDoneInput = true;
     } else {
-      simState.inputSequence += "."
+      simState.inputSequence += ".";
     }
 
     // Apply gravity on gravity frames, regardless of what inputChar is

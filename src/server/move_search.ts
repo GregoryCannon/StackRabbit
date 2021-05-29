@@ -48,7 +48,7 @@ export function getPossibleMoves(
   const gravity = GetGravity(level);
   const rotationsList = PIECE_LOOKUP[currentPieceId][0] as Array<PieceArray>;
 
-  const simParams : SimParams = {
+  const simParams: SimParams = {
     board: startingBoard,
     initialX,
     initialY,
@@ -145,7 +145,6 @@ function exploreLegalPlacementsUntilLock(
     );
     let inputSequenceWithWait = inputSequence;
 
-
     let startedLookingForTuckSpins = false;
     let highestRegisteredY = -1; // Tracks the Y values already registered to avoid duplicates
     while (true) {
@@ -230,19 +229,19 @@ export function getPossibilityFromSimState(
   const numEntryDelayFrames = calculateEntryDelayFrames(simState, simParams);
 
   // Add pre-lineclear ARE frames to the input sequence
-  for (let i = 0; i < numEntryDelayFrames - 5; i++){
+  for (let i = 0; i < numEntryDelayFrames - 5; i++) {
     inputSequence += "*";
   }
 
   // Add line clear frames to the input sequence
-  if (numLinesCleared > 0){
-    for (let i = 0; i < 17; i++){
-      inputSequence += "^"
+  if (numLinesCleared > 0) {
+    for (let i = 0; i < 17; i++) {
+      inputSequence += "^";
     }
   }
 
   // Add post-lineclear ARE frames to the input sequence
-  for (let i = 0; i < 5; i++){
+  for (let i = 0; i < 5; i++) {
     inputSequence += "*";
   }
 
@@ -260,7 +259,10 @@ export function getPossibilityFromSimState(
 }
 
 /** Calculate the ARE as a function of the "lock height" (the height of the highest cell in the piece)  */
-function calculateEntryDelayFrames(simState: SimState, simParams: SimParams) : number{
+function calculateEntryDelayFrames(
+  simState: SimState,
+  simParams: SimParams
+): number {
   const startingY = simParams.pieceId === "I" ? -2 : -1;
   const yOffset = simState.y - startingY;
   const lockHeight = NUM_ROW - yOffset;

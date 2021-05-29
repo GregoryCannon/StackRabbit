@@ -73,7 +73,7 @@ export function getPossibleMovesBfs(
   const gravity = GetGravity(level);
   const rotationsList = PIECE_LOOKUP[currentPieceId][0] as Array<PieceArray>;
 
-  const simParams : SimParams = {
+  const simParams: SimParams = {
     board: startingBoard,
     initialX,
     initialY,
