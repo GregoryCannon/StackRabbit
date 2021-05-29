@@ -49,6 +49,40 @@ export class PreComputeManager {
     }
   }
 
+  finessePrecompute(
+    searchState: SearchState,
+    shouldLog: boolean,
+    initialAiParams: InitialAiParams,
+    paramMods: ParamMods,
+    inputFrameTimeline: string,
+    reactionTimeFrames: number,
+    onPartialResultCallback: Function,
+    onResultCallback: Function
+  ) {
+    console.time("FINESSE PRECOMPUTE");
+    // Get a backup placement, in case computation is slow
+    this.defaultPlacement = getBestMove(
+      searchState,
+      shouldLog,
+      initialAiParams,
+      paramMods,
+      inputFrameTimeline,
+      /* searchDepth= */ 1,
+      /* hypotheticalSearchDepth= */ 1
+    );
+    if (this.defaultPlacement === null) {
+      onResultCallback("No legal moves");
+      return;
+    }
+    // Send a response with just the default placement in case the other computation doesn't finish
+    const formattedResult = formatPrecomputeResult(null, this.defaultPlacement);
+    console.log(
+      "Saving partial result",
+      formatPossibility(this.defaultPlacement)
+    );
+    onPartialResultCallback(formattedResult);
+  }
+
   precompute(
     searchState: SearchState,
     shouldLog: boolean,
@@ -154,22 +188,27 @@ export class PreComputeManager {
     if (this.onResultCallback === null) {
       throw new Error("No result callback provided");
     }
-    console.log(formattedResult);
+    // console.log(formattedResult);
     this.onResultCallback(formattedResult);
   }
 }
 
 function formatPrecomputeResult(results, defaultPlacement) {
+  const defaultFormatted = formatPossibility(defaultPlacement);
   let resultString = `Default:${
     defaultPlacement ? formatPossibility(defaultPlacement) : "N/A"
   }`;
   for (const piece of POSSIBLE_NEXT_PIECES) {
-    if (!results[piece]) {
+    if (results == null) {
+      // If we have no next box info, do the default for everything
+      resultString += `\n${piece}:${defaultFormatted}`;
+    } else if (!results[piece]) {
+      // If we have some results but no moves for this piece
       resultString += `\n${piece}:No legal moves`;
-      continue;
+    } else {
+      // Otherwise, add the real result
+      resultString += `\n${piece}:${formatPossibility(results[piece])}`;
     }
-    const singlePieceFormatted = formatPossibility(results[piece]);
-    resultString += `\n${piece}:${singlePieceFormatted}`;
   }
   return resultString;
 }
@@ -278,80 +317,3 @@ function testPrediction() {
     )
   );
 }
-
-// export function futureRecomputePlacementAndAdjustments(
-//   searchState: SearchState,
-//   shouldLog: boolean,
-//   initialAiParams: InitialAiParams,
-//   paramMods: ParamMods,
-//   inputFrameTimeline: string,
-//   searchDepth: number,
-//   hypotheticalSearchDepth: number
-// ): string {
-//   const results = {};
-
-//   // Update input objects
-//   let aiParams = addTapInfoToAiParams(
-//     initialAiParams,
-//     searchState.level,
-//     inputFrameTimeline
-//   );
-//   const aiMode = getAiMode(
-//     searchState.board,
-//     searchState.lines,
-//     searchState.level,
-//     aiParams
-//   );
-//   aiParams = modifyParamsForAiMode(aiParams, aiMode, paramMods);
-
-//   for (const nextPieceId of POSSIBLE_NEXT_PIECES) {
-//     const newSearchState = { ...searchState, nextPieceId };
-//     const bestMoveThisPiece = getBestMove(
-//       newSearchState,
-//       shouldLog,
-//       initialAiParams,
-//       paramMods,
-//       inputFrameTimeline,
-//       searchDepth,
-//       hypotheticalSearchDepth
-//     );
-//     results[nextPieceId] = bestMoveThisPiece;
-//   }
-
-//   // Find the average position of all the possible adjustments
-//   let totalXOffset = 0;
-//   let totalRotation = 0;
-//   for (const nextPieceId of POSSIBLE_NEXT_PIECES) {
-//     const bestMove: PossibilityChain = results[nextPieceId];
-//     totalXOffset += bestMove.placement[1];
-//     totalRotation += bestMove.placement[0] == 3 ? -1 : bestMove.placement[0];
-//   }
-//   const averageXOffset = Math.round(totalXOffset / POSSIBLE_NEXT_PIECES.length);
-//   const averageRotation = Math.round(
-//     totalRotation / POSSIBLE_NEXT_PIECES.length
-//   );
-
-//   // Sort the possibilities by their distance from the average and choose the closest
-//   const sortedPossibilities: Array<PossibilityChain> = Object.values(
-//     results
-//   ).sort(
-//     (a: PossibilityChain, b: PossibilityChain) =>
-//       distanceFromAverage(a.placement, averageXOffset, averageRotation) -
-//       distanceFromAverage(b.placement, averageXOffset, averageRotation)
-//   ) as Array<PossibilityChain>;
-//   const defaultPlacement = sortedPossibilities[0];
-
-//   // Format the results
-//   return formatPrecomputeResult(results, defaultPlacement);
-//   // return response;
-//   // return new Promise((resolve, reject) => {
-//   //   resolve(response);
-//   // });
-// }
-
-// function distanceFromAverage(placement, averageXOffset, averageRotation) {
-//   const [rotation, xOffset] = placement;
-//   const numShiftsNeeded = Math.abs(xOffset - averageXOffset);
-//   const numRotationsNeeded = Math.abs(rotation - averageRotation);
-//   return Math.max(numShiftsNeeded, numRotationsNeeded);
-// }
