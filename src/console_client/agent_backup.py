@@ -1,3 +1,12 @@
+'''
+In desperation while trying to get the naive agent to work pre/post 29, 
+I started quickly trying hacky workarounds. I didn't have much of a commit history
+that night due to the time crunch, so I copied a backup version here.
+
+Not great programming practice, but that night was literally down to the minute before flying home. Sue me lol.
+'''
+
+
 import threading
 
 from numpy import False_
