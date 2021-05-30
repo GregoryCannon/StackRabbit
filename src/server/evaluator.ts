@@ -386,7 +386,7 @@ export function rateSurface(surfaceArray): string {
     surfaceArray.slice(0, 9)
   );
   let surfaceFactorNoNextBox = rankLookup.getValueOfBoardSurface(
-    correctedSurface,
+    correctedSurface
   );
   let result = "No next box: " + surfaceFactorNoNextBox.toFixed(2);
   for (const pieceId of utils.POSSIBLE_NEXT_PIECES) {
@@ -448,11 +448,7 @@ export function fastEval(
 
   let surfaceFactor =
     aiParams.SURFACE_COEF *
-    getSurfaceValue(
-      correctedSurface,
-      totalHeightCorrected,
-      aiParams
-    );
+    getSurfaceValue(correctedSurface, totalHeightCorrected, aiParams);
   let killscreenSurfaceLeftFactor =
     aiParams.LEFT_SURFACE_COEF *
     getLeftSurfaceValue(boardAfter, aiParams, level);
@@ -582,11 +578,7 @@ export function getValueOfPossibility(
       : 0;
   let surfaceFactor =
     aiParams.SURFACE_COEF *
-    getSurfaceValue(
-      correctedSurface,
-      totalHeightCorrected,
-      aiParams
-    );
+    getSurfaceValue(correctedSurface, totalHeightCorrected, aiParams);
   let killscreenSurfaceLeftFactor =
     aiParams.LEFT_SURFACE_COEF *
     getLeftSurfaceValue(boardAfter, aiParams, level);

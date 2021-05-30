@@ -318,10 +318,9 @@ function searchDepth1(
 
     // Convert to a 1-chain
     possibility.totalValue = value as number;
-    possibility.partialValue = evaluator.getLineClearValue(
-      possibility.numLinesCleared,
-      aiParams
-    );
+    possibility.partialValue =
+      evaluator.getLineClearValue(possibility.numLinesCleared, aiParams) +
+      possibility.inputCost;
     possibility.searchStateAfterMove = getSearchStateAfter(
       searchState,
       possibility,

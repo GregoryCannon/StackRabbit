@@ -7,6 +7,20 @@ import {
 import { getPossibilityFromSimState } from "./move_search";
 import { logBoard } from "./utils";
 
+const SPINTUCK_COST = -0.3;
+const SPIN_COST = -0.2;
+const TUCK_COST = -0.1;
+const INPUT_COST_LOOKUP = {
+  E: SPINTUCK_COST,
+  F: SPINTUCK_COST,
+  I: SPINTUCK_COST,
+  G: SPINTUCK_COST,
+  L: TUCK_COST,
+  R: TUCK_COST,
+  A: SPIN_COST,
+  B: SPIN_COST,
+};
+
 // Determine the x increment to apply based on the encoded input
 const X_INCREMENT_LOOKUP = {
   L: -1,
@@ -30,12 +44,65 @@ export function searchForTucksOrSpins(
   potentialTuckSpinStates: Array<DFSState>,
   simParams: SimParams,
   lockHeightLookup: Map<string, number>
+) {
+  let novelPossibilities = [];
+  const alreadyFound: Set<string> = new Set();
+  // Look in order of ease of input (tucks -> spins -> spintucks)
+  novelPossibilities = novelPossibilities.concat(searchForTucksOrSpinsInternal(
+    potentialTuckSpinStates,
+    simParams,
+    lockHeightLookup,
+    alreadyFound,
+    "TUCK"
+  ));
+  novelPossibilities = novelPossibilities.concat(searchForTucksOrSpinsInternal(
+    potentialTuckSpinStates,
+    simParams,
+    lockHeightLookup,
+    alreadyFound,
+    "SPIN"
+  ));
+  novelPossibilities = novelPossibilities.concat(searchForTucksOrSpinsInternal(
+    potentialTuckSpinStates,
+    simParams,
+    lockHeightLookup,
+    alreadyFound,
+    "SPINTUCK"
+  ));
+  return novelPossibilities;
+}
+
+const POSSIBLE_INPUT_LOOKUP = {
+  TUCK: {
+    1: "LR",
+    2: "LR",
+    4: "LR",
+  },
+  SPIN: {
+    1: "",
+    2: "A",
+    4: "AB",
+  },
+  SPINTUCK: {
+    1: "",
+    2: "EI",
+    4: "EIFG",
+  },
+};
+
+function searchForTucksOrSpinsInternal(
+  potentialTuckSpinStates: Array<DFSState>,
+  simParams: SimParams,
+  lockHeightLookup: Map<string, number>,
+  alreadyFound: Set<string>,
+  inputType: string
 ): Array<PossibilityChain> {
   const novelPossibilities = [];
   for (const simState of potentialTuckSpinStates) {
+    // Find the possible inputs
     const numOrientations = simParams.rotationsList.length;
-    const possibleInputs =
-      numOrientations == 1 ? "LR" : numOrientations == 2 ? "EILRA" : "EIFGLRAB";
+    const possibleInputs = POSSIBLE_INPUT_LOOKUP[inputType][numOrientations];
+    // Try each one
     for (const inputChar of possibleInputs) {
       const xDelta = X_INCREMENT_LOOKUP[inputChar] || 0;
       const rotDelta = ROTATION_LOOKUP[inputChar] || 0;
@@ -53,7 +120,7 @@ export function searchForTucksOrSpins(
           newRot,
           simState,
           simParams,
-          lockHeightLookup,
+          alreadyFound,
           novelPossibilities
         );
       }
@@ -74,19 +141,6 @@ function hasBeenVisited(
   return simState.y <= highestYSeen;
 }
 
-function getInputCost(inputChar) {
-  // Apply a small penalty to spintucks so if there in an equivalent tuck it will be evalutated as better
-  if (
-    inputChar == "E" ||
-    inputChar == "I" ||
-    inputChar == "F" ||
-    inputChar == "G"
-  ) {
-    return 0.1;
-  }
-  return 0;
-}
-
 /**
  * Tries out an input from a given state, and if it's valid, adds it to the active list.
  * If the piece locks in after the input, it will also add that finished state to the final list.
@@ -97,7 +151,7 @@ function tryInput(
   newRotationIndex: number,
   parentSimState: DFSState,
   simParams: SimParams,
-  lockHeightLookup: Map<string, number>,
+  alreadyFound: Set<string>,
   novelPossibilities: Array<Possibility>
 ): void {
   let hasDoneInput = false;
@@ -162,20 +216,18 @@ function tryInput(
         )
       ) {
         debugLog(simState, simParams, "SUCCESS - GRAVITY");
-
-        // Piece locked into the stack, so register the new highest Y and make a possibility for it!
-        // lockHeightLookup.set(
-        //   simState.rotationIndex + "," + simState.x,
-        //   simState.y
-        // );
+        // Piece locked into the stack, so add it if it hasn't been seen before!
+        const encodedEndingSpot = simState.x + "|" + simState.y
+        if (!alreadyFound.has(encodedEndingSpot))
         novelPossibilities.push(
           getPossibilityFromSimState(
             simState,
             simParams,
             simState.inputSequence,
-            getInputCost(inputChar)
+            INPUT_COST_LOOKUP[inputChar]
           )
         );
+        alreadyFound.add(encodedEndingSpot)
         return;
       }
       // Otherwise it shifts down and we keep searching
