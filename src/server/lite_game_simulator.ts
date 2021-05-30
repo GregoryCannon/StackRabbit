@@ -1,5 +1,6 @@
 import { getBestMove } from "./main";
 import { getParamMods, getParams } from "./params";
+import { predictSearchStateAtAdjustmentTime } from "./precompute";
 
 const main = require("./main");
 const utils = require("./utils");
@@ -13,7 +14,8 @@ export const REWARDS = {
   3: 300,
   4: 1200,
 };
-const INPUT_SEQUENCE_12_HZ = "X....";
+const INPUT_SEQUENCE_12_HZ = "X.....";
+const REACTION_TIME_FRAMES = 25;
 const paramsManager = require("./params");
 export const DIG_LINE_CAP = 25;
 
@@ -38,7 +40,9 @@ export function simulateManyGames(
         aiParams,
         paramMods,
         INPUT_SEQUENCE_12_HZ,
-        /* predefinedPieceSequence= */ null,
+        "ZJOSLISTJZOLTIJZJZOSJSZJTZ",
+        // /* predefinedPieceSequence= */ null,
+        /* shouldAdjust= */ true,
         /* isDig= */ false,
         /* onPlacementCallback= */ null,
         /* shouldLog= */ false
@@ -70,6 +74,7 @@ export function simulateDigPractice(
         paramMods,
         INPUT_SEQUENCE_12_HZ,
         /* predefinedPieceSequence= */ null,
+        /* shouldAdjust= */ true,
         /* isDig= */ true,
         /* onPlacementCallback= */ null,
         /* shouldLog= */ i == 0
@@ -91,13 +96,14 @@ function sleep(ms) {
  * @param {function(lines, numHoles)} gameOverCondition - function to check custom game over conditions
  * @returns [score, lines, level]
  */
-export function simulateGame(
+export async function simulateGame(
   startingLevel,
   startingBoard,
   aiParams,
   paramMods,
   inputFrameTimeline: string,
   presetPieceSequence,
+  shouldAdjust,
   isDig,
   afterPlacementCallback,
   shouldLog
@@ -107,8 +113,6 @@ export function simulateGame(
   let lines = 0;
   let level = startingLevel;
   let numHoles = utils.getHoleCount(startingBoard);
-  let nextTransitionLineCount =
-    startingLevel == 19 ? 140 : startingLevel == 18 ? 130 : 200;
   let pieceIndex = 0;
   const pieceSequence = presetPieceSequence
     ? presetPieceSequence
@@ -120,29 +124,22 @@ export function simulateGame(
     const currentPieceId = pieceSequence[pieceIndex];
     const nextPieceId = pieceSequence[pieceIndex + 1];
 
-    // await sleep(1000);
+    await sleep(1000);
 
     // Place one piece
-    const bestMove: Possibility = getBestMove(
-      {
-        board: board,
-        currentPieceId,
-        nextPieceId,
-        level,
-        lines,
-        framesAlreadyElapsed: 0,
-        canFirstFrameShift: false,
-        existingXOffset: 0,
-        existingYOffset: 0,
-        existingRotation: 0,
-      },
-      /* shouldLog= */ false,
-      aiParams,
-      paramMods,
-      inputFrameTimeline,
-      /* searchDepth= */ 2,
-      /* hypotheticalSearchDepth= */ 1
-    );
+    const searchState = {
+      board: board,
+      currentPieceId,
+      nextPieceId,
+      level,
+      lines,
+      framesAlreadyElapsed: 0,
+      canFirstFrameShift: false,
+      existingXOffset: 0,
+      existingYOffset: 0,
+      existingRotation: 0,
+    };
+    const bestMove = getMoveThisStep(searchState, aiParams, paramMods, inputFrameTimeline, shouldAdjust);
 
     // Set the board to the resulting board after making that move
     if (bestMove == null) {
@@ -154,19 +151,10 @@ export function simulateGame(
     }
     board = bestMove.boardAfter;
     numHoles = bestMove.numHoles;
-
-    const numLinesCleared = bestMove.numLinesCleared;
-    if (numLinesCleared > 0) {
-      // Update lines, level, then score (needs to be that order)
-      lines += numLinesCleared;
-      if (lines >= nextTransitionLineCount) {
-        level++;
-        nextTransitionLineCount += 10;
-        if (shouldLog) {
-          console.log(`TRANSITIONING TO LEVEL ${level}`);
-        }
-      }
-      score += REWARDS[numLinesCleared] * (level + 1);
+    lines = bestMove.searchStateAfterMove.lines
+    level = bestMove.searchStateAfterMove.level
+    if (bestMove.numLinesCleared > 0) {
+      score += REWARDS[bestMove.numLinesCleared] * (level + 1);
     }
 
     // Check for game over
@@ -180,7 +168,7 @@ export function simulateGame(
     }
 
     // Maybe log per-piece stats
-    if (false) {
+    if (true) {
       console.log(`Score: ${score}, Lines: ${lines}, Level: ${level}`);
       utils.logBoard(board);
     }
@@ -199,6 +187,52 @@ export function simulateGame(
 
   return [score, lines, level, numHoles];
 }
+
+function getMoveThisStep(searchState, aiParams, paramMods, inputFrameTimeline, shouldAdjust){
+  if (shouldAdjust){
+    const initalMove = getBestMove(
+      {
+        ...searchState,
+        nextPieceId: null
+      },
+      /* shouldLog= */ true,
+      aiParams,
+      paramMods,
+      inputFrameTimeline,
+      /* searchDepth= */ 1,
+      /* hypotheticalSearchDepth= */ 1
+    );
+    if (initalMove == null){
+      return null;
+    }
+    const newSearchState = predictSearchStateAtAdjustmentTime(searchState, initalMove.inputSequence, inputFrameTimeline, REACTION_TIME_FRAMES);
+    newSearchState.nextPieceId = searchState.nextPieceId;
+    const adjustment = getBestMove(
+      newSearchState,
+      /* shouldLog= */ false,
+      aiParams,
+      paramMods,
+      inputFrameTimeline,
+      /* searchDepth= */ 1,
+      /* hypotheticalSearchDepth= */ 0
+    );
+    console.log("INITIAL MOVE:", initalMove.placement);
+    console.log("ADJUSTMENT:", adjustment.placement);
+    return adjustment || initalMove;
+  } else {
+    return getBestMove(
+      searchState,
+      /* shouldLog= */ false,
+      aiParams,
+      paramMods,
+      inputFrameTimeline,
+      /* searchDepth= */ 2,
+      /* hypotheticalSearchDepth= */ 1
+    );
+  }
+}
+
+
 
 /**
  * Checks if the player has topped out by scanning the piece spawn
@@ -277,6 +311,7 @@ function regressionTest() {
     paramsManager.getParamMods(),
     INPUT_SEQUENCE_12_HZ,
     regressionTestPieceSequence,
+    /* shouldAdjust= */ false,
     /* isDig= */ false,
     null,
     /* shouldLog= */ true
@@ -287,10 +322,10 @@ function regressionTest() {
 
 if (typeof require !== "undefined" && require.main === module) {
   // regressionTest();
-  // runScoreExperiment(100);
+  runScoreExperiment(1);
   // simulateKillscreenTraining(500);
-  // runScoreExperiment(1000);
-  const results = simulateManyGames(100, 18, getParams(), getParamMods());
-  console.log(results);
-  console.log(results.map((x) => x[1]));
+  // simulateDigPractice(1, 18, getParams(), getParamMods());
+  // const results = simulateManyGames(100, 18, getParams(), getParamMods());
+  // console.log(results);
+  // console.log(results.map((x) => x[1]));
 }

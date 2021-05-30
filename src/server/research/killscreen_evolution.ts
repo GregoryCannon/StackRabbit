@@ -110,6 +110,7 @@ function simulateKillscreenTraining2(numIterations) {
       getParamMods(),
       INPUT_TIMELINE,
       /* presetSequence= */ null,
+      /* shouldAdjust= */ false,
       /* isDig= */ false,
       afterPlacementCallback,
       /* shouldLog= */ false
@@ -149,6 +150,7 @@ export function simulateKillscreenTraining(numIterations) {
       getParamMods(),
       INPUT_TIMELINE,
       /* presetSequence= */ null,
+      /* shouldAdjust= */ false,
       /* isDig= */ false,
       afterPlacementCallback,
       /* shouldLog= */ true

@@ -68,7 +68,7 @@ export class PreComputeManager {
       paramMods,
       inputFrameTimeline,
       /* searchDepth= */ 1,
-      /* hypotheticalSearchDepth= */ 1
+      /* hypotheticalSearchDepth= */ 0
     );
     if (this.defaultPlacement === null) {
       onResultCallback("No legal moves");
@@ -222,7 +222,7 @@ function isAnyOf(str, possible) {
   return false;
 }
 
-function predictSearchStateAtAdjustmentTime(
+export function predictSearchStateAtAdjustmentTime(
   initialState: SearchState,
   inputSequence: string,
   inputFrameTimeline: string,
