@@ -139,7 +139,13 @@ export async function simulateGame(
       existingYOffset: 0,
       existingRotation: 0,
     };
-    const bestMove = getMoveThisStep(searchState, aiParams, paramMods, inputFrameTimeline, shouldAdjust);
+    const bestMove = getMoveThisStep(
+      searchState,
+      aiParams,
+      paramMods,
+      inputFrameTimeline,
+      shouldAdjust
+    );
 
     // Set the board to the resulting board after making that move
     if (bestMove == null) {
@@ -151,8 +157,8 @@ export async function simulateGame(
     }
     board = bestMove.boardAfter;
     numHoles = bestMove.numHoles;
-    lines = bestMove.searchStateAfterMove.lines
-    level = bestMove.searchStateAfterMove.level
+    lines = bestMove.searchStateAfterMove.lines;
+    level = bestMove.searchStateAfterMove.level;
     if (bestMove.numLinesCleared > 0) {
       score += REWARDS[bestMove.numLinesCleared] * (level + 1);
     }
@@ -188,12 +194,18 @@ export async function simulateGame(
   return [score, lines, level, numHoles];
 }
 
-function getMoveThisStep(searchState, aiParams, paramMods, inputFrameTimeline, shouldAdjust){
-  if (shouldAdjust){
+function getMoveThisStep(
+  searchState,
+  aiParams,
+  paramMods,
+  inputFrameTimeline,
+  shouldAdjust
+) {
+  if (shouldAdjust) {
     const initalMove = getBestMove(
       {
         ...searchState,
-        nextPieceId: null
+        nextPieceId: null,
       },
       /* shouldLog= */ true,
       aiParams,
@@ -202,10 +214,15 @@ function getMoveThisStep(searchState, aiParams, paramMods, inputFrameTimeline, s
       /* searchDepth= */ 1,
       /* hypotheticalSearchDepth= */ 1
     );
-    if (initalMove == null){
+    if (initalMove == null) {
       return null;
     }
-    const newSearchState = predictSearchStateAtAdjustmentTime(searchState, initalMove.inputSequence, inputFrameTimeline, REACTION_TIME_FRAMES);
+    const newSearchState = predictSearchStateAtAdjustmentTime(
+      searchState,
+      initalMove.inputSequence,
+      inputFrameTimeline,
+      REACTION_TIME_FRAMES
+    );
     newSearchState.nextPieceId = searchState.nextPieceId;
     const adjustment = getBestMove(
       newSearchState,
@@ -231,8 +248,6 @@ function getMoveThisStep(searchState, aiParams, paramMods, inputFrameTimeline, s
     );
   }
 }
-
-
 
 /**
  * Checks if the player has topped out by scanning the piece spawn

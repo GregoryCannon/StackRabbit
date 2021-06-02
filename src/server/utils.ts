@@ -49,8 +49,8 @@ export function GetGravity(level) {
 }
 
 export function formatPossibility(possibility: PossibilityChain) {
-  if (possibility == null){
-    return "No legal moves"
+  if (possibility == null) {
+    return "No legal moves";
   }
   return (
     possibility.placement[0] +

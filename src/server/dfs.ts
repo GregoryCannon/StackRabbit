@@ -48,27 +48,33 @@ export function searchForTucksOrSpins(
   let novelPossibilities = [];
   const alreadyFound: Set<string> = new Set();
   // Look in order of ease of input (tucks -> spins -> spintucks)
-  novelPossibilities = novelPossibilities.concat(searchForTucksOrSpinsInternal(
-    potentialTuckSpinStates,
-    simParams,
-    lockHeightLookup,
-    alreadyFound,
-    "TUCK"
-  ));
-  novelPossibilities = novelPossibilities.concat(searchForTucksOrSpinsInternal(
-    potentialTuckSpinStates,
-    simParams,
-    lockHeightLookup,
-    alreadyFound,
-    "SPIN"
-  ));
-  novelPossibilities = novelPossibilities.concat(searchForTucksOrSpinsInternal(
-    potentialTuckSpinStates,
-    simParams,
-    lockHeightLookup,
-    alreadyFound,
-    "SPINTUCK"
-  ));
+  novelPossibilities = novelPossibilities.concat(
+    searchForTucksOrSpinsInternal(
+      potentialTuckSpinStates,
+      simParams,
+      lockHeightLookup,
+      alreadyFound,
+      "TUCK"
+    )
+  );
+  novelPossibilities = novelPossibilities.concat(
+    searchForTucksOrSpinsInternal(
+      potentialTuckSpinStates,
+      simParams,
+      lockHeightLookup,
+      alreadyFound,
+      "SPIN"
+    )
+  );
+  novelPossibilities = novelPossibilities.concat(
+    searchForTucksOrSpinsInternal(
+      potentialTuckSpinStates,
+      simParams,
+      lockHeightLookup,
+      alreadyFound,
+      "SPINTUCK"
+    )
+  );
   return novelPossibilities;
 }
 
@@ -217,17 +223,17 @@ function tryInput(
       ) {
         debugLog(simState, simParams, "SUCCESS - GRAVITY");
         // Piece locked into the stack, so add it if it hasn't been seen before!
-        const encodedEndingSpot = simState.x + "|" + simState.y
+        const encodedEndingSpot = simState.x + "|" + simState.y;
         if (!alreadyFound.has(encodedEndingSpot))
-        novelPossibilities.push(
-          getPossibilityFromSimState(
-            simState,
-            simParams,
-            simState.inputSequence,
-            INPUT_COST_LOOKUP[inputChar]
-          )
-        );
-        alreadyFound.add(encodedEndingSpot)
+          novelPossibilities.push(
+            getPossibilityFromSimState(
+              simState,
+              simParams,
+              simState.inputSequence,
+              INPUT_COST_LOOKUP[inputChar]
+            )
+          );
+        alreadyFound.add(encodedEndingSpot);
         return;
       }
       // Otherwise it shifts down and we keep searching
