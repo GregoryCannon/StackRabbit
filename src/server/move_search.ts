@@ -255,6 +255,8 @@ export function getPossibilityFromSimState(
     numLinesCleared,
     boardAfter,
     inputCost,
+    lockPositionEncoded:
+      simState.rotationIndex + "|" + simState.x + "|" + simState.y,
   };
 }
 

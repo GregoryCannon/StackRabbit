@@ -66,6 +66,7 @@ interface Possibility {
   numLinesCleared: number;
   boardAfter: Board;
   inputCost: number;
+  lockPositionEncoded: string;
   fastEvalScore?: number;
   evalScore?: number;
   evalExplanation?: string;
@@ -100,6 +101,12 @@ interface SearchState {
   existingYOffset: number;
   existingRotation: number;
   canFirstFrameShift: boolean;
+}
+
+interface PhantomPlacement {
+  inputSequence: string;
+  defaultPlacement: PossibilityChain;
+  adjustmentSearchState: SearchState;
 }
 
 const enum AiMode {
@@ -157,6 +164,7 @@ interface ParamMods {
 /* ------------ Messages for Worker Threads ------------ */
 
 interface WorkerDataArgs {
+  computationType: string; // Either 'finesse' or 'standard'
   piece: PieceId;
   newSearchState: SearchState;
   initialAiParams: InitialAiParams;
