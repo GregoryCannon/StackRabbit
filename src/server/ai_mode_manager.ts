@@ -64,7 +64,7 @@ function shouldUseDigMode(
       (currentPieceId === "I" &&
         row >= tetrisZoneStart &&
         row <= tetrisZoneEnd) ||
-      numRowsOfGarbage > 2
+      numRowsOfGarbage <= 3
     );
   }
 
