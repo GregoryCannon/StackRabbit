@@ -341,15 +341,6 @@ function getBuiltOutLeftFactor(
   aiParams: AiParams,
   aiMode: AiMode
 ) {
-  // Don't build out the left if there's a hole there
-  if (
-    aiMode === AiMode.DIG ||
-    boardHelper.hasHoleInColumn(boardAfter, 0, /* numRowsFromTop= */ 5) ||
-    boardHelper.hasHoleInColumn(boardAfter, 1, /* numRowsFromTop= */ 5)
-  ) {
-    return 0;
-  }
-
   // Handle low left cases first
   const averageHeight = surfaceArray.slice(2, 8).reduce((a, b) => a + b) / 7;
   if (surfaceArray[0] < averageHeight) {
@@ -358,6 +349,15 @@ function getBuiltOutLeftFactor(
       aiParams.BUILT_OUT_LEFT_COEF *
       Math.pow(averageHeight - surfaceArray[0], aiParams.LOW_LEFT_EXP)
     );
+  }
+
+  // Don't build out the left if there's a hole there
+  if (
+    aiMode === AiMode.DIG ||
+    boardHelper.hasHoleInColumn(boardAfter, 0, /* numRowsFromTop= */ 5) ||
+    boardHelper.hasHoleInColumn(boardAfter, 1, /* numRowsFromTop= */ 5)
+  ) {
+    return 0;
   }
 
   // Otherwise reward building out the left
