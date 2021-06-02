@@ -322,6 +322,16 @@ function getSurfaceValue(
   return rawValue + B - A / Math.max(1, rawValue);
 }
 
+export function getPartialValue(
+  possibility: Possibility,
+  aiParams: InitialAiParams
+) {
+  return (
+    getLineClearValue(possibility.numLinesCleared, aiParams) +
+    possibility.inputCost
+  );
+}
+
 export function getLineClearValue(numLinesCleared, aiParams) {
   return numLinesCleared == 4
     ? aiParams.TETRIS_COEF

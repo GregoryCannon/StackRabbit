@@ -318,13 +318,10 @@ function searchDepth1(
 
     // Convert to a 1-chain
     possibility.totalValue = value as number;
-    possibility.partialValue =
-      evaluator.getLineClearValue(possibility.numLinesCleared, aiParams) +
-      possibility.inputCost;
+    possibility.partialValue = evaluator.getPartialValue(possibility, aiParams);
     possibility.searchStateAfterMove = getSearchStateAfter(
       searchState,
-      possibility,
-      aiParams
+      possibility
     );
   }
   // Sort by value
@@ -450,10 +447,9 @@ function searchDepthNPlusOne(
   return hypotheticalResults;
 }
 
-function getSearchStateAfter(
+export function getSearchStateAfter(
   prevSearchState: SearchState,
-  possibility: Possibility,
-  aiParams: AiParams
+  possibility: Possibility
 ): SearchState {
   const levelAfter = utils.getLevelAfterLineClears(
     prevSearchState.level,
