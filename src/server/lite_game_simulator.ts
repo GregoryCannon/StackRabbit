@@ -14,7 +14,7 @@ export const REWARDS = {
   3: 300,
   4: 1200,
 };
-const INPUT_SEQUENCE_12_HZ = "X.....";
+const INPUT_SEQUENCE_12_HZ = "X....";
 const REACTION_TIME_FRAMES = 25;
 const paramsManager = require("./params");
 export const DIG_LINE_CAP = 25;
