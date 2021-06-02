@@ -214,6 +214,43 @@ export function getLeftSurface(board: Board, maxHeight) {
   return "" + getColHeight(0) + getColHeight(1) + getColHeight(2);
 }
 
+/** Gets the surface of just the left-most 3 columns, if they don't have any holes.
+ * The heights are RELATIVE to the average heights in columns 4-10
+ * (This is used for killscreen play)
+ */
+export function getRelativeLeftSurface(board: Board, maxHeight) {
+  if (
+    hasHoleInColumn(board, 0) ||
+    hasHoleInColumn(board, 1) ||
+    hasHoleInColumn(board, 2)
+  ) {
+    return null;
+  }
+
+  const getColHeight = (col) =>
+    Math.min(Math.min(9, maxHeight), getBoardHeightAtColumn(board, col));
+  const col1 = getColHeight(0);
+  const col2 = getColHeight(1);
+  const col3 = getColHeight(2);
+  let totalHeightOfRest = 0;
+
+  // Get the height of the rest of the columns
+  for (let i = 3; i < 10; i++) {
+    totalHeightOfRest += getColHeight(i);
+  }
+  const avgHeightOfRest = totalHeightOfRest / 7;
+  const avgHeightOfLeft = (col1 + col2 + col3) / 3;
+  const surfaceLevelAboveFloor = Math.min(col1, col2, col3);
+  return (
+    "" +
+    (col1 - surfaceLevelAboveFloor) +
+    (col2 - surfaceLevelAboveFloor) +
+    (col3 - surfaceLevelAboveFloor) +
+    "|" +
+    Math.round(avgHeightOfLeft - avgHeightOfRest)
+  );
+}
+
 /** Gets the height in a particular column. */
 export function getBoardHeightAtColumn(board: Board, col: number) {
   let row = 0;
