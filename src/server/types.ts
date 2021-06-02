@@ -107,6 +107,7 @@ interface PhantomPlacement {
   inputSequence: string;
   defaultPlacement: PossibilityChain;
   adjustmentSearchState: SearchState;
+  possibleAdjustmentsLookup?: Map<PieceId, Array<Possibility>>;
 }
 
 const enum AiMode {

@@ -52,9 +52,13 @@ function performComputationFinesse(args): Object {
       /* searchDepth= */ 1,
       /* hypotheticalSearchDepth= */ 0
     );
-    lockPositionValueLookup[originalPiecePossibility.lockPositionEncoded] =
-      bestMoveAfter.totalValue || Number.MIN_SAFE_INTEGER;
-    // console.log(`${args.piece}: Best move after ${originalPiecePossibility.placement} is ${bestMoveAfter.placement}, with value ${bestMoveAfter.totalValue}\n`);
+    const lockPositionValue =
+      bestMoveAfter == null
+        ? Number.MIN_SAFE_INTEGER
+        : bestMoveAfter.totalValue;
+    lockPositionValueLookup[
+      originalPiecePossibility.lockPositionEncoded
+    ] = lockPositionValue;
   }
 
   console.timeEnd(args.piece);

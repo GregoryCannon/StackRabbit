@@ -10,7 +10,16 @@ import {
 
 const child_process = require("child_process");
 
-const NUM_THREADS = 7;
+const NUM_THREADS = 6;
+const THREAD_ASSIGNMENT = {
+  O: 0,
+  I: 0,
+  S: 1,
+  Z: 2,
+  L: 3,
+  J: 4,
+  T: 5,
+};
 
 /**
  * This class is involved with precomputing adjustments for all possible next pieces, and choosing
@@ -75,7 +84,7 @@ export class PreComputeManager {
     console.time("FINESSE PRECOMPUTE");
     this.onResultCallback = onResultCallback;
     this.results = {};
-    this.pendingResults = NUM_THREADS;
+    this.pendingResults = POSSIBLE_NEXT_PIECES.length;
     this.inputFrameTimeline = inputFrameTimeline;
     this.aiParams = initialAiParams;
 
@@ -103,6 +112,7 @@ export class PreComputeManager {
     // onPartialResultCallback(formattedResult);
 
     // Ping all the workers to start evaluating the next piece values
+    console.time("WORKER PHASE");
     for (let i = 0; i < POSSIBLE_NEXT_PIECES.length; i++) {
       const nextPieceId = POSSIBLE_NEXT_PIECES[i];
 
@@ -114,7 +124,8 @@ export class PreComputeManager {
         paramMods,
         inputFrameTimeline,
       };
-      this.workers[i].send(argsData);
+
+      this.workers[THREAD_ASSIGNMENT[nextPieceId]].send(argsData);
     }
 
     // Calculate all the possible phantom placements (on main thread since it's not doing anything)
@@ -124,6 +135,7 @@ export class PreComputeManager {
       inputFrameTimeline,
       reactionTimeFrames
     );
+    this._precompileAdjustmentMoves();
   }
 
   precompute(
@@ -139,7 +151,7 @@ export class PreComputeManager {
     console.time("PRECOMPUTE");
     this.onResultCallback = onResultCallback;
     this.results = {};
-    this.pendingResults = NUM_THREADS;
+    this.pendingResults = POSSIBLE_NEXT_PIECES.length;
 
     // Get initial NNB placement
     if (reactionTimeFrames === 0) {
@@ -189,7 +201,7 @@ export class PreComputeManager {
         paramMods,
         inputFrameTimeline,
       };
-      this.workers[i].send(argsData);
+      this.workers[THREAD_ASSIGNMENT[nextPieceId]].send(argsData);
     }
   }
 
@@ -258,15 +270,12 @@ export class PreComputeManager {
         break;
 
       case "result-finesse":
-        console.log(
-          `Finesse result for piece ${message.piece} ${message.result}`
-        );
         // Save the partial result
         this.results[message.piece] = message.result;
         this.pendingResults--;
         // If all results are in, compile them and send back to parent
         if (this.pendingResults == 0) {
-          console.log("DONE WITH FINESSE WORKERS");
+          console.timeEnd("WORKER PHASE");
           this._compileResponseFinesse();
         }
         break;
@@ -291,20 +300,14 @@ export class PreComputeManager {
     this.onResultCallback(formattedResult);
   }
 
-  _compileResponseFinesse() {
-    console.time("COLLAPSE");
-    let overallResponse: string = formatPrecomputeResult(
-      {},
-      this.defaultPlacement
-    );
-    let bestPhantomPlacementValue = Number.MIN_SAFE_INTEGER;
+  _precompileAdjustmentMoves() {
+    console.time("Get adjustment moves");
     for (const phantomPlacement of this.phantomPlacements) {
-      let totalValue = 0;
-      const responseObj = {};
+      const adjustmentLookup = new Map();
       for (const pieceId of POSSIBLE_NEXT_PIECES) {
         // Figure out what adjustment you'd do for that piece
         const s = phantomPlacement.adjustmentSearchState;
-        const possibleAdjs = getPossibleMoves(
+        let possibleAdjs = getPossibleMoves(
           s.board,
           s.currentPieceId,
           s.level,
@@ -316,14 +319,39 @@ export class PreComputeManager {
           s.canFirstFrameShift,
           /* shouldLog= */ false
         );
+        adjustmentLookup.set(pieceId, possibleAdjs);
+      }
+      phantomPlacement.possibleAdjustmentsLookup = adjustmentLookup;
+    }
+    console.timeEnd("Get adjustment moves");
+    console.log("DONE PRECOMPILE ADJ");
+  }
+
+  _compileResponseFinesse() {
+    console.log("STARTING COLLAPSE");
+    console.time("COLLAPSE");
+    let overallResponse: string = formatPrecomputeResult(
+      {},
+      this.defaultPlacement
+    );
+
+    let bestPhantomPlacementValue = Number.MIN_SAFE_INTEGER;
+    for (const phantomPlacement of this.phantomPlacements) {
+      let totalValue = 0;
+      const responseObj = {};
+      for (const pieceId of POSSIBLE_NEXT_PIECES) {
+        // Figure out what adjustment you'd do for that piece
         let maxValue = Number.MIN_SAFE_INTEGER;
         let maxPossibility: PossibilityChain = null;
-        for (const adjPossibility of possibleAdjs) {
+        for (const adjPossibility of phantomPlacement.possibleAdjustmentsLookup.get(
+          pieceId
+        )) {
           // Combine the partial value of this placement with the inner value from the lookup
           const value =
             getPartialValue(adjPossibility, this.aiParams) * 1.001 +
+            // -0.1 * countInputs(adjPossibility.placement) +
+            getAdjustmentInputCost(adjPossibility) +
             this.results[pieceId][adjPossibility.lockPositionEncoded];
-
           // Check if this is the best adjustment
           if (value > maxValue) {
             maxValue = value;
@@ -399,6 +427,27 @@ export function countInputs(placement) {
     return 1 + Math.abs(placement[1]);
   }
   return placement[0] + Math.abs(placement[1]);
+}
+
+export function getAdjustmentInputCost(possibility: Possibility) {
+  const SPINTUCK_COST = -0.3;
+  const SPIN_COST = -0.2;
+  const TUCK_COST = -0.1;
+  const INPUT_COST_LOOKUP = {
+    E: SPINTUCK_COST,
+    F: SPINTUCK_COST,
+    I: SPINTUCK_COST,
+    G: SPINTUCK_COST,
+    L: TUCK_COST,
+    R: TUCK_COST,
+    A: SPIN_COST,
+    B: SPIN_COST,
+  };
+  let adjCost = 0;
+  for (const inputChar of possibility.inputSequence) {
+    adjCost += INPUT_COST_LOOKUP[inputChar] || 0;
+  }
+  return adjCost + possibility.inputCost;
 }
 
 export function predictSearchStateAtAdjustmentTime(
