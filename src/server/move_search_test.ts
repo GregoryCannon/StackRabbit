@@ -196,7 +196,7 @@ function tapRangeTest() {
 
   const expected16 = true;
   if (
-    canDoPlacement(getTestBoardWithHeight(9), 29, "I", 1, 4, timeline13_5Hz) !==
+    canDoPlacement(getTestBoardWithHeight(9), 29, "I", 1, 3, timeline13_5Hz) !==
     expected16
   ) {
     console.log(`Failed: 9 high 3 tap 29 13.5 Hz. Expected: ${expected16}`);
@@ -243,7 +243,7 @@ function lastMinuteRotationsTest() {
 
 function speedTest(x) {
   console.time("\nspeedtest");
-  for (let i = 0; i < 1; i++) {
+  for (let i = 0; i < 10; i++) {
     getPossibleMoves(
       getTestBoardWithHeight(x),
       "L",
@@ -262,9 +262,9 @@ function speedTest(x) {
 
 // MAIN
 
-// for (let i = 0; i < 100; i++) {
-//   speedTest(i % 15);
-// }
+for (let i = 0; i < 20; i++) {
+  speedTest(4);
+}
 tapRangeTest();
 lastMinuteRotationsTest();
 legalMovesTest();
