@@ -19,7 +19,7 @@ TIMELINE_KYROS = "...X.X.X.X.X.X.X.X.X"
 
 -- Config constants
 SHOULD_ADJUST = true
-REACTION_TIME_FRAMES = 25
+REACTION_TIME_FRAMES = 20
 INPUT_TIMELINE = TIMELINE_12_HZ;
 SHOULD_RECORD_GAMES = true
 MOVIE_PATH = "C:\\Users\\Greg\\Desktop\\VODs\\" -- Where to store the fm2 VODS (absolute path)
@@ -229,6 +229,11 @@ end
 
 function calculateInputs(apiResult, isAdjustment)
   if apiResult == "No legal moves" or apiResult == nil then
+    if REACTION_TIME_FRAMES == 0 then
+      -- Game is over when there is no placement for a new piece
+      print("GAME OVER: No adjustment")
+      gameOver = true
+    end
     return
   end
 
@@ -405,6 +410,7 @@ function runGameFrame()
   elseif gamePhase >= 2 and gamePhase <= 8 then
     if gamePhaseLastFrame == 1 then
       if not isFirstPiece and not gameOver and getInputForFrame(arrFrameIndex + 1) ~= "*" then
+        print(inputSequence)
         error("Server mistimed lock delay")
       end
       asPieceLocks()
