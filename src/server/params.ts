@@ -1,10 +1,10 @@
 export const SEARCH_BREADTH = {
-  1: 34,
+  1: 999, // Don't prune on the first stage ("bad" placements could be a floating burn setup)
   2: 10,
 };
 
 export const EVALUATION_BREADTH = {
-  1: 34,
+  1: 999, // Same as search breadth
   2: 20,
   3: 10 /* This breadth refers to the first hypothetical level, regardless of whether there was 1 or 2 concrete levels before */,
 };
@@ -86,7 +86,7 @@ export const DEFAULT_PARAMS: InitialAiParams = {
   AVG_HEIGHT_COEF: -4.50624,
   SCARE_HEIGHT_OFFSET: -3,
   BURN_COEF: -5,
-  COL_10_COEF: -7,
+  COL_10_COEF: -10,
   COL_10_HEIGHT_MULTIPLIER_EXP: 2.5,
   DEAD_COEF: -10000,
   MAX_DIRTY_TETRIS_HEIGHT: 0.15, // (As a multiple of the scare height)
@@ -170,10 +170,10 @@ const TOURNEY_MEDIUM_AGGRO_MODIFICATIONS = {
 };
 
 const TOURNEY_SMALL_AGGRO_MODIFICATIONS = {
-  BURN_COEF: -10,
-  HIGH_COL_9_COEF: -5,
-  UNABLE_TO_BURN_COEF: -0.5,
-  AVG_HEIGHT_COEF: -6,
+  BURN_COEF: -7.5,
+  HIGH_COL_9_COEF: -4,
+  UNABLE_TO_BURN_COEF: -0.4,
+  AVG_HEIGHT_COEF: -5.25,
 };
 
 const AGGRO_MODIFICATIONS = {
@@ -209,6 +209,10 @@ const TOURNEY_MEDIUM_AGGRO_PARAMS = applyModsToParams(
   DEFAULT_PARAMS,
   TOURNEY_MEDIUM_AGGRO_MODIFICATIONS
 );
+const TOURNEY_SMALL_AGGRO_PARAMS = applyModsToParams(
+  DEFAULT_PARAMS,
+  TOURNEY_SMALL_AGGRO_MODIFICATIONS
+);
 const TOURNEY_AGGRO_PARAMS = applyModsToParams(
   DEFAULT_PARAMS,
   TOURNEY_AGGRO_MODIFICATIONS
@@ -233,7 +237,7 @@ const MEDIUM_LOW_TAP_SPEED_PARAMS = applyModsToParams(
 );
 
 export function getParams(): InitialAiParams {
-  return DEFAULT_PARAMS;
+  return AGGRO_PARAMS;
 }
 
 export function getParamMods(): ParamMods {
