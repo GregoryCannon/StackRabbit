@@ -27,6 +27,8 @@ interface SimParams {
 
 /* ----------- Move Search-Related Types ------------ */
 
+type MoveSearchResult = [Array<PossibilityChain>, Array<PossibilityChain>];
+
 interface SimState {
   x: number;
   y: number;

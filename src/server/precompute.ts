@@ -89,7 +89,7 @@ export class PreComputeManager {
     this.aiParams = initialAiParams;
 
     // Get a backup placement, in case computation is slow
-    const possibleMoves = getSortedMoveList(
+    const [possibleMoves, _] = getSortedMoveList(
       searchState,
       shouldLog,
       initialAiParams,
@@ -103,6 +103,7 @@ export class PreComputeManager {
       onResultCallback("No legal moves");
       return;
     }
+
     // Send a response with just the default placement in case the other computation doesn't finish
     // const formattedResult = formatPrecomputeResult({}, this.defaultPlacement);
     // console.log(
@@ -346,12 +347,16 @@ export class PreComputeManager {
         for (const adjPossibility of phantomPlacement.possibleAdjustmentsLookup.get(
           pieceId
         )) {
-          // Combine the partial value of this placement with the inner value from the lookup
+          // Combine the input cost with the placement value
           const value =
-            getPartialValue(adjPossibility, this.aiParams) * 1.001 +
             // -0.1 * countInputs(adjPossibility.placement) +
             getAdjustmentInputCost(adjPossibility) +
             this.results[pieceId][adjPossibility.lockPositionEncoded];
+          if (isNaN(value)) {
+            throw new Error(
+              "Unknown lock value: " + adjPossibility.lockPositionEncoded
+            );
+          }
           // Check if this is the best adjustment
           if (value > maxValue) {
             maxValue = value;
@@ -361,7 +366,7 @@ export class PreComputeManager {
                 phantomPlacement.adjustmentSearchState,
                 adjPossibility
               ),
-              totalValue: 0,
+              totalValue: null, // Not used, only converted types so that searchStateAfter property exists
             };
           }
         }

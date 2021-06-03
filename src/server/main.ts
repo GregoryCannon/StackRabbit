@@ -26,7 +26,7 @@ export function getBestMove(
   inputFrameTimeline: string,
   searchDepth: number,
   hypotheticalSearchDepth: number
-) {
+): PossibilityChain {
   return (
     getSortedMoveList(
       searchState,
@@ -36,7 +36,7 @@ export function getBestMove(
       inputFrameTimeline,
       searchDepth,
       hypotheticalSearchDepth
-    )[0] || null
+    )[0][0] || null
   );
 }
 
@@ -48,7 +48,7 @@ export function getSortedMoveList(
   inputFrameTimeline: string,
   searchDepth: number,
   hypotheticalSearchDepth: number
-): Array<PossibilityChain> {
+): MoveSearchResult {
   // Add additional info to the base params (tap speed, dig/scoring mode, etc.)
   let aiParams = addTapInfoToAiParams(
     initialAiParams,
@@ -64,7 +64,7 @@ export function getSortedMoveList(
   );
   aiParams = modifyParamsForAiMode(aiParams, aiMode, paramMods);
 
-  const concretePossibilities = searchConcretely(
+  const [bestConcrete, prunedConcrete] = searchConcretely(
     searchState,
     shouldLog,
     aiParams,
@@ -73,46 +73,16 @@ export function getSortedMoveList(
   );
 
   if (hypotheticalSearchDepth == 0) {
-    return concretePossibilities;
+    return [bestConcrete, prunedConcrete];
   } else {
-    const sortedPossibilities = searchHypothetically(
-      concretePossibilities,
+    const bestHypothetical = searchHypothetically(
+      bestConcrete,
       aiParams,
       aiMode,
       hypotheticalSearchDepth,
       shouldLog
     );
-    return sortedPossibilities;
-  }
-}
-
-export function evaluateFirstPlacements(
-  searchState,
-  shouldLog,
-  aiParams,
-  aiMode,
-  searchDepth,
-  hypotheticalSearchDepth
-) {
-  const concretePossibilities = searchConcretely(
-    searchState,
-    shouldLog,
-    aiParams,
-    aiMode,
-    searchDepth
-  );
-
-  if (hypotheticalSearchDepth == 0) {
-    return concretePossibilities[0] || null;
-  } else {
-    const sortedPossibilities = searchHypothetically(
-      concretePossibilities,
-      aiParams,
-      aiMode,
-      hypotheticalSearchDepth,
-      shouldLog
-    );
-    return sortedPossibilities[0] || null;
+    return [bestHypothetical, prunedConcrete];
   }
 }
 
@@ -125,18 +95,22 @@ function searchConcretely(
   aiParams: AiParams,
   aiMode: AiMode,
   searchDepth: number
-): Array<PossibilityChain> | null {
+): MoveSearchResult | null {
   if (searchDepth > 2 || searchDepth < 0) {
     throw new Error("Parameter out of bounds: searchDepth = " + searchDepth);
   }
 
-  const depth1Possibilities: Array<PossibilityChain> = searchDepth1(
+  const [depth1Possibilities, prunedD1]: MoveSearchResult = searchDepth1(
     searchState,
     shouldLog,
     aiParams,
     aiMode,
     EVALUATION_BREADTH[1]
   );
+  if (prunedD1.length > 0){
+    throw new Error("Pruned at depth 1");
+  }
+
 
   // If the search depth was 1, we're done
   if (searchDepth == 1) {
@@ -147,7 +121,7 @@ function searchConcretely(
         console.log(x.evalExplanation);
       });
     }
-    return depth1Possibilities;
+    return [depth1Possibilities, []];
   }
 
   if (shouldLog) {
@@ -166,7 +140,7 @@ function searchConcretely(
 
   /* ---------- Explore at depth 2 for promising moves ------------ */
 
-  const depth2Possibilities = searchDepth2(
+  const [depth2Possibilities, prunedD2] = searchDepth2(
     depth1Possibilities.slice(0, SEARCH_BREADTH[1]),
     aiParams,
     aiMode
@@ -182,7 +156,7 @@ function searchConcretely(
       ])
     );
   }
-  return depth2Possibilities;
+  return [depth2Possibilities, prunedD2];
 }
 
 /** Normalizes a weight vector to an average value of 1 per cell (in-place). */
@@ -267,7 +241,7 @@ function searchDepth1(
   aiParams: AiParams,
   aiMode: AiMode,
   evalBreadth: number
-): Array<PossibilityChain> {
+): MoveSearchResult {
   // Get the possible moves
   let possibilityList = getPossibleMoves(
     searchState.board,
@@ -281,6 +255,7 @@ function searchDepth1(
     searchState.canFirstFrameShift,
     false
   );
+  let pruned = [];
 
   // If there are more moves than we plan on evaluating, do a fast-eval and prune based on that
   if (possibilityList.length > evalBreadth) {
@@ -299,6 +274,7 @@ function searchDepth1(
     // Prune the bad possibilities
     possibilityList.sort((a, b) => b.fastEvalScore - a.fastEvalScore);
     possibilityList = possibilityList.slice(0, evalBreadth);
+    pruned = possibilityList.slice(evalBreadth);
   }
 
   // Evaluate each promising possibility and convert it to a 1-chain
@@ -325,27 +301,34 @@ function searchDepth1(
     );
   }
   // Sort by value
-  return possibilityList.sort((x, y) => y.evalScore - x.evalScore) as Array<
-    PossibilityChain
-  >;
+  return [
+    possibilityList.sort((x, y) => y.evalScore - x.evalScore) as Array<
+      PossibilityChain
+    >,
+    pruned,
+  ];
 }
 
 function searchDepth2(
   depth1Possibilities: Array<PossibilityChain>,
   aiParams: AiParams,
   aiMode: AiMode
-): Array<PossibilityChain> {
+): MoveSearchResult {
   // Best chains of two moves
   let best2Chains: Array<PossibilityChain> = [];
+  let pruned: Array<PossibilityChain> = [];
   for (const outerPossibility of depth1Possibilities) {
     // Search one level deeper from the result of the first move
-    const innerPossibilities = searchDepth1(
+    const [innerPossibilities, prunedD1] = searchDepth1(
       outerPossibility.searchStateAfterMove,
       /* shouldLog= */ false,
       aiParams,
       aiMode,
       EVALUATION_BREADTH[2]
-    ).slice(0, SEARCH_BREADTH[2]);
+    );
+    if (prunedD1.length > 0){
+      throw new Error("Pruned at depth 1");
+    }
 
     // Generate 2-chains by combining the outer and inner moves
     const new2Chains = innerPossibilities.map(
@@ -358,17 +341,17 @@ function searchDepth2(
 
     // Merge with the current best list, leaving the highest N chain possibilities seen so far
     if (new2Chains.length > 0) {
-      best2Chains = utils
-        .mergeSortedArrays(
-          best2Chains,
-          new2Chains,
-          (x, y) =>
-            y.totalValue - x.totalValue + 0.001 * (y.evalScore - x.evalScore) // Tiebreak by which one has the best value after the first placement
-        )
-        .slice(0, SEARCH_BREADTH[2]);
+      const newList: Array<PossibilityChain> = utils.mergeSortedArrays(
+        best2Chains,
+        new2Chains,
+        (x, y) =>
+          y.totalValue - x.totalValue + 0.001 * (y.evalScore - x.evalScore) // Tiebreak by which one has the best value after the first placement
+      );
+      best2Chains = newList.slice(0, SEARCH_BREADTH[2]);
+      pruned = pruned.concat(newList.slice(SEARCH_BREADTH[2]));
     }
   }
-  return best2Chains;
+  return [best2Chains, pruned];
 }
 
 function searchDepthNPlusOne(
@@ -395,14 +378,14 @@ function searchDepthNPlusOne(
     // Get the best placement for each hypothetical piece
     for (const hypotheticalPiece of POSSIBLE_NEXT_PIECES) {
       searchState.currentPieceId = hypotheticalPiece;
-      const bestMove =
-        searchDepth1(
-          searchState,
-          false,
-          aiParams,
-          aiMode,
-          EVALUATION_BREADTH[3]
-        )[0] || null;
+      const [moveList, _] = searchDepth1(
+        searchState,
+        false,
+        aiParams,
+        aiMode,
+        EVALUATION_BREADTH[3]
+      );
+      const bestMove = moveList[0] || null;
       bestMovesList.push({
         ...bestMove,
         hypotheticalPiece,

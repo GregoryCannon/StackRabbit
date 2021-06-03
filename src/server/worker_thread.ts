@@ -31,34 +31,37 @@ function performComputationFinesse(args): Object {
 
   // Query for the possible moves for the previous piece
   const originalPieceSearchState = args.newSearchState;
-  const moveList: Array<PossibilityChain> = getSortedMoveList(
+  const [bestMoves, prunedMoves]: MoveSearchResult = getSortedMoveList(
     originalPieceSearchState,
     /* shouldLog= */ false,
     args.initialAiParams,
     args.paramMods,
     args.inputFrameTimeline,
-    /* searchDepth= */ 1,
-    /* hypotheticalSearchDepth= */ 0
+    /* searchDepth= */ 2,
+    /* hypotheticalSearchDepth= */ 1
   );
 
+  // Store the highest value for each lock position
   const lockPositionValueLookup = {};
-  for (const originalPiecePossibility of moveList) {
-    const bestMoveAfter = getBestMove(
-      originalPiecePossibility.searchStateAfterMove,
-      /* shouldLog= */ false,
-      args.initialAiParams,
-      args.paramMods,
-      args.inputFrameTimeline,
-      /* searchDepth= */ 1,
-      /* hypotheticalSearchDepth= */ 0
-    );
-    const lockPositionValue =
-      bestMoveAfter == null
-        ? Number.MIN_SAFE_INTEGER
-        : bestMoveAfter.totalValue;
-    lockPositionValueLookup[
-      originalPiecePossibility.lockPositionEncoded
-    ] = lockPositionValue;
+  for (const possibility of bestMoves) {
+    const lockPos = possibility.lockPositionEncoded;
+    // Highest value will occur first since list is sorted)
+    if (!lockPositionValueLookup.hasOwnProperty(lockPos)) {
+      lockPositionValueLookup[lockPos] = possibility.totalValue;
+    }
+  }
+  // Store values for all the other lock positions from the pruned possibilities
+  for (const prunedPossibility of prunedMoves) {
+    const lockPos = prunedPossibility.lockPositionEncoded;
+    const unsearchedPenalty = 10; // Favor choosing placements where the futures are known
+    // Store the highest value for each lock position (will occur first since list is sorted)
+    if (
+      !lockPositionValueLookup.hasOwnProperty(lockPos) ||
+      prunedPossibility.totalValue > lockPositionValueLookup[lockPos]
+    ) {
+      lockPositionValueLookup[lockPos] =
+        prunedPossibility.totalValue - unsearchedPenalty;
+    }
   }
 
   console.timeEnd(args.piece);
