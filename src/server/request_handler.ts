@@ -128,7 +128,7 @@ export class RequestHandler {
       canFirstFrameShift,
     });
 
-    // Validate pieces
+    // Validate inputs
     currentPieceId = currentPieceId.toUpperCase();
     nextPieceId = nextPieceId.toUpperCase();
     if (!["I", "O", "L", "J", "T", "S", "Z"].includes(currentPieceId)) {
@@ -148,6 +148,11 @@ export class RequestHandler {
     }
     if (level < 18 || level > 30) {
       console.log("WARNING - Unusual level:", level);
+    }
+    if (lines < 10 && (level < 15 || (level > 19 && level !== 29))) {
+      throw new Error(
+        `Unsupported starting level: ${level}. Supported starts: 18, 19, 29`
+      );
     }
     for (const char of inputFrameTimeline) {
       if (char !== "X" && char !== ".") {
