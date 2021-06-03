@@ -246,8 +246,15 @@ export function getPossibilityFromSimState(
   }
 
   // Add the possibility to the list
+  const numOrientations = simParams.rotationsList.length;
+  const lockPositionEncoded =
+    simState.rotationIndex + "|" + simState.x + "|" + simState.y;
   return {
-    placement: [simState.rotationIndex, simState.x - simParams.initialX],
+    placement: [
+      (simState.rotationIndex - simParams.existingRotation + numOrientations) %
+        numOrientations,
+      simState.x - simParams.initialX,
+    ],
     inputSequence,
     surfaceArray,
     numHoles,
@@ -255,8 +262,7 @@ export function getPossibilityFromSimState(
     numLinesCleared,
     boardAfter,
     inputCost,
-    lockPositionEncoded:
-      simState.rotationIndex + "|" + simState.x + "|" + simState.y,
+    lockPositionEncoded,
   };
 }
 
