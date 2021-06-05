@@ -20,9 +20,8 @@ function getReward(surfaceLeft) {
 }
 
 type SuccessorMap = Map<string, Map<string, number>>;
-const GAMMA = 0.9;
 const MAX_VALUE_ITERATIONS = 10000;
-const NUM_SAMPLE_GAMES = 1000;
+const NUM_SAMPLE_GAMES = 10;
 
 function valueIterate(successors: SuccessorMap): Object {
   let values = {};
@@ -124,71 +123,71 @@ function simulateKillscreenTraining2(numIterations) {
   console.log(ranks);
 }
 
-/** Runs trials on the killscreen and logs down how good various surfaces are for the left-most 3 columns. */
-export function simulateKillscreenTraining(numIterations) {
-  const ranks: Map<string, Array<number>> = new Map();
+// /** Runs trials on the killscreen and logs down how good various surfaces are for the left-most 3 columns. */
+// export function simulateKillscreenTraining(numIterations) {
+//   const ranks: Map<string, Array<number>> = new Map();
 
-  let aiParams = addTapInfoToAiParams(getParams(), 29, INPUT_TIMELINE);
-  const MAX_4_TAP_HEIGHT = calculateTapHeight(29, INPUT_TIMELINE, 4);
-  console.log("height: ", MAX_4_TAP_HEIGHT);
+//   let aiParams = addTapInfoToAiParams(getParams(), 29, INPUT_TIMELINE);
+//   const MAX_4_TAP_HEIGHT = calculateTapHeight(29, INPUT_TIMELINE, 4);
+//   console.log("height: ", MAX_4_TAP_HEIGHT);
 
-  for (let i = 0; i < numIterations; i++) {
-    console.log(`Iteration ${i + 1} of ${numIterations}`);
-    const history = [];
-    const afterPlacementCallback = (board, isGameOver) => {
-      const leftSurface = getLeftSurface(board, MAX_4_TAP_HEIGHT + 3);
-      if (leftSurface !== null) {
-        history.push(leftSurface);
-      }
-    };
+//   for (let i = 0; i < numIterations; i++) {
+//     console.log(`Iteration ${i + 1} of ${numIterations}`);
+//     const history = [];
+//     const afterPlacementCallback = (board, isGameOver) => {
+//       const leftSurface = getLeftSurface(board, MAX_4_TAP_HEIGHT + 3);
+//       if (leftSurface !== null) {
+//         history.push(leftSurface);
+//       }
+//     };
 
-    // Play out one game
-    simulateGame(
-      29,
-      getEmptyBoard(),
-      getParams(),
-      getParamMods(),
-      INPUT_TIMELINE,
-      /* presetSequence= */ null,
-      /* shouldAdjust= */ false,
-      /* isDig= */ false,
-      afterPlacementCallback,
-      /* shouldLog= */ true
-    );
+//     // Play out one game
+//     simulateGame(
+//       29,
+//       getEmptyBoard(),
+//       getParams(),
+//       getParamMods(),
+//       INPUT_TIMELINE,
+//       /* presetSequence= */ null,
+//       /* shouldAdjust= */ false,
+//       /* isDig= */ false,
+//       afterPlacementCallback,
+//       /* shouldLog= */ true
+//     );
 
-    // Process the history
-    console.log(history);
-    if (history.length === 0) {
-      continue;
-    }
-    history.reverse(); // We'll work back to front
-    let lastAdded = null;
-    // Score each surface based on how many clean surfaces succeeded it
-    for (let t = 0; t < history.length; t++) {
-      const surface = history[t];
-      // Don't repeatedly add for long sequences of the same surface
-      if (surface === lastAdded) {
-        continue;
-      }
-      if (!ranks.has(surface)) {
-        ranks.set(surface, []);
-      }
-      // Add the score to the list of scores for that surface
-      ranks.get(surface).push(t);
-      lastAdded = surface;
-    }
-  }
-  console.log(ranks);
-  const avgRanks = {};
-  ranks.forEach((scoreList, surface) => {
-    if (scoreList.length == 0) {
-      return;
-    }
-    let total = scoreList.reduce((a, b) => a + b);
-    const avgScore = total / scoreList.length;
-    avgRanks[surface] = avgScore;
-  });
-  console.log(avgRanks);
-}
+//     // Process the history
+//     console.log(history);
+//     if (history.length === 0) {
+//       continue;
+//     }
+//     history.reverse(); // We'll work back to front
+//     let lastAdded = null;
+//     // Score each surface based on how many clean surfaces succeeded it
+//     for (let t = 0; t < history.length; t++) {
+//       const surface = history[t];
+//       // Don't repeatedly add for long sequences of the same surface
+//       if (surface === lastAdded) {
+//         continue;
+//       }
+//       if (!ranks.has(surface)) {
+//         ranks.set(surface, []);
+//       }
+//       // Add the score to the list of scores for that surface
+//       ranks.get(surface).push(t);
+//       lastAdded = surface;
+//     }
+//   }
+//   console.log(ranks);
+//   const avgRanks = {};
+//   ranks.forEach((scoreList, surface) => {
+//     if (scoreList.length == 0) {
+//       return;
+//     }
+//     let total = scoreList.reduce((a, b) => a + b);
+//     const avgScore = total / scoreList.length;
+//     avgRanks[surface] = avgScore;
+//   });
+//   console.log(avgRanks);
+// }
 
 simulateKillscreenTraining2(NUM_SAMPLE_GAMES);

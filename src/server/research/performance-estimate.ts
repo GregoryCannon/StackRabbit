@@ -9,18 +9,24 @@ function totalFrames(lockHeight, grav) {
 
 const s = {
   1: 34,
-  2: 4,
-  3: 3,
+  2: 10,
+  3: 1,
 };
+// const s = {
+//   1: 34,
+//   2: 7,
+//   3: 3,
+// };
 
 const e = {
   1: 34,
   2: 20,
   3: 10,
-  4: 10,
+  4: 5,
 };
 
-const G_time = 0.046;
+// const G_time = 0.046;
+const G_time = 0.1;
 const E_time = 0.011;
 
 function computeTime(depth) {
