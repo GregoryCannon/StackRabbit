@@ -107,10 +107,9 @@ function searchConcretely(
     aiMode,
     EVALUATION_BREADTH[1]
   );
-  if (prunedD1.length > 0){
+  if (prunedD1.length > 0) {
     throw new Error("Pruned at depth 1");
   }
-
 
   // If the search depth was 1, we're done
   if (searchDepth == 1) {
@@ -326,7 +325,7 @@ function searchDepth2(
       aiMode,
       EVALUATION_BREADTH[2]
     );
-    if (prunedD1.length > 0){
+    if (prunedD1.length > 0) {
       throw new Error("Pruned at depth 1");
     }
 

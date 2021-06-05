@@ -223,7 +223,8 @@ function tryInput(
       ) {
         debugLog(simState, simParams, "SUCCESS - GRAVITY");
         // Piece locked into the stack, so add it if it hasn't been seen before!
-        const encodedEndingSpot = simState.x + "|" + simState.y + "|" + simState.rotationIndex;
+        const encodedEndingSpot =
+          simState.x + "|" + simState.y + "|" + simState.rotationIndex;
         if (!alreadyFound.has(encodedEndingSpot))
           novelPossibilities.push(
             getPossibilityFromSimState(

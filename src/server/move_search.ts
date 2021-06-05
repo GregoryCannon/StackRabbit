@@ -147,6 +147,7 @@ function exploreLegalPlacementsUntilLock(
 
     let startedLookingForTuckSpins = false;
     let highestRegisteredY = -1; // Tracks the Y values already registered to avoid duplicates
+
     while (true) {
       // Run simulated frames of only gravity
       const isGravityFrame =
