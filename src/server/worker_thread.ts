@@ -53,11 +53,12 @@ function performComputationFinesse(args): Object {
   // Store values for all the other lock positions from the pruned possibilities
   for (const prunedPossibility of prunedMoves) {
     const lockPos = prunedPossibility.lockPositionEncoded;
-    const unsearchedPenalty = 10; // Favor choosing placements where the futures are known
+    const unsearchedPenalty = 100; // Favor choosing placements where the futures are known
     // Store the highest value for each lock position (will occur first since list is sorted)
     if (
       !lockPositionValueLookup.hasOwnProperty(lockPos) ||
-      prunedPossibility.totalValue > lockPositionValueLookup[lockPos]
+      prunedPossibility.totalValue - unsearchedPenalty >
+        lockPositionValueLookup[lockPos]
     ) {
       lockPositionValueLookup[lockPos] =
         prunedPossibility.totalValue - unsearchedPenalty;
@@ -65,7 +66,7 @@ function performComputationFinesse(args): Object {
   }
 
   console.timeEnd(args.piece);
-  // console.log("LOOKUP", lockPositionValueLookup);
+  console.log("LOOKUP", lockPositionValueLookup);
   return lockPositionValueLookup;
 }
 
