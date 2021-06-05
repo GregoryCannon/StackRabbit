@@ -218,7 +218,7 @@ export function getLeftSurface(board: Board, maxHeight) {
  * The heights are RELATIVE to the average heights in columns 4-10
  * (This is used for killscreen play)
  */
-export function getRelativeLeftSurface(board: Board, maxHeight) {
+export function getRelativeLeftSurface(board: Board, max4TapHeight) {
   if (
     hasHoleInColumn(board, 0) ||
     hasHoleInColumn(board, 1) ||
@@ -227,28 +227,35 @@ export function getRelativeLeftSurface(board: Board, maxHeight) {
     return null;
   }
 
+  const maxHeight = Math.min(9, max4TapHeight + 2);
   const getColHeight = (col) =>
-    Math.min(Math.min(9, maxHeight), getBoardHeightAtColumn(board, col));
-  const col1 = getColHeight(0);
-  const col2 = getColHeight(1);
-  const col3 = getColHeight(2);
-  let totalHeightOfRest = 0;
+    Math.min(maxHeight, getBoardHeightAtColumn(board, col));
+  let col1 = getBoardHeightAtColumn(board, 0);
+  let col2 = getBoardHeightAtColumn(board, 1);
+  let col3 = getBoardHeightAtColumn(board, 2);
+
+  const surfaceLevelAboveFloor = Math.min(col1, col2, col3);
+  const avgHeightOfLeft = (col1 + col2 + col3) / 3;
+
+  // Adjust for transposed surfaces
+  col1 = Math.min(maxHeight, col1 - surfaceLevelAboveFloor);
+  col2 = Math.min(maxHeight, col2 - surfaceLevelAboveFloor);
+  col3 = Math.min(maxHeight, col3 - surfaceLevelAboveFloor);
 
   // Get the height of the rest of the columns
-  for (let i = 3; i < 10; i++) {
-    totalHeightOfRest += getColHeight(i);
+  let totalHeightOfMiddle = 0;
+  for (let i = 3; i < 8; i++) {
+    totalHeightOfMiddle += getColHeight(i);
   }
-  const avgHeightOfRest = totalHeightOfRest / 7;
-  const avgHeightOfLeft = (col1 + col2 + col3) / 3;
-  const surfaceLevelAboveFloor = Math.min(col1, col2, col3);
-  return (
-    "" +
-    (col1 - surfaceLevelAboveFloor) +
-    (col2 - surfaceLevelAboveFloor) +
-    (col3 - surfaceLevelAboveFloor) +
-    "|" +
-    Math.round(avgHeightOfLeft - avgHeightOfRest)
+  totalHeightOfMiddle += 1 * (getColHeight(8) + getColHeight(9));
+
+  const avgHeightOfMiddle = totalHeightOfMiddle / 7;
+  const heightDiff = Math.max(
+    -1 * maxHeight,
+    avgHeightOfLeft - avgHeightOfMiddle
   );
+
+  return `${col1}${col2}${col3}|${Math.round(heightDiff)}`;
 }
 
 /** Gets the height in a particular column. */
@@ -288,13 +295,16 @@ export function boardHasInaccessibileLeft(
   const col2Height = surfaceArray[1];
   const col3Height = surfaceArray[2];
 
+  const avgHeightOfMiddle = surfaceArray.slice(3).reduce((x, y) => x + y) / 7;
+
   if (aiMode === AiMode.KILLSCREEN) {
     // On killscreen, we mainly access the left with 4-taps. So we need either
     // 1) a left built as high as the 4 tap height
     // 2) access to the left with a 4 tap
     if (
       col1Height >= col2Height &&
-      col1Height > aiParams.MAX_4_TAP_LOOKUP[level]
+      col1Height > aiParams.MAX_4_TAP_LOOKUP[level] &&
+      col1Height >= avgHeightOfMiddle
     ) {
       return false;
     }
@@ -339,19 +349,37 @@ export function boardHasInaccessibileLeft(
 /** Returns true if the tap speed is not sufficient to get a long bar to the right. */
 export function boardHasInaccessibileRight(
   board: Board,
+  surfaceArray: Array<number>,
   level: number,
   aiParams: AiParams,
   aiMode: AiMode
 ) {
   const col9Height = getBoardHeightAtColumn(board, NUM_COLUMN - 2);
   const col10Height = getBoardHeightAtColumn(board, NUM_COLUMN - 1);
+  const avgHeightOfMiddle =
+    surfaceArray.slice(0, 8).reduce((x, y) => x + y) / 8;
+
   // (killscreen-only) if right is built out, we're good
-  if (
-    aiMode === AiMode.KILLSCREEN &&
-    col10Height >= col9Height &&
-    col10Height > aiParams.MAX_4_TAP_LOOKUP[level]
-  ) {
-    return false;
+  if (aiMode === AiMode.KILLSCREEN) {
+    if (
+      col10Height >= col9Height &&
+      col10Height > aiParams.MAX_4_TAP_LOOKUP[level] &&
+      col10Height >= avgHeightOfMiddle
+    ) {
+      return false;
+    }
+    if (
+      col10Height == col9Height + 1 &&
+      canDoPlacement(board, level, "Z", 1, 3, aiParams.INPUT_FRAME_TIMELINE)
+    ) {
+      return false;
+    }
+    if (
+      col10Height == col9Height - 1 &&
+      canDoPlacement(board, level, "S", 1, 3, aiParams.INPUT_FRAME_TIMELINE)
+    ) {
+      return false;
+    }
   }
 
   // Otherwise we need a 4 tap

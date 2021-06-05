@@ -53,17 +53,17 @@ export const DEFAULT_PARAM_MODS = {
   },
   KILLSCREEN: {
     COL_10_COEF: 0,
-    BUILT_OUT_LEFT_COEF: 6,
+    BUILT_OUT_LEFT_COEF: 0,
     BUILT_OUT_RIGHT_COEF: 1.5,
-    AVG_HEIGHT_COEF: -3,
+    AVG_HEIGHT_COEF: -5,
     HOLE_COEF: -40, // changed
     BURN_COEF: 0,
     UNABLE_TO_BURN_COEF: 0,
     HIGH_COL_9_COEF: 0,
     HIGH_COL_9_EXP: 0,
     INACCESSIBLE_LEFT_COEF: -100,
-    INACCESSIBLE_RIGHT_COEF: -300,
-    SPIRE_HEIGHT_COEF: -1.2,
+    INACCESSIBLE_RIGHT_COEF: -100,
+    SPIRE_HEIGHT_COEF: -1,
     LEFT_SURFACE_COEF: 1,
     TETRIS_COEF: 40,
     SURFACE_COEF: 0.5,
@@ -77,8 +77,6 @@ export const DEFAULT_PARAM_MODS = {
 /*--------------------------------
     Raw Param Data
 ---------------------------------*/
-
-// ... (Previous results are not important now, they're in git history if curious)
 
 // Trained using gradient descent and heavily modified
 export const DEFAULT_PARAMS: InitialAiParams = {
@@ -237,7 +235,7 @@ const MEDIUM_LOW_TAP_SPEED_PARAMS = applyModsToParams(
 );
 
 export function getParams(): InitialAiParams {
-  return AGGRO_PARAMS;
+  return TOURNEY_SMALL_AGGRO_PARAMS;
 }
 
 export function getParamMods(): ParamMods {

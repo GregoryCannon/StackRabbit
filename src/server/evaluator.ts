@@ -6,6 +6,7 @@ import {
   RANKS_13_5_HZ,
   VALUE_ITERATED_RANKS_13_5_HZ,
 } from "../../docs/killscreen_ranks";
+import { ranks_12hz } from "../../docs/killscreen_ranks_v2";
 import * as boardHelper from "./board_helper";
 import { getParams } from "./params";
 import * as utils from "./utils";
@@ -48,23 +49,6 @@ function estimateBurnsDueToEarlyDoubleWell(surfaceArray, maxSafeCol9Height) {
   //      3 diff => 5 below col8 = 2 burns
   const diff = lowestGoodColumn9 - col9;
   return Math.ceil(diff / 2);
-}
-
-/** Get the rank of the left-3-column surface (killscreen-only) */
-function getLeftSurfaceValue(board, aiParams, level) {
-  const max4Tap = aiParams.MAX_4_TAP_LOOKUP[level];
-  const max5Tap = aiParams.MAX_5_TAP_LOOKUP[level];
-
-  const leftSurface = boardHelper.getLeftSurface(board, max4Tap + 3);
-
-  if (max4Tap == 3 && max5Tap == -1) {
-    return RANKS_12HZ_5K[leftSurface] || 0;
-  } else if (max4Tap == 5 && max5Tap == 0) {
-    return VALUE_ITERATED_RANKS_13_5_HZ[leftSurface] || 0;
-  } else if (max4Tap == 6 && max5Tap == 2) {
-    return RANKS_15_HZ[leftSurface] || 0;
-  }
-  return 0;
 }
 
 /** If there is a spire in the middle of the board, return its height above the scare line. Otherwise, return 0. */
@@ -308,6 +292,46 @@ function isTetrisReadyRightWell(board) {
   return true;
 }
 
+function transformSurfaceValue(rawValue, A, maxValue) {
+  const correction = A / maxValue;
+  // console.log(surfaceArray, nextPieceId, rawValue);
+  return rawValue + correction - A / Math.max(1, rawValue);
+}
+
+/** Get the rank of the left-3-column surface (killscreen-only) */
+function getLeftSurfaceValue(board, aiParams, level) {
+  const max4Tap = aiParams.MAX_4_TAP_LOOKUP[level];
+  const max5Tap = aiParams.MAX_5_TAP_LOOKUP[level];
+
+  const leftSurface = boardHelper.getRelativeLeftSurface(board, max4Tap);
+  if (leftSurface == null) {
+    return transformSurfaceValue(0, 350, 100);
+  }
+
+  const split = leftSurface.split("|");
+  // Transpositions of the surface with different height relative to the rest of the stack
+  const lowerAlt = `${split[0]}|${parseInt(split[1]) - 1}`;
+  const higherAlt = `${split[0]}|${parseInt(split[1]) + 1}`;
+
+  // Find the right ranks based on tap speed
+  let ranks, rawValue;
+  if (max4Tap == 3 && max5Tap == -1) {
+    ranks = ranks_12hz;
+  }
+
+  // Look up the surface, or extrapolate from a similar surface
+  if (ranks.hasOwnProperty(leftSurface)) {
+    rawValue = ranks[leftSurface];
+  } else if (ranks.hasOwnProperty(lowerAlt)) {
+    rawValue = ranks[lowerAlt] * 1.2;
+  } else if (ranks.hasOwnProperty(higherAlt)) {
+    rawValue = ranks[higherAlt] * 0.8;
+  } else {
+    rawValue = 0;
+  }
+  return transformSurfaceValue(rawValue, 350, 100);
+}
+
 function getSurfaceValue(
   surfaceArray: Array<number>,
   totalHeightCorrected: number,
@@ -316,10 +340,7 @@ function getSurfaceValue(
   let rawValue = rankLookup.getValueOfBoardSurface(surfaceArray);
   // Add in the extreme gap penalty prior to transforming the rank
   rawValue += totalHeightCorrected * aiParams.EXTREME_GAP_COEF;
-  const A = 150;
-  const B = A / 30;
-  // console.log(surfaceArray, nextPieceId, rawValue);
-  return rawValue + B - A / Math.max(1, rawValue);
+  return transformSurfaceValue(rawValue, 150, 30);
 }
 
 export function getPartialValue(
@@ -577,6 +598,7 @@ export function getValueOfPossibility(
   );
   const rightIsInaccessible = boardHelper.boardHasInaccessibileRight(
     boardAfter,
+    surfaceArray,
     levelAfterPlacement,
     aiParams,
     aiMode
