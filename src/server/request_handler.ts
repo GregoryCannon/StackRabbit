@@ -275,7 +275,7 @@ export class RequestHandler {
       searchState.framesAlreadyElapsed = 0;
     }
 
-    this.preComputeManager.finessePrecompute(
+    this.preComputeManager.precompute(
       searchState,
       SHOULD_LOG_ALL,
       params.getParams(),

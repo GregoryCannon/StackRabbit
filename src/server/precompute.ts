@@ -342,7 +342,7 @@ export class PreComputeManager {
       const responseObj = {};
       for (const pieceId of POSSIBLE_NEXT_PIECES) {
         // Figure out what adjustment you'd do for that piece
-        let maxValue = Number.MIN_SAFE_INTEGER;
+        let maxValue = phantomPlacement.defaultPlacement.totalValue;
         let maxPossibility: PossibilityChain = null;
         for (const adjPossibility of phantomPlacement.possibleAdjustmentsLookup.get(
           pieceId
