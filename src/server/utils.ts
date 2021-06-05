@@ -1,3 +1,5 @@
+const { performance } = require("perf_hooks");
+
 export const NUM_ROW = 20;
 export const NUM_COLUMN = 10;
 export const SquareState = Object.freeze({
@@ -323,4 +325,34 @@ export function cloneBoard(board) {
     newBoard.push(newRow);
   }
   return newBoard;
+}
+
+const performanceCounts = {};
+const performanceTotals = {};
+const performanceStartTimes = {};
+const startupWait = 2;
+
+export function startTiming(id: string) {
+  performanceStartTimes[id] = performance.now();
+  if (!performanceCounts[id]) {
+    performanceCounts[id] = 0;
+    performanceTotals[id] = 0;
+  }
+}
+
+export function stopTiming(id, repeats) {
+  // Get the time first thing for accuracy
+  const endTime = performance.now();
+
+  if (!performanceStartTimes.hasOwnProperty(id)) {
+    throw new Error("Tried to stop timer that didn't exist");
+  }
+  performanceCounts[id] += 1;
+  if (performanceCounts[id] > startupWait) {
+    performanceTotals[id] += endTime - performanceStartTimes[id];
+    const avgTime =
+      performanceTotals[id] / (performanceCounts[id] - startupWait) / repeats -
+      0.0072 / repeats;
+    console.log(id, avgTime.toFixed(4), (avgTime * 34).toFixed(4));
+  }
 }
