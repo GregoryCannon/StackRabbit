@@ -26,8 +26,9 @@ const e = {
 };
 
 // const G_time = 0.046;
-const G_time = 0.1;
+const G_time = 0.7;
 const E_time = 0.011;
+// const E_time = 0;
 
 function computeTime(depth) {
   switch (depth) {
