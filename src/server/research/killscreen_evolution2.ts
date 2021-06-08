@@ -24,7 +24,7 @@ function start() {
   // Ping the workers to start
   console.time("worker phase");
   for (let i = 0; i < NUM_THREADS; i++) {
-    workers[i].send({ threadId: i });
+    workers[i].send({ type: "successors", threadId: i });
   }
 }
 
@@ -68,7 +68,7 @@ function processResults() {
   // Value iterate!
   const ranks: Object = valueIterate(successors);
 
-  fs.writeFileSync("docs/12_hz_ranks_v1.txt", JSON.stringify(ranks));
+  fs.writeFileSync("docs/15_hz_ranks_v0.txt", JSON.stringify(ranks));
 
   console.log(ranks);
 }
@@ -77,10 +77,8 @@ function processResults() {
 function getReward(surfaceLeft) {
   if (surfaceLeft[0] >= surfaceLeft[1] && surfaceLeft[0] >= surfaceLeft[2]) {
     const heightDiff = surfaceLeft.split("|")[1];
-    if (heightDiff >= 4) {
+    if (heightDiff >= 5) {
       return 100;
-    } else if (heightDiff == 3) {
-      return 70;
     }
   }
   return 0;

@@ -95,7 +95,7 @@ function sleep(ms) {
  * @param {function(lines, numHoles)} gameOverCondition - function to check custom game over conditions
  * @returns [score, lines, level]
  */
-export async function simulateGame(
+export function simulateGame(
   startingLevel,
   startingBoard,
   aiParams,
@@ -165,7 +165,8 @@ export async function simulateGame(
     // Check for game over
     gameOver =
       hasToppedOut(board) ||
-      (isDig && (numHoles === 0 || lines >= DIG_LINE_CAP));
+      (isDig && (numHoles === 0 || lines >= DIG_LINE_CAP)) ||
+      lines >= 230;
 
     // Call the post-placement callback if needed
     if (afterPlacementCallback !== null) {
