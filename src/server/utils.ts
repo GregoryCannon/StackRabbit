@@ -1,4 +1,4 @@
-const { performance } = require("perf_hooks");
+import { IS_PAL } from "./params";
 
 export const NUM_ROW = 20;
 export const NUM_COLUMN = 10;
@@ -18,7 +18,10 @@ export const POSSIBLE_NEXT_PIECES: Array<PieceId> = [
 ];
 
 export function GetGravity(level) {
-  const GRAVITY = {
+  if (IS_PAL) {
+    return GetGravityPAL(level);
+  }
+  const NSTC_GRAVITY = {
     0: 48,
     1: 43,
     2: 38,
@@ -42,9 +45,40 @@ export function GetGravity(level) {
     29: 1,
   };
   if (level <= 18) {
-    return GRAVITY[level];
+    return NSTC_GRAVITY[level];
   } else if (level < 29) {
     return 2;
+  } else {
+    return 1;
+  }
+}
+
+export function GetGravityPAL(level) {
+  const PAL_GRAVITY = {
+    0: 36,
+    1: 32,
+    2: 29,
+    3: 25,
+    4: 22,
+    5: 18,
+    6: 15,
+    7: 11,
+    8: 7,
+    9: 5,
+    10: 4,
+    11: 4,
+    12: 4,
+    13: 3,
+    14: 3,
+    15: 3,
+    16: 2,
+    17: 2,
+    18: 2,
+    19: 1,
+    29: 1,
+  };
+  if (level <= 18) {
+    return PAL_GRAVITY[level];
   } else {
     return 1;
   }
@@ -248,18 +282,22 @@ export function getLineCountOfFirstTransition(startingLevel) {
  * NOTE: This assumes level 18, 19, or 29 starts.
  */
 export function getLevelAfterLineClears(level, lines, numLinesCleared) {
-  // Once you go killscreen you never go back
-  if (level >= 29) {
+  // If it hasn't reached transition, it can't go up in level
+  if (level == 18 && lines < 126){
+    return 18;
+  }
+  if (level == 19 && lines < 136){
+    return 19;
+  }
+  if (level == 29 && lines < 196){
     return 29;
   }
-  const newLineCount = lines + numLinesCleared;
-  if (newLineCount < 130) {
-    return Math.max(level, 18);
-  } else if (newLineCount < 230) {
-    return 19 + Math.floor((newLineCount - 130) / 10);
-  } else {
-    return 29;
+
+  // Otherwise it goes up every time you cross a multiple of 10
+  if ((lines % 10) + numLinesCleared >= 10){
+    return level + 1;
   }
+  return level;
 }
 
 export function parseBoard(boardStr: string): Board {
@@ -333,6 +371,10 @@ const performanceStartTimes = {};
 const startupWait = 2;
 
 export function startTiming(id: string) {
+  // Load this dynamically so the web UI doesn't need to require it
+  if (performance == null){
+    performance = require("perf_hooks").performance;
+  }
   performanceStartTimes[id] = performance.now();
   if (!performanceCounts[id]) {
     performanceCounts[id] = 0;
