@@ -283,18 +283,18 @@ export function getLineCountOfFirstTransition(startingLevel) {
  */
 export function getLevelAfterLineClears(level, lines, numLinesCleared) {
   // If it hasn't reached transition, it can't go up in level
-  if (level == 18 && lines < 126){
+  if (level == 18 && lines < 126) {
     return 18;
   }
-  if (level == 19 && lines < 136){
+  if (level == 19 && lines < 136) {
     return 19;
   }
-  if (level == 29 && lines < 196){
+  if (level == 29 && lines < 196) {
     return 29;
   }
 
   // Otherwise it goes up every time you cross a multiple of 10
-  if ((lines % 10) + numLinesCleared >= 10){
+  if ((lines % 10) + numLinesCleared >= 10) {
     return level + 1;
   }
   return level;
@@ -372,7 +372,7 @@ const startupWait = 2;
 
 export function startTiming(id: string) {
   // Load this dynamically so the web UI doesn't need to require it
-  if (performance == null){
+  if (performance == null) {
     performance = require("perf_hooks").performance;
   }
   performanceStartTimes[id] = performance.now();
