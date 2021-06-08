@@ -1,6 +1,6 @@
 import { canDoPlacement, placementIsLegal } from "./move_search";
 
-const PIECE_LOOKUP = require("../tetrominoes").PIECE_LOOKUP;
+const PIECE_LOOKUP = require("../web_client/tetrominoes").PIECE_LOOKUP;
 const utils = require("./utils");
 const NUM_COLUMN = utils.NUM_COLUMN;
 const NUM_ROW = utils.NUM_ROW;

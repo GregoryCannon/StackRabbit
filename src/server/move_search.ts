@@ -1,4 +1,4 @@
-import { PIECE_LOOKUP } from "../../built/src/tetrominoes";
+import { PIECE_LOOKUP } from "../../src/web_client/tetrominoes";
 import {
   generateInputSequence,
   getBoardAndLinesClearedAfterPlacement,
@@ -7,6 +7,7 @@ import {
   _validateIntParam,
 } from "./board_helper";
 import { searchForTucksOrSpins } from "./dfs";
+import { CAN_TUCK } from "./params";
 import {
   GetGravity,
   getSurfaceArrayAndHoles,
@@ -103,6 +104,10 @@ export function getPossibleMoves(
     lockHeightLookup,
     potentialTuckSpinStates,
   ] = exploreLegalPlacementsUntilLock(legalPlacementSimStates, simParams);
+
+  if (!CAN_TUCK) {
+    return basicPossibilities;
+  }
 
   const tuckSpinPossibilites = searchForTucksOrSpins(
     potentialTuckSpinStates,

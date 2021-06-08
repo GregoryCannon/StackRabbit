@@ -1,4 +1,4 @@
-import { PIECE_LOOKUP } from "../../../built/src/tetrominoes";
+import { PIECE_LOOKUP } from "../../../src/web_client/tetrominoes";
 import {
   getBoardAndLinesClearedAfterPlacement,
   getTestBoardWithHeight,

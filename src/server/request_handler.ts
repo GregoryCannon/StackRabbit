@@ -1,4 +1,4 @@
-import { PIECE_LOOKUP } from "../../built/src/tetrominoes";
+import { PIECE_LOOKUP } from "../../src/web_client/tetrominoes";
 import { getBoardAndLinesClearedAfterPlacement } from "./board_helper";
 import { rateSurface } from "./evaluator";
 import { PreComputeManager } from "./precompute";
@@ -12,7 +12,7 @@ import {
 const mainApp = require("./main");
 const params = require("./params");
 
-const SHOULD_LOG_ALL = false;
+const SHOULD_LOG_ALL = true;
 
 export class RequestHandler {
   preComputeManager: PreComputeManager;
@@ -226,7 +226,7 @@ export class RequestHandler {
       params.getParamMods(),
       inputFrameTimeline,
       /* searchDepth= */ 1,
-      /* hypotheticalSearchDepth= */ 1
+      /* hypotheticalSearchDepth= */ 0
     );
 
     console.timeEnd("NoNextBox");

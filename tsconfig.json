@@ -5,5 +5,5 @@
     "target": "es5",
     "downlevelIteration": true
   },
-  "include": ["./src/server/*.ts", "./src/server/research/*.ts", "./src/server/rank-lookup.js", "./src/tetrominoes.js", "./docs/killscreen_ranks.js"]
+  "include": ["./src/server/*.ts", "./src/server/research/*.ts", "./src/server/rank-lookup.js", "./src/web_client/tetrominoes.js", "./docs/killscreen_ranks.js"]
 }
