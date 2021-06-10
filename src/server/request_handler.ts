@@ -12,7 +12,7 @@ import {
 const mainApp = require("./main");
 const params = require("./params");
 
-const SHOULD_LOG_ALL = true;
+const SHOULD_LOG_ALL = false;
 
 export class RequestHandler {
   preComputeManager: PreComputeManager;
@@ -226,7 +226,7 @@ export class RequestHandler {
       params.getParamMods(),
       inputFrameTimeline,
       /* searchDepth= */ 1,
-      /* hypotheticalSearchDepth= */ 0
+      /* hypotheticalSearchDepth= */ 1
     );
 
     console.timeEnd("NoNextBox");

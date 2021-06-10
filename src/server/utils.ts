@@ -1,4 +1,4 @@
-import { IS_PAL } from "./params";
+import { IS_PAL, WELL_COLUMN } from "./params";
 
 export const NUM_ROW = 20;
 export const NUM_COLUMN = 10;
@@ -186,12 +186,52 @@ export function isTuckSetup(row, col, board, heights) {
   return false;
 }
 
+export function countHolesInColumn(
+  col: number,
+  board: Board,
+  surfaceArray: Array<number>,
+  holeCells: Set<number>
+) {
+  let numHolesSeen = 0;
+  let curHoleHeight = 0;
+  let numHoles = 0;
+  for (let row = NUM_ROW - 1; row >= NUM_ROW - surfaceArray[col]; row--) {
+    if (board[row][col] === SquareState.EMPTY) {
+      curHoleHeight++;
+    } else if (curHoleHeight > 0) {
+      // Add a hole for the one we've tracked so far.
+      numHolesSeen++;
+
+      // Ignore the first hole in the well column (the well itself)
+      if (col === WELL_COLUMN && numHolesSeen === 1) {
+        curHoleHeight = 0;
+        continue;
+      }
+
+      // Penalize taller holes more, except in the well column
+      if (curHoleHeight === 1 || col === WELL_COLUMN) {
+        numHoles += 1;
+      } else if (curHoleHeight === 2) {
+        numHoles += 2;
+      } else {
+        numHoles += 4;
+      }
+
+      for (let r = 0; r < curHoleHeight; r++) {
+        holeCells.add((row + r) * 10 + col);
+      }
+      curHoleHeight = 0;
+    }
+  }
+  return numHoles;
+}
+
 export function getSurfaceArrayAndHoles(
   board: Board
-): [Array<number>, number, Array<CellLocation>] {
+): [Array<number>, number, Set<number>] {
   const heights = [];
   let numHoles = 0;
-  let holeCells: Array<CellLocation> = [];
+  let holeCells: Set<number> = new Set();
 
   // Get the column heights first
   for (let col = 0; col < NUM_COLUMN; col++) {
@@ -202,34 +242,12 @@ export function getSurfaceArrayAndHoles(
     heights.push(20 - row);
   }
   // Then look for holes
+  // TODO: Handle delayed tuck setups
   for (let col = 0; col < NUM_COLUMN; col++) {
-    let row = 20 - heights[col];
-    while (row < NUM_ROW - 1) {
-      row++;
-      if (board[row][col] === SquareState.EMPTY && col < NUM_COLUMN - 1) {
-        // if (isTuckSetup(row, col, board, heights)) {
-        //   numHoles += 0.8;
-        //   holeCells.push([row, col]);
-        //   while (row < NUM_ROW && board[row][col] === SquareState.EMPTY) {
-        //     numHoles += 0.2;
-        //     holeCells.push([row, col]);
-        //     row++;
-        //   }
-        //   break;
-        // }
-
-        // Add a hole if it's anywhere other than column 10
-        numHoles++;
-        holeCells.push([row, col]);
-        row++;
-        // Add fractional holes for subsequent cells within a tall hole
-        while (row < NUM_ROW && board[row][col] === SquareState.EMPTY) {
-          numHoles += 0.2;
-          holeCells.push([row, col]);
-          row++;
-        }
-      }
+    if (col === WELL_COLUMN) {
+      continue;
     }
+    numHoles += countHolesInColumn(col, board, heights, holeCells);
   }
   return [heights, numHoles, holeCells];
 }

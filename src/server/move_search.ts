@@ -326,8 +326,38 @@ function explorePlacementsHorizontally(
   return { rangesLeft, rangesRight };
 }
 
+export function getPieceRanges(
+  board: Board,
+  level: number,
+  pieceId: PieceId,
+  rotationIndex: number,
+  inputFrameTimeline: string
+) {
+  if (!inputFrameTimeline) {
+    throw new Error("Unknown input timeline when checking placement");
+  }
+  const gravity = GetGravity(level); // 0-indexed, executes on the 0 frame. e.g. 2... 1... 0(shift).. 2... 1... 0(shift)
+  const rotationsList = PIECE_LOOKUP[pieceId as string][0];
+  const simParams: SimParams = {
+    board,
+    initialX: 3,
+    initialY: pieceId === "I" ? -2 : -1,
+    framesAlreadyElapsed: 0,
+    gravity,
+    rotationsList,
+    pieceId,
+    existingRotation: 0,
+    inputFrameTimeline,
+    canFirstFrameShift: false, // This param is only relevant for adjustments
+  };
+  return [
+    repeatedlyShiftPiece(-1, rotationIndex, simParams, []),
+    repeatedlyShiftPiece(1, rotationIndex, simParams, []),
+  ];
+}
+
 /**
- * Helper function for getPieceRanges that shifts a hypothetical piece as many times as it can in
+ * Helper function that shifts a hypothetical piece as many times as it can in
  * each direction, before it hits the stack or the edge of the screen.
  */
 function repeatedlyShiftPiece(

@@ -47,7 +47,7 @@ export function pieceCollision(
  * @returns the number of lines cleared
  */
 function clearLines(board: Board) {
-  let fullLines = [];
+  let numLinesCleared = 0;
   for (let r = 0; r < NUM_ROW; r++) {
     let isRowFull = true;
     for (let c = 0; c < NUM_COLUMN; c++) {
@@ -57,22 +57,12 @@ function clearLines(board: Board) {
       }
     }
     if (isRowFull) {
-      fullLines.push(r);
+      board.splice(r, 1);
+      board.unshift([0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+      numLinesCleared++;
     }
   }
-  for (const r of fullLines) {
-    // Move down all the rows above it
-    for (let y = r; y >= 1; y--) {
-      for (let c = 0; c < NUM_COLUMN; c++) {
-        board[y][c] = board[y - 1][c];
-      }
-    }
-    // Clear out the very top row (newly shifted into the screen)
-    for (let c = 0; c < NUM_COLUMN; c++) {
-      board[0][c] = SquareState.EMPTY;
-    }
-  }
-  return fullLines.length;
+  return numLinesCleared;
 }
 
 export function getBoardAndLinesClearedAfterPlacement(
@@ -295,7 +285,8 @@ export function boardHasInaccessibileLeft(
   const col2Height = surfaceArray[1];
   const col3Height = surfaceArray[2];
 
-  const avgHeightOfMiddle = surfaceArray.slice(3).reduce((x, y) => x + y) / 7;
+  const avgHeightOfMiddle =
+    surfaceArray.slice(3, 7).reduce((x, y) => x + y) / 4;
 
   if (aiMode === AiMode.KILLSCREEN) {
     // On killscreen, we mainly access the left with 4-taps. So we need either
@@ -324,11 +315,13 @@ export function boardHasInaccessibileLeft(
   // 2) access to the left with a 5 tap
   if (
     col1Height >= col2Height &&
-    col1Height > aiParams.MAX_5_TAP_LOOKUP[level]
+    col1Height > aiParams.MAX_5_TAP_LOOKUP[level] &&
+    col1Height >= avgHeightOfMiddle
   ) {
     return false;
   }
   // If an L can reach the left, then we're fine
+  // Observe that other 4-tap cases, like O & J are covered in the previous case
   if (
     col1Height === col2Height - 1 &&
     col2Height == col3Height &&
@@ -339,8 +332,8 @@ export function boardHasInaccessibileLeft(
   return !canDoPlacement(
     board,
     level,
-    "I",
-    1,
+    "T",
+    3,
     -5,
     aiParams.INPUT_FRAME_TIMELINE
   );

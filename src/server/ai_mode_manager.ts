@@ -15,7 +15,8 @@ export function getAiMode(
   if (level >= killscreenLevel && aiParams.MAX_5_TAP_LOOKUP[level] <= 4) {
     return AiMode.KILLSCREEN;
   }
-  if (shouldUseDigMode(board, level, currentPieceId, aiParams)) {
+  // Dig, unless it's too close to the killscreen to dig
+  if (shouldUseDigMode(board, level, currentPieceId, aiParams) && (lines < 226 || level !== killscreenLevel - 1)) {
     return AiMode.DIG;
   }
   if (level >= killscreenLevel) {
@@ -48,7 +49,7 @@ function shouldUseDigMode(
   }
   // Calculate where the next Tetris will be built
   let row = 0;
-  while (row < NUM_ROW && board[row][WELL_COLUMN - 1] == SquareState.EMPTY) {
+  while (row < NUM_ROW && board[row][WELL_COLUMN] == SquareState.EMPTY) {
     row++;
   }
   // Both inclusive
@@ -65,12 +66,11 @@ function shouldUseDigMode(
   function holeWarrantsDigging(row, firstFullRow) {
     const blockingWell = board[row][NUM_COLUMN - 1] === SquareState.FULL;
     const numRowsOfGarbage = row - firstFullRow;
-
     // If it's perfectly set up to play dirty, don't dig
     if (
       blockingWell &&
       NUM_ROW - row <= maxDirtyTetrisHeight &&
-      numRowsOfGarbage > 2
+      numRowsOfGarbage > 3
     ) {
       return false;
     }

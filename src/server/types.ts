@@ -1,7 +1,5 @@
 type Board = Array<Array<number>>;
 
-type CellLocation = [number, number]; // [row, col]
-
 type Placement = [number, number]; // [numRightRotations, numShifts]
 
 type LockPlacement = [number, number, number, string]; // [numRightRotations, x, y, inputSequence, arrFrameIndex]
@@ -11,6 +9,8 @@ type PieceArray = Array<Array<number>>;
 type PieceId = "I" | "O" | "L" | "J" | "T" | "S" | "Z" | null;
 
 type Direction = "L" | "R" | "";
+
+type SimulatedGameResult = [ number, number, number, number]; // score, lines, level, numHoles
 
 interface SimParams {
   board: Board;
@@ -64,7 +64,7 @@ interface Possibility {
   inputSequence: string;
   surfaceArray: Array<number>;
   numHoles: number;
-  holeCells: Array<CellLocation>;
+  holeCells: Set<number>;
   numLinesCleared: number;
   boardAfter: Board;
   inputCost: number;
@@ -140,7 +140,7 @@ interface InitialAiParams {
   SPIRE_HEIGHT_EXPONENT: number;
   SPIRE_HEIGHT_COEF: number;
   UNABLE_TO_BURN_COEF: number;
-  UNABLE_TO_BURN_DIFF_EXP: number;
+  UNABLE_TO_BURN_HEIGHT_EXP: number;
   HIGH_COL_9_COEF: number;
   HIGH_COL_9_EXP: number;
   SURFACE_COEF: number;
