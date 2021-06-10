@@ -2,14 +2,15 @@ const process = require("process");
 import { calculateTapHeight, getRelativeLeftSurface } from "../board_helper";
 import { getEmptyBoard, simulateGame } from "../lite_game_simulator";
 import { getParamMods, getParams } from "../params";
+import { generateDigPracticeBoard } from "../utils";
 
 type SuccessorMap = Map<string, Map<string, number>>;
 
-const INPUT_TIMELINE = "X..";
+const INPUT_TIMELINE = "X....";
 const MAX_4_TAP_HEIGHT = calculateTapHeight(29, INPUT_TIMELINE, 4);
 const DEATH_RANK = "xxx";
 
-const TRAINING_TIME_MINS = 3;
+const TRAINING_TIME_MINS = 10;
 const MS_PER_MIN = 60000;
 
 let threadId = -1;
@@ -98,7 +99,7 @@ function measureAverageScore() {
 
     // Play out one game
     const [score, lines, level] = simulateGame(
-      29,
+      18,
       getEmptyBoard(),
       getParams(),
       getParamMods(),
@@ -116,6 +117,43 @@ function measureAverageScore() {
   return scores;
 }
 
+
+export function simulateDigPractice() {
+  // Note the starting time and keep training until a specified number of minutes after that
+  const startTimeMs = Date.now();
+  const endTimeMs = startTimeMs + TRAINING_TIME_MINS * MS_PER_MIN;
+
+  let results = [];
+  for (let i = 0; Date.now() < endTimeMs; i++) {
+    // Start of iteration
+    console.log(`${threadId}: Iteration ${i + 1}`);
+    console.log(
+      `${threadId}: ${((Date.now() - startTimeMs) / MS_PER_MIN).toFixed(
+        2
+      )} minutes elapsed, out of ${TRAINING_TIME_MINS}`
+    );
+
+    // Simulate a game with a dirty starting board and capped lines
+    results.push(
+      simulateGame(
+        18,
+        generateDigPracticeBoard(5, 6),
+        getParams(),
+        getParamMods(),
+        INPUT_TIMELINE,
+        /* predefinedPieceSequence= */ null,
+        /* shouldAdjust= */ false,
+        /* isDig= */ true,
+        /* onPlacementCallback= */ null,
+        /* shouldLog= */ i == 0
+      )
+    );
+  }
+  // console.log(results);
+  return results;
+}
+
+
 /**
  * Listener for messages from the main thread
  */
@@ -126,6 +164,8 @@ process.on("message", (message) => {
     result = measureSuccessorsInTestGames();
   } else if (message.type === "average") {
     result = measureAverageScore();
+  } else if (message.type === "dig"){
+    result = simulateDigPractice();
   }
   process.send({
     type: "result",

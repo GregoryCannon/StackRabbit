@@ -8,9 +8,9 @@ function totalFrames(lockHeight, grav) {
 }
 
 const s = {
-  1: 34,
-  2: 10,
-  3: 1,
+  2: 34,
+  3: 10,
+  4: 1,
 };
 // const s = {
 //   1: 34,

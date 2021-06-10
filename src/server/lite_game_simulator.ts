@@ -51,39 +51,6 @@ export function simulateManyGames(
   return results;
 }
 
-export function simulateDigPractice(
-  numIterations,
-  startingLevel,
-  aiParams,
-  paramMods
-) {
-  const results = [];
-  for (let i = 0; i < numIterations; i++) {
-    // Progress indicator
-    if (((i / numIterations) * 100) % 5 == 0) {
-      console.log(`${(i / numIterations) * 100}% complete`);
-    }
-
-    // Simulate a game with a dirty starting board and capped lines
-    results.push(
-      simulateGame(
-        startingLevel,
-        utils.generateDigPracticeBoard(5, 6),
-        aiParams,
-        paramMods,
-        INPUT_SEQUENCE_12_HZ,
-        /* predefinedPieceSequence= */ null,
-        /* shouldAdjust= */ true,
-        /* isDig= */ true,
-        /* onPlacementCallback= */ null,
-        /* shouldLog= */ i == 0
-      )
-    );
-  }
-  // console.log(results);
-  return results;
-}
-
 function sleep(ms) {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
@@ -301,7 +268,7 @@ function getRandomPiece(previousPieceId) {
 function runScoreExperiment(numTrials) {
   const resultList = simulateManyGames(
     numTrials,
-    18,
+    29,
     paramsManager.getParams(),
     paramsManager.getParamMods()
   );
@@ -338,8 +305,6 @@ function regressionTest() {
 if (typeof require !== "undefined" && require.main === module) {
   // regressionTest();
   runScoreExperiment(1);
-  // simulateKillscreenTraining(500);
-  // simulateDigPractice(1, 18, getParams(), getParamMods());
   // const results = simulateManyGames(100, 18, getParams(), getParamMods());
   // console.log(results);
   // console.log(results.map((x) => x[1]));

@@ -3,7 +3,7 @@
  */
 
 import * as liteGameSimulator from "../lite_game_simulator";
-import { V5_NO_DIRTIES, getParams, DEFAULT_PARAM_MODS } from "../params";
+import { NO_DIRTIES_PARAMS, getParams, DEFAULT_PARAM_MODS } from "../params";
 
 const NOISE_THRESHOLD = 1000;
 const DOMAIN = "DIG";
@@ -18,6 +18,11 @@ const FEATURES_TO_OPTIMIZE = [
   "SURFACE_COEF",
   "BUILT_OUT_LEFT_COEF",
 ];
+
+function simulateDigPractice(a,b,c,d){
+  // Has been migrated elsewhere. This file is no longer in use.
+  return null;
+}
 
 /**
  * Fitness function: the average score
@@ -46,10 +51,10 @@ function getFitness(paramMods, currentFitness?) {
   // First do a spot check with a small number of iterations.
   // If it's not even close to the current fitness, don't run more iterations
   console.log("Running spot check...");
-  const spotCheckResults = liteGameSimulator.simulateDigPractice(
+  const spotCheckResults = simulateDigPractice(
     SPOT_CHECK_ITERATIONS,
     18,
-    V5_NO_DIRTIES,
+    NO_DIRTIES_PARAMS,
     paramMods
   );
   const spotCheckFitness = fitnessFunction(spotCheckResults);
@@ -67,10 +72,10 @@ function getFitness(paramMods, currentFitness?) {
   console.log("Continuing to full simulation...");
   return fitnessFunction(
     spotCheckResults.concat(
-      liteGameSimulator.simulateDigPractice(
+      simulateDigPractice(
         ITERATIONS_PER_TEST - SPOT_CHECK_ITERATIONS,
         18,
-        V5_NO_DIRTIES,
+        NO_DIRTIES_PARAMS,
         paramMods
       )
     )
