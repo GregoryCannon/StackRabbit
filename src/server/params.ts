@@ -1,6 +1,7 @@
+// Each index corresponds to the level you're starting search at while doing the pruning.
 export const SEARCH_BREADTH = {
-  1: 999, // Don't prune on the first stage ("bad" placements could be a floating burn setup)
-  2: 10,
+  2: 999, // Don't prune on the before the second stage ("bad" placements could be a floating burn setup)
+  3: 10, /* This breadth refers to the first hypothetical level, regardless of whether there was 1 or 2 concrete levels before */
 };
 
 export const EVALUATION_BREADTH = {
@@ -8,6 +9,11 @@ export const EVALUATION_BREADTH = {
   2: 20,
   3: 10 /* This breadth refers to the first hypothetical level, regardless of whether there was 1 or 2 concrete levels before */,
 };
+
+export const IS_PAL = false;
+export const WELL_COLUMN = 9; // 0-indexed
+export const IS_NON_RIGHT_WELL = false;
+export const CAN_TUCK = false;
 
 /*--------------------------------
   State-based param modification
@@ -43,7 +49,7 @@ export const DEFAULT_PARAM_MODS = {
   DIG: {
     BURN_COEF: -1,
     COL_10_COEF: -1,
-    HOLE_WEIGHT_COEF: -4,
+    HOLE_WEIGHT_COEF: -8,
     HOLE_COEF: -100,
   },
   NEAR_KILLSCREEN: {
@@ -53,9 +59,9 @@ export const DEFAULT_PARAM_MODS = {
   },
   KILLSCREEN: {
     COL_10_COEF: 0,
-    BUILT_OUT_LEFT_COEF: 0,
-    BUILT_OUT_RIGHT_COEF: 1.5,
-    AVG_HEIGHT_COEF: -5,
+    BUILT_OUT_LEFT_COEF: 1,
+    BUILT_OUT_RIGHT_COEF: 0.75,
+    AVG_HEIGHT_COEF: -3,
     HOLE_COEF: -40, // changed
     BURN_COEF: 0,
     UNABLE_TO_BURN_COEF: 0,
@@ -63,13 +69,13 @@ export const DEFAULT_PARAM_MODS = {
     HIGH_COL_9_EXP: 0,
     INACCESSIBLE_LEFT_COEF: -100,
     INACCESSIBLE_RIGHT_COEF: -100,
-    SPIRE_HEIGHT_COEF: -1,
-    LEFT_SURFACE_COEF: 1,
+    SPIRE_HEIGHT_COEF: -0.5,
+    LEFT_SURFACE_COEF: 0.5,
     TETRIS_COEF: 40,
     SURFACE_COEF: 0.5,
   },
   KILLSCREEN_RIGHT_WELL: {
-    SCARE_HEIGHT_OFFSET: -2,
+    SCARE_HEIGHT_OFFSET: 0,
     BURN_COEF: -1,
   },
 };
@@ -81,14 +87,14 @@ export const DEFAULT_PARAM_MODS = {
 // Trained using gradient descent and heavily modified
 export const DEFAULT_PARAMS: InitialAiParams = {
   AVG_HEIGHT_EXPONENT: 1.5000000000004,
-  AVG_HEIGHT_COEF: -4.50624,
+  AVG_HEIGHT_COEF: -5,
   SCARE_HEIGHT_OFFSET: -3,
   BURN_COEF: -5,
-  COL_10_COEF: -10,
-  COL_10_HEIGHT_MULTIPLIER_EXP: 2.5,
+  COL_10_COEF: -1,
+  COL_10_HEIGHT_MULTIPLIER_EXP: 3,
   DEAD_COEF: -10000,
-  MAX_DIRTY_TETRIS_HEIGHT: 0.15, // (As a multiple of the scare height)
-  EXTREME_GAP_COEF: -3,
+  MAX_DIRTY_TETRIS_HEIGHT: 0.25, // (As a multiple of the scare height)
+  EXTREME_GAP_COEF: -2,
   BUILT_OUT_LEFT_COEF: 3,
   BUILT_OUT_RIGHT_COEF: 0,
   LOW_LEFT_EXP: 1.5,
@@ -97,15 +103,25 @@ export const DEFAULT_PARAMS: InitialAiParams = {
   SPIRE_HEIGHT_EXPONENT: 1.215999999999999,
   SPIRE_HEIGHT_COEF: -1.1556000000000002,
   UNABLE_TO_BURN_COEF: -0.3,
-  UNABLE_TO_BURN_DIFF_EXP: 1.5,
+  UNABLE_TO_BURN_HEIGHT_EXP: 3,
   HIGH_COL_9_COEF: -3,
   HIGH_COL_9_EXP: 2,
   SURFACE_COEF: 1,
   LEFT_SURFACE_COEF: 0,
   TETRIS_COEF: 25,
-  TETRIS_READY_COEF: 0,
-  INACCESSIBLE_LEFT_COEF: -30,
+  TETRIS_READY_COEF: 5,
+  INACCESSIBLE_LEFT_COEF: -50,
   INACCESSIBLE_RIGHT_COEF: -300,
+};
+
+const CENTER_WELL_MODIFICATIONS = {
+  UNABLE_TO_BURN_COEF: 0,
+  UNABLE_TO_BURN_HEIGHT_EXP: 0,
+  HIGH_COL_9_COEF: 0,
+  HIGH_COL_9_EXP: 0,
+  LEFT_SURFACE_COEF: 0,
+  INACCESSIBLE_LEFT_COEF: -200,
+  INACCESSIBLE_RIGHT_COEF: -200,
 };
 
 const PLAY_PERFECT_PARAMS: InitialAiParams = {
@@ -126,7 +142,7 @@ const PLAY_PERFECT_PARAMS: InitialAiParams = {
   SPIRE_HEIGHT_EXPONENT: 1.215999999999999,
   SPIRE_HEIGHT_COEF: -1.1556000000000002,
   UNABLE_TO_BURN_COEF: 0,
-  UNABLE_TO_BURN_DIFF_EXP: 0,
+  UNABLE_TO_BURN_HEIGHT_EXP: 0,
   HIGH_COL_9_COEF: 0,
   HIGH_COL_9_EXP: 0,
   SURFACE_COEF: 0.02,
@@ -149,7 +165,7 @@ const DROUGHT_MODIFICATIONS = {
 const NO_DIRTIES_MODIFICATIONS = {
   MAX_DIRTY_TETRIS_HEIGHT: 0, // (As a multiple of the scare height)
 };
-export const V5_NO_DIRTIES = applyModsToParams(
+export const NO_DIRTIES_PARAMS = applyModsToParams(
   DEFAULT_PARAMS,
   NO_DIRTIES_MODIFICATIONS
 );
@@ -220,7 +236,6 @@ const FULL_AGGRO_PARAMS = applyModsToParams(
   DEFAULT_PARAMS,
   FULL_AGGRO_MODIFICATIONS
 );
-
 const DROUGHT_CODE_PARAMS = applyModsToParams(
   DEFAULT_PARAMS,
   DROUGHT_MODIFICATIONS
@@ -233,9 +248,13 @@ const MEDIUM_LOW_TAP_SPEED_PARAMS = applyModsToParams(
   DEFAULT_PARAMS,
   MEDIUM_LOW_TAP_SPEED_MODIFICATIONS
 );
+const CENTER_WELL_PARAMS = applyModsToParams(
+  DEFAULT_PARAMS,
+  CENTER_WELL_MODIFICATIONS
+);
 
 export function getParams(): InitialAiParams {
-  return TOURNEY_SMALL_AGGRO_PARAMS;
+  return NO_DIRTIES_PARAMS;
 }
 
 export function getParamMods(): ParamMods {
