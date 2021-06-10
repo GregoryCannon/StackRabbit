@@ -140,7 +140,7 @@ function searchConcretely(
   /* ---------- Explore at depth 2 for promising moves ------------ */
 
   const [depth2Possibilities, prunedD2] = searchDepth2(
-    depth1Possibilities.slice(0, SEARCH_BREADTH[1]),
+    depth1Possibilities.slice(0, SEARCH_BREADTH[2]),
     aiParams,
     aiMode
   );
@@ -180,17 +180,7 @@ function searchHypothetically(
     throw new Error("Unsupported hypothetical search depth");
   }
 
-  let weightVector;
-  switch (aiMode) {
-    case AiMode.DIG:
-    case AiMode.NEAR_KILLSCREEN:
-      weightVector = normalize([2, 2, 1, 1, 1, 1, 2]);
-      break;
-    case AiMode.STANDARD:
-    case AiMode.KILLSCREEN:
-    case AiMode.KILLSCREEN_RIGHT_WELL:
-      weightVector = normalize([1.5, 1, 1, 1, 1, 1, 1.5]);
-  }
+  let weightVector = normalize([1.5, 1, 1, 1, 1, 1, 1.5]);
 
   const hypotheticalResults = searchDepthNPlusOne(
     possibilityChains,
@@ -281,7 +271,6 @@ function searchDepth1(
     // Evaluate
     const [value, explanation] = evaluator.getValueOfPossibility(
       possibility,
-      searchState.nextPieceId,
       searchState.level,
       searchState.lines,
       aiMode,
@@ -338,7 +327,7 @@ function searchDepth2(
       })
     );
 
-    // Merge with the current best list, leaving the highest N chain possibilities seen so far
+    // Merge with the current best list
     if (new2Chains.length > 0) {
       const newList: Array<PossibilityChain> = utils.mergeSortedArrays(
         best2Chains,
@@ -346,8 +335,9 @@ function searchDepth2(
         (x, y) =>
           y.totalValue - x.totalValue + 0.001 * (y.evalScore - x.evalScore) // Tiebreak by which one has the best value after the first placement
       );
-      best2Chains = newList.slice(0, SEARCH_BREADTH[2]);
-      pruned = pruned.concat(newList.slice(SEARCH_BREADTH[2]));
+      // Save the best N chains we've seen so far. Keep the rest in case they're needed later.
+      best2Chains = newList.slice(0, SEARCH_BREADTH[3]);
+      pruned = pruned.concat(newList.slice(SEARCH_BREADTH[3]));
     }
   }
   return [best2Chains, pruned];
