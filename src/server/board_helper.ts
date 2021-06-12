@@ -1,6 +1,5 @@
 import { canDoPlacement, placementIsLegal } from "./move_search";
 
-const PIECE_LOOKUP = require("../web_client/tetrominoes").PIECE_LOOKUP;
 const utils = require("./utils");
 const NUM_COLUMN = utils.NUM_COLUMN;
 const NUM_ROW = utils.NUM_ROW;
@@ -70,7 +69,7 @@ export function getBoardAndLinesClearedAfterPlacement(
   currentRotationPiece: PieceArray,
   x: number,
   y: number
-) {
+): [Board, number] {
   let tempBoard = utils.cloneBoard(board);
   for (let r = 0; r < currentRotationPiece.length; r++) {
     for (let c = 0; c < currentRotationPiece[r].length; c++) {
@@ -225,7 +224,7 @@ export function getRelativeLeftSurface(board: Board, max4TapHeight) {
   let col3 = getBoardHeightAtColumn(board, 2);
 
   const surfaceLevelAboveFloor = Math.min(col1, col2, col3);
-  const avgHeightOfLeft = (col1 + col2 + col3) / 3;
+  const avgHeightOfLeft = (col1 + col2) / 2;
 
   // Adjust for transposed surfaces
   col1 = Math.min(maxHeight, col1 - surfaceLevelAboveFloor);
@@ -234,12 +233,10 @@ export function getRelativeLeftSurface(board: Board, max4TapHeight) {
 
   // Get the height of the rest of the columns
   let totalHeightOfMiddle = 0;
-  for (let i = 3; i < 8; i++) {
+  for (let i = 2; i < NUM_COLUMN; i++) {
     totalHeightOfMiddle += getColHeight(i);
   }
-  totalHeightOfMiddle += 1 * (getColHeight(8) + getColHeight(9));
-
-  const avgHeightOfMiddle = totalHeightOfMiddle / 7;
+  const avgHeightOfMiddle = totalHeightOfMiddle / 8;
   const heightDiff = Math.max(
     -1 * maxHeight,
     avgHeightOfLeft - avgHeightOfMiddle
