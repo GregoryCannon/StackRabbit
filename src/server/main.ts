@@ -3,7 +3,7 @@ const aiModeManager = require("./ai_mode_manager");
 const boardHelper = require("./board_helper");
 const { SEARCH_BREADTH, modifyParamsForAiMode } = require("./params");
 import { getPossibleMoves } from "./move_search";
-import { EVALUATION_BREADTH } from "./params";
+import { EVALUATION_BREADTH, IS_DROUGHT_MODE } from "./params";
 import * as utils from "./utils";
 import { POSSIBLE_NEXT_PIECES } from "./utils";
 
@@ -64,7 +64,7 @@ export function getSortedMoveList(
   );
   aiParams = modifyParamsForAiMode(aiParams, aiMode, paramMods);
 
-  const [bestConcrete, prunedConcrete] = searchConcretely(
+  let [bestConcrete, prunedConcrete] = searchConcretely(
     searchState,
     shouldLog,
     aiParams,
@@ -75,6 +75,13 @@ export function getSortedMoveList(
   if (hypotheticalSearchDepth == 0) {
     return [bestConcrete, prunedConcrete];
   } else {
+    // Prune the concrete search if it hasn't been pruned already
+    if (bestConcrete.length > SEARCH_BREADTH[3]) {
+      prunedConcrete = prunedConcrete.concat(
+        bestConcrete.slice(SEARCH_BREADTH[3])
+      );
+      bestConcrete = bestConcrete.slice(0, SEARCH_BREADTH[3]);
+    }
     const bestHypothetical = searchHypothetically(
       bestConcrete,
       aiParams,
@@ -180,7 +187,9 @@ function searchHypothetically(
     throw new Error("Unsupported hypothetical search depth");
   }
 
-  let weightVector = normalize([1.5, 1, 1, 1, 1, 1, 1.5]);
+  let weightVector = IS_DROUGHT_MODE
+    ? normalize([1.5, 1, 1, 1, 1, 1.5])
+    : normalize([1.5, 1, 1, 1, 1, 1, 1.5]);
 
   const hypotheticalResults = searchDepthNPlusOne(
     possibilityChains,
@@ -189,6 +198,7 @@ function searchHypothetically(
     weightVector
   );
 
+  // Maybe log info about the EV results
   if (shouldLog) {
     console.log(
       "\n\n------------------------\nBest Results after Stochastic Analysis"
@@ -363,7 +373,7 @@ function searchDepthNPlusOne(
       totalPartialValue = chain.partialValue;
     }
 
-    const bestMovesList: Array<HypotheticalBestMove> = []; // Map from piece ID to 1-chain
+    let bestMovesList: Array<HypotheticalBestMove> = []; // Map from piece ID to 1-chain
     // Get the best placement for each hypothetical piece
     for (const hypotheticalPiece of POSSIBLE_NEXT_PIECES) {
       searchState.currentPieceId = hypotheticalPiece;
@@ -388,6 +398,11 @@ function searchDepthNPlusOne(
     // Sort the hypotheticals best to worst
     bestMovesList.sort((a, b) => b.totalValue - a.totalValue);
 
+    // If drought mode is on, don't anticipate getting long bars
+    if (IS_DROUGHT_MODE) {
+      bestMovesList = bestMovesList.filter((x) => x.hypotheticalPiece !== "I");
+    }
+
     // Get a weighted EV based on the weight vector
     if (
       weightVector.length !== bestMovesList.length ||
@@ -406,6 +421,12 @@ function searchDepthNPlusOne(
       total += bestMovesList[i].totalValue * weightVector[i];
     }
     const expectedValue = total / len;
+
+    // Attach the EV to the original possibility
+    chain.expectedValue = expectedValue;
+    if (chain.innerPossibility) {
+      chain.innerPossibility.expectedValue = expectedValue;
+    }
 
     hypotheticalResults.push({
       possibilityChain: chain,
