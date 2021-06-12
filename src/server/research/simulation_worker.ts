@@ -1,16 +1,19 @@
 const process = require("process");
-import { calculateTapHeight, getRelativeLeftSurface } from "../board_helper";
-import { getEmptyBoard, simulateGame } from "../lite_game_simulator";
+import { getRelativeLeftSurface } from "../board_helper";
+import {
+  DIG_LINE_CAP,
+  getEmptyBoard,
+  simulateGame,
+} from "../lite_game_simulator";
 import { getParamMods, getParams } from "../params";
 import { generateDigPracticeBoard } from "../utils";
+import { DEATH_RANK } from "./killscreen_training";
+import {
+  SIM_INPUT_TIMELINE,
+  SIM_MAX_4_TAP_HEIGHT,
+  TRAINING_TIME_MINS,
+} from "./simulation_testing";
 
-type SuccessorMap = Map<string, Map<string, number>>;
-
-const INPUT_TIMELINE = "X....";
-const MAX_4_TAP_HEIGHT = calculateTapHeight(29, INPUT_TIMELINE, 4);
-const DEATH_RANK = "xxx";
-
-const TRAINING_TIME_MINS = 10;
 const MS_PER_MIN = 60000;
 
 let threadId = -1;
@@ -40,7 +43,7 @@ function measureSuccessorsInTestGames(): Object {
   const afterPlacementCallback = (board, isGameOver) => {
     const surface = isGameOver
       ? DEATH_RANK
-      : getRelativeLeftSurface(board, MAX_4_TAP_HEIGHT);
+      : getRelativeLeftSurface(board, SIM_MAX_4_TAP_HEIGHT);
 
     if (surface !== previousSurface && surface !== null) {
       registerSuccessor(successors, previousSurface, surface);
@@ -67,10 +70,11 @@ function measureSuccessorsInTestGames(): Object {
       getEmptyBoard(),
       getParams(),
       getParamMods(),
-      INPUT_TIMELINE,
+      SIM_INPUT_TIMELINE,
       /* presetSequence= */ null,
       /* shouldAdjust= */ false,
       /* isDig= */ false,
+      /* maxLines= */ 230,
       afterPlacementCallback,
       /* shouldLog= */ false
     );
@@ -103,10 +107,11 @@ function measureAverageScore() {
       getEmptyBoard(),
       getParams(),
       getParamMods(),
-      INPUT_TIMELINE,
+      SIM_INPUT_TIMELINE,
       /* presetSequence= */ null,
       /* shouldAdjust= */ false,
       /* isDig= */ false,
+      /* maxLines= */ 230,
       null,
       /* shouldLog= */ false
     );
@@ -116,7 +121,6 @@ function measureAverageScore() {
   scores.forEach((x) => console.log(x));
   return scores;
 }
-
 
 export function simulateDigPractice() {
   // Note the starting time and keep training until a specified number of minutes after that
@@ -140,10 +144,11 @@ export function simulateDigPractice() {
         generateDigPracticeBoard(5, 6),
         getParams(),
         getParamMods(),
-        INPUT_TIMELINE,
+        SIM_INPUT_TIMELINE,
         /* predefinedPieceSequence= */ null,
         /* shouldAdjust= */ false,
         /* isDig= */ true,
+        /* maxLines= */ DIG_LINE_CAP,
         /* onPlacementCallback= */ null,
         /* shouldLog= */ i == 0
       )
@@ -153,6 +158,41 @@ export function simulateDigPractice() {
   return results;
 }
 
+export function testOpener() {
+  // Note the starting time and keep training until a specified number of minutes after that
+  const startTimeMs = Date.now();
+  const endTimeMs = startTimeMs + TRAINING_TIME_MINS * MS_PER_MIN;
+
+  let results = [];
+  for (let i = 0; Date.now() < endTimeMs; i++) {
+    // Start of iteration
+    console.log(`${threadId}: Iteration ${i + 1}`);
+    console.log(
+      `${threadId}: ${((Date.now() - startTimeMs) / MS_PER_MIN).toFixed(
+        2
+      )} minutes elapsed, out of ${TRAINING_TIME_MINS}`
+    );
+
+    // Simulate a game with a dirty starting board and capped lines
+    results.push(
+      simulateGame(
+        18,
+        generateDigPracticeBoard(5, 6),
+        getParams(),
+        getParamMods(),
+        SIM_INPUT_TIMELINE,
+        /* predefinedPieceSequence= */ null,
+        /* shouldAdjust= */ false,
+        /* isDig= */ false,
+        /* maxLines= */ 5,
+        /* onPlacementCallback= */ null,
+        /* shouldLog= */ i == 0
+      )
+    );
+  }
+  // console.log(results);
+  return results;
+}
 
 /**
  * Listener for messages from the main thread
@@ -164,7 +204,7 @@ process.on("message", (message) => {
     result = measureSuccessorsInTestGames();
   } else if (message.type === "average") {
     result = measureAverageScore();
-  } else if (message.type === "dig"){
+  } else if (message.type === "dig") {
     result = simulateDigPractice();
   }
   process.send({

@@ -1,56 +1,56 @@
-import * as child_process from "child_process";
 import * as fs from "fs";
-const DEATH_RANK = "xxx";
-const MAX_RANK_VALUE = 100;
+import { SIM_MAX_4_TAP_HEIGHT } from "./simulation_testing";
 
-/* ------------------------------
-    Worker thread configuration 
---------------------------------- */
+export const DEATH_RANK = "xxx";
 
-let workers = [];
-const NUM_THREADS = 8;
-let pendingResults = NUM_THREADS;
-let results = [];
+// /* ------------------------------
+//     Worker thread configuration
+// --------------------------------- */
 
-function start() {
-  // Initialize workers
-  for (let i = 0; i < NUM_THREADS; i++) {
-    workers[i] = child_process.fork(
-      "built/src/server/research/killscreen_evo_worker.js"
-    );
-    workers[i].addListener("message", onMessage);
-  }
+// let workers = [];
+// const NUM_THREADS = 8;
+// let pendingResults = NUM_THREADS;
+// let results = [];
 
-  // Ping the workers to start
-  console.time("worker phase");
-  for (let i = 0; i < NUM_THREADS; i++) {
-    workers[i].send({ type: "successors", threadId: i });
-  }
-}
+// function start() {
+//   // Initialize workers
+//   for (let i = 0; i < NUM_THREADS; i++) {
+//     workers[i] = child_process.fork(
+//       "built/src/server/research/killscreen_evo_worker.js"
+//     );
+//     workers[i].addListener("message", onMessage);
+//   }
 
-function onMessage(message) {
-  if ((message.type = "result")) {
-    // console.log("Received response message:", message.result);
-    results.push(message.result);
-    pendingResults--;
-    if (pendingResults == 0) {
-      console.timeEnd("worker phase");
-      workers.forEach((x) => x.kill());
-      processResults();
-    }
-  }
-}
+//   // Ping the workers to start
+//   console.time("worker phase");
+//   for (let i = 0; i < NUM_THREADS; i++) {
+//     workers[i].send({ type: "successors", threadId: i });
+//   }
+// }
+
+// function onMessage(message) {
+//   if ((message.type = "result")) {
+//     // console.log("Received response message:", message.result);
+//     results.push(message.result);
+//     pendingResults--;
+//     if (pendingResults == 0) {
+//       console.timeEnd("worker phase");
+//       workers.forEach((x) => x.kill());
+//       processResults();
+//     }
+//   }
+// }
 
 /* ------------------------------------------
     Result compilation and Value iteration
   ------------------------------------------- */
 
-function processResults() {
+export function processKillscreenResults(resultsList) {
   console.log("Processing results");
 
   // Merge the successor maps
   const successors = {};
-  for (const succMap of results) {
+  for (const succMap of resultsList) {
     for (const [fromSurface, freqMap] of Object.entries(succMap)) {
       for (const [toSurface, transitionCount] of Object.entries(freqMap)) {
         if (!successors.hasOwnProperty(fromSurface)) {
@@ -65,10 +65,12 @@ function processResults() {
   }
   console.log(successors);
 
+  fs.writeFileSync("docs/successors.json", JSON.stringify(successors));
+
   // Value iterate!
   const ranks: Object = valueIterate(successors);
 
-  fs.writeFileSync("docs/15_hz_ranks_v0.txt", JSON.stringify(ranks));
+  fs.writeFileSync("docs/15_hz_ranks_v0.json", JSON.stringify(ranks));
 
   console.log(ranks);
 }
@@ -77,7 +79,11 @@ function processResults() {
 function getReward(surfaceLeft) {
   if (surfaceLeft[0] >= surfaceLeft[1] && surfaceLeft[0] >= surfaceLeft[2]) {
     const heightDiff = surfaceLeft.split("|")[1];
-    if (heightDiff >= 5) {
+    if (heightDiff == 3) {
+      return 50;
+    } else if (heightDiff == 4) {
+      return 75;
+    } else if (heightDiff >= 5) {
       return 100;
     }
   }
@@ -112,8 +118,9 @@ function valueIterate(successors: Object): Object {
       successors
     )) {
       const inherentValue = getReward(surface);
+      const heightDiff = parseInt(surface.split("|")[1]);
 
-      if (inherentValue >= MAX_RANK_VALUE) {
+      if (heightDiff >= SIM_MAX_4_TAP_HEIGHT) {
         // If it's a goal state, use the inherent reward
         newValues[surface] = inherentValue;
       } else {
@@ -139,4 +146,4 @@ function valueIterate(successors: Object): Object {
   return values;
 }
 
-start();
+// start();

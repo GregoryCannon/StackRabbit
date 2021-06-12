@@ -43,6 +43,7 @@ export function simulateManyGames(
         /* predefinedPieceSequence= */ null,
         /* shouldAdjust= */ true,
         /* isDig= */ false,
+        /* maxLines= */ 230,
         /* onPlacementCallback= */ null,
         /* shouldLog= */ false
       )
@@ -71,6 +72,7 @@ export function simulateGame(
   presetPieceSequence,
   shouldAdjust,
   isDig,
+  maxLines,
   afterPlacementCallback,
   shouldLog
 ) {
@@ -129,11 +131,9 @@ export function simulateGame(
       score += REWARDS[bestMove.numLinesCleared] * (level + 1);
     }
 
-    // Check for game over
+    // Check for game over via various conditions
     gameOver =
-      hasToppedOut(board) ||
-      (isDig && (numHoles === 0 || lines >= DIG_LINE_CAP)) ||
-      lines >= 230;
+      hasToppedOut(board) || (isDig && numHoles === 0) || lines >= maxLines;
 
     // Call the post-placement callback if needed
     if (afterPlacementCallback !== null) {
@@ -295,6 +295,7 @@ function regressionTest() {
     regressionTestPieceSequence,
     /* shouldAdjust= */ false,
     /* isDig= */ false,
+    /* maxLines= */ 230,
     null,
     /* shouldLog= */ true
   );

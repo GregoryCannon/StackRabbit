@@ -19,7 +19,7 @@ const FEATURES_TO_OPTIMIZE = [
   "BUILT_OUT_LEFT_COEF",
 ];
 
-function simulateDigPractice(a,b,c,d){
+function simulateDigPractice(a, b, c, d) {
   // Has been migrated elsewhere. This file is no longer in use.
   return null;
 }
