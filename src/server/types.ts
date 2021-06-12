@@ -10,7 +10,7 @@ type PieceId = "I" | "O" | "L" | "J" | "T" | "S" | "Z" | null;
 
 type Direction = "L" | "R" | "";
 
-type SimulatedGameResult = [ number, number, number, number]; // score, lines, level, numHoles
+type SimulatedGameResult = [number, number, number, number]; // score, lines, level, numHoles
 
 interface SimParams {
   board: Board;
