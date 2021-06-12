@@ -45,9 +45,9 @@ function performComputationFinesse(args): Object {
   const lockPositionValueLookup = {};
   for (const possibility of bestMoves) {
     const lockPos = possibility.lockPositionEncoded;
-    // Highest value will occur first since list is sorted)
+    // Highest value will occur first since list is sorted. So if we've seen it before, we have the best already.
     if (!lockPositionValueLookup.hasOwnProperty(lockPos)) {
-      lockPositionValueLookup[lockPos] = possibility.totalValue;
+      lockPositionValueLookup[lockPos] = possibility.expectedValue;
     }
   }
   // Store values for all the other lock positions from the pruned possibilities
@@ -66,7 +66,7 @@ function performComputationFinesse(args): Object {
   }
 
   console.timeEnd(args.piece);
-  console.log("LOOKUP", lockPositionValueLookup);
+  // console.log("LOOKUP", lockPositionValueLookup);
   return lockPositionValueLookup;
 }
 

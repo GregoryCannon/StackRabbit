@@ -105,12 +105,12 @@ export class PreComputeManager {
     }
 
     // Send a response with just the default placement in case the other computation doesn't finish
-    // const formattedResult = formatPrecomputeResult({}, this.defaultPlacement);
-    // console.log(
-    //   "Saving partial result",
-    //   formatPossibility(this.defaultPlacement)
-    // );
-    // onPartialResultCallback(formattedResult);
+    const formattedResult = formatPrecomputeResult({}, this.defaultPlacement);
+    console.log(
+      "Saving partial result",
+      formatPossibility(this.defaultPlacement)
+    );
+    onPartialResultCallback(formattedResult);
 
     // Ping all the workers to start evaluating the next piece values
     console.time("WORKER PHASE");
@@ -342,7 +342,9 @@ export class PreComputeManager {
       const responseObj = {};
       for (const pieceId of POSSIBLE_NEXT_PIECES) {
         // Figure out what adjustment you'd do for that piece
-        let maxValue = phantomPlacement.defaultPlacement.totalValue;
+        let maxValue = this.results[pieceId][
+          phantomPlacement.defaultPlacement.lockPositionEncoded
+        ];
         let maxPossibility: PossibilityChain = null;
         for (const adjPossibility of phantomPlacement.possibleAdjustmentsLookup.get(
           pieceId
@@ -352,7 +354,15 @@ export class PreComputeManager {
             // -0.1 * countInputs(adjPossibility.placement) +
             getAdjustmentInputCost(adjPossibility) +
             this.results[pieceId][adjPossibility.lockPositionEncoded];
-          if (isNaN(value)) {
+          if (
+            !this.results[pieceId].hasOwnProperty(
+              adjPossibility.lockPositionEncoded
+            )
+          ) {
+            console.log(phantomPlacement.defaultPlacement);
+            console.log(adjPossibility);
+            console.log(pieceId);
+            console.log(this.results[pieceId]);
             throw new Error(
               "Unknown lock value: " + adjPossibility.lockPositionEncoded
             );
@@ -465,6 +475,7 @@ export function predictSearchStateAtAdjustmentTime(
   let inputsUsedByAdjTime = 0;
   let offsetXAtAdjustmentTime = 0;
   let rotationAtAdjustmentTime = 0;
+  let totalActiveFrames = 0;
 
   // Loop through the frames until adjustment time
   for (let i = 0; i < reactionTimeFrames; i++) {
@@ -487,10 +498,17 @@ export function predictSearchStateAtAdjustmentTime(
       rotationAtAdjustmentTime--;
     }
 
+    // Check for hitting the stack
+    if (isAnyOf(thisFrameStr, "*^")) {
+      break;
+    }
+
     // Track inputs used
     if (thisFrameStr !== ".") {
       inputsUsedByAdjTime++;
     }
+
+    totalActiveFrames++;
   }
 
   // Correct the rotation to be in the modulus
@@ -507,7 +525,7 @@ export function predictSearchStateAtAdjustmentTime(
 
   // Calculate the y value from gravity
   let offsetYAtAdjustmentTime = Math.floor(
-    reactionTimeFrames / GetGravity(initialState.level)
+    totalActiveFrames / GetGravity(initialState.level)
   );
 
   return {
