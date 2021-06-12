@@ -16,7 +16,7 @@ export function getAiMode(
     return AiMode.KILLSCREEN;
   }
   // Dig, unless it's too close to the killscreen to dig
-  if (shouldUseDigMode(board, level, currentPieceId, aiParams) && (lines < 226 || level !== killscreenLevel - 1)) {
+  if (shouldUseDigMode(board, level, currentPieceId, aiParams)) {
     return AiMode.DIG;
   }
   if (level >= killscreenLevel) {
