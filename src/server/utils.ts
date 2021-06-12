@@ -1,4 +1,4 @@
-import { IS_PAL, WELL_COLUMN } from "./params";
+import { IS_DROUGHT_MODE, IS_PAL, WELL_COLUMN } from "./params";
 
 export const NUM_ROW = 20;
 export const NUM_COLUMN = 10;
@@ -190,7 +190,8 @@ export function countHolesInColumn(
   col: number,
   board: Board,
   surfaceArray: Array<number>,
-  holeCells: Set<number>
+  holeCells: Set<number>,
+  isWell: boolean
 ) {
   let numHolesSeen = 0;
   let curHoleHeight = 0;
@@ -203,13 +204,13 @@ export function countHolesInColumn(
       numHolesSeen++;
 
       // Ignore the first hole in the well column (the well itself)
-      if (col === WELL_COLUMN && numHolesSeen === 1) {
+      if (isWell && numHolesSeen === 1) {
         curHoleHeight = 0;
         continue;
       }
 
       // Penalize taller holes more, except in the well column
-      if (curHoleHeight === 1 || col === WELL_COLUMN) {
+      if (curHoleHeight === 1 || isWell) {
         numHoles += 1;
       } else if (curHoleHeight === 2) {
         numHoles += 2;
@@ -247,7 +248,13 @@ export function getSurfaceArrayAndHoles(
     if (col === WELL_COLUMN) {
       continue;
     }
-    numHoles += countHolesInColumn(col, board, heights, holeCells);
+    numHoles += countHolesInColumn(
+      col,
+      board,
+      heights,
+      holeCells,
+      /* isWell= */ false
+    );
   }
   return [heights, numHoles, holeCells];
 }

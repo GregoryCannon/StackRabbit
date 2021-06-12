@@ -540,16 +540,13 @@ export function fastEval(
     );
   }
 
-  if (
-    aiMode === AiMode.KILLSCREEN ||
-    IS_NON_RIGHT_WELL ||
-    aiMode == AiMode.DIG
-  ) {
+  if (aiMode === AiMode.KILLSCREEN || aiMode === AiMode.DIG) {
     numHoles += utils.countHolesInColumn(
       WELL_COLUMN,
       boardAfter,
-      surfaceArray,
-      holeCells
+      surfaceArrayWithCol10,
+      holeCells,
+      /* isWell= */ aiMode === AiMode.DIG // It's still a well if you're digging, but not on killscreen
     );
   }
   const scareHeight = utils.getScareHeight(levelAfterPlacement, aiParams);
@@ -651,16 +648,13 @@ export function getValueOfPossibility(
     );
   }
   // Sometimes add holes in the designated well column, based on the game state
-  if (
-    aiMode === AiMode.KILLSCREEN ||
-    IS_NON_RIGHT_WELL ||
-    aiMode == AiMode.DIG
-  ) {
+  if (aiMode === AiMode.KILLSCREEN || aiMode === AiMode.DIG) {
     numHoles += utils.countHolesInColumn(
       WELL_COLUMN,
       boardAfter,
-      surfaceArray,
-      holeCells
+      surfaceArrayWithCol10,
+      holeCells,
+      /* isWell= */ aiMode === AiMode.DIG // It's still a well if you're digging, but not on killscreen
     );
   }
 
@@ -787,6 +781,7 @@ export function getValueOfPossibility(
     ? aiParams.INACCESSIBLE_RIGHT_COEF
     : 0;
   const inputCostFactor = possibility.inputCost;
+  const levelCorrectionFactor = levelAfterPlacement >= 29 ? 200 : 0;
 
   const factors = {
     surfaceFactor,
@@ -807,6 +802,7 @@ export function getValueOfPossibility(
     inaccessibleLeftFactor,
     inaccessibleRightFactor,
     inputCostFactor,
+    levelCorrectionFactor,
   };
 
   let [totalValue, explanation] = compileFactors(factors, aiMode);

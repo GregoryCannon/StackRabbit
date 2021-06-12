@@ -1,7 +1,7 @@
 // Each index corresponds to the level you're starting search at while doing the pruning.
 export const SEARCH_BREADTH = {
   2: 999, // Don't prune on the before the second stage ("bad" placements could be a floating burn setup)
-  3: 10, /* This breadth refers to the first hypothetical level, regardless of whether there was 1 or 2 concrete levels before */
+  3: 8 /* This breadth refers to the first hypothetical level, regardless of whether there was 1 or 2 concrete levels before */,
 };
 
 export const EVALUATION_BREADTH = {
@@ -13,7 +13,9 @@ export const EVALUATION_BREADTH = {
 export const IS_PAL = false;
 export const WELL_COLUMN = 9; // 0-indexed
 export const IS_NON_RIGHT_WELL = false;
-export const CAN_TUCK = false;
+export const CAN_TUCK = true;
+export const USE_FINESSE = true;
+export const IS_DROUGHT_MODE = true;
 
 /*--------------------------------
   State-based param modification
@@ -108,7 +110,7 @@ export const DEFAULT_PARAMS: InitialAiParams = {
   HIGH_COL_9_EXP: 2,
   SURFACE_COEF: 1,
   LEFT_SURFACE_COEF: 0,
-  TETRIS_COEF: 25,
+  TETRIS_COEF: 30,
   TETRIS_READY_COEF: 5,
   INACCESSIBLE_LEFT_COEF: -50,
   INACCESSIBLE_RIGHT_COEF: -300,
@@ -154,12 +156,13 @@ const PLAY_PERFECT_PARAMS: InitialAiParams = {
 };
 
 const DROUGHT_MODIFICATIONS = {
-  BURN_COEF: -3,
+  BURN_COEF: -2,
   EXTREME_GAP_COEF: -20,
   AVG_HEIGHT_COEF: -10,
   AVG_HEIGHT_EXPONENT: 1.5,
   HIGH_COL_9_COEF: -10,
-  TETRIS_READY_COEF: 10,
+  TETRIS_READY_COEF: 25,
+  TETRIS_COEF: 100,
 };
 
 const NO_DIRTIES_MODIFICATIONS = {
@@ -180,7 +183,7 @@ const TOURNEY_MEDIUM_AGGRO_MODIFICATIONS = {
   BURN_COEF: -10,
   HIGH_COL_9_COEF: -5,
   UNABLE_TO_BURN_COEF: -0.5,
-  AVG_HEIGHT_COEF: -6,
+  AVG_HEIGHT_COEF: -7,
 };
 
 const TOURNEY_SMALL_AGGRO_MODIFICATIONS = {
@@ -254,7 +257,7 @@ const CENTER_WELL_PARAMS = applyModsToParams(
 );
 
 export function getParams(): InitialAiParams {
-  return NO_DIRTIES_PARAMS;
+  return DEFAULT_PARAMS;
 }
 
 export function getParamMods(): ParamMods {
