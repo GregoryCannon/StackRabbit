@@ -262,9 +262,9 @@ function speedTest(x) {
 
 // MAIN
 
-for (let i = 0; i < 20; i++) {
-  speedTest(4);
-}
+// for (let i = 0; i < 20; i++) {
+//   speedTest(4);
+// }
 tapRangeTest();
 lastMinuteRotationsTest();
 legalMovesTest();

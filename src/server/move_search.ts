@@ -61,6 +61,15 @@ export function getPossibleMoves(
     existingRotation,
     canFirstFrameShift,
   };
+  if (shouldLog)
+    logBoard(
+      getBoardAndLinesClearedAfterPlacement(
+        startingBoard,
+        rotationsList[existingRotation],
+        initialX,
+        initialY
+      )[0]
+    );
 
   const legalPlacementSimStates: Array<SimState> = [];
 
@@ -408,31 +417,40 @@ function repeatedlyShiftPiece(
       simState.arrFrameIndex
     );
     const isGravityFrame = simState.frameIndex % gravity === gravity - 1; // Returns true every Nth frame, where N = gravity
+    let addNewPlacement = false;
 
     if (isInputFrame) {
-      const inputsSucceeded = performSimulationShift(
+      // Try the shift input, then the rotation input
+      const shiftSucceeded = performSimulationShift(
         shiftIncrement,
         simState,
         board,
         rotationsList[simState.rotationIndex]
       );
-      if (!inputsSucceeded) {
+      if (!shiftSucceeded) {
         return rangeCurrent;
       }
-    }
-
-    if (isInputFrame) {
-      const inputSucceeded = performSimulationRotation(
+      const rotationSucceeded = performSimulationRotation(
         goalRotationIndex,
         simState,
         board,
         rotationsList
       );
-      if (!inputSucceeded) {
+      if (!rotationSucceeded) {
         return rangeCurrent;
       }
+
       // If both the input and the rotations went through, we're good
       rangeCurrent += shiftIncrement;
+
+      // If we just shifted and are in the intended rotation, then this is a legal placement
+      if (
+        legalPlacementSimStates !== null &&
+        isInputFrame &&
+        simState.rotationIndex === goalRotationIndex
+      ) {
+        addNewPlacement = true;
+      }
     }
 
     if (isGravityFrame) {
@@ -464,11 +482,7 @@ function repeatedlyShiftPiece(
     simState.arrFrameIndex += 1;
 
     // If we just shifted and are in the intended rotation, then this is a legal placement
-    if (
-      legalPlacementSimStates !== null &&
-      isInputFrame &&
-      simState.rotationIndex === goalRotationIndex
-    ) {
+    if (addNewPlacement) {
       legalPlacementSimStates.push({ ...simState });
     }
   }
