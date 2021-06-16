@@ -203,7 +203,7 @@ function searchHypothetically(
     console.log(
       "\n\n------------------------\nBest Results after Stochastic Analysis"
     );
-    hypotheticalResults.slice(0, 3).forEach((result: HypotheticalResult) => {
+    hypotheticalResults.slice(0, 5).forEach((result: HypotheticalResult) => {
       const chain = result.possibilityChain;
       console.log(
         `Moves: ${chain.placement}    ${
