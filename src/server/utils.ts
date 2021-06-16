@@ -168,22 +168,44 @@ export function generateDigPracticeBoard(garbageHeight, numHoles) {
 }
 
 /** Returns true if the specified cell 1) exists and 2) is empty */
-function isEmptyCell(row, col, board) {
+function isEmptyCellAboveStack(row, col, board, surfaceArray) {
   if (col < 0 || col >= NUM_COLUMN || row < 0 || row >= NUM_ROW) {
     return false;
   }
-  return board[row][col] == SquareState.EMPTY;
+  if (surfaceArray.toString() === [1,1,2,2,3,0,0,0,0,0].toString()){
+    logBoard(board)
+    console.log(row, col, board[row][col] == SquareState.EMPTY, NUM_ROW - row - 1, surfaceArray[col]);
+    console.log(board[row][col] == SquareState.EMPTY && (NUM_ROW - row - 1) === surfaceArray[col]);
+  }
+  return board[row][col] == SquareState.EMPTY && (NUM_ROW - row - 1) === surfaceArray[col];
 }
 
 /** Detects holes that could potentially be tucked into */
-export function isTuckSetup(row, col, board, heights) {
-  if (isEmptyCell(row, col + 1, board) && isEmptyCell(row, col + 2, board)) {
-    return true;
+export function isTuckSetup(row, col, board, surfaceArray) : [boolean, number]{
+  if (surfaceArray.toString() === [1,1,2,2,3,0,0,0,0,0].toString()){
+    logBoard(board)
+    console.log("Checking for tuck at ", row, col);
   }
-  if (isEmptyCell(row, col - 1, board) && isEmptyCell(row, col - 2, board)) {
-    return true;
+  if (isEmptyCellAboveStack(row, col + 1, board, surfaceArray) && isEmptyCellAboveStack(row, col + 2, board, surfaceArray)) {
+    let cellsOfSpace = 2;
+    let i = col + 3;
+    while (isEmptyCellAboveStack(row, i, board, surfaceArray)){
+      cellsOfSpace++;
+      i++;
+    }
+    return [true, cellsOfSpace];
   }
-  return false;
+  if (isEmptyCellAboveStack(row, col - 1, board, surfaceArray) && isEmptyCellAboveStack(row, col - 2, board, surfaceArray)) {
+    let cellsOfSpace = 2;
+    let i = col - 3;
+    while (isEmptyCellAboveStack(row, i, board, surfaceArray)){
+      cellsOfSpace++;
+      i--;
+    }
+    return [true, cellsOfSpace];
+  }
+  // console.log(surfaceArray.join(","), "false")
+  return [false, 0];
 }
 
 export function countHolesInColumn(
@@ -209,8 +231,15 @@ export function countHolesInColumn(
         continue;
       }
 
+      const [tuckSetup, cellsOfSpace] = isTuckSetup(row + curHoleHeight, col, board, surfaceArray);
+      if (tuckSetup){
+        const spaceMultiplier = Math.max(0.2, 1 - 0.3 * (cellsOfSpace - 2));
+        numHoles += spaceMultiplier * curHoleHeight;
+        // console.log(col, surfaceArray.join(","), numHoles, curHoleHeight);
+      }
+
       // Penalize taller holes more, except in the well column
-      if (curHoleHeight === 1 || isWell) {
+      else if (curHoleHeight === 1 || isWell) {
         numHoles += 1;
       } else if (curHoleHeight === 2) {
         numHoles += 2;
@@ -218,7 +247,7 @@ export function countHolesInColumn(
         numHoles += 4;
       }
 
-      for (let r = 0; r < curHoleHeight; r++) {
+      for (let r = 1; r <= curHoleHeight; r++) {
         holeCells.add((row + r) * 10 + col);
       }
       curHoleHeight = 0;
@@ -336,7 +365,19 @@ export function getScareHeight(level: number, aiParams: AiParams) {
     throw new Error("No tap heights calculated when looking up scare height");
   }
   const max5TapHeight = aiParams.MAX_5_TAP_LOOKUP[level];
-  return Math.max(0, max5TapHeight + aiParams.SCARE_HEIGHT_OFFSET);
+  let offset;
+  if (max5TapHeight <= 4){
+    offset = -1
+  } else if (max5TapHeight <= 6){
+    offset = -2
+  } else if (max5TapHeight <= 10){
+    offset = -3
+  } else if (max5TapHeight <= 12){
+    offset = -4
+  } else {
+    offset = -5
+  }
+  return Math.max(0, max5TapHeight + offset);
 }
 
 export function logBoard(board) {

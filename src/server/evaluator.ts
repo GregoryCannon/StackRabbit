@@ -91,7 +91,7 @@ function getRowsNeedingToBurn(
   holeCells.forEach((x) => {
     const holeRow = Math.floor(x / 10);
     const holeCol = x % 10;
-    const isTuck = utils.isTuckSetup(holeRow, holeCol, board, surfaceArray);
+    const [isTuck, _] = utils.isTuckSetup(holeRow, holeCol, board, surfaceArray);
     // Ignore holes that can be dirty tetrised over
     if (
       NUM_ROW - holeRow <= maxDirtyTetrisHeight &&
@@ -701,7 +701,7 @@ export function getValueOfPossibility(
     rowsNeedingToBurnIfTucksFail.delete(row);
   }
   const guaranteedBurns =
-    rowsNeedingToBurn.size + 0.5 * rowsNeedingToBurnIfTucksFail.size;
+    rowsNeedingToBurn.size + 0 * rowsNeedingToBurnIfTucksFail.size;
 
   const leftIsInaccessible = boardHelper.boardHasInaccessibileLeft(
     boardAfter,
@@ -737,7 +737,7 @@ export function getValueOfPossibility(
     aiParams.TETRIS_READY_COEF * (false ? -1 : tetrisReady ? 1 : 0);
   const holeFactor = numHoles * aiParams.HOLE_COEF;
   const holeWeightFactor =
-    (rowsNeedingToBurn.size + 0.1 * rowsNeedingToBurnIfTucksFail.size) *
+    (rowsNeedingToBurn.size + 0 * rowsNeedingToBurnIfTucksFail.size) *
     aiParams.HOLE_WEIGHT_COEF;
   const lineClearFactor = getLineClearValue(numLinesCleared, aiParams);
   const guaranteedBurnsFactor = guaranteedBurns * aiParams.BURN_COEF;
