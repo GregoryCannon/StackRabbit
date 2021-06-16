@@ -1,10 +1,14 @@
 import * as child_process from "child_process";
 import { calculateTapHeight } from "../board_helper";
+import { parseBoard } from "../utils";
 import { processKillscreenResults } from "./killscreen_training";
+
+// Specifies to the worker thread what type of simulation needs to be done
 const TestType = Object.freeze({
   DIG: "dig",
   STANDARD: "average",
   KILLSCREEN: "successors",
+  OPENER: "opener",
 });
 
 /* ------------------------------
@@ -17,11 +21,12 @@ export const SIM_MAX_4_TAP_HEIGHT = calculateTapHeight(
   SIM_INPUT_TIMELINE,
   4
 );
+export const OPENER_TEST_BOARD = parseBoard("00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010000000011100000001111000000");
 
-export const TRAINING_TIME_MINS = 10;
-const NUM_THREADS = 7;
+export const TRAINING_TIME_MINS = 2;
+const NUM_THREADS = 8;
 
-const curTestType = TestType.KILLSCREEN;
+const curTestType = TestType.OPENER;
 
 /* ------------------------------
     Worker thread setup
@@ -82,7 +87,7 @@ function digFitnessFunction(threadResults: Array<Array<SimulatedGameResult>>) {
   console.log("\n----\n", numGames);
   console.log("Deaths:", deathCount);
   console.log("Avg lines:", totalLines / numGames);
-  return [totalLines / numGames, deathCount / numGames];
+  return [totalLines / numGames, deathCount / numGames].map(x => x.toFixed(4));
 }
 
 function defaultFitnessFunction(
@@ -106,22 +111,48 @@ function defaultFitnessFunction(
   console.log("AVERAGE LINES:", totalLines / numGames);
   console.log("SAMPLE SIZE:", numGames);
   console.log("Early topouts", totalEarlyTopouts);
-  return [totalScore / numGames, totalEarlyTopouts / numGames];
+  return [totalScore / numGames, totalEarlyTopouts / numGames].map(x => x.toFixed(4));
+}
+
+function openerFitnessFunction(
+  threadResults: Array<Array<SimulatedGameResult>>
+) {
+  let gamesPerfect = 0;
+  let totalEarlyTopouts = 0;
+  let numGames = 0;
+  for (const result of threadResults) {
+    for (const [score, lines, level, numHoles] of result) {
+      if (lines === 8 && numHoles === 0){
+        gamesPerfect++;
+      }
+      if (lines < 5) {
+        totalEarlyTopouts++;
+      }
+    }
+    numGames += result.length;
+  }
+  console.log("\n\n% TWO PERFECT TETRISES:", gamesPerfect / numGames * 100);
+  console.log("NUM PERFECT, SAMPLE SIZE:")
+  console.log(gamesPerfect);
+  console.log(numGames);
+  console.log("Early topouts", totalEarlyTopouts);
+  return [gamesPerfect / numGames, totalEarlyTopouts / numGames].map(x => x.toFixed(4));
 }
 
 function processResults() {
   switch (curTestType) {
-    case TestType.STANDARD:
-    case TestType.DIG:
-      const fitness =
-        curTestType == TestType.DIG
-          ? digFitnessFunction(results)
-          : defaultFitnessFunction(results);
-      console.log(
-        "\nFITNESS:",
-        fitness.map((x) => x.toFixed(4))
-      );
+    case TestType.OPENER:
+      console.log("\n\nFitness:", openerFitnessFunction(results))
       break;
+
+    case TestType.STANDARD:
+      console.log("\n\nFitness:", defaultFitnessFunction(results))
+      break;
+
+    case TestType.DIG:
+      console.log("\n\nFitness:", digFitnessFunction(results))
+      break;
+
     case TestType.KILLSCREEN:
       processKillscreenResults(results);
   }

@@ -9,13 +9,13 @@ import { getParamMods, getParams } from "../params";
 import { generateDigPracticeBoard } from "../utils";
 import { DEATH_RANK } from "./killscreen_training";
 import {
+  OPENER_TEST_BOARD,
   SIM_INPUT_TIMELINE,
   SIM_MAX_4_TAP_HEIGHT,
   TRAINING_TIME_MINS,
 } from "./simulation_testing";
 
 const MS_PER_MIN = 60000;
-
 let threadId = -1;
 
 /**
@@ -158,7 +158,7 @@ export function simulateDigPractice() {
   return results;
 }
 
-export function testOpener() {
+export function testOpener(openerBoard) {
   // Note the starting time and keep training until a specified number of minutes after that
   const startTimeMs = Date.now();
   const endTimeMs = startTimeMs + TRAINING_TIME_MINS * MS_PER_MIN;
@@ -177,7 +177,7 @@ export function testOpener() {
     results.push(
       simulateGame(
         18,
-        generateDigPracticeBoard(5, 6),
+        openerBoard,
         getParams(),
         getParamMods(),
         SIM_INPUT_TIMELINE,
@@ -206,6 +206,8 @@ process.on("message", (message) => {
     result = measureAverageScore();
   } else if (message.type === "dig") {
     result = simulateDigPractice();
+  } else if (message.type === "opener"){
+    result = testOpener(OPENER_TEST_BOARD);
   }
   process.send({
     type: "result",
