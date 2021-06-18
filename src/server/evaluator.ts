@@ -70,11 +70,15 @@ function getSpireHeight(surfaceArray, scareHeight) {
 
 /** Gets the average height of the columns (excluding col 10, except on killscreen) */
 function getAverageHeightAboveScareLine(surfaceArray, scareHeight) {
+  if (surfaceArray.length !== 9){
+    throw new Error("Surface array length was " + surfaceArray.length);
+  }
   let total = 0;
   for (const height of surfaceArray) {
     total += height;
   }
   const averageHeight = total / surfaceArray.length;
+  console.log("Surface for avg height", surfaceArray.join(","), averageHeight, scareHeight);
   return Math.max(0, averageHeight - scareHeight);
 }
 
@@ -91,7 +95,12 @@ function getRowsNeedingToBurn(
   holeCells.forEach((x) => {
     const holeRow = Math.floor(x / 10);
     const holeCol = x % 10;
-    const [isTuck, _] = utils.isTuckSetup(holeRow, holeCol, board, surfaceArray);
+    const [isTuck, _] = utils.isTuckSetup(
+      holeRow,
+      holeCol,
+      board,
+      surfaceArray
+    );
     // Ignore holes that can be dirty tetrised over
     if (
       NUM_ROW - holeRow <= maxDirtyTetrisHeight &&
@@ -436,10 +445,12 @@ function getBuiltOutLeftFactor(
 ) {
   // Handle low left cases first
   const averageHeight = surfaceArray.slice(2, 8).reduce((a, b) => a + b) / 7;
+  const heightMultiplier = averageHeight / Math.max(scareHeight, 2);
   if (surfaceArray[0] < averageHeight) {
     return (
       -1 *
       aiParams.BUILT_OUT_LEFT_COEF *
+      Math.pow(heightMultiplier, 0.5) *
       Math.pow(averageHeight - surfaceArray[0], aiParams.LOW_LEFT_EXP)
     );
   }
@@ -457,7 +468,6 @@ function getBuiltOutLeftFactor(
   const col1Height = surfaceArray[0];
   const rawValue =
     aiParams.BUILT_OUT_LEFT_COEF * Math.max(0, col1Height - averageHeight);
-  const heightMultiplier = averageHeight / Math.max(scareHeight, 2);
   return heightMultiplier * rawValue;
 }
 

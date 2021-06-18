@@ -1,7 +1,7 @@
 // Each index corresponds to the level you're starting search at while doing the pruning.
 export const SEARCH_BREADTH = {
   2: 999, // Don't prune on the before the second stage ("bad" placements could be a floating burn setup)
-  3: 8 /* This breadth refers to the first hypothetical level, regardless of whether there was 1 or 2 concrete levels before */,
+  3: 10 /* This breadth refers to the first hypothetical level, regardless of whether there was 1 or 2 concrete levels before */,
 };
 
 export const EVALUATION_BREADTH = {
@@ -15,7 +15,7 @@ export const WELL_COLUMN = 9; // 0-indexed
 export const IS_NON_RIGHT_WELL = false;
 export const CAN_TUCK = true;
 export const USE_FINESSE = true;
-export const IS_DROUGHT_MODE = true;
+export const IS_DROUGHT_MODE = false;
 
 /*--------------------------------
   State-based param modification
@@ -257,7 +257,7 @@ const CENTER_WELL_PARAMS = applyModsToParams(
 );
 
 export function getParams(): InitialAiParams {
-  return DEFAULT_PARAMS;
+  return TOURNEY_MEDIUM_AGGRO_PARAMS;
 }
 
 export function getParamMods(): ParamMods {

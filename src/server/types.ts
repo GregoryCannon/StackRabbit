@@ -88,8 +88,10 @@ interface HypotheticalResult {
   possibilityChain: PossibilityChain;
 }
 
-interface HypotheticalBestMove extends PossibilityChain {
-  hypotheticalPiece: PieceId;
+interface HypotheticalBestMove {
+  pieceSequence: string;
+  moveSequence: Array<Placement>;
+  resultingValue: number;
 }
 
 interface SearchState {
@@ -102,6 +104,7 @@ interface SearchState {
   existingXOffset: number;
   existingYOffset: number;
   existingRotation: number;
+  reactionTime: number;
   canFirstFrameShift: boolean;
 }
 

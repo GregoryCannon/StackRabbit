@@ -30,6 +30,7 @@ function getMove(state: LiteGameState, aiParams: InitialAiParams) {
       level: state.level,
       lines: state.lines,
       framesAlreadyElapsed: 0,
+      reactionTime: 0,
       canFirstFrameShift: false,
       existingXOffset: 0,
       existingYOffset: 0,

@@ -41,7 +41,7 @@ export function simulateManyGames(
         paramMods,
         INPUT_SEQUENCE_12_HZ,
         /* predefinedPieceSequence= */ null,
-        /* shouldAdjust= */ true,
+        /* shouldAdjust= */ false,
         /* isDig= */ false,
         /* maxLines= */ 230,
         /* onPlacementCallback= */ null,
@@ -102,6 +102,7 @@ export function simulateGame(
       level,
       lines,
       framesAlreadyElapsed: 0,
+      reactionTime: 0,
       canFirstFrameShift: false,
       existingXOffset: 0,
       existingYOffset: 0,
@@ -142,8 +143,9 @@ export function simulateGame(
 
     // Maybe log per-piece stats
     if (false) {
-      console.log(`Score: ${score}, Lines: ${lines}, Level: ${level}`);
+      console.log(searchState.currentPieceId);
       utils.logBoard(board);
+      console.log(`Score: ${score}, Lines: ${lines}, Level: ${level}`);
     }
 
     i++;
@@ -162,23 +164,22 @@ export function simulateGame(
 }
 
 function getMoveThisStep(
-  searchState,
-  aiParams,
-  paramMods,
-  inputFrameTimeline,
-  shouldAdjust
+  searchState: SearchState,
+  aiParams: AiParams,
+  paramMods: ParamMods,
+  inputFrameTimeline: string,
+  shouldAdjust: boolean
 ) {
   if (shouldAdjust) {
     const initalMove = getBestMove(
       {
         ...searchState,
-        nextPieceId: null,
       },
       /* shouldLog= */ true,
       aiParams,
       paramMods,
       inputFrameTimeline,
-      /* searchDepth= */ 1,
+      /* searchDepth= */ 2,
       /* hypotheticalSearchDepth= */ 1
     );
     if (initalMove == null) {
@@ -188,7 +189,6 @@ function getMoveThisStep(
       searchState,
       initalMove.inputSequence,
       inputFrameTimeline,
-      REACTION_TIME_FRAMES
     );
     newSearchState.nextPieceId = searchState.nextPieceId;
     const adjustment = getBestMove(
@@ -268,7 +268,7 @@ function getRandomPiece(previousPieceId) {
 function runScoreExperiment(numTrials) {
   const resultList = simulateManyGames(
     numTrials,
-    29,
+    18,
     paramsManager.getParams(),
     paramsManager.getParamMods()
   );

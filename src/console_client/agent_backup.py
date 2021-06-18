@@ -275,7 +275,7 @@ def requestPrecompute(stateAfter):
   if nextPiece == None:
     raise Exception("No next piece")
   placementLookup = None
-  requestStr = "http://127.0.0.1:3000/precompute-naive/{boardSerialized}/{nextPiece}/null/{level}/{lines}/0/0/0/0/{INPUT_TIMELINE}/true".format(
+  requestStr = "http://127.0.0.1:3000/precompute-naive/{boardSerialized}/{nextPiece}/null/{level}/{lines}/0/0/0/0/0/{INPUT_TIMELINE}/true".format(
     boardSerialized = stateAfter["board"],
     nextPiece = nextPiece,
     level = stateAfter["level"],

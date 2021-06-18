@@ -55,7 +55,7 @@ export class RequestHandler {
 
       case "async-nb":
         return this._wrapAsync(() =>
-          this.handleRequestSyncWithNextBox(requestArgs)
+          this.handleRequestSyncWithNextBox(requestArgs, 1)
         );
 
       case "async-nnb":
@@ -63,20 +63,18 @@ export class RequestHandler {
           this.handleRequestSyncNoNextBox(requestArgs)
         );
 
+      case "research-nb":
+          return [this.handleRequestSyncWithNextBox(requestArgs, 3), 200];
+
       case "sync-nb":
-        return [this.handleRequestSyncWithNextBox(requestArgs), 200];
+        return [this.handleRequestSyncWithNextBox(requestArgs, 1), 200];
 
       case "sync-nnb":
         return [this.handleRequestSyncNoNextBox(requestArgs), 200];
 
       case "precompute":
         return this._wrapAsync(() =>
-          this.handlePrecomputeRequest(requestArgs, /* isNaive= */ false)
-        );
-
-      case "precompute-naive":
-        return this._wrapAsync(() =>
-          this.handlePrecomputeRequest(requestArgs, /* isNaive= */ true)
+          this.handlePrecomputeRequest(requestArgs)
         );
 
       default:
@@ -104,6 +102,7 @@ export class RequestHandler {
       existingYOffset,
       existingRotation,
       framesAlreadyElapsed,
+      reactionTime,
       inputFrameTimeline,
       canFirstFrameShift,
     ] = requestArgs;
@@ -112,6 +111,7 @@ export class RequestHandler {
     existingXOffset = parseInt(existingXOffset) || 0;
     existingYOffset = parseInt(existingYOffset) || 0;
     framesAlreadyElapsed = parseInt(framesAlreadyElapsed) || 0;
+    reactionTime = parseInt(reactionTime) || 0;
     existingRotation = parseInt(existingRotation) || 0;
     canFirstFrameShift = canFirstFrameShift.toLowerCase() === "true";
 
@@ -124,6 +124,7 @@ export class RequestHandler {
       existingXOffset,
       existingYOffset,
       existingRotation,
+      reactionTime,
       framesAlreadyElapsed,
       inputFrameTimeline,
       canFirstFrameShift,
@@ -150,7 +151,7 @@ export class RequestHandler {
     if (level < 18 || level > 30) {
       console.log("WARNING - Unusual level:", level);
     }
-    if (lines < 10 && (level < 15 || (level > 19 && level !== 29))) {
+    if (lines < 10 && (level !== 18 && level !== 19 && level !== 29)) {
       throw new Error(
         `Unsupported starting level: ${level}. Supported starts: 18, 19, 29`
       );
@@ -186,6 +187,7 @@ export class RequestHandler {
         existingXOffset,
         existingYOffset,
         existingRotation,
+        reactionTime,
         framesAlreadyElapsed,
         canFirstFrameShift,
       },
@@ -227,7 +229,7 @@ export class RequestHandler {
       params.getParamMods(),
       inputFrameTimeline,
       /* searchDepth= */ 1,
-      /* hypotheticalSearchDepth= */ 1
+      /* hypotheticalSearchDepth= */ 0
     );
 
     console.timeEnd("NoNextBox");
@@ -241,7 +243,7 @@ export class RequestHandler {
    * Synchronously choose the best placement, with next piece & 1-depth search.
    * @returns {string} the API response
    */
-  handleRequestSyncWithNextBox(requestArgs) {
+  handleRequestSyncWithNextBox(requestArgs, hypotheticalSearchDepth) {
     let [searchState, inputFrameTimeline] = this._parseArguments(requestArgs);
 
     // Get the best move
@@ -252,7 +254,7 @@ export class RequestHandler {
       params.getParamMods(),
       inputFrameTimeline,
       /* searchDepth= */ 2,
-      /* hypotheticalSearchDepth= */ 1
+      hypotheticalSearchDepth
     );
 
     if (!bestMove) {
@@ -265,16 +267,8 @@ export class RequestHandler {
    * Pre-compute both an initial placement and all possible adjustments for the upcoming piece.
    * @returns {string} the API response
    */
-  handlePrecomputeRequest(requestArgs, isNaive) {
+  handlePrecomputeRequest(requestArgs) {
     let [searchState, inputFrameTimeline] = this._parseArguments(requestArgs);
-    let reactionTimeFrames;
-    if (isNaive) {
-      reactionTimeFrames = 0;
-    } else {
-      // Parse the reaction time from the 'frames already elapsed' param
-      reactionTimeFrames = searchState.framesAlreadyElapsed;
-      searchState.framesAlreadyElapsed = 0;
-    }
 
     this.preComputeManager.finessePrecompute(
       searchState,
@@ -282,7 +276,6 @@ export class RequestHandler {
       params.getParams(),
       params.getParamMods(),
       inputFrameTimeline,
-      reactionTimeFrames,
       function (result) {
         this.partialResult = result;
       }.bind(this),

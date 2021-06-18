@@ -77,7 +77,6 @@ export class PreComputeManager {
     initialAiParams: InitialAiParams,
     paramMods: ParamMods,
     inputFrameTimeline: string,
-    reactionTimeFrames: number,
     onPartialResultCallback: Function,
     onResultCallback: Function
   ) {
@@ -134,7 +133,6 @@ export class PreComputeManager {
       searchState,
       possibleMoves,
       inputFrameTimeline,
-      reactionTimeFrames
     );
     this._precompileAdjustmentMoves();
   }
@@ -145,7 +143,6 @@ export class PreComputeManager {
     initialAiParams: InitialAiParams,
     paramMods: ParamMods,
     inputFrameTimeline: string,
-    reactionTimeFrames: number,
     onPartialResultCallback: Function,
     onResultCallback: Function
   ) {
@@ -155,7 +152,7 @@ export class PreComputeManager {
     this.pendingResults = POSSIBLE_NEXT_PIECES.length;
 
     // Get initial NNB placement
-    if (reactionTimeFrames === 0) {
+    if (searchState.reactionTime === 0) {
       this.defaultPlacement = null;
     } else {
       this.defaultPlacement = getBestMove(
@@ -182,12 +179,11 @@ export class PreComputeManager {
 
     // Ping the worker threads to compute all possible adjustments
     const newSearchState =
-      reactionTimeFrames > 0
+      searchState.reactionTime > 0
         ? predictSearchStateAtAdjustmentTime(
             searchState,
             this.defaultPlacement.inputSequence,
             inputFrameTimeline,
-            reactionTimeFrames
           )
         : searchState;
 
@@ -210,7 +206,6 @@ export class PreComputeManager {
     initialSearchState: SearchState,
     possibleMoves: Array<PossibilityChain>,
     inputFrameTimeline: string,
-    reactionTimeFrames: number
   ) {
     const seenInputSequences = new Set();
     const phantomPlacements: Array<PhantomPlacement> = [];
@@ -224,7 +219,7 @@ export class PreComputeManager {
     for (const possibility of possibleMoves) {
       const newInputSequence = possibility.inputSequence.substr(
         0,
-        reactionTimeFrames
+        initialSearchState.reactionTime
       );
       if (!seenInputSequences.has(newInputSequence)) {
         // Predict the state at adjustment time and register the phantom placement
@@ -232,7 +227,6 @@ export class PreComputeManager {
           initialSearchState,
           newInputSequence,
           inputFrameTimeline,
-          reactionTimeFrames
         );
 
         // Add a new phantom placement
@@ -359,10 +353,21 @@ export class PreComputeManager {
               adjPossibility.lockPositionEncoded
             )
           ) {
-            console.log(phantomPlacement.defaultPlacement);
-            console.log(adjPossibility);
+            console.log({
+              ...phantomPlacement.defaultPlacement,
+              boardAfter: null,
+            });
+            console.log({ ...adjPossibility, boardAfter: null });
             console.log(pieceId);
             console.log(this.results[pieceId]);
+            for (const piece in POSSIBLE_NEXT_PIECES) {
+              if (!this.results[piece]) {
+                throw new Error("No results for piece" + piece);
+              }
+              console.log(
+                piece + " " + Object.keys(this.results[piece]).length
+              );
+            }
             throw new Error(
               "Unknown lock value: " + adjPossibility.lockPositionEncoded
             );
@@ -469,7 +474,6 @@ export function predictSearchStateAtAdjustmentTime(
   initialState: SearchState,
   inputSequence: string,
   inputFrameTimeline: string,
-  reactionTimeFrames
 ) {
   let inputsPossibleByAdjTime = 0;
   let inputsUsedByAdjTime = 0;
@@ -478,7 +482,7 @@ export function predictSearchStateAtAdjustmentTime(
   let totalActiveFrames = 0;
 
   // Loop through the frames until adjustment time
-  for (let i = 0; i < reactionTimeFrames; i++) {
+  for (let i = 0; i < initialState.reactionTime; i++) {
     if (shouldPerformInputsThisFrame(inputFrameTimeline, i)) {
       inputsPossibleByAdjTime++;
     }
@@ -537,7 +541,8 @@ export function predictSearchStateAtAdjustmentTime(
     existingXOffset: offsetXAtAdjustmentTime,
     existingYOffset: offsetYAtAdjustmentTime,
     existingRotation: rotationAtAdjustmentTime,
-    framesAlreadyElapsed: reactionTimeFrames,
+    framesAlreadyElapsed: initialState.reactionTime,
+    reactionTime: initialState.reactionTime,
     canFirstFrameShift: inputsUsedByAdjTime < inputsPossibleByAdjTime,
   };
 }
@@ -557,14 +562,13 @@ function testPrediction() {
         level: 18,
         lines: 0,
         framesAlreadyElapsed: 0,
+        reactionTime: 0,
         existingXOffset: 0,
         existingYOffset: 0,
         existingRotation: 0,
         canFirstFrameShift: false,
       },
       "E....E...L...L",
-      "X....X...X...X",
-      15
-    )
+      "X....X...X...X")
   );
 }
