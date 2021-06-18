@@ -58,7 +58,6 @@ function shouldUseDigMode(
 
   const surfaceArrayWithCol10 = utils.getSurfaceArrayAndHoles(board)[0];
 
-
   const scareHeight = utils.getScareHeight(level, aiParams);
   // TODO: when 'eventual board after line clear' implemented, check that the hole can ever
   // be under the max dirty tetris line
@@ -68,7 +67,7 @@ function shouldUseDigMode(
 
   function holeWarrantsDigging(row, col, firstFullRow, surfaceArray) {
     // If it's a tuck setup, don't dig
-    if (utils.isTuckSetup(row, col, board, surfaceArray)[0]){
+    if (utils.isTuckSetup(row, col, board, surfaceArray)[0]) {
       return false;
     }
     // If it's perfectly set up to play dirty, don't dig
@@ -107,7 +106,9 @@ function shouldUseDigMode(
       row++;
       if (board[row][col] === SquareState.EMPTY) {
         // Found hole
-        if (holeWarrantsDigging(row, col, firstFullRow, surfaceArrayWithCol10)) {
+        if (
+          holeWarrantsDigging(row, col, firstFullRow, surfaceArrayWithCol10)
+        ) {
           return true;
         }
       }

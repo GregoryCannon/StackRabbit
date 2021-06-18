@@ -21,7 +21,9 @@ export const SIM_MAX_4_TAP_HEIGHT = calculateTapHeight(
   SIM_INPUT_TIMELINE,
   4
 );
-export const OPENER_TEST_BOARD = parseBoard("00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010000000011100000001111000000");
+export const OPENER_TEST_BOARD = parseBoard(
+  "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000011100000011110"
+);
 
 export const TRAINING_TIME_MINS = 2;
 const NUM_THREADS = 8;
@@ -87,7 +89,9 @@ function digFitnessFunction(threadResults: Array<Array<SimulatedGameResult>>) {
   console.log("\n----\n", numGames);
   console.log("Deaths:", deathCount);
   console.log("Avg lines:", totalLines / numGames);
-  return [totalLines / numGames, deathCount / numGames].map(x => x.toFixed(4));
+  return [totalLines / numGames, deathCount / numGames].map((x) =>
+    x.toFixed(4)
+  );
 }
 
 function defaultFitnessFunction(
@@ -101,7 +105,7 @@ function defaultFitnessFunction(
     for (const [score, lines] of result) {
       totalScore += score;
       totalLines += lines;
-      if (score <= 300000) {
+      if (score <= 500000) {
         totalEarlyTopouts++;
       }
     }
@@ -111,7 +115,9 @@ function defaultFitnessFunction(
   console.log("AVERAGE LINES:", totalLines / numGames);
   console.log("SAMPLE SIZE:", numGames);
   console.log("Early topouts", totalEarlyTopouts);
-  return [totalScore / numGames, totalEarlyTopouts / numGames].map(x => x.toFixed(4));
+  return [totalScore / numGames, totalEarlyTopouts / numGames].map((x) =>
+    x.toFixed(4)
+  );
 }
 
 function openerFitnessFunction(
@@ -136,21 +142,23 @@ function openerFitnessFunction(
   console.log(gamesPerfect);
   console.log(numGames);
   console.log("Early topouts", totalEarlyTopouts);
-  return [gamesPerfect / numGames, totalEarlyTopouts / numGames].map(x => x.toFixed(4));
+  return [gamesPerfect / numGames, totalEarlyTopouts / numGames].map((x) =>
+    x.toFixed(4)
+  );
 }
 
 function processResults() {
   switch (curTestType) {
     case TestType.OPENER:
-      console.log("\n\nFitness:", openerFitnessFunction(results))
+      console.log("\n\nFitness:", openerFitnessFunction(results));
       break;
 
     case TestType.STANDARD:
-      console.log("\n\nFitness:", defaultFitnessFunction(results))
+      console.log("\n\nFitness:", defaultFitnessFunction(results));
       break;
 
     case TestType.DIG:
-      console.log("\n\nFitness:", digFitnessFunction(results))
+      console.log("\n\nFitness:", digFitnessFunction(results));
       break;
 
     case TestType.KILLSCREEN:

@@ -206,7 +206,7 @@ process.on("message", (message) => {
     result = measureAverageScore();
   } else if (message.type === "dig") {
     result = simulateDigPractice();
-  } else if (message.type === "opener"){
+  } else if (message.type === "opener") {
     result = testOpener(OPENER_TEST_BOARD);
   }
   process.send({

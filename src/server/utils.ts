@@ -172,33 +172,33 @@ function isEmptyCellAboveStack(row, col, board, surfaceArray) {
   if (col < 0 || col >= NUM_COLUMN || row < 0 || row >= NUM_ROW) {
     return false;
   }
-  if (surfaceArray.toString() === [1,1,2,2,3,0,0,0,0,0].toString()){
-    logBoard(board)
-    console.log(row, col, board[row][col] == SquareState.EMPTY, NUM_ROW - row - 1, surfaceArray[col]);
-    console.log(board[row][col] == SquareState.EMPTY && (NUM_ROW - row - 1) === surfaceArray[col]);
-  }
-  return board[row][col] == SquareState.EMPTY && (NUM_ROW - row - 1) === surfaceArray[col];
+  return (
+    board[row][col] == SquareState.EMPTY &&
+    NUM_ROW - row - 1 === surfaceArray[col]
+  );
 }
 
 /** Detects holes that could potentially be tucked into */
-export function isTuckSetup(row, col, board, surfaceArray) : [boolean, number]{
-  if (surfaceArray.toString() === [1,1,2,2,3,0,0,0,0,0].toString()){
-    logBoard(board)
-    console.log("Checking for tuck at ", row, col);
-  }
-  if (isEmptyCellAboveStack(row, col + 1, board, surfaceArray) && isEmptyCellAboveStack(row, col + 2, board, surfaceArray)) {
+export function isTuckSetup(row, col, board, surfaceArray): [boolean, number] {
+  if (
+    isEmptyCellAboveStack(row, col + 1, board, surfaceArray) &&
+    isEmptyCellAboveStack(row, col + 2, board, surfaceArray)
+  ) {
     let cellsOfSpace = 2;
     let i = col + 3;
-    while (isEmptyCellAboveStack(row, i, board, surfaceArray)){
+    while (isEmptyCellAboveStack(row, i, board, surfaceArray)) {
       cellsOfSpace++;
       i++;
     }
     return [true, cellsOfSpace];
   }
-  if (isEmptyCellAboveStack(row, col - 1, board, surfaceArray) && isEmptyCellAboveStack(row, col - 2, board, surfaceArray)) {
+  if (
+    isEmptyCellAboveStack(row, col - 1, board, surfaceArray) &&
+    isEmptyCellAboveStack(row, col - 2, board, surfaceArray)
+  ) {
     let cellsOfSpace = 2;
     let i = col - 3;
-    while (isEmptyCellAboveStack(row, i, board, surfaceArray)){
+    while (isEmptyCellAboveStack(row, i, board, surfaceArray)) {
       cellsOfSpace++;
       i--;
     }
@@ -231,8 +231,13 @@ export function countHolesInColumn(
         continue;
       }
 
-      const [tuckSetup, cellsOfSpace] = isTuckSetup(row + curHoleHeight, col, board, surfaceArray);
-      if (tuckSetup){
+      const [tuckSetup, cellsOfSpace] = isTuckSetup(
+        row + curHoleHeight,
+        col,
+        board,
+        surfaceArray
+      );
+      if (tuckSetup) {
         const spaceMultiplier = Math.max(0.2, 1 - 0.3 * (cellsOfSpace - 2));
         numHoles += spaceMultiplier * curHoleHeight;
         // console.log(col, surfaceArray.join(","), numHoles, curHoleHeight);
@@ -366,16 +371,16 @@ export function getScareHeight(level: number, aiParams: AiParams) {
   }
   const max5TapHeight = aiParams.MAX_5_TAP_LOOKUP[level];
   let offset;
-  if (max5TapHeight <= 4){
-    offset = -1
-  } else if (max5TapHeight <= 6){
-    offset = -2
-  } else if (max5TapHeight <= 10){
-    offset = -3
-  } else if (max5TapHeight <= 12){
-    offset = -4
+  if (max5TapHeight <= 4) {
+    offset = -1;
+  } else if (max5TapHeight <= 6) {
+    offset = -2;
+  } else if (max5TapHeight <= 10) {
+    offset = -3;
+  } else if (max5TapHeight <= 12) {
+    offset = -4;
   } else {
-    offset = -5
+    offset = -5;
   }
   return Math.max(0, max5TapHeight + offset);
 }
