@@ -190,7 +190,7 @@ function searchHypothetically(
   // Evaluate the weighted EV of each possibility chain
   let hypotheticalResults: Array<HypotheticalResult> = [];
   for (const [i,chain] of possibilityChains.entries()) {
-    if (hypotheticalSearchDepth > 1){
+    if (hypotheticalSearchDepth > 2){
       console.log(`Checking 2-chain ${i} of ${possibilityChains.length}`);
     }
 
@@ -374,11 +374,7 @@ function getBestMovesForAllPossibleSequences(
 
   // Get the best placement for each hypothetical piece
   const hypotheticalSequences = getHypotheticalSequences(hypotheticalSearchDepth);
-  for (const [i,sequence] of hypotheticalSequences.entries()) {
-    // if (i % 500 == 0){
-    //   console.log(`Checking hypothetical sequence ${i} of ${hypotheticalSequences.length}`);
-    // }
-
+  for (const sequence of hypotheticalSequences) {
     // If drought mode is on, don't anticipate getting long bars
     if (IS_DROUGHT_MODE && sequence.includes("I")) {
       continue;
@@ -530,37 +526,25 @@ export function addTapInfoToAiParams(
   const newParams = JSON.parse(JSON.stringify(initialAiParams));
   // Save the input frame timeline
   newParams.INPUT_FRAME_TIMELINE = inputFrameTimeline;
-
-  // Look up the 4/5 tap height for the current and maybe next level
   newParams.MAX_5_TAP_LOOKUP = {};
-  newParams.MAX_5_TAP_LOOKUP[level] = boardHelper.calculateTapHeight(
-    level,
-    inputFrameTimeline,
-    5
-  );
   newParams.MAX_4_TAP_LOOKUP = {};
-  newParams.MAX_4_TAP_LOOKUP[level] = boardHelper.calculateTapHeight(
-    level,
-    inputFrameTimeline,
-    4
-  );
-  const nextLevel = level + 1;
-  // Also look up the tap ranges for the next level, in case we evaluate possibilites after the transition
-  newParams.MAX_5_TAP_LOOKUP[nextLevel] = boardHelper.calculateTapHeight(
-    nextLevel,
-    inputFrameTimeline,
-    5
-  );
-  newParams.MAX_4_TAP_LOOKUP[nextLevel] = boardHelper.calculateTapHeight(
-    nextLevel,
-    inputFrameTimeline,
-    4
-  );
 
-  // Add burn quota on 28 if not already present
-  if (level == 28) {
-    //...
+  const addForLevel = (lvl) => {
+    newParams.MAX_5_TAP_LOOKUP[lvl] = boardHelper.calculateTapHeight(
+      lvl,
+      inputFrameTimeline,
+      5
+    );
+    newParams.MAX_4_TAP_LOOKUP[lvl] = boardHelper.calculateTapHeight(
+      lvl,
+      inputFrameTimeline,
+      4
+    );
   }
+
+  addForLevel(level);
+  addForLevel(level + 1);
+  addForLevel(level + 2);
 
   return newParams;
 }

@@ -13,7 +13,7 @@ import {
 const mainApp = require("./main");
 const params = require("./params");
 
-const SHOULD_LOG_ALL = true;
+const SHOULD_LOG_ALL = false;
 
 export class RequestHandler {
   preComputeManager: PreComputeManager;

@@ -118,9 +118,10 @@ interface PhantomPlacement {
 const enum AiMode {
   STANDARD,
   DIG,
+  DIG_INTO_KILLSCREEN,
   NEAR_KILLSCREEN,
   KILLSCREEN,
-  KILLSCREEN_RIGHT_WELL,
+  KILLSCREEN_FOR_TETRISES,
 }
 
 /* ----------- Evaluation Parameters ------------- */
@@ -139,7 +140,6 @@ interface InitialAiParams {
   LOW_LEFT_EXP: number;
   HOLE_COEF: number;
   HOLE_WEIGHT_COEF: number;
-  SCARE_HEIGHT_OFFSET: number;
   SPIRE_HEIGHT_EXPONENT: number;
   SPIRE_HEIGHT_COEF: number;
   UNABLE_TO_BURN_COEF: number;

@@ -365,11 +365,21 @@ export function parseBoard(boardStr: string): Board {
     .map((rowSerialized) => rowSerialized.split("").map((x) => parseInt(x)));
 }
 
-export function getScareHeight(level: number, aiParams: AiParams) {
+export function getScareHeight(level: number, lines: number, aiParams: AiParams) {
   if (!aiParams.MAX_5_TAP_LOOKUP) {
     throw new Error("No tap heights calculated when looking up scare height");
   }
-  const max5TapHeight = aiParams.MAX_5_TAP_LOOKUP[level];
+  let max5TapHeight = aiParams.MAX_5_TAP_LOOKUP[level];
+
+  // If near transition, take it into account early
+  const preEmptTransitionLines = 6;
+  if (getLevelAfterLineClears(level, lines, preEmptTransitionLines) > level && level < 28){
+    const newMax5Tap = aiParams.MAX_5_TAP_LOOKUP[level + 1];
+    const linesUntilTransition = 10 - (lines % 10);
+    const ratioPreToPost = linesUntilTransition / preEmptTransitionLines;
+    max5TapHeight = ratioPreToPost * max5TapHeight + (1 - ratioPreToPost) * newMax5Tap;
+  }
+
   let offset;
   if (max5TapHeight <= 4) {
     offset = -1;

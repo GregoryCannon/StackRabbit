@@ -1,7 +1,7 @@
 // Each index corresponds to the level you're starting search at while doing the pruning.
 export const SEARCH_BREADTH = {
   2: 999, // Don't prune on the before the second stage ("bad" placements could be a floating burn setup)
-  3: 10 /* This breadth refers to the first hypothetical level, regardless of whether there was 1 or 2 concrete levels before */,
+  3: 8 /* This breadth refers to the first hypothetical level, regardless of whether there was 1 or 2 concrete levels before */,
 };
 
 export const EVALUATION_BREADTH = {
@@ -36,12 +36,14 @@ export function modifyParamsForAiMode(aiParams, aiMode, paramMods) {
   switch (aiMode) {
     case AiMode.DIG:
       return applyModsToParams(aiParams, paramMods.DIG);
+    case AiMode.DIG_INTO_KILLSCREEN:
+      return applyModsToParams(aiParams, paramMods.DIG_INTO_KILLSCREEN);
     case AiMode.NEAR_KILLSCREEN:
       return applyModsToParams(aiParams, paramMods.NEAR_KILLSCREEN);
     case AiMode.KILLSCREEN:
       return applyModsToParams(aiParams, paramMods.KILLSCREEN);
-    case AiMode.KILLSCREEN_RIGHT_WELL:
-      return applyModsToParams(aiParams, paramMods.KILLSCREEN_RIGHT_WELL);
+    case AiMode.KILLSCREEN_FOR_TETRISES:
+      return applyModsToParams(aiParams, paramMods.KILLSCREEN_FOR_TETRISES);
     default:
       return aiParams;
   }
@@ -53,9 +55,14 @@ export const DEFAULT_PARAM_MODS = {
     COL_10_COEF: -1,
     HOLE_WEIGHT_COEF: -8,
     HOLE_COEF: -100,
+    AVG_HEIGHT_COEF: -8,
+  },
+  DIG_INTO_KILLSCREEN: {
+    BURN_COEF: -1,
+    TETRIS_READY_COEF: 10,
+    TETRIS_COEF: 500, // has to be more than INACCESSIBLE_RIGHT, so that it'll take a tetris on 229 lines
   },
   NEAR_KILLSCREEN: {
-    BURN_COEF: -15,
     TETRIS_READY_COEF: 10,
     TETRIS_COEF: 500, // has to be more than INACCESSIBLE_RIGHT, so that it'll take a tetris on 229 lines
   },
@@ -76,8 +83,7 @@ export const DEFAULT_PARAM_MODS = {
     TETRIS_COEF: 40,
     SURFACE_COEF: 0.5,
   },
-  KILLSCREEN_RIGHT_WELL: {
-    SCARE_HEIGHT_OFFSET: 0,
+  KILLSCREEN_FOR_TETRISES: {
     BURN_COEF: -1,
   },
 };
@@ -90,7 +96,6 @@ export const DEFAULT_PARAM_MODS = {
 export const DEFAULT_PARAMS: InitialAiParams = {
   AVG_HEIGHT_EXPONENT: 1.5000000000004,
   AVG_HEIGHT_COEF: -5,
-  SCARE_HEIGHT_OFFSET: -3,
   BURN_COEF: -5,
   COL_10_COEF: -1,
   COL_10_HEIGHT_MULTIPLIER_EXP: 3,
@@ -111,7 +116,7 @@ export const DEFAULT_PARAMS: InitialAiParams = {
   SURFACE_COEF: 1,
   LEFT_SURFACE_COEF: 0,
   TETRIS_COEF: 30,
-  TETRIS_READY_COEF: 5,
+  TETRIS_READY_COEF: 6,
   INACCESSIBLE_LEFT_COEF: -50,
   INACCESSIBLE_RIGHT_COEF: -300,
 };
@@ -129,7 +134,6 @@ const CENTER_WELL_MODIFICATIONS = {
 const PLAY_PERFECT_PARAMS: InitialAiParams = {
   AVG_HEIGHT_EXPONENT: 1,
   AVG_HEIGHT_COEF: -300,
-  SCARE_HEIGHT_OFFSET: 0,
   BURN_COEF: -1000,
   COL_10_COEF: 0,
   COL_10_HEIGHT_MULTIPLIER_EXP: 0,
@@ -183,14 +187,13 @@ const TOURNEY_MEDIUM_AGGRO_MODIFICATIONS = {
   BURN_COEF: -10,
   HIGH_COL_9_COEF: -5,
   UNABLE_TO_BURN_COEF: -0.5,
-  AVG_HEIGHT_COEF: -7,
+  AVG_HEIGHT_COEF: -6,
 };
 
 const TOURNEY_SMALL_AGGRO_MODIFICATIONS = {
   BURN_COEF: -7.5,
   HIGH_COL_9_COEF: -4,
   UNABLE_TO_BURN_COEF: -0.4,
-  AVG_HEIGHT_COEF: -5.25,
 };
 
 const AGGRO_MODIFICATIONS = {
@@ -211,14 +214,12 @@ const FULL_AGGRO_MODIFICATIONS = {
 
 const LOW_TAP_SPEED_MODIFICATIONS = {
   UNABLE_TO_BURN_COEF: -0.7,
-  SCARE_HEIGHT_OFFSET: -1,
   BURN_COEF: -5,
   INACCESSIBLE_LEFT_COEF: -200,
 };
 
 const MEDIUM_LOW_TAP_SPEED_MODIFICATIONS = {
   UNABLE_TO_BURN_COEF: -0.7,
-  SCARE_HEIGHT_OFFSET: -2,
   INACCESSIBLE_LEFT_COEF: -200,
 };
 

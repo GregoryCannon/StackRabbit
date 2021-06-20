@@ -16,12 +16,12 @@ export function getAiMode(
     return AiMode.KILLSCREEN;
   }
   // Dig, unless it's too close to the killscreen to dig
-  if (shouldUseDigMode(board, level, currentPieceId, aiParams)) {
-    return AiMode.DIG;
+  if (shouldUseDigMode(board, level, lines, currentPieceId, aiParams)) {
+    return lines >= 226 ? AiMode.DIG_INTO_KILLSCREEN : AiMode.DIG;
   }
   if (level >= killscreenLevel) {
     // This is checked after dig mode so that right well killscreen AI can still dig
-    return AiMode.KILLSCREEN_RIGHT_WELL;
+    return AiMode.KILLSCREEN_FOR_TETRISES;
   }
   if (lines >= 220 && level === killscreenLevel - 1) {
     return AiMode.NEAR_KILLSCREEN;
@@ -40,6 +40,7 @@ export function getAiMode(
 function shouldUseDigMode(
   board,
   level,
+  lines,
   currentPieceId: PieceId,
   aiParams: AiParams
 ) {
@@ -58,7 +59,7 @@ function shouldUseDigMode(
 
   const surfaceArrayWithCol10 = utils.getSurfaceArrayAndHoles(board)[0];
 
-  const scareHeight = utils.getScareHeight(level, aiParams);
+  const scareHeight = utils.getScareHeight(level, lines, aiParams);
   // TODO: when 'eventual board after line clear' implemented, check that the hole can ever
   // be under the max dirty tetris line
   const maxDirtyTetrisHeight = Math.round(

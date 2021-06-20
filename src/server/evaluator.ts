@@ -70,15 +70,11 @@ function getSpireHeight(surfaceArray, scareHeight) {
 
 /** Gets the average height of the columns (excluding col 10, except on killscreen) */
 function getAverageHeightAboveScareLine(surfaceArray, scareHeight) {
-  if (surfaceArray.length !== 9){
-    throw new Error("Surface array length was " + surfaceArray.length);
-  }
   let total = 0;
   for (const height of surfaceArray) {
     total += height;
   }
   const averageHeight = total / surfaceArray.length;
-  console.log("Surface for avg height", surfaceArray.join(","), averageHeight, scareHeight);
   return Math.max(0, averageHeight - scareHeight);
 }
 
@@ -559,7 +555,7 @@ export function fastEval(
       /* isWell= */ aiMode === AiMode.DIG // It's still a well if you're digging, but not on killscreen
     );
   }
-  const scareHeight = utils.getScareHeight(levelAfterPlacement, aiParams);
+  const scareHeight = utils.getScareHeight(levelAfterPlacement, lines + numLinesCleared, aiParams);
   const spireHeight = getSpireHeight(surfaceArray, scareHeight);
   const avgHeightAboveScareLine = getAverageHeightAboveScareLine(
     surfaceArray,
@@ -669,7 +665,7 @@ export function getValueOfPossibility(
   }
 
   // Precompute values needed in calculating the factors
-  const scareHeight = utils.getScareHeight(levelAfterPlacement, aiParams);
+  const scareHeight = utils.getScareHeight(levelAfterPlacement, lines + numLinesCleared, aiParams);
   const spireHeight = getSpireHeight(surfaceArray, scareHeight);
   const avgHeightAboveScareLine = getAverageHeightAboveScareLine(
     aiMode == AiMode.KILLSCREEN ? surfaceArrayWithCol10 : surfaceArray,
@@ -791,7 +787,7 @@ export function getValueOfPossibility(
     ? aiParams.INACCESSIBLE_RIGHT_COEF
     : 0;
   const inputCostFactor = possibility.inputCost;
-  const levelCorrectionFactor = levelAfterPlacement >= 29 ? 200 : 0;
+  const levelCorrectionFactor = levelAfterPlacement >= 29 ? 100 : 0;
 
   const factors = {
     surfaceFactor,
