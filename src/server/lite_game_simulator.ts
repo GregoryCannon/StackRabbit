@@ -15,7 +15,7 @@ export const REWARDS = {
   4: 1200,
 };
 const INPUT_SEQUENCE_12_HZ = "X....";
-const REACTION_TIME_FRAMES = 25;
+const REACTION_TIME_FRAMES = 18;
 const paramsManager = require("./params");
 export const DIG_LINE_CAP = 25;
 
@@ -41,7 +41,7 @@ export function simulateManyGames(
         paramMods,
         INPUT_SEQUENCE_12_HZ,
         /* predefinedPieceSequence= */ null,
-        /* shouldAdjust= */ false,
+        /* shouldAdjust= */ true,
         /* isDig= */ false,
         /* maxLines= */ 230,
         /* onPlacementCallback= */ null,
@@ -102,7 +102,7 @@ export function simulateGame(
       level,
       lines,
       framesAlreadyElapsed: 0,
-      reactionTime: 0,
+      reactionTime: REACTION_TIME_FRAMES,
       canFirstFrameShift: false,
       existingXOffset: 0,
       existingYOffset: 0,
@@ -175,12 +175,12 @@ function getMoveThisStep(
       {
         ...searchState,
       },
-      /* shouldLog= */ true,
+      /* shouldLog= */ false,
       aiParams,
       paramMods,
       inputFrameTimeline,
-      /* searchDepth= */ 2,
-      /* hypotheticalSearchDepth= */ 1
+      /* searchDepth= */ 1,
+      /* hypotheticalSearchDepth= */ 2
     );
     if (initalMove == null) {
       return null;
@@ -197,11 +197,11 @@ function getMoveThisStep(
       aiParams,
       paramMods,
       inputFrameTimeline,
-      /* searchDepth= */ 1,
-      /* hypotheticalSearchDepth= */ 0
+      /* searchDepth= */ 2,
+      /* hypotheticalSearchDepth= */ 1
     );
-    console.log("INITIAL MOVE:", initalMove.placement);
-    console.log("ADJUSTMENT:", adjustment.placement);
+    // console.log("INITIAL MOVE:", initalMove.placement);
+    // console.log("ADJUSTMENT:", adjustment.placement);
     return adjustment || initalMove;
   } else {
     return getBestMove(
@@ -305,7 +305,7 @@ function regressionTest() {
 
 if (typeof require !== "undefined" && require.main === module) {
   // regressionTest();
-  runScoreExperiment(1);
+  runScoreExperiment(5);
   // const results = simulateManyGames(100, 18, getParams(), getParamMods());
   // console.log(results);
   // console.log(results.map((x) => x[1]));
