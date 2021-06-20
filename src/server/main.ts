@@ -4,7 +4,6 @@ const boardHelper = require("./board_helper");
 const { SEARCH_BREADTH, modifyParamsForAiMode } = require("./params");
 import { getPossibleMoves } from "./move_search";
 import { EVALUATION_BREADTH, IS_DROUGHT_MODE } from "./params";
-import { predictSearchStateAtAdjustmentTime } from "./precompute";
 import * as utils from "./utils";
 import { POSSIBLE_NEXT_PIECES } from "./utils";
 
@@ -189,8 +188,8 @@ function searchHypothetically(
 
   // Evaluate the weighted EV of each possibility chain
   let hypotheticalResults: Array<HypotheticalResult> = [];
-  for (const [i,chain] of possibilityChains.entries()) {
-    if (hypotheticalSearchDepth > 2){
+  for (const [i, chain] of possibilityChains.entries()) {
+    if (hypotheticalSearchDepth > 2) {
       console.log(`Checking 2-chain ${i} of ${possibilityChains.length}`);
     }
 
@@ -221,7 +220,11 @@ function searchHypothetically(
 
   // Maybe log info about the EV results
   if (shouldLog) {
-    logExpectedValueResults(hypotheticalResults, hypotheticalSearchDepth, aiParams);
+    logExpectedValueResults(
+      hypotheticalResults,
+      hypotheticalSearchDepth,
+      aiParams
+    );
   }
 
   return hypotheticalResults.map((x) => x.possibilityChain);
@@ -348,7 +351,6 @@ function searchDepth2(
   return [best2Chains, pruned];
 }
 
-
 /**
  * Iterates over all possible future sequences of length N, and plays each one out no-next-box.
  * @param chain - the chain of existing moves
@@ -373,7 +375,9 @@ function getBestMovesForAllPossibleSequences(
   }
 
   // Get the best placement for each hypothetical piece
-  const hypotheticalSequences = getHypotheticalSequences(hypotheticalSearchDepth);
+  const hypotheticalSequences = getHypotheticalSequences(
+    hypotheticalSearchDepth
+  );
   for (const sequence of hypotheticalSequences) {
     // If drought mode is on, don't anticipate getting long bars
     if (IS_DROUGHT_MODE && sequence.includes("I")) {
@@ -383,7 +387,7 @@ function getBestMovesForAllPossibleSequences(
     let hypotheticalLine = []; // The string of NNB moves
     let totalValueOfLine = concretePartialValue;
     let loopSearchState = { ...searchState };
-    for (let i = 0; i < sequence.length; i++){
+    for (let i = 0; i < sequence.length; i++) {
       loopSearchState.currentPieceId = sequence[i];
       const [moveList, _] = searchDepth1(
         loopSearchState,
@@ -392,14 +396,14 @@ function getBestMovesForAllPossibleSequences(
         EVALUATION_BREADTH[3]
       );
       let bestMove = moveList[0] || null;
-      
-      if (bestMove === null){
+
+      if (bestMove === null) {
         // Topped out during the hypothetical line
-        totalValueOfLine = aiParams.DEAD_COEF
+        totalValueOfLine = aiParams.DEAD_COEF;
         break;
       }
 
-      if (i == sequence.length - 1){
+      if (i == sequence.length - 1) {
         totalValueOfLine += bestMove.totalValue;
       } else {
         totalValueOfLine += bestMove.partialValue;
@@ -412,7 +416,7 @@ function getBestMovesForAllPossibleSequences(
     bestMovesList.push({
       pieceSequence: sequence,
       resultingValue: totalValueOfLine,
-      moveSequence: hypotheticalLine
+      moveSequence: hypotheticalLine,
     });
   }
 
@@ -441,19 +445,24 @@ function getExpectedValue(
   let total = 0;
   const len = bestMovesList.length;
   for (let i = 0; i < len; i++) {
-    total += bestMovesList[i].resultingValue * (weightVector ? weightVector[i] : 1);
+    total +=
+      bestMovesList[i].resultingValue * (weightVector ? weightVector[i] : 1);
   }
   return total / len;
 }
 
-export function logExpectedValueResults(hypotheticalResults: Array<HypotheticalResult>, hypotheticalSearchDepth: number, aiParams: AiParams){
+export function logExpectedValueResults(
+  hypotheticalResults: Array<HypotheticalResult>,
+  hypotheticalSearchDepth: number,
+  aiParams: AiParams
+) {
   console.log(
     "\n\n------------------------\nBest Results after Stochastic Analysis"
   );
   hypotheticalResults.slice(0, 5).forEach((result: HypotheticalResult, i) => {
     const chain = result.possibilityChain;
     console.log(
-      `\n#${i+1}    Moves: ${chain.placement}    ${
+      `\n#${i + 1}    Moves: ${chain.placement}    ${
         chain.innerPossibility ? chain.innerPossibility.placement : ""
       }`
     );
@@ -464,14 +473,16 @@ export function logExpectedValueResults(hypotheticalResults: Array<HypotheticalR
     );
     const numMoves = result.bestMoves.length;
     for (const [i, hypotheticalBestMove] of result.bestMoves.entries()) {
-      if (i < 4 || i >= numMoves - 4){
+      if (i < 4 || i >= numMoves - 4) {
         console.log(
-          `If ${hypotheticalBestMove.pieceSequence}, do ${
-            hypotheticalBestMove.moveSequence.join(" ")
-          }. Value: ${(hypotheticalBestMove.resultingValue || aiParams.DEAD_COEF).toFixed(2)}`
+          `If ${
+            hypotheticalBestMove.pieceSequence
+          }, do ${hypotheticalBestMove.moveSequence.join(" ")}. Value: ${(
+            hypotheticalBestMove.resultingValue || aiParams.DEAD_COEF
+          ).toFixed(2)}`
         );
-      } else if (i == 4){
-        console.log("...")
+      } else if (i == 4) {
+        console.log("...");
       }
       // console.log(hypotheticalBestMove.evalExplanation);
     }
@@ -502,20 +513,20 @@ export function getSearchStateAfter(
   };
 }
 
-export function getHypotheticalSequences(goalLength){
+export function getHypotheticalSequences(goalLength) {
   let sequences = POSSIBLE_NEXT_PIECES;
   let length = 1;
-  while (length < goalLength){
+  while (length < goalLength) {
     const newSequences = [];
-    for (const oldSeq of sequences){
-      for (const newPiece of POSSIBLE_NEXT_PIECES){
+    for (const oldSeq of sequences) {
+      for (const newPiece of POSSIBLE_NEXT_PIECES) {
         newSequences.push(oldSeq + newPiece);
       }
     }
-    sequences = newSequences
+    sequences = newSequences;
     length++;
   }
-  return sequences
+  return sequences;
 }
 
 export function addTapInfoToAiParams(
@@ -540,7 +551,7 @@ export function addTapInfoToAiParams(
       inputFrameTimeline,
       4
     );
-  }
+  };
 
   addForLevel(level);
   addForLevel(level + 1);

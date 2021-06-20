@@ -188,7 +188,7 @@ function getMoveThisStep(
     const newSearchState = predictSearchStateAtAdjustmentTime(
       searchState,
       initalMove.inputSequence,
-      inputFrameTimeline,
+      inputFrameTimeline
     );
     newSearchState.nextPieceId = searchState.nextPieceId;
     const adjustment = getBestMove(

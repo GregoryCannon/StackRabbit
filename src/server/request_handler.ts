@@ -64,7 +64,7 @@ export class RequestHandler {
         );
 
       case "research-nb":
-          return [this.handleRequestSyncWithNextBox(requestArgs, 3), 200];
+        return [this.handleRequestSyncWithNextBox(requestArgs, 3), 200];
 
       case "sync-nb":
         return [this.handleRequestSyncWithNextBox(requestArgs, 1), 200];
@@ -73,9 +73,7 @@ export class RequestHandler {
         return [this.handleRequestSyncNoNextBox(requestArgs), 200];
 
       case "precompute":
-        return this._wrapAsync(() =>
-          this.handlePrecomputeRequest(requestArgs)
-        );
+        return this._wrapAsync(() => this.handlePrecomputeRequest(requestArgs));
 
       default:
         return [
@@ -151,7 +149,7 @@ export class RequestHandler {
     if (level < 18 || level > 30) {
       console.log("WARNING - Unusual level:", level);
     }
-    if (lines < 10 && (level !== 18 && level !== 19 && level !== 29)) {
+    if (lines < 10 && level !== 18 && level !== 19 && level !== 29) {
       throw new Error(
         `Unsupported starting level: ${level}. Supported starts: 18, 19, 29`
       );

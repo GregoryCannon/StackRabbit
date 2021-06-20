@@ -1,4 +1,4 @@
-import { IS_DROUGHT_MODE, IS_PAL, WELL_COLUMN } from "./params";
+import { IS_PAL, WELL_COLUMN } from "./params";
 
 export const NUM_ROW = 20;
 export const NUM_COLUMN = 10;
@@ -365,7 +365,11 @@ export function parseBoard(boardStr: string): Board {
     .map((rowSerialized) => rowSerialized.split("").map((x) => parseInt(x)));
 }
 
-export function getScareHeight(level: number, lines: number, aiParams: AiParams) {
+export function getScareHeight(
+  level: number,
+  lines: number,
+  aiParams: AiParams
+) {
   if (!aiParams.MAX_5_TAP_LOOKUP) {
     throw new Error("No tap heights calculated when looking up scare height");
   }
@@ -373,11 +377,15 @@ export function getScareHeight(level: number, lines: number, aiParams: AiParams)
 
   // If near transition, take it into account early
   const preEmptTransitionLines = 6;
-  if (getLevelAfterLineClears(level, lines, preEmptTransitionLines) > level && level < 28){
+  if (
+    getLevelAfterLineClears(level, lines, preEmptTransitionLines) > level &&
+    level < 28
+  ) {
     const newMax5Tap = aiParams.MAX_5_TAP_LOOKUP[level + 1];
     const linesUntilTransition = 10 - (lines % 10);
     const ratioPreToPost = linesUntilTransition / preEmptTransitionLines;
-    max5TapHeight = ratioPreToPost * max5TapHeight + (1 - ratioPreToPost) * newMax5Tap;
+    max5TapHeight =
+      ratioPreToPost * max5TapHeight + (1 - ratioPreToPost) * newMax5Tap;
   }
 
   let offset;

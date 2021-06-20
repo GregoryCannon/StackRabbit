@@ -312,7 +312,9 @@ function updateGameState() {
 
     // Draw the new pieces
     m_canvas.drawCurrentPiece();
-    m_canvas.drawNextBox(GameSettings.isNoAdjustmentMode() ? null : m_nextPiece);
+    m_canvas.drawNextBox(
+      GameSettings.isNoAdjustmentMode() ? null : m_nextPiece
+    );
     m_canvas.drawPieceStatusDisplay(m_pieceSelector.getStatusDisplay());
 
     // Checked here because the game over condition depends on the newly spawned piece
@@ -379,7 +381,7 @@ function runOneFrame() {
           removeFullRows();
         }
         // If we're in no-adjustment mode (has extra long entry delay), animate a waiting bar
-        if (GameSettings.isNoAdjustmentMode()){
+        if (GameSettings.isNoAdjustmentMode()) {
           m_canvas.drawNextBoxWaitingLine(m_ARE + m_lineClearFrames);
         }
         break;
@@ -389,7 +391,7 @@ function runOneFrame() {
         m_ARE -= 1;
 
         // If we're in no-adjustment mode (has extra long entry delay), animate a waiting bar
-        if (GameSettings.isNoAdjustmentMode()){
+        if (GameSettings.isNoAdjustmentMode()) {
           m_canvas.drawNextBoxWaitingLine(m_ARE);
         }
         break;
@@ -542,7 +544,7 @@ function lockPiece() {
   m_currentPiece.lock();
   m_inputManager.onPieceLock();
   m_canvas.drawBoard();
-  if (GameSettings.isNoAdjustmentMode()){
+  if (GameSettings.isNoAdjustmentMode()) {
     m_canvas.drawNextBox(m_nextPiece);
   }
 
@@ -628,7 +630,9 @@ function loadSnapshotFromHistory() {
     document.activeElement.blur();
     m_canvas.drawBoard();
     m_canvas.drawCurrentPiece();
-    m_canvas.drawNextBox(GameSettings.isNoAdjustmentMode() ? null : m_nextPiece);
+    m_canvas.drawNextBox(
+      GameSettings.isNoAdjustmentMode() ? null : m_nextPiece
+    );
     refreshHeaderText();
     refreshScoreHUD();
     refreshStats();
