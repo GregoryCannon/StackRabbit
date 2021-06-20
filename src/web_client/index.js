@@ -571,7 +571,7 @@ function lockPiece() {
 
   // Add additional ARE in no-adjustment-mode
   if (GameSettings.isNoAdjustmentMode()) {
-    m_ARE += 18;
+    m_ARE += m_lineClearFrames > 0 ? 0 : 18;
   }
 }
 
