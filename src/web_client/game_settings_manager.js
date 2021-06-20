@@ -30,6 +30,10 @@ export function shouldShowParityHints() {
   return Ui.getParityHintsEnabled();
 }
 
+export function isNoAdjustmentMode() {
+  return Ui.getNoAdjustmentsModeEnabled();
+}
+
 export function getGameSpeedMultiplier() {
   return Ui.getGameSpeedMultiplier();
 }

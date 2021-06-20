@@ -10,6 +10,9 @@ const droughtCheckbox = document.getElementById("drought-checkbox");
 const diggingHintsCheckbox = document.getElementById("digging-hints-checkbox");
 const parityHintsCheckbox = document.getElementById("parity-hints-checkbox");
 const transition10Checkbox = document.getElementById("transition-10-checkbox");
+const noAdjustmentsCheckbox = document.getElementById(
+  "no-adjustments-checkbox"
+);
 const pieceSequenceText = document.getElementById("piece-sequence");
 const levelSelectElement = document.getElementById("level-select");
 
@@ -176,6 +179,10 @@ export function getDiggingHintsEnabled() {
 
 export function getParityHintsEnabled() {
   return parityHintsCheckbox.checked;
+}
+
+export function getNoAdjustmentsModeEnabled() {
+  return noAdjustmentsCheckbox.checked;
 }
 
 export function getGameSpeedMultiplier() {

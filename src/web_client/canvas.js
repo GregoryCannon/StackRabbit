@@ -15,9 +15,15 @@ import {
 import { GetLevel, GetCurrentPiece, calcParity } from "./index.js";
 const GameSettings = require("./game_settings_manager");
 
+// All in units of SQUARE_SIZE
+const nextBoxStartX = NUM_COLUMN + 1;
+const nextBoxStartY = 8;
+const nextBoxWidth = 5;
+const nextBoxHeight = 4.5;
+
 // Resize the canvas based on the square size
 mainCanvas.setAttribute("height", SQUARE_SIZE * NUM_ROW);
-mainCanvas.setAttribute("width", SQUARE_SIZE * (NUM_COLUMN + 7)); // +6 for next boxk
+mainCanvas.setAttribute("width", SQUARE_SIZE * (NUM_COLUMN + 7)); // +6 for next box
 
 export function Canvas(board) {
   this.board = board;
@@ -110,25 +116,22 @@ Canvas.prototype.drawSquare = function (x, y, color, border = false) {
  * @param {Piece object} nextPiece
  */
 Canvas.prototype.drawNextBox = function (nextPiece) {
-  // All in units of SQUARE_SIZE
-  const startX = NUM_COLUMN + 1;
-  const startY = 8;
-  const width = 5;
-  const height = 4.5;
-
   // background
   context.fillStyle = "BLACK";
   context.fillRect(
-    startX * SQUARE_SIZE,
-    startY * SQUARE_SIZE,
-    width * SQUARE_SIZE,
-    height * SQUARE_SIZE
+    nextBoxStartX * SQUARE_SIZE,
+    nextBoxStartY * SQUARE_SIZE,
+    nextBoxWidth * SQUARE_SIZE,
+    nextBoxHeight * SQUARE_SIZE
   );
 
   if (nextPiece != null) {
     const pieceStartX =
-      nextPiece.id === "I" || nextPiece.id === "O" ? startX + 0.5 : startX;
-    const pieceStartY = nextPiece.id === "I" ? startY - 0.25 : startY + 0.25;
+      nextPiece.id === "I" || nextPiece.id === "O"
+        ? nextBoxStartX + 0.5
+        : nextBoxStartX;
+    const pieceStartY =
+      nextPiece.id === "I" ? nextBoxStartY - 0.25 : nextBoxStartY + 0.25;
     const color = COLOR_PALETTE[nextPiece.colorId][GetLevel() % 10];
 
     // draw the piece
@@ -147,6 +150,29 @@ Canvas.prototype.drawNextBox = function (nextPiece) {
       }
     }
   }
+};
+
+Canvas.prototype.drawNextBoxWaitingLine = function (areFramesLeft) {
+  const maxFrames = 18 + 18 + 18;
+  const maxLineWidth = (nextBoxWidth - 1) * SQUARE_SIZE;
+
+  // Clear the area first
+  context.fillStyle = "black";
+  context.fillRect(
+    (nextBoxStartX + 0.5) * SQUARE_SIZE,
+    (nextBoxStartY + 4) * SQUARE_SIZE,
+    maxLineWidth,
+    4 * PIXEL_SIZE
+  );
+
+  // Draw the progress bar in white
+  context.fillStyle = "white";
+  context.fillRect(
+    (nextBoxStartX + 1) * SQUARE_SIZE,
+    (nextBoxStartY + 4) * SQUARE_SIZE,
+    (areFramesLeft / maxFrames) * maxLineWidth,
+    4 * PIXEL_SIZE
+  );
 };
 
 Canvas.prototype.drawScoreDisplay = function (score) {

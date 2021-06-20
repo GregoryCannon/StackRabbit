@@ -168,7 +168,6 @@ function removeFullRows() {
 
     // Update the board
     m_canvas.drawBoard();
-    m_canvas.drawNextBox(m_nextPiece);
   }
 }
 
@@ -201,10 +200,6 @@ function getNewPiece() {
   // Piece status is drawn first, since the read index increments when the next
   // piece is selected
   m_nextPiece = new Piece(m_pieceSelector.getNextPiece(), m_board);
-
-  // Draw the new piece in the next box
-  m_canvas.drawNextBox(m_nextPiece);
-  m_canvas.drawPieceStatusDisplay(m_pieceSelector.getStatusDisplay());
 }
 
 function resetGameVariables() {
@@ -278,6 +273,7 @@ function startGame() {
   document.activeElement.blur();
   m_canvas.drawBoard();
   m_canvas.drawCurrentPiece();
+  m_canvas.drawNextBox(GameSettings.isNoAdjustmentMode() ? null : m_nextPiece);
   refreshHeaderText();
   refreshScoreHUD();
   refreshStats();
@@ -314,8 +310,11 @@ function updateGameState() {
 
     saveSnapshotToHistory();
 
-    // Draw the next piece, since it's the end of ARE (and that's how NES does it)
+    // Draw the new pieces
     m_canvas.drawCurrentPiece();
+    m_canvas.drawNextBox(GameSettings.isNoAdjustmentMode() ? null : m_nextPiece);
+    m_canvas.drawPieceStatusDisplay(m_pieceSelector.getStatusDisplay());
+
     // Checked here because the game over condition depends on the newly spawned piece
     if (isGameOver()) {
       m_gameState = GameState.GAME_OVER;
@@ -379,11 +378,20 @@ function runOneFrame() {
           // Clear the lines for real and shift stuff down
           removeFullRows();
         }
+        // If we're in no-adjustment mode (has extra long entry delay), animate a waiting bar
+        if (GameSettings.isNoAdjustmentMode()){
+          m_canvas.drawNextBoxWaitingLine(m_ARE + m_lineClearFrames);
+        }
         break;
 
       case GameState.ARE:
         // Waiting for next piece
         m_ARE -= 1;
+
+        // If we're in no-adjustment mode (has extra long entry delay), animate a waiting bar
+        if (GameSettings.isNoAdjustmentMode()){
+          m_canvas.drawNextBoxWaitingLine(m_ARE);
+        }
         break;
 
       case GameState.RUNNING:
@@ -534,6 +542,9 @@ function lockPiece() {
   m_currentPiece.lock();
   m_inputManager.onPieceLock();
   m_canvas.drawBoard();
+  if (GameSettings.isNoAdjustmentMode()){
+    m_canvas.drawNextBox(m_nextPiece);
+  }
 
   // Refresh board-based stats
   refreshStats();
@@ -556,7 +567,12 @@ function lockPiece() {
   /* ARE (frame delay before next piece) is 10 frames for 0-2 height, then an additional
       2 frames for each group of 4 above that.
         E.g. 9 high would be: 10 + 2 + 2 = 14 frames */
-  m_ARE = 10 + Math.floor((lockHeight + 2) / 4) * 2;
+  m_ARE = Math.min(18, 10 + Math.floor((lockHeight + 2) / 4) * 2);
+
+  // Add additional ARE in no-adjustment-mode
+  if (GameSettings.isNoAdjustmentMode()) {
+    m_ARE += 18;
+  }
 }
 
 function saveSnapshotToHistory() {
@@ -612,7 +628,7 @@ function loadSnapshotFromHistory() {
     document.activeElement.blur();
     m_canvas.drawBoard();
     m_canvas.drawCurrentPiece();
-    m_canvas.drawNextBox(m_nextPiece);
+    m_canvas.drawNextBox(GameSettings.isNoAdjustmentMode() ? null : m_nextPiece);
     refreshHeaderText();
     refreshScoreHUD();
     refreshStats();
@@ -817,4 +833,4 @@ window.setTimeout(() => {
   refreshStats();
   refreshScoreHUD();
   gameLoop();
-}, 20);
+}, 200);
