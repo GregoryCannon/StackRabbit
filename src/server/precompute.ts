@@ -132,7 +132,7 @@ export class PreComputeManager {
     this._calculatePhantomPlacements(
       searchState,
       possibleMoves,
-      inputFrameTimeline,
+      inputFrameTimeline
     );
     this._precompileAdjustmentMoves();
   }
@@ -183,7 +183,7 @@ export class PreComputeManager {
         ? predictSearchStateAtAdjustmentTime(
             searchState,
             this.defaultPlacement.inputSequence,
-            inputFrameTimeline,
+            inputFrameTimeline
           )
         : searchState;
 
@@ -205,7 +205,7 @@ export class PreComputeManager {
   _calculatePhantomPlacements(
     initialSearchState: SearchState,
     possibleMoves: Array<PossibilityChain>,
-    inputFrameTimeline: string,
+    inputFrameTimeline: string
   ) {
     const seenInputSequences = new Set();
     const phantomPlacements: Array<PhantomPlacement> = [];
@@ -226,7 +226,7 @@ export class PreComputeManager {
         const adjSearchState = predictSearchStateAtAdjustmentTime(
           initialSearchState,
           newInputSequence,
-          inputFrameTimeline,
+          inputFrameTimeline
         );
 
         // Add a new phantom placement
@@ -300,7 +300,13 @@ export class PreComputeManager {
     for (const phantomPlacement of this.phantomPlacements) {
       const adjustmentLookup = new Map();
       for (const pieceId of POSSIBLE_NEXT_PIECES) {
-        // Figure out what adjustment you'd do for that piece
+        // If it's already done a tuck or spin, it can't do any more inputs
+        if (phantomPlacement.defaultPlacement.inputCost !== 0) {
+          adjustmentLookup.set(pieceId, []);
+          continue;
+        }
+
+        // Calculate the possible adjustments for each piece
         const s = phantomPlacement.adjustmentSearchState;
         let possibleAdjs = getPossibleMoves(
           s.board,
@@ -360,9 +366,10 @@ export class PreComputeManager {
             console.log({ ...adjPossibility, boardAfter: null });
             console.log(pieceId);
             console.log(this.results[pieceId]);
-            for (const piece in POSSIBLE_NEXT_PIECES) {
+            for (const piece of POSSIBLE_NEXT_PIECES) {
+              console.log(piece);
               if (!this.results[piece]) {
-                throw new Error("No results for piece" + piece);
+                throw new Error("No results for piece:" + piece);
               }
               console.log(
                 piece + " " + Object.keys(this.results[piece]).length
@@ -473,7 +480,7 @@ export function getAdjustmentInputCost(possibility: Possibility) {
 export function predictSearchStateAtAdjustmentTime(
   initialState: SearchState,
   inputSequence: string,
-  inputFrameTimeline: string,
+  inputFrameTimeline: string
 ) {
   let inputsPossibleByAdjTime = 0;
   let inputsUsedByAdjTime = 0;
@@ -569,6 +576,7 @@ function testPrediction() {
         canFirstFrameShift: false,
       },
       "E....E...L...L",
-      "X....X...X...X")
+      "X....X...X...X"
+    )
   );
 }
