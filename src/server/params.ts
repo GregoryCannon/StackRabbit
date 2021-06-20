@@ -15,7 +15,7 @@ export const WELL_COLUMN = 9; // 0-indexed
 export const IS_NON_RIGHT_WELL = false;
 export const CAN_TUCK = true;
 export const USE_FINESSE = true;
-export const IS_DROUGHT_MODE = false;
+export const IS_DROUGHT_MODE = true;
 
 /*--------------------------------
   State-based param modification
@@ -102,7 +102,7 @@ export const DEFAULT_PARAMS: InitialAiParams = {
   DEAD_COEF: -10000,
   MAX_DIRTY_TETRIS_HEIGHT: 0.25, // (As a multiple of the scare height)
   EXTREME_GAP_COEF: -2,
-  BUILT_OUT_LEFT_COEF: 3,
+  BUILT_OUT_LEFT_COEF: 2,
   BUILT_OUT_RIGHT_COEF: 0,
   LOW_LEFT_EXP: 1.5,
   HOLE_COEF: -30,
@@ -160,7 +160,7 @@ const PLAY_PERFECT_PARAMS: InitialAiParams = {
 };
 
 const DROUGHT_MODIFICATIONS = {
-  BURN_COEF: -2,
+  BURN_COEF: -6,
   EXTREME_GAP_COEF: -20,
   AVG_HEIGHT_COEF: -10,
   AVG_HEIGHT_EXPONENT: 1.5,
@@ -258,7 +258,7 @@ const CENTER_WELL_PARAMS = applyModsToParams(
 );
 
 export function getParams(): InitialAiParams {
-  return TOURNEY_MEDIUM_AGGRO_PARAMS;
+  return DROUGHT_CODE_PARAMS;
 }
 
 export function getParamMods(): ParamMods {

@@ -6,7 +6,12 @@ import {
 } from "../../docs/killscreen_ranks_v2";
 import * as boardHelper from "./board_helper";
 import { getPieceRanges } from "./move_search";
-import { getParams, IS_NON_RIGHT_WELL, WELL_COLUMN } from "./params";
+import {
+  getParams,
+  IS_DROUGHT_MODE,
+  IS_NON_RIGHT_WELL,
+  WELL_COLUMN,
+} from "./params";
 import * as utils from "./utils";
 const SquareState = utils.SquareState;
 const NUM_ROW = utils.NUM_ROW;
@@ -307,10 +312,34 @@ function isTetrisReadyRightWell(board) {
   // Check if the 4 rows above the stopping point of the long bar are filled
   for (let checkRow = row - 4; checkRow <= row - 1; checkRow++) {
     for (let checkCol = 0; checkCol < 9; checkCol++) {
-      if (checkRow < 0 || checkRow >= NUM_ROW) {
+      if (
+        checkRow < 0 ||
+        checkRow >= NUM_ROW ||
+        board[checkRow][checkCol] == SquareState.EMPTY
+      ) {
         return false;
       }
-      if (board[checkRow][checkCol] == SquareState.EMPTY) {
+    }
+  }
+
+  return true;
+}
+
+function isTripleReady(board) {
+  // Move the imaginary L down column 9
+  let row = 0;
+  while (row < NUM_ROW && board[row][8] == SquareState.EMPTY) {
+    row++;
+  }
+
+  // Check if the 3 rows intersecting the L are filled
+  for (let checkRow = row - 1; checkRow <= row + 1; checkRow++) {
+    for (let checkCol = 0; checkCol < 9; checkCol++) {
+      if (
+        checkRow < 0 ||
+        checkRow >= NUM_ROW ||
+        board[checkRow][checkCol] == SquareState.EMPTY
+      ) {
         return false;
       }
     }
@@ -425,6 +454,18 @@ export function getPartialValue(
 }
 
 export function getLineClearValue(numLinesCleared, aiParams) {
+  // Drought mode is a completely different ballgame for evaluating line clear penalty
+  if (IS_DROUGHT_MODE){
+    switch(numLinesCleared){
+      case 4:
+        return aiParams.TETRIS_COEF;
+      case 3:
+      case 1:
+        return 1 * aiParams.BURN_COEF;
+      case 2:
+        return 2 * aiParams.BURN_COEF;
+    }
+  }
   return numLinesCleared == 4
     ? aiParams.TETRIS_COEF
     : numLinesCleared > 0
@@ -555,7 +596,11 @@ export function fastEval(
       /* isWell= */ aiMode === AiMode.DIG // It's still a well if you're digging, but not on killscreen
     );
   }
-  const scareHeight = utils.getScareHeight(levelAfterPlacement, lines + numLinesCleared, aiParams);
+  const scareHeight = utils.getScareHeight(
+    levelAfterPlacement,
+    lines + numLinesCleared,
+    aiParams
+  );
   const spireHeight = getSpireHeight(surfaceArray, scareHeight);
   const avgHeightAboveScareLine = getAverageHeightAboveScareLine(
     surfaceArray,
@@ -665,7 +710,11 @@ export function getValueOfPossibility(
   }
 
   // Precompute values needed in calculating the factors
-  const scareHeight = utils.getScareHeight(levelAfterPlacement, lines + numLinesCleared, aiParams);
+  const scareHeight = utils.getScareHeight(
+    levelAfterPlacement,
+    lines + numLinesCleared,
+    aiParams
+  );
   const spireHeight = getSpireHeight(surfaceArray, scareHeight);
   const avgHeightAboveScareLine = getAverageHeightAboveScareLine(
     aiMode == AiMode.KILLSCREEN ? surfaceArrayWithCol10 : surfaceArray,
@@ -673,6 +722,7 @@ export function getValueOfPossibility(
   );
   const maxDirtyTetrisHeight = aiParams.MAX_DIRTY_TETRIS_HEIGHT * scareHeight;
   const tetrisReady = isTetrisReadyRightWell(boardAfter);
+  const tripleReady = isTripleReady(boardAfter);
   const [
     rowsNeedingToBurn,
     rowsNeedingToBurnIfTucksFail,
@@ -740,7 +790,8 @@ export function getValueOfPossibility(
     aiParams.LEFT_SURFACE_COEF *
     getLeftSurfaceValue(boardAfter, aiParams, level);
   const tetrisReadyFactor =
-    aiParams.TETRIS_READY_COEF * (false ? -1 : tetrisReady ? 1 : 0);
+    aiParams.TETRIS_READY_COEF *
+    ((tetrisReady ? 1 : 0) + (IS_DROUGHT_MODE && tripleReady ? 1 : 0));
   const holeFactor = numHoles * aiParams.HOLE_COEF;
   const holeWeightFactor =
     (rowsNeedingToBurn.size + 0 * rowsNeedingToBurnIfTucksFail.size) *
