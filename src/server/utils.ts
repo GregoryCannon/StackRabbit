@@ -208,6 +208,7 @@ export function isTuckSetup(row, col, board, surfaceArray): [boolean, number] {
   return [false, 0];
 }
 
+
 export function countHolesInColumn(
   col: number,
   board: Board,

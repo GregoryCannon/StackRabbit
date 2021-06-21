@@ -14,7 +14,6 @@ export const IS_PAL = false;
 export const WELL_COLUMN = 9; // 0-indexed
 export const IS_NON_RIGHT_WELL = false;
 export const CAN_TUCK = true;
-export const USE_FINESSE = true;
 export const IS_DROUGHT_MODE = true;
 
 /*--------------------------------
@@ -68,7 +67,7 @@ export const DEFAULT_PARAM_MODS = {
   },
   KILLSCREEN: {
     COL_10_COEF: 0,
-    BUILT_OUT_LEFT_COEF: 1,
+    BUILT_OUT_LEFT_COEF: 0,
     BUILT_OUT_RIGHT_COEF: 0.75,
     AVG_HEIGHT_COEF: -3,
     HOLE_COEF: -40, // changed

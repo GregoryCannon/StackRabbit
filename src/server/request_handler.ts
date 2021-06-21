@@ -1,7 +1,6 @@
 import { PIECE_LOOKUP } from "../../src/web_client/tetrominoes";
 import { getBoardAndLinesClearedAfterPlacement } from "./board_helper";
 import { rateSurface } from "./evaluator";
-import { USE_FINESSE } from "./params";
 import { PreComputeManager } from "./precompute";
 import {
   formatPossibility,
@@ -13,7 +12,7 @@ import {
 const mainApp = require("./main");
 const params = require("./params");
 
-const SHOULD_LOG_ALL = false;
+const SHOULD_LOG_ALL = true;
 
 export class RequestHandler {
   preComputeManager: PreComputeManager;
