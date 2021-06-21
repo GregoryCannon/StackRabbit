@@ -1,4 +1,6 @@
+import { getRowsNeedingToBurn } from "./evaluator";
 import { canDoPlacement, placementIsLegal } from "./move_search";
+import { getSurfaceArrayAndHoles, parseBoard } from "./utils";
 
 const utils = require("./utils");
 const NUM_COLUMN = utils.NUM_COLUMN;
@@ -117,7 +119,7 @@ export function _validateIntParam(value: number, min: number, max: number) {
  * I = press R + B (2nd letter of 'right')
  * G = press R + A (3rd letter of 'right')
  *
- * e.g. L piece 5-tap left, 12Hz tapping: f....L....L....L....L
+ * e.g. L piece 5-tap left, 12Hz tapping: F....L....L....L....L
  */
 export function generateInputSequence(
   rotationIndex,
@@ -185,38 +187,164 @@ export function generateInputSequence(
   return inputSequence;
 }
 
-/** Gets the surface of just the left-most 3 columns, if they don't have any holes.
- * (This is used for killscreen play)
+/**
+ * Checks whether the killscreen left surface will resolve into a clean left after all
+ * the doable line clears are performed.
+ * @returns an array [ doesResolve, linesClearedInTheProcess ]
  */
-export function getLeftSurface(board: Board, maxHeight) {
-  if (
-    hasHoleInColumn(board, 0) ||
-    hasHoleInColumn(board, 1) ||
-    hasHoleInColumn(board, 2)
+function leftSurfaceResolvesCleanly(
+  board: Board,
+  surfaceArray: Array<number>,
+  leftHoleCells: Set<number>,
+  allHoleCells: Set<number>,
+  minReachableX,
+  maxReachableX
+): [boolean, Set<number>] {
+  if (leftHoleCells.size === 0) {
+    throw new Error(
+      "Queried whether left surface resolves but there were no holes"
+    );
+  }
+  // Find the rows that can easily clear
+  const linesCleared: Set<number> = new Set();
+  const highestRowOfLeftSurface = Math.max(
+    surfaceArray[0],
+    surfaceArray[1],
+    surfaceArray[2]
+  );
+  let lowestRowWithHole = -1;
+  for (const x of leftHoleCells) {
+    lowestRowWithHole = Math.max(lowestRowWithHole, Math.floor(x / 10));
+  }
+  for (
+    let row = NUM_ROW - highestRowOfLeftSurface;
+    row < lowestRowWithHole;
+    row++
   ) {
-    return null;
+    let canClear = true;
+    for (let col = 0; col < NUM_COLUMN; col++) {
+      if (board[row][col] == SquareState.FULL) {
+        continue;
+      }
+      if (
+        col < minReachableX ||
+        col > maxReachableX ||
+        allHoleCells.has(row * 10 + col)
+      ) {
+        // This row can't easily be cleared
+        // console.log(`Can't clear row ${row} because of col ${col}`);
+        canClear = false;
+        break;
+      }
+    }
+    // If it got this far, then it can be cleared
+    if (canClear) {
+      linesCleared.add(row);
+    }
+  }
+  // console.log("Potential line clears", linesCleared);
+
+  // See if the holes are still holes after the clears
+  for (const x of leftHoleCells) {
+    const holeRow = Math.floor(x / 10);
+    const holeCol = x % 10;
+
+    // Check that all filled rows above the hole are potentially clearable
+    for (let row = holeRow - 1; row >= NUM_ROW - surfaceArray[holeCol]; row--) {
+      // console.log("Checking row", row);
+      if (board[row][holeCol] && !linesCleared.has(row)) {
+        // Still a hole, so the left can't resolve
+        return [false, null];
+      }
+    }
   }
 
-  const getColHeight = (col) =>
-    Math.min(Math.min(9, maxHeight), getBoardHeightAtColumn(board, col));
-
-  return "" + getColHeight(0) + getColHeight(1) + getColHeight(2);
+  return [true, linesCleared];
 }
 
-/** Gets the surface of just the left-most 3 columns, if they don't have any holes.
- * The heights are RELATIVE to the average heights in columns 4-10
- * (This is used for killscreen play)
+// const testBoard = parseBoard(
+//   "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000111110011001111001111111100111"
+// );
+// const [surfaceArray, numHoles, holeCells] = getSurfaceArrayAndHoles(testBoard);
+// // console.log(
+// //   "LEFT SURFACE RESOLVES:",
+// //   leftSurfaceResolvesCleanly(
+// //     testBoard,
+// //     surfaceArray,
+// //     holeCells,
+// //     holeCells,
+// //     1,
+// //     8
+// //   )
+// // );
+// console.log(
+//   "RESULT",
+//   getLeftSurfaces(testBoard, 3, holeCells, surfaceArray, 1, 9)
+// );
+
+/** Gets the surface of just the left-most 3 columns. (This is used for killscreen play).
+ * The heights are RELATIVE to the average heights in columns 3-10, such that the surface
+ * is invariant to line clears.
+ *
+ * @returns an array [ currentSurface, eventualSurface ], where eventualSurface refers to the
+ * surface after all easily-completed lines are cleared.
  */
-export function getRelativeLeftSurface(board: Board, max4TapHeight) {
-  if (
-    hasHoleInColumn(board, 0) ||
-    hasHoleInColumn(board, 1) ||
-    hasHoleInColumn(board, 2)
-  ) {
-    return null;
+export function getLeftSurfaces(
+  board: Board,
+  max4TapHeight,
+  holeCells: Set<number>,
+  surfaceArray: Array<number>,
+  minReachableX,
+  maxReachableX
+): [string, string] {
+  // Get the normal surface
+  const maxHeight = Math.min(9, max4TapHeight + 2);
+  const currentLeftSurface = getRelativeLeftSurface(board, maxHeight);
+
+  let eventualSurface = null;
+
+  // Check for holes in the left 3 cols
+  const leftColsHoles: Set<number> = new Set();
+  for (const x of holeCells) {
+    const holeCol = x % 10;
+    if (holeCol <= 2) {
+      // Check if the hole can be reasonably be resolved
+      leftColsHoles.add(x);
+    }
   }
 
-  const maxHeight = Math.min(9, max4TapHeight + 2);
+  if (leftColsHoles.size == 0) {
+    return [currentLeftSurface, null];
+  }
+
+  const [doesResolve, linesCleared] = leftSurfaceResolvesCleanly(
+    board,
+    surfaceArray,
+    leftColsHoles,
+    holeCells,
+    minReachableX,
+    maxReachableX
+  );
+  if (doesResolve) {
+    // Clear the lines on a shallow copy of the board
+    const newBoard = [];
+    for (let i = 0; i < linesCleared.size; i++) {
+      newBoard.push([0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    }
+    for (let i = 0; i < NUM_ROW; i++) {
+      if (!linesCleared.has(i)) {
+        newBoard.push(board[i]);
+      }
+    }
+    const eventualSurface = getRelativeLeftSurface(newBoard, maxHeight);
+    return [currentLeftSurface, eventualSurface];
+  } else {
+    // Surface doesn't resolve
+    return [null, null];
+  }
+}
+
+export function getRelativeLeftSurface(board: Board, maxHeight): string {
   const getColHeight = (col) =>
     Math.min(maxHeight, getBoardHeightAtColumn(board, col));
   let col1 = getBoardHeightAtColumn(board, 0);
@@ -270,14 +398,14 @@ export function hasHoleInColumn(board: Board, col: number, heightFromTop = 20) {
   return false;
 }
 
-/** Returns true if the board needs a 5 tap to resolve, and the tap speed is not sufficient to get a piece there. */
+/** Returns 1 if the left is accesible, and 0 otherwise. */
 export function boardHasInaccessibileLeft(
   board: Board,
   surfaceArray: Array<number>,
   level: number,
   aiParams: AiParams,
   aiMode: AiMode
-) {
+): number {
   const col1Height = surfaceArray[0];
   const col2Height = surfaceArray[1];
   const col3Height = surfaceArray[2];
@@ -294,7 +422,7 @@ export function boardHasInaccessibileLeft(
       col1Height > aiParams.MAX_4_TAP_LOOKUP[level] &&
       col1Height >= avgHeightOfMiddle
     ) {
-      return false;
+      return 1;
     }
     const canDo4TapLeft = canDoPlacement(
       board,
@@ -304,7 +432,7 @@ export function boardHasInaccessibileLeft(
       -4,
       aiParams.INPUT_FRAME_TIMELINE
     );
-    return !canDo4TapLeft;
+    return canDo4TapLeft ? 1 : 0;
   }
 
   //In normal stacking, we mainly access the left with 5-taps. So we need either
@@ -315,7 +443,7 @@ export function boardHasInaccessibileLeft(
     col1Height > aiParams.MAX_5_TAP_LOOKUP[level] &&
     col1Height >= avgHeightOfMiddle
   ) {
-    return false;
+    return 1;
   }
   // If an L can reach the left, then we're fine
   // Observe that other 4-tap cases, like O & J are covered in the previous case
@@ -324,16 +452,11 @@ export function boardHasInaccessibileLeft(
     col2Height == col3Height &&
     canDoPlacement(board, level, "L", 0, -4, aiParams.INPUT_FRAME_TIMELINE)
   ) {
-    return false;
+    return 1;
   }
-  return !canDoPlacement(
-    board,
-    level,
-    "T",
-    3,
-    -5,
-    aiParams.INPUT_FRAME_TIMELINE
-  );
+  return canDoPlacement(board, level, "T", 3, -5, aiParams.INPUT_FRAME_TIMELINE)
+    ? 1
+    : 0;
 }
 
 /** Returns true if the tap speed is not sufficient to get a long bar to the right. */
@@ -356,31 +479,26 @@ export function boardHasInaccessibileRight(
       col10Height > aiParams.MAX_4_TAP_LOOKUP[level] &&
       col10Height >= avgHeightOfMiddle
     ) {
-      return false;
+      return 1;
     }
     if (
       col10Height == col9Height + 1 &&
       canDoPlacement(board, level, "Z", 1, 3, aiParams.INPUT_FRAME_TIMELINE)
     ) {
-      return false;
+      return 0.5;
     }
     if (
       col10Height == col9Height - 1 &&
       canDoPlacement(board, level, "S", 1, 3, aiParams.INPUT_FRAME_TIMELINE)
     ) {
-      return false;
+      return 0.5;
     }
   }
 
   // Otherwise we need a 4 tap
-  return !canDoPlacement(
-    board,
-    level,
-    "I",
-    1,
-    4,
-    aiParams.INPUT_FRAME_TIMELINE
-  );
+  return canDoPlacement(board, level, "I", 1, 4, aiParams.INPUT_FRAME_TIMELINE)
+    ? 1
+    : 0;
 }
 
 /** A modulus function that correctly handles negatives. */

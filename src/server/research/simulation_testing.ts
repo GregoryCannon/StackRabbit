@@ -15,7 +15,7 @@ const TestType = Object.freeze({
     Configuration
 --------------------------------- */
 
-export const SIM_INPUT_TIMELINE = "X....X...";
+export const SIM_INPUT_TIMELINE = "X....";
 export const SIM_MAX_4_TAP_HEIGHT = calculateTapHeight(
   29,
   SIM_INPUT_TIMELINE,
@@ -28,7 +28,7 @@ export const OPENER_TEST_BOARD = parseBoard(
 export const TRAINING_TIME_MINS = 2;
 const NUM_THREADS = 8;
 
-const curTestType = TestType.OPENER;
+const curTestType = TestType.STANDARD;
 
 /* ------------------------------
     Worker thread setup
@@ -128,7 +128,7 @@ function openerFitnessFunction(
   let numGames = 0;
   for (const result of threadResults) {
     for (const [score, lines, level, numHoles] of result) {
-      if (lines === 8 && numHoles === 0){
+      if (lines === 8 && numHoles === 0) {
         gamesPerfect++;
       }
       if (lines < 5) {
@@ -137,8 +137,8 @@ function openerFitnessFunction(
     }
     numGames += result.length;
   }
-  console.log("\n\n% TWO PERFECT TETRISES:", gamesPerfect / numGames * 100);
-  console.log("NUM PERFECT, SAMPLE SIZE:")
+  console.log("\n\n% TWO PERFECT TETRISES:", (gamesPerfect / numGames) * 100);
+  console.log("NUM PERFECT, SAMPLE SIZE:");
   console.log(gamesPerfect);
   console.log(numGames);
   console.log("Early topouts", totalEarlyTopouts);

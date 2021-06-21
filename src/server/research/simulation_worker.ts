@@ -41,8 +41,8 @@ function measureSuccessorsInTestGames(): Object {
   // After every placement, add a new connection to the successor map
   let previousSurface;
   const afterPlacementCallback = (board, isGameOver) => {
-    const surface = isGameOver
-      ? DEATH_RANK
+    const [surface, eventualSurface] = isGameOver
+      ? [DEATH_RANK, null]
       : getRelativeLeftSurface(board, SIM_MAX_4_TAP_HEIGHT);
 
     if (surface !== previousSurface && surface !== null) {
@@ -103,7 +103,7 @@ function measureAverageScore() {
 
     // Play out one game
     const [score, lines, level] = simulateGame(
-      18,
+      29,
       getEmptyBoard(),
       getParams(),
       getParamMods(),

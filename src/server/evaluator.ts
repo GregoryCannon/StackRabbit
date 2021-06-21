@@ -7,6 +7,7 @@ import {
 import * as boardHelper from "./board_helper";
 import { getPieceRanges } from "./move_search";
 import {
+  CAN_TUCK,
   getParams,
   IS_DROUGHT_MODE,
   IS_NON_RIGHT_WELL,
@@ -84,7 +85,7 @@ function getAverageHeightAboveScareLine(surfaceArray, scareHeight) {
 }
 
 /** Calculates the number of lines that need to be cleared for all the holes to be resolved. */
-function getRowsNeedingToBurn(
+export function getRowsNeedingToBurn(
   board,
   surfaceArray,
   maxDirtyTetrisHeight,
@@ -96,12 +97,8 @@ function getRowsNeedingToBurn(
   holeCells.forEach((x) => {
     const holeRow = Math.floor(x / 10);
     const holeCol = x % 10;
-    const [isTuck, _] = utils.isTuckSetup(
-      holeRow,
-      holeCol,
-      board,
-      surfaceArray
-    );
+    const isTuck =
+      CAN_TUCK && utils.isTuckSetup(holeRow, holeCol, board, surfaceArray)[0];
     // Ignore holes that can be dirty tetrised over
     if (
       NUM_ROW - holeRow <= maxDirtyTetrisHeight &&
@@ -354,22 +351,21 @@ function transformSurfaceValue(rawValue, A, maxValue) {
 }
 
 /** Get the rank of the left-3-column surface (killscreen-only) */
-function getLeftSurfaceValue(board, aiParams, level) {
+function getLeftSurfaceValue(
+  board,
+  surfaceArray,
+  holeCells,
+  aiParams,
+  level,
+  minReachableX,
+  maxReachableX,
+  considerEventualSurface
+) {
   const max4Tap = aiParams.MAX_4_TAP_LOOKUP[level];
   const max5Tap = aiParams.MAX_5_TAP_LOOKUP[level];
 
-  const leftSurface = boardHelper.getRelativeLeftSurface(board, max4Tap);
-  if (leftSurface == null) {
-    return transformSurfaceValue(0, 350, 100);
-  }
-
-  const split = leftSurface.split("|");
-  // Transpositions of the surface with different height relative to the rest of the stack
-  const lowerAlt = `${split[0]}|${parseInt(split[1]) - 1}`;
-  const higherAlt = `${split[0]}|${parseInt(split[1]) + 1}`;
-
   // Find the right ranks based on tap speed
-  let ranks, rawValue;
+  let ranks;
   if (max4Tap == 3 && max5Tap == -1) {
     ranks = ranks_12hz;
   } else if (max4Tap == 4 && max5Tap == 0) {
@@ -381,17 +377,57 @@ function getLeftSurfaceValue(board, aiParams, level) {
     return 0;
   }
 
-  // Look up the surface, or extrapolate from a similar surface
-  if (ranks.hasOwnProperty(leftSurface)) {
-    rawValue = ranks[leftSurface];
-  } else if (ranks.hasOwnProperty(lowerAlt)) {
-    rawValue = ranks[lowerAlt] * 1.2;
-  } else if (ranks.hasOwnProperty(higherAlt)) {
-    rawValue = ranks[higherAlt] * 0.8;
-  } else {
-    rawValue = 0;
+  if (!considerEventualSurface) {
+    const leftSurface = boardHelper.getRelativeLeftSurface(board, max4Tap + 2);
+    if (boardHelper.hasHoleInColumn(board, 0) || boardHelper.hasHoleInColumn(board, 1) || boardHelper.hasHoleInColumn(board, 2)){
+      return transformSurfaceValue(0, 350, 100);
+    }
+    const rawValue = lookUpLeftSurfaceRaw(leftSurface, ranks);
+    return transformSurfaceValue(rawValue, 350, 100);
   }
-  return transformSurfaceValue(rawValue, 350, 100);
+
+  // Get the current and eventual left surface
+  const [leftSurface, eventualSurface] = boardHelper.getLeftSurfaces(
+    board,
+    max4Tap,
+    holeCells,
+    surfaceArray,
+    minReachableX,
+    maxReachableX
+  );
+  if (leftSurface == null) {
+    return transformSurfaceValue(0, 350, 100);
+  }
+
+  // Evaluate the left surface, maybe taking into account the eventual surface
+  const rawValue = lookUpLeftSurfaceRaw(leftSurface, ranks);
+  if (eventualSurface == null) {
+    return transformSurfaceValue(rawValue, 350, 100);
+  }
+  const eventualValue = lookUpLeftSurfaceRaw(eventualSurface, ranks);
+  return (
+    0.3 * transformSurfaceValue(rawValue, 350, 100) +
+    0.7 * transformSurfaceValue(eventualValue, 350, 100)
+  );
+}
+
+function lookUpLeftSurfaceRaw(leftSurface, ranks) {
+  const split = leftSurface.split("|");
+
+  if (ranks.hasOwnProperty(leftSurface)) {
+    return ranks[leftSurface];
+  }
+  // If the surface isn't found in the ranks object, try extrapolating the value
+  // from transpositions of that surface that differ only in height diff
+  const lowerAlt = `${split[0]}|${parseInt(split[1]) - 1}`;
+  if (ranks.hasOwnProperty(lowerAlt)) {
+    return ranks[lowerAlt] * 1.2;
+  }
+  const higherAlt = `${split[0]}|${parseInt(split[1]) + 1}`;
+  if (ranks.hasOwnProperty(higherAlt)) {
+    return ranks[higherAlt] * 0.8;
+  }
+  return 0;
 }
 
 function getSurfaceValue(
@@ -455,8 +491,8 @@ export function getPartialValue(
 
 export function getLineClearValue(numLinesCleared, aiParams) {
   // Drought mode is a completely different ballgame for evaluating line clear penalty
-  if (IS_DROUGHT_MODE){
-    switch(numLinesCleared){
+  if (IS_DROUGHT_MODE) {
+    switch (numLinesCleared) {
       case 4:
         return aiParams.TETRIS_COEF;
       case 3:
@@ -616,7 +652,16 @@ export function fastEval(
     );
   let killscreenSurfaceLeftFactor =
     aiParams.LEFT_SURFACE_COEF *
-    getLeftSurfaceValue(boardAfter, aiParams, level);
+    getLeftSurfaceValue(
+      boardAfter,
+      surfaceArrayWithCol10,
+      holeCells,
+      aiParams,
+      level,
+      /* minReachableX= */ null, // Not used when not considering eventual surfaces
+      /* maxReachableX= */ null,
+      /* considerEventualSurface= */ false
+    );
   const holeFactor = numHoles * aiParams.HOLE_COEF;
   const estimatedHoleWeightBurnFactor = numHoles * (aiParams.BURN_COEF * 3);
   const lineClearFactor = getLineClearValue(numLinesCleared, aiParams);
@@ -708,6 +753,20 @@ export function getValueOfPossibility(
       /* isWell= */ aiMode === AiMode.DIG // It's still a well if you're digging, but not on killscreen
     );
   }
+  // Refund holes in cols 1-3 on killscreen
+  if (aiMode === AiMode.KILLSCREEN) {
+    for (let col = 0; col <= 2; col++) {
+      numHoles -=
+        0 *
+        utils.countHolesInColumn(
+          col,
+          boardAfter,
+          surfaceArrayWithCol10,
+          holeCells,
+          /* isWell= */ false
+        );
+    }
+  }
 
   // Precompute values needed in calculating the factors
   const scareHeight = utils.getScareHeight(
@@ -759,14 +818,14 @@ export function getValueOfPossibility(
   const guaranteedBurns =
     rowsNeedingToBurn.size + 0 * rowsNeedingToBurnIfTucksFail.size;
 
-  const leftIsInaccessible = boardHelper.boardHasInaccessibileLeft(
+  const leftAccessibility = boardHelper.boardHasInaccessibileLeft(
     boardAfter,
     surfaceArray,
     levelAfterPlacement,
     aiParams,
     aiMode
   );
-  const rightIsInaccessible = boardHelper.boardHasInaccessibileRight(
+  const rightAccessibility = boardHelper.boardHasInaccessibileRight(
     boardAfter,
     surfaceArray,
     levelAfterPlacement,
@@ -788,7 +847,16 @@ export function getValueOfPossibility(
     );
   let killscreenSurfaceLeftFactor =
     aiParams.LEFT_SURFACE_COEF *
-    getLeftSurfaceValue(boardAfter, aiParams, level);
+    getLeftSurfaceValue(
+      boardAfter,
+      surfaceArrayWithCol10,
+      holeCells,
+      aiParams,
+      level,
+      minReachableX,
+      maxReachableX,
+      /* considerEventualSurface= */ false
+    );
   const tetrisReadyFactor =
     aiParams.TETRIS_READY_COEF *
     ((tetrisReady ? 1 : 0) + (IS_DROUGHT_MODE && tripleReady ? 1 : 0));
@@ -831,12 +899,10 @@ export function getValueOfPossibility(
   const builtOutRightFactor =
     aiParams.BUILT_OUT_RIGHT_COEF *
     getBuiltOutRightFactor(boardAfter, surfaceArray);
-  const inaccessibleLeftFactor = leftIsInaccessible
-    ? aiParams.INACCESSIBLE_LEFT_COEF
-    : 0;
-  const inaccessibleRightFactor = rightIsInaccessible
-    ? aiParams.INACCESSIBLE_RIGHT_COEF
-    : 0;
+  const inaccessibleLeftFactor =
+    (1 - leftAccessibility) * aiParams.INACCESSIBLE_LEFT_COEF;
+  const inaccessibleRightFactor =
+    (1 - rightAccessibility) * aiParams.INACCESSIBLE_RIGHT_COEF;
   const inputCostFactor = possibility.inputCost;
   const levelCorrectionFactor = levelAfterPlacement >= 29 ? 100 : 0;
 
