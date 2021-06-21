@@ -3323,7 +3323,7 @@ const ranks_15hz_v1 = {
 }
 
 const ranks_12hz = ranks_12hz_v1;
-const ranks_13hz = ranks_13hz_v1;
+const ranks_13hz = ranks_13hz_v2;
 const ranks_15hz = ranks_15hz_v0;
 
 module.exports = {
