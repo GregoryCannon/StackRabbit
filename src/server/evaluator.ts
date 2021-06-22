@@ -855,7 +855,7 @@ export function getValueOfPossibility(
       level,
       minReachableX,
       maxReachableX,
-      /* considerEventualSurface= */ false
+      /* considerEventualSurface= */ true
     );
   const tetrisReadyFactor =
     aiParams.TETRIS_READY_COEF *

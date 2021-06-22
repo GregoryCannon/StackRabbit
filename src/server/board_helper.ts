@@ -262,25 +262,6 @@ function leftSurfaceResolvesCleanly(
   return [true, linesCleared];
 }
 
-// const testBoard = parseBoard(
-//   "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000111110011001111001111111100111"
-// );
-// const [surfaceArray, numHoles, holeCells] = getSurfaceArrayAndHoles(testBoard);
-// // console.log(
-// //   "LEFT SURFACE RESOLVES:",
-// //   leftSurfaceResolvesCleanly(
-// //     testBoard,
-// //     surfaceArray,
-// //     holeCells,
-// //     holeCells,
-// //     1,
-// //     8
-// //   )
-// // );
-// console.log(
-//   "RESULT",
-//   getLeftSurfaces(testBoard, 3, holeCells, surfaceArray, 1, 9)
-// );
 
 /** Gets the surface of just the left-most 3 columns. (This is used for killscreen play).
  * The heights are RELATIVE to the average heights in columns 3-10, such that the surface
@@ -494,13 +475,13 @@ export function rateRightAccessibility(
       col10Height == col9Height + 1 &&
       canDoPlacement(board, level, "Z", 1, 3, aiParams.INPUT_FRAME_TIMELINE)
     ) {
-      return 0.5;
+      return 1;
     }
     if (
       col10Height == col9Height - 1 &&
       canDoPlacement(board, level, "S", 1, 3, aiParams.INPUT_FRAME_TIMELINE)
     ) {
-      return 0.5;
+      return 1;
     }
   }
 
