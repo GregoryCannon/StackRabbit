@@ -818,14 +818,14 @@ export function getValueOfPossibility(
   const guaranteedBurns =
     rowsNeedingToBurn.size + 0 * rowsNeedingToBurnIfTucksFail.size;
 
-  const leftAccessibility = boardHelper.boardHasInaccessibileLeft(
+  const leftAccessibility = boardHelper.rateLeftAccessibility(
     boardAfter,
     surfaceArray,
     levelAfterPlacement,
     aiParams,
     aiMode
   );
-  const rightAccessibility = boardHelper.boardHasInaccessibileRight(
+  const rightAccessibility = boardHelper.rateRightAccessibility(
     boardAfter,
     surfaceArray,
     levelAfterPlacement,

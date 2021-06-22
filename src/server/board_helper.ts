@@ -399,7 +399,7 @@ export function hasHoleInColumn(board: Board, col: number, heightFromTop = 20) {
 }
 
 /** Returns 1 if the left is accesible, and 0 otherwise. */
-export function boardHasInaccessibileLeft(
+export function rateLeftAccessibility(
   board: Board,
   surfaceArray: Array<number>,
   level: number,
@@ -460,7 +460,7 @@ export function boardHasInaccessibileLeft(
 }
 
 /** Returns true if the tap speed is not sufficient to get a long bar to the right. */
-export function boardHasInaccessibileRight(
+export function rateRightAccessibility(
   board: Board,
   surfaceArray: Array<number>,
   level: number,
@@ -481,6 +481,15 @@ export function boardHasInaccessibileRight(
     ) {
       return 1;
     }
+  }
+
+  // Otherwise we need a 4 tap
+  if (canDoPlacement(board, level, "I", 1, 4, aiParams.INPUT_FRAME_TIMELINE)){
+    return 1;
+  }
+
+  // (killscreen-only) If an S/Z 3-tap makes it, we're somewhat ok
+  if (aiMode === AiMode.KILLSCREEN) {
     if (
       col10Height == col9Height + 1 &&
       canDoPlacement(board, level, "Z", 1, 3, aiParams.INPUT_FRAME_TIMELINE)
@@ -495,10 +504,7 @@ export function boardHasInaccessibileRight(
     }
   }
 
-  // Otherwise we need a 4 tap
-  return canDoPlacement(board, level, "I", 1, 4, aiParams.INPUT_FRAME_TIMELINE)
-    ? 1
-    : 0;
+  return 0;
 }
 
 /** A modulus function that correctly handles negatives. */
