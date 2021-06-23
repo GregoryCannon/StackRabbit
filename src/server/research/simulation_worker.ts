@@ -94,12 +94,14 @@ function measureAverageScore() {
   let scores = [];
   for (let i = 0; Date.now() < endTimeMs; i++) {
     // Start of iteration
-    console.log(`${threadId}: Iteration ${i + 1}`);
-    console.log(
-      `${threadId}: ${((Date.now() - startTimeMs) / MS_PER_MIN).toFixed(
-        2
-      )} minutes elapsed, out of ${TRAINING_TIME_MINS}`
-    );
+    if (i % 10 === 0){
+      console.log(`${threadId}: Iteration ${i + 1}`);
+      console.log(
+        `${threadId}: ${((Date.now() - startTimeMs) / MS_PER_MIN).toFixed(
+          2
+        )} minutes elapsed, out of ${TRAINING_TIME_MINS}`
+      );
+    }
 
     // Play out one game
     const [score, lines, level] = simulateGame(

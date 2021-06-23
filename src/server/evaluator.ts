@@ -379,9 +379,9 @@ function getLeftSurfaceValue(
 
   if (!considerEventualSurface) {
     const leftSurface = boardHelper.getRelativeLeftSurface(board, max4Tap + 2);
-    if (boardHelper.hasHoleInColumn(board, 0) || boardHelper.hasHoleInColumn(board, 1) || boardHelper.hasHoleInColumn(board, 2)){
-      return transformSurfaceValue(0, 350, 100);
-    }
+    // if (boardHelper.hasHoleInColumn(board, 0) || boardHelper.hasHoleInColumn(board, 1) || boardHelper.hasHoleInColumn(board, 2)){
+    //   return transformSurfaceValue(0, 350, 100);
+    // }
     const rawValue = lookUpLeftSurfaceRaw(leftSurface, ranks);
     return transformSurfaceValue(rawValue, 350, 100);
   }
@@ -406,8 +406,8 @@ function getLeftSurfaceValue(
   }
   const eventualValue = lookUpLeftSurfaceRaw(eventualSurface, ranks);
   return (
-    0.3 * transformSurfaceValue(rawValue, 350, 100) +
-    0.7 * transformSurfaceValue(eventualValue, 350, 100)
+    0.5 * transformSurfaceValue(rawValue, 350, 100) +
+    0.5 * transformSurfaceValue(eventualValue, 350, 100)
   );
 }
 
@@ -757,7 +757,7 @@ export function getValueOfPossibility(
   if (aiMode === AiMode.KILLSCREEN) {
     for (let col = 0; col <= 2; col++) {
       numHoles -=
-        0 *
+        0.2 *
         utils.countHolesInColumn(
           col,
           boardAfter,

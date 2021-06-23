@@ -282,8 +282,6 @@ export function getLeftSurfaces(
   const maxHeight = Math.min(9, max4TapHeight + 2);
   const currentLeftSurface = getRelativeLeftSurface(board, maxHeight);
 
-  let eventualSurface = null;
-
   // Check for holes in the left 3 cols
   const leftColsHoles: Set<number> = new Set();
   for (const x of holeCells) {
@@ -408,7 +406,7 @@ export function rateLeftAccessibility(
     const canDo4TapLeft = canDoPlacement(
       board,
       level,
-      "L",
+      col1Height === col2Height ? "O" : "L",
       0,
       -4,
       aiParams.INPUT_FRAME_TIMELINE
