@@ -14,7 +14,7 @@ export const IS_PAL = false;
 export const WELL_COLUMN = 9; // 0-indexed
 export const IS_NON_RIGHT_WELL = false;
 export const CAN_TUCK = true;
-export const IS_DROUGHT_MODE = true;
+export const IS_DROUGHT_MODE = false;
 
 /*--------------------------------
   State-based param modification
@@ -258,7 +258,7 @@ const CENTER_WELL_PARAMS = applyModsToParams(
 );
 
 export function getParams(): InitialAiParams {
-  return DROUGHT_CODE_PARAMS;
+  return TOURNEY_MEDIUM_AGGRO_PARAMS;
 }
 
 export function getParamMods(): ParamMods {
