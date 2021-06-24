@@ -1,42 +1,43 @@
 import { PreComputeManager } from "./precompute";
 import { RequestHandler } from "./request_handler";
-import * as http from "http";
+import * as express from "express";
 
-const hostname = "127.0.0.1";
 const port = 3000;
+const ALLOW_MULTITHREAD = true;
 
-console.log("Starting server...");
-
-/**
- * Create HTTP server for the frontend to request
- */
-function initServer(requestHandler) {
-  const server = http.createServer((req, res) => {
-    res.statusCode = 200;
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Content-Type", "text/plain");
-
+function initExpressServer(requestHandler){
+  const app = express();
+  app.get("*", function (req: any, res: any) {
+    // Log the request
     console.log("\n-------------------------\nlocalhost:" + port + req.url);
     console.time("Full request");
 
+    // Main processing
     const [response, responseCode] = requestHandler.routeRequest(req);
 
+    // Send response
     console.timeEnd("Full request");
-    // console.log("Sending response:", response, responseCode);
+    console.log("Sending response:", response, responseCode);
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Content-Type", "text/plain");
     res.statusCode = responseCode;
     res.end(response);
-  });
+  })
 
-  server.listen(port, hostname, () => {
-    console.log(`Server running at http://${hostname}:${port}/`);
-  });
+  app.listen(port);
+  console.log("Listening on port", port);
 }
 
-// Create an object to manage the worker threads involved in heavy placement computation
-const precomputer = new PreComputeManager();
+if (ALLOW_MULTITHREAD){
+  // Create an object to manage the worker threads involved in heavy placement computation
+  const precomputer = new PreComputeManager();
 
-// Start the server once the precomputer is operational
-precomputer.initialize(() => {
-  const requestHandler = new RequestHandler(precomputer);
-  initServer(requestHandler);
-});
+  // Start the server once the precomputer is operational
+  precomputer.initialize(() => {
+    const requestHandler = new RequestHandler(precomputer);
+    initExpressServer(requestHandler);
+  });
+} else {
+  const requestHandler = new RequestHandler(null);
+    initExpressServer(requestHandler);
+}

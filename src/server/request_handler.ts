@@ -265,6 +265,9 @@ export class RequestHandler {
    * @returns {string} the API response
    */
   handlePrecomputeRequest(requestArgs) {
+    if (!this.preComputeManager){
+      return;
+    }
     let [searchState, inputFrameTimeline] = this._parseArguments(requestArgs);
 
     this.preComputeManager.finessePrecompute(
