@@ -1,3 +1,5 @@
+import { evaluateBoard, fastEvalBoard } from "./evaluator";
+
 // Each index corresponds to the level you're starting search at while doing the pruning.
 export const SEARCH_BREADTH = {
   2: 999, // Don't prune on the before the second stage ("bad" placements could be a floating burn setup)
@@ -48,6 +50,28 @@ export function modifyParamsForAiMode(aiParams, aiMode, paramMods) {
   }
 }
 
+/**
+ * Calculate a new burn penalty based on the overall state of the stack.
+ * (Be more willing to burn when things are in trouble)
+ * 
+ * The numbers used here came from an exponential regression on the following key points:
+ * eval 30 = 2x burn penalty (ideal stack)
+ * eval 24 = 1x burn penalty (a little uncomfortable)
+ * eval 15 = 0.5x burn penalty (in trouble)
+ * eval 0 = 0.25x burn penalty (in serious trouble)
+ * @param aiParams 
+ * @param searchState 
+ */
+export function modifyParamsForFlexibleAggresion(aiParams: AiParams, searchState: SearchState){
+  const [boardEval, _] = fastEvalBoard(searchState.board, searchState.level, searchState.lines, AiMode.STANDARD, aiParams);
+  const burnMultiplier = Math.pow(2, -2.58 + 0.11 * boardEval);
+  // const burnMultiplier = boardEval > 25 ? 1.5 : 1;
+  // console.log("BOARD EVAL:", boardEval);
+  // console.log("BURN PENALTY", burnMultiplier * aiParams.BURN_COEF);
+  aiParams.BURN_COEF = burnMultiplier * aiParams.BURN_COEF;
+  return aiParams;
+}
+
 export const DEFAULT_PARAM_MODS = {
   DIG: {
     BURN_COEF: -1,
@@ -96,7 +120,8 @@ export const DEFAULT_PARAM_MODS = {
 export const DEFAULT_PARAMS: InitialAiParams = {
   AVG_HEIGHT_EXPONENT: 1.5000000000004,
   AVG_HEIGHT_COEF: -5,
-  BURN_COEF: -5,
+  BURN_COEF: -10,
+  BURN_COEF_POST: -8,
   COL_10_COEF: -1,
   COL_10_HEIGHT_MULTIPLIER_EXP: 3,
   DEAD_COEF: -10000,
@@ -135,6 +160,7 @@ const PLAY_PERFECT_PARAMS: InitialAiParams = {
   AVG_HEIGHT_EXPONENT: 1,
   AVG_HEIGHT_COEF: -300,
   BURN_COEF: -1000,
+  BURN_COEF_POST: -1000,
   COL_10_COEF: 0,
   COL_10_HEIGHT_MULTIPLIER_EXP: 0,
   DEAD_COEF: -100000,
@@ -177,10 +203,17 @@ export const NO_DIRTIES_PARAMS = applyModsToParams(
   NO_DIRTIES_MODIFICATIONS
 );
 
-const TOURNEY_AGGRO_MODIFICATIONS = {
-  BURN_COEF: -14,
+const EXHIBITION_PATCH = {
+  BURN_COEF: -15,
+  BURN_COEF_POST: -12,
   HIGH_COL_9_COEF: -5,
   UNABLE_TO_BURN_COEF: -0.5,
+}
+
+const TOURNEY_SMALL_AGGRO_MODIFICATIONS = {
+  BURN_COEF: -7.5,
+  HIGH_COL_9_COEF: -4,
+  UNABLE_TO_BURN_COEF: -0.4,
 };
 
 const TOURNEY_MEDIUM_AGGRO_MODIFICATIONS = {
@@ -190,10 +223,10 @@ const TOURNEY_MEDIUM_AGGRO_MODIFICATIONS = {
   AVG_HEIGHT_COEF: -6,
 };
 
-const TOURNEY_SMALL_AGGRO_MODIFICATIONS = {
-  BURN_COEF: -7.5,
-  HIGH_COL_9_COEF: -4,
-  UNABLE_TO_BURN_COEF: -0.4,
+const TOURNEY_AGGRO_MODIFICATIONS = {
+  BURN_COEF: -14,
+  HIGH_COL_9_COEF: -5,
+  UNABLE_TO_BURN_COEF: -0.5,
 };
 
 const AGGRO_MODIFICATIONS = {
@@ -258,7 +291,10 @@ const CENTER_WELL_PARAMS = applyModsToParams(
 );
 
 export function getParams(): InitialAiParams {
-  return TOURNEY_MEDIUM_AGGRO_PARAMS;
+  return applyModsToParams(
+    DEFAULT_PARAMS,
+    EXHIBITION_PATCH
+  );
 }
 
 export function getParamMods(): ParamMods {

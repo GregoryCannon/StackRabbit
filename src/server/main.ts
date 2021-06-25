@@ -3,7 +3,7 @@ const aiModeManager = require("./ai_mode_manager");
 const boardHelper = require("./board_helper");
 const { SEARCH_BREADTH, modifyParamsForAiMode } = require("./params");
 import { getPossibleMoves } from "./move_search";
-import { EVALUATION_BREADTH, IS_DROUGHT_MODE } from "./params";
+import { EVALUATION_BREADTH, IS_DROUGHT_MODE, modifyParamsForFlexibleAggresion } from "./params";
 import * as utils from "./utils";
 import { POSSIBLE_NEXT_PIECES } from "./utils";
 
@@ -62,6 +62,10 @@ export function getSortedMoveList(
     searchState.currentPieceId,
     aiParams
   );
+  // Update the params based on level, AI mode, etc.
+  if (searchState.level >= 19 && aiParams.BURN_COEF_POST !== undefined){
+    aiParams.BURN_COEF = aiParams.BURN_COEF_POST
+  }
   aiParams = modifyParamsForAiMode(aiParams, aiMode, paramMods);
 
   let [bestConcrete, prunedConcrete] = searchConcretely(
@@ -260,7 +264,6 @@ function searchDepth1(
     for (const possibility of possibilityList) {
       const [value, _] = evaluator.fastEval(
         possibility,
-        searchState.nextPieceId,
         searchState.level,
         searchState.lines,
         aiMode,
@@ -283,7 +286,6 @@ function searchDepth1(
       searchState.level,
       searchState.lines,
       aiMode,
-      /* shouldLog= */ false,
       aiParams
     );
     possibility.evalScore = value as number;

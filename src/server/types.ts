@@ -130,6 +130,7 @@ interface InitialAiParams {
   AVG_HEIGHT_EXPONENT: number;
   AVG_HEIGHT_COEF: number;
   BURN_COEF: number;
+  BURN_COEF_POST: number;
   COL_10_COEF: number;
   COL_10_HEIGHT_MULTIPLIER_EXP: number;
   DEAD_COEF: number;

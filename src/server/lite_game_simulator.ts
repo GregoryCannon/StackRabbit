@@ -88,7 +88,7 @@ export function simulateGame(
   let gameOver = false;
   let i = 0;
 
-  while (!gameOver && i < 10000) {
+  while (!gameOver && i < 2000) {
     const currentPieceId = pieceSequence[pieceIndex];
     const nextPieceId = pieceSequence[pieceIndex + 1];
 
@@ -180,7 +180,7 @@ function getMoveThisStep(
       paramMods,
       inputFrameTimeline,
       /* searchDepth= */ 1,
-      /* hypotheticalSearchDepth= */ 2
+      /* hypotheticalSearchDepth= */ 1
     );
     if (initalMove == null) {
       return null;
