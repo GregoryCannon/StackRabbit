@@ -579,15 +579,46 @@ export function rateSurface(surfaceArray): string {
   return result;
 }
 
+export function evaluateBoard(board: Board, level: number, lines: number, aiMode: AiMode, aiParams: AiParams){
+  const [surfaceArray, numHoles, holeCells] = utils.getSurfaceArrayAndHoles(board);
+  const fakePossibility = {
+    surfaceArray,
+    numHoles,
+    numLinesCleared: 0,
+    boardAfter: board,
+    holeCells,
+    inputCost: 0,
+    placement: null,
+    lockPositionEncoded: null,
+    inputSequence: null
+  }
+  return getValueOfPossibility(fakePossibility, level, lines, aiMode, aiParams)
+}
+
+export function fastEvalBoard(board: Board, level: number, lines: number, aiMode: AiMode, aiParams: AiParams){
+  const [surfaceArray, numHoles, holeCells] = utils.getSurfaceArrayAndHoles(board);
+  const fakePossibility = {
+    surfaceArray,
+    numHoles,
+    numLinesCleared: 0,
+    boardAfter: board,
+    holeCells,
+    inputCost: 0,
+    placement: null,
+    lockPositionEncoded: null,
+    inputSequence: null
+  }
+  return fastEval(fakePossibility, level, lines, aiMode, aiParams)
+}
+
 /** An evaluation function that only includes the factors that are super fast to calculate */
 export function fastEval(
   possibility: Possibility,
-  nextPieceId: PieceId,
   level: number,
   lines: number,
   aiMode: AiMode,
   aiParams: AiParams
-) {
+) : [number, string] {
   let {
     surfaceArray,
     numHoles,
@@ -650,7 +681,7 @@ export function fastEval(
       totalHeightCorrected,
       aiParams
     );
-  let killscreenSurfaceLeftFactor =
+  let killscreenSurfaceLeftFactor = aiMode !== AiMode.KILLSCREEN ? 0 :
     aiParams.LEFT_SURFACE_COEF *
     getLeftSurfaceValue(
       boardAfter,
@@ -702,7 +733,6 @@ export function getValueOfPossibility(
   level,
   lines,
   aiMode,
-  shouldLog,
   aiParams
 ) {
   let {
@@ -845,7 +875,7 @@ export function getValueOfPossibility(
       totalHeightCorrected,
       aiParams
     );
-  let killscreenSurfaceLeftFactor =
+  let killscreenSurfaceLeftFactor = aiMode !== AiMode.KILLSCREEN ? 0 :
     aiParams.LEFT_SURFACE_COEF *
     getLeftSurfaceValue(
       boardAfter,
@@ -932,13 +962,6 @@ export function getValueOfPossibility(
 
   if (aiParams.BURN_COEF < -500) {
     totalValue = Math.max(-200000, totalValue);
-  }
-
-  if (shouldLog) {
-    console.log(
-      `---- Evaluated possiblity: ${possibility.placement}, mode: ${aiMode}\n`,
-      explanation
-    );
   }
 
   return [totalValue, explanation];
