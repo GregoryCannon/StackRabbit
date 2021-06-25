@@ -14,7 +14,10 @@ import {
   SIM_MAX_4_TAP_HEIGHT,
   TRAINING_TIME_MINS,
 } from "./simulation_testing";
+import * as fs from "fs"
+// const pieceSequences = fs.readFileSync("docs/sequence_pool.txt").toString();
 
+const SEQUENCE_OFFSET = 2000; // An offset into the piece sequence file to get new RNG
 const MS_PER_MIN = 60000;
 let threadId = -1;
 
@@ -86,7 +89,7 @@ function measureSuccessorsInTestGames(): Object {
 /**
  * Runs a series of simulated games and tracks all of the scores
  */
-function measureAverageScore() {
+function measureAverageScore(isKillscreen) {
   // Note the starting time and keep training until a specified number of minutes after that
   const startTimeMs = Date.now();
   const endTimeMs = startTimeMs + TRAINING_TIME_MINS * MS_PER_MIN;
@@ -94,7 +97,7 @@ function measureAverageScore() {
   let scores = [];
   for (let i = 0; Date.now() < endTimeMs; i++) {
     // Start of iteration
-    if (i % 10 === 0){
+    if (i % 1 === 0){
       console.log(`${threadId}: Iteration ${i + 1}`);
       console.log(
         `${threadId}: ${((Date.now() - startTimeMs) / MS_PER_MIN).toFixed(
@@ -104,16 +107,18 @@ function measureAverageScore() {
     }
 
     // Play out one game
+    // const pieceSequenceNum = i * 8 + threadId + SEQUENCE_OFFSET;
+    // const sequence = pieceSequences.slice(pieceSequenceNum * 2000, (pieceSequenceNum + 1) * 2000);
     const [score, lines, level] = simulateGame(
-      29,
+      isKillscreen ? 29 : 18,
       getEmptyBoard(),
       getParams(),
       getParamMods(),
       SIM_INPUT_TIMELINE,
       /* presetSequence= */ null,
-      /* shouldAdjust= */ false,
+      /* shouldAdjust= */ !isKillscreen,
       /* isDig= */ false,
-      /* maxLines= */ 230,
+      /* maxLines= */ 130,
       null,
       /* shouldLog= */ false
     );
@@ -204,8 +209,10 @@ process.on("message", (message) => {
   let result;
   if (message.type === "successors") {
     result = measureSuccessorsInTestGames();
-  } else if (message.type === "average") {
-    result = measureAverageScore();
+  } else if (message.type === "standard") {
+    result = measureAverageScore(/* isKillscreen= */ false);
+  } else if (message.type === "killscreen") {
+    result = measureAverageScore(/* isKillscreen= */ true);
   } else if (message.type === "dig") {
     result = simulateDigPractice();
   } else if (message.type === "opener") {

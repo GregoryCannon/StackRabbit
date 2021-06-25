@@ -6,14 +6,17 @@ import { processKillscreenResults } from "./killscreen_training";
 // Specifies to the worker thread what type of simulation needs to be done
 const TestType = Object.freeze({
   DIG: "dig",
-  STANDARD: "average",
-  KILLSCREEN: "successors",
+  STANDARD: "standard",
+  KILLSCREEN: "killscreen",
+  LEFT_SURFACE_SUCCESSORS: "successors",
   OPENER: "opener",
 });
 
 /* ------------------------------
     Configuration
 --------------------------------- */
+
+const curTestType = TestType.STANDARD;
 
 export const SIM_INPUT_TIMELINE = "X....";
 export const SIM_MAX_4_TAP_HEIGHT = calculateTapHeight(
@@ -25,10 +28,9 @@ export const OPENER_TEST_BOARD = parseBoard(
   "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000011100000011110"
 );
 
-export const TRAINING_TIME_MINS = 2;
+export const TRAINING_TIME_MINS = 15;
 const NUM_THREADS = 8;
 
-const curTestType = TestType.STANDARD;
 
 /* ------------------------------
     Worker thread setup
@@ -108,6 +110,7 @@ function defaultFitnessFunction(
       if (score <= 500000) {
         totalEarlyTopouts++;
       }
+      console.log(score);
     }
     numGames += result.length;
   }
@@ -161,7 +164,7 @@ function processResults() {
       console.log("\n\nFitness:", digFitnessFunction(results));
       break;
 
-    case TestType.KILLSCREEN:
+    case TestType.LEFT_SURFACE_SUCCESSORS:
       processKillscreenResults(results);
   }
 }
