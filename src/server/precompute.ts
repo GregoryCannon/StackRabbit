@@ -345,7 +345,7 @@ export class PreComputeManager {
         let maxValue = this.results[pieceId][
           phantomPlacement.defaultPlacement.lockPositionEncoded
         ];
-        let maxPossibility: PossibilityChain = null;
+        let maxPossibility: PossibilityChain = phantomPlacement.defaultPlacement;
         for (const adjPossibility of phantomPlacement.possibleAdjustmentsLookup.get(
           pieceId
         )) {
