@@ -1,8 +1,12 @@
 import { IS_PAL, WELL_COLUMN } from "./params";
-import * as utils from "./utils";
-const SquareState = utils.SquareState;
-const NUM_ROW = utils.NUM_ROW;
-const NUM_COLUMN = utils.NUM_COLUMN;
+import {
+  getScareHeight,
+  getSurfaceArrayAndHoles,
+  isTuckSetup,
+  NUM_COLUMN,
+  NUM_ROW,
+  SquareState,
+} from "./utils";
 
 export function getAiMode(
   board,
@@ -15,19 +19,70 @@ export function getAiMode(
   if (level >= killscreenLevel && aiParams.MAX_5_TAP_LOOKUP[level] <= 4) {
     return AiMode.KILLSCREEN;
   }
+  const surfaceArray = getSurfaceArrayAndHoles(board)[0];
+  if (lines === 229 && hasHoleInTetrisZone(board, surfaceArray)) {
+    return AiMode.IMMINENT_DEATH;
+  }
   // Dig, unless it's too close to the killscreen to dig
-  if (shouldUseDigMode(board, level, lines, currentPieceId, aiParams)) {
+  if (
+    shouldUseDigMode(
+      board,
+      surfaceArray,
+      level,
+      lines,
+      currentPieceId,
+      aiParams
+    )
+  ) {
     return lines >= 226 ? AiMode.DIG_INTO_KILLSCREEN : AiMode.DIG;
   }
   if (level >= killscreenLevel) {
     // This is checked after dig mode so that right well killscreen AI can still dig
     return AiMode.KILLSCREEN_FOR_TETRISES;
   }
-  if (lines >= 220 && level === killscreenLevel - 1) {
+  if (
+    (lines >= 217 && level === killscreenLevel - 1) ||
+    level === killscreenLevel - 2
+  ) {
     return AiMode.NEAR_KILLSCREEN;
   }
 
   return AiMode.STANDARD;
+}
+
+function hasHoleInTetrisZone(board, surfaceArray) {
+  // Calculate where the next Tetris will be built
+  let row = 0;
+  while (row < NUM_ROW && board[row][WELL_COLUMN] == SquareState.EMPTY) {
+    row++;
+  }
+  const tetrisZoneStart = row - 4; // Both inclusive
+  const tetrisZoneEnd = row - 1;
+
+  // Check for holes in the Teris zone
+  for (let col = 0; col < NUM_COLUMN; col++) {
+    if (col == WELL_COLUMN) {
+      continue;
+    }
+    // Navigate past the empty space above each column
+    let row = 0;
+    while (row < NUM_ROW && board[row][col] === SquareState.EMPTY) {
+      row++;
+    }
+
+    // Now that we're in the stack, if there are empty cells, they're holes
+    while (row < NUM_ROW - 1) {
+      row++;
+      if (
+        board[row][col] === SquareState.EMPTY &&
+        !isTuckSetup(row, col, board, surfaceArray)[0] &&
+        row >= tetrisZoneStart &&
+        row <= tetrisZoneEnd
+      ) {
+        return true;
+      }
+    }
+  }
 }
 
 /** The logic here is quite complex, it's a shame it has to be manually coded instead of trained.
@@ -39,6 +94,7 @@ export function getAiMode(
  */
 function shouldUseDigMode(
   board,
+  surfaceArray,
   level,
   lines,
   currentPieceId: PieceId,
@@ -57,9 +113,7 @@ function shouldUseDigMode(
   const tetrisZoneStart = row - 4;
   const tetrisZoneEnd = row - 1;
 
-  const surfaceArrayWithCol10 = utils.getSurfaceArrayAndHoles(board)[0];
-
-  const scareHeight = utils.getScareHeight(level, lines, aiParams);
+  const scareHeight = getScareHeight(level, lines, aiParams);
   // TODO: when 'eventual board after line clear' implemented, check that the hole can ever
   // be under the max dirty tetris line
   const maxDirtyTetrisHeight = Math.round(
@@ -68,7 +122,7 @@ function shouldUseDigMode(
 
   function holeWarrantsDigging(row, col, firstFullRow, surfaceArray) {
     // If it's a tuck setup, don't dig
-    if (utils.isTuckSetup(row, col, board, surfaceArray)[0]) {
+    if (isTuckSetup(row, col, board, surfaceArray)[0]) {
       return false;
     }
     // If it's perfectly set up to play dirty, don't dig
@@ -107,9 +161,7 @@ function shouldUseDigMode(
       row++;
       if (board[row][col] === SquareState.EMPTY) {
         // Found hole
-        if (
-          holeWarrantsDigging(row, col, firstFullRow, surfaceArrayWithCol10)
-        ) {
+        if (holeWarrantsDigging(row, col, firstFullRow, surfaceArray)) {
           return true;
         }
       }

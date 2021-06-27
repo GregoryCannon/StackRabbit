@@ -3,7 +3,11 @@ const aiModeManager = require("./ai_mode_manager");
 const boardHelper = require("./board_helper");
 const { SEARCH_BREADTH, modifyParamsForAiMode } = require("./params");
 import { getPossibleMoves } from "./move_search";
-import { EVALUATION_BREADTH, IS_DROUGHT_MODE, modifyParamsForFlexibleAggresion } from "./params";
+import {
+  EVALUATION_BREADTH,
+  IS_DROUGHT_MODE,
+  modifyParamsForFlexibleAggresion,
+} from "./params";
 import * as utils from "./utils";
 import { POSSIBLE_NEXT_PIECES } from "./utils";
 
@@ -63,8 +67,8 @@ export function getSortedMoveList(
     aiParams
   );
   // Update the params based on level, AI mode, etc.
-  if (searchState.level >= 19 && aiParams.BURN_COEF_POST !== undefined){
-    aiParams.BURN_COEF = aiParams.BURN_COEF_POST
+  if (searchState.level >= 19 && aiParams.BURN_COEF_POST !== undefined) {
+    aiParams.BURN_COEF = aiParams.BURN_COEF_POST;
   }
   aiParams = modifyParamsForAiMode(aiParams, aiMode, paramMods);
 
@@ -293,7 +297,12 @@ function searchDepth1(
 
     // Convert to a 1-chain
     possibility.totalValue = value as number;
-    possibility.partialValue = evaluator.getPartialValue(possibility, aiParams);
+    possibility.partialValue = evaluator.getPartialValue(
+      possibility,
+      searchState.lines,
+      aiParams,
+      aiMode
+    );
     possibility.searchStateAfterMove = getSearchStateAfter(
       searchState,
       possibility
@@ -325,17 +334,26 @@ function searchDepth2(
       EVALUATION_BREADTH[2]
     );
     if (prunedD1.length > 0) {
-      throw new Error("Pruned at depth 1");
+      throw new Error("Pruned at depth 1 - this should never happen");
     }
 
-    // Generate 2-chains by combining the outer and inner moves
-    const new2Chains = innerPossibilities.map(
-      (innerPossibility: Possibility) => ({
+    let new2Chains;
+    if (innerPossibilities.length > 0) {
+      // Generate 2-chains by combining the outer and inner moves
+      new2Chains = innerPossibilities.map((innerPossibility: Possibility) => ({
         ...outerPossibility,
         innerPossibility: innerPossibility,
         totalValue: innerPossibility.evalScore + outerPossibility.partialValue,
-      })
-    );
+      }));
+    } else {
+      new2Chains = [
+        {
+          ...outerPossibility,
+          innerPossibility: null,
+          totalValue: aiParams.DEAD_COEF,
+        },
+      ];
+    }
 
     // Merge with the current best list
     if (new2Chains.length > 0) {

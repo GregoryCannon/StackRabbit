@@ -208,7 +208,6 @@ export function isTuckSetup(row, col, board, surfaceArray): [boolean, number] {
   return [false, 0];
 }
 
-
 export function countHolesInColumn(
   col: number,
   board: Board,
@@ -364,6 +363,10 @@ export function parseBoard(boardStr: string): Board {
   return boardStr
     .match(/.{1,10}/g) // Select groups of 10 characters
     .map((rowSerialized) => rowSerialized.split("").map((x) => parseInt(x)));
+}
+
+export function getMaxSafeCol9(level: number, aiParams: AiParams) {
+  return Math.max(4, aiParams.MAX_4_TAP_LOOKUP[level] - 5);
 }
 
 export function getScareHeight(

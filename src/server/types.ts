@@ -2,15 +2,13 @@ type Board = Array<Array<number>>;
 
 type Placement = [number, number]; // [numRightRotations, numShifts]
 
-type LockPlacement = [number, number, number, string]; // [numRightRotations, x, y, inputSequence, arrFrameIndex]
-
 type PieceArray = Array<Array<number>>;
 
 type PieceId = "I" | "O" | "L" | "J" | "T" | "S" | "Z" | null;
 
-type Direction = "L" | "R" | "";
-
 type SimulatedGameResult = [number, number, number, number]; // score, lines, level, numHoles
+
+type ReachableCols = [number, number, number, number]; // 4 tap left, 4 tap right, 5 tap left, 5 tap right
 
 interface SimParams {
   board: Board;
@@ -110,9 +108,9 @@ interface SearchState {
 
 interface PhantomPlacement {
   inputSequence: string;
-  defaultPlacement: PossibilityChain;
+  initialPlacement: PossibilityChain;
   adjustmentSearchState: SearchState;
-  possibleAdjustmentsLookup?: Map<PieceId, Array<Possibility>>;
+  possibleAdjustmentsLookup?: Array<Possibility>;
 }
 
 const enum AiMode {
@@ -122,6 +120,7 @@ const enum AiMode {
   NEAR_KILLSCREEN,
   KILLSCREEN,
   KILLSCREEN_FOR_TETRISES,
+  IMMINENT_DEATH,
 }
 
 /* ----------- Evaluation Parameters ------------- */

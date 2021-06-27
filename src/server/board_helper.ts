@@ -262,7 +262,6 @@ function leftSurfaceResolvesCleanly(
   return [true, linesCleared];
 }
 
-
 /** Gets the surface of just the left-most 3 columns. (This is used for killscreen play).
  * The heights are RELATIVE to the average heights in columns 3-10, such that the surface
  * is invariant to line clears.
@@ -463,7 +462,7 @@ export function rateRightAccessibility(
   }
 
   // Otherwise we need a 4 tap
-  if (canDoPlacement(board, level, "I", 1, 4, aiParams.INPUT_FRAME_TIMELINE)){
+  if (canDoPlacement(board, level, "I", 1, 4, aiParams.INPUT_FRAME_TIMELINE)) {
     return 1;
   }
 

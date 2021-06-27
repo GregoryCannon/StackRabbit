@@ -45,6 +45,8 @@ export function modifyParamsForAiMode(aiParams, aiMode, paramMods) {
       return applyModsToParams(aiParams, paramMods.KILLSCREEN);
     case AiMode.KILLSCREEN_FOR_TETRISES:
       return applyModsToParams(aiParams, paramMods.KILLSCREEN_FOR_TETRISES);
+    case AiMode.IMMINENT_DEATH:
+      return applyModsToParams(aiParams, paramMods.IMMINENT_DEATH);
     default:
       return aiParams;
   }
@@ -53,17 +55,26 @@ export function modifyParamsForAiMode(aiParams, aiMode, paramMods) {
 /**
  * Calculate a new burn penalty based on the overall state of the stack.
  * (Be more willing to burn when things are in trouble)
- * 
+ *
  * The numbers used here came from an exponential regression on the following key points:
  * eval 30 = 2x burn penalty (ideal stack)
  * eval 24 = 1x burn penalty (a little uncomfortable)
  * eval 15 = 0.5x burn penalty (in trouble)
  * eval 0 = 0.25x burn penalty (in serious trouble)
- * @param aiParams 
- * @param searchState 
+ * @param aiParams
+ * @param searchState
  */
-export function modifyParamsForFlexibleAggresion(aiParams: AiParams, searchState: SearchState){
-  const [boardEval, _] = fastEvalBoard(searchState.board, searchState.level, searchState.lines, AiMode.STANDARD, aiParams);
+export function modifyParamsForFlexibleAggresion(
+  aiParams: AiParams,
+  searchState: SearchState
+) {
+  const [boardEval, _] = fastEvalBoard(
+    searchState.board,
+    searchState.level,
+    searchState.lines,
+    AiMode.STANDARD,
+    aiParams
+  );
   const burnMultiplier = Math.pow(2, -2.58 + 0.11 * boardEval);
   // const burnMultiplier = boardEval > 25 ? 1.5 : 1;
   // console.log("BOARD EVAL:", boardEval);
@@ -79,28 +90,37 @@ export const DEFAULT_PARAM_MODS = {
     HOLE_WEIGHT_COEF: -8,
     HOLE_COEF: -100,
     AVG_HEIGHT_COEF: -8,
+    // HIGH_COL_9_COEF: -3,
   },
   DIG_INTO_KILLSCREEN: {
     BURN_COEF: -1,
     TETRIS_READY_COEF: 10,
-    TETRIS_COEF: 500, // has to be more than INACCESSIBLE_RIGHT, so that it'll take a tetris on 229 lines
+    TETRIS_COEF: 400, // has to be more than INACCESSIBLE_RIGHT, so that it'll take a tetris on 229 lines
   },
   NEAR_KILLSCREEN: {
-    TETRIS_READY_COEF: 10,
-    TETRIS_COEF: 500, // has to be more than INACCESSIBLE_RIGHT, so that it'll take a tetris on 229 lines
+    TETRIS_READY_COEF: 15,
+    MAX_DIRTY_TETRIS_HEIGHT: 0.5,
+    TETRIS_COEF: 400, // has to be more than INACCESSIBLE_RIGHT, so that it'll take a tetris on 229 lines
+  },
+  IMMINENT_DEATH: {
+    AVG_HEIGHT_COEF: 0,
+    SPIRE_HEIGHT_COEF: 0,
+    INACCESSIBLE_LEFT_COEF: 0,
+    INACCESSIBLE_RIGHT_COEF: 0,
+    TETRIS_COEF: 400, // In case of a crazy center well or something
   },
   KILLSCREEN: {
     COL_10_COEF: 0,
     BUILT_OUT_LEFT_COEF: 0,
-    BUILT_OUT_RIGHT_COEF: 0.75,
-    AVG_HEIGHT_COEF: -3,
+    BUILT_OUT_RIGHT_COEF: 1.5,
+    AVG_HEIGHT_COEF: -5,
     AVG_HEIGHT_EXPONENT: 1.2000000000004,
-    HOLE_COEF: -40,
+    HOLE_COEF: -60,
     BURN_COEF: 0,
     UNABLE_TO_BURN_COEF: 0,
     HIGH_COL_9_COEF: 0,
     HIGH_COL_9_EXP: 0,
-    INACCESSIBLE_LEFT_COEF: -200,
+    INACCESSIBLE_LEFT_COEF: -100,
     INACCESSIBLE_RIGHT_COEF: -100,
     SPIRE_HEIGHT_COEF: -0.5,
     LEFT_SURFACE_COEF: 0.5,
@@ -108,7 +128,9 @@ export const DEFAULT_PARAM_MODS = {
     SURFACE_COEF: 0.5,
   },
   KILLSCREEN_FOR_TETRISES: {
-    BURN_COEF: -1,
+    // BURN_COEF: -4,
+    // HIGH_COL_9_COEF: -2,
+    // HIGH_COL_9_EXP: 1.6,
   },
 };
 
@@ -204,11 +226,19 @@ export const NO_DIRTIES_PARAMS = applyModsToParams(
 );
 
 const EXHIBITION_PATCH = {
-  BURN_COEF: -15,
+  BURN_COEF: -12,
   BURN_COEF_POST: -12,
   HIGH_COL_9_COEF: -5,
   UNABLE_TO_BURN_COEF: -0.5,
-}
+};
+
+const EXHIBITION_AGGRO_PATCH = {
+  BURN_COEF: -15,
+  BURN_COEF_POST: -15,
+  HIGH_COL_9_COEF: -5,
+  UNABLE_TO_BURN_COEF: -0.5,
+  AVG_HEIGHT_COEF: -6,
+};
 
 const TOURNEY_SMALL_AGGRO_MODIFICATIONS = {
   BURN_COEF: -7.5,
@@ -291,10 +321,7 @@ const CENTER_WELL_PARAMS = applyModsToParams(
 );
 
 export function getParams(): InitialAiParams {
-  return applyModsToParams(
-    DEFAULT_PARAMS,
-    EXHIBITION_PATCH
-  );
+  return applyModsToParams(DEFAULT_PARAMS, EXHIBITION_PATCH);
 }
 
 export function getParamMods(): ParamMods {

@@ -75,13 +75,12 @@ function getSpireHeight(surfaceArray, scareHeight) {
 }
 
 /** Gets the average height of the columns (excluding col 10, except on killscreen) */
-function getAverageHeightAboveScareLine(surfaceArray, scareHeight) {
+function getAverageHeight(surfaceArray) {
   let total = 0;
   for (const height of surfaceArray) {
     total += height;
   }
-  const averageHeight = total / surfaceArray.length;
-  return Math.max(0, averageHeight - scareHeight);
+  return total / surfaceArray.length;
 }
 
 /** Calculates the number of lines that need to be cleared for all the holes to be resolved. */
@@ -481,15 +480,26 @@ function getFlatnessScore(surfaceArray: Array<number>) {
 
 export function getPartialValue(
   possibility: Possibility,
-  aiParams: InitialAiParams
+  linesBefore: number,
+  aiParams: AiParams,
+  aiMode: AiMode
 ) {
   return (
-    getLineClearValue(possibility.numLinesCleared, aiParams) +
-    possibility.inputCost
+    getLineClearValue(
+      possibility.numLinesCleared,
+      linesBefore,
+      aiParams,
+      aiMode
+    ) + possibility.inputCost
   );
 }
 
-export function getLineClearValue(numLinesCleared, aiParams) {
+export function getLineClearValue(
+  numLinesCleared: number,
+  linesBefore: number,
+  aiParams: AiParams,
+  aiMode: AiMode
+) {
   // Drought mode is a completely different ballgame for evaluating line clear penalty
   if (IS_DROUGHT_MODE) {
     switch (numLinesCleared) {
@@ -502,11 +512,46 @@ export function getLineClearValue(numLinesCleared, aiParams) {
         return 2 * aiParams.BURN_COEF;
     }
   }
-  return numLinesCleared == 4
-    ? aiParams.TETRIS_COEF
-    : numLinesCleared > 0
-    ? aiParams.BURN_COEF * numLinesCleared
-    : 0;
+
+  // Before killscreen, there's also some complexity
+  if (aiMode == AiMode.NEAR_KILLSCREEN && numLinesCleared < 4) {
+    return ratePreKillscreenLineClears(linesBefore, numLinesCleared, aiParams);
+  }
+
+  // Tetris reward or burn penalty
+  if (numLinesCleared == 4) {
+    return aiParams.TETRIS_COEF;
+  }
+  if (aiMode === AiMode.IMMINENT_DEATH) {
+    return numLinesCleared * 1000;
+  }
+  return numLinesCleared * aiParams.BURN_COEF;
+}
+
+function ratePreKillscreenLineClears(
+  linesBefore: number,
+  numLinesCleared: number,
+  aiParams
+) {
+  const before = linesBefore - 210;
+  const after = before + numLinesCleared;
+  if (
+    (before <= 7 && after > 7) ||
+    (before <= 11 && after > 11) ||
+    (before <= 15 && after > 15) ||
+    (before <= 19 && after > 19)
+  ) {
+    // Penalize a burn more if it lowers the number of potential Tetrises
+    return (2 + numLinesCleared) * aiParams.BURN_COEF;
+  } else if (before >= 16) {
+    // Line clears are literally good from 226 - 229
+    return -1 * numLinesCleared * aiParams.BURN_COEF;
+  } else if (before >= 12) {
+    // Partially punish burns that don't cost a Tetris
+    return 0.5 * numLinesCleared * aiParams.BURN_COEF;
+  } else {
+    return numLinesCleared * aiParams.BURN_COEF;
+  }
 }
 
 function getBuiltOutLeftFactor(
@@ -579,8 +624,16 @@ export function rateSurface(surfaceArray): string {
   return result;
 }
 
-export function evaluateBoard(board: Board, level: number, lines: number, aiMode: AiMode, aiParams: AiParams){
-  const [surfaceArray, numHoles, holeCells] = utils.getSurfaceArrayAndHoles(board);
+export function evaluateBoard(
+  board: Board,
+  level: number,
+  lines: number,
+  aiMode: AiMode,
+  aiParams: AiParams
+) {
+  const [surfaceArray, numHoles, holeCells] = utils.getSurfaceArrayAndHoles(
+    board
+  );
   const fakePossibility = {
     surfaceArray,
     numHoles,
@@ -590,13 +643,21 @@ export function evaluateBoard(board: Board, level: number, lines: number, aiMode
     inputCost: 0,
     placement: null,
     lockPositionEncoded: null,
-    inputSequence: null
-  }
-  return getValueOfPossibility(fakePossibility, level, lines, aiMode, aiParams)
+    inputSequence: null,
+  };
+  return getValueOfPossibility(fakePossibility, level, lines, aiMode, aiParams);
 }
 
-export function fastEvalBoard(board: Board, level: number, lines: number, aiMode: AiMode, aiParams: AiParams){
-  const [surfaceArray, numHoles, holeCells] = utils.getSurfaceArrayAndHoles(board);
+export function fastEvalBoard(
+  board: Board,
+  level: number,
+  lines: number,
+  aiMode: AiMode,
+  aiParams: AiParams
+) {
+  const [surfaceArray, numHoles, holeCells] = utils.getSurfaceArrayAndHoles(
+    board
+  );
   const fakePossibility = {
     surfaceArray,
     numHoles,
@@ -606,9 +667,9 @@ export function fastEvalBoard(board: Board, level: number, lines: number, aiMode
     inputCost: 0,
     placement: null,
     lockPositionEncoded: null,
-    inputSequence: null
-  }
-  return fastEval(fakePossibility, level, lines, aiMode, aiParams)
+    inputSequence: null,
+  };
+  return fastEval(fakePossibility, level, lines, aiMode, aiParams);
 }
 
 /** An evaluation function that only includes the factors that are super fast to calculate */
@@ -618,7 +679,7 @@ export function fastEval(
   lines: number,
   aiMode: AiMode,
   aiParams: AiParams
-) : [number, string] {
+): [number, string] {
   let {
     surfaceArray,
     numHoles,
@@ -643,10 +704,7 @@ export function fastEval(
     lines,
     numLinesCleared
   );
-  const maxSafeCol9Height = Math.max(
-    4,
-    aiParams.MAX_4_TAP_LOOKUP[levelAfterPlacement] - 5
-  );
+  const maxSafeCol9Height = utils.getMaxSafeCol9(levelAfterPlacement, aiParams);
   if (aiParams.BURN_COEF > -500) {
     correctedSurface = correctSurfaceForDoubleWell(
       correctedSurface,
@@ -669,10 +727,10 @@ export function fastEval(
     aiParams
   );
   const spireHeight = getSpireHeight(surfaceArray, scareHeight);
-  const avgHeightAboveScareLine = getAverageHeightAboveScareLine(
-    surfaceArray,
-    scareHeight
+  const averageHeight = getAverageHeight(
+    aiMode == AiMode.KILLSCREEN ? surfaceArrayWithCol10 : surfaceArray
   );
+  const avgHeightAboveScareLine = Math.max(0, averageHeight - scareHeight);
 
   let surfaceFactor =
     aiParams.SURFACE_COEF *
@@ -681,21 +739,28 @@ export function fastEval(
       totalHeightCorrected,
       aiParams
     );
-  let killscreenSurfaceLeftFactor = aiMode !== AiMode.KILLSCREEN ? 0 :
-    aiParams.LEFT_SURFACE_COEF *
-    getLeftSurfaceValue(
-      boardAfter,
-      surfaceArrayWithCol10,
-      holeCells,
-      aiParams,
-      level,
-      /* minReachableX= */ null, // Not used when not considering eventual surfaces
-      /* maxReachableX= */ null,
-      /* considerEventualSurface= */ false
-    );
+  let killscreenSurfaceLeftFactor =
+    aiMode !== AiMode.KILLSCREEN
+      ? 0
+      : aiParams.LEFT_SURFACE_COEF *
+        getLeftSurfaceValue(
+          boardAfter,
+          surfaceArrayWithCol10,
+          holeCells,
+          aiParams,
+          level,
+          /* minReachableX= */ null, // Not used when not considering eventual surfaces
+          /* maxReachableX= */ null,
+          /* considerEventualSurface= */ false
+        );
   const holeFactor = numHoles * aiParams.HOLE_COEF;
   const estimatedHoleWeightBurnFactor = numHoles * (aiParams.BURN_COEF * 3);
-  const lineClearFactor = getLineClearValue(numLinesCleared, aiParams);
+  const lineClearFactor = getLineClearValue(
+    numLinesCleared,
+    lines,
+    aiParams,
+    aiMode
+  );
   const spireHeightFactor =
     aiParams.SPIRE_HEIGHT_COEF *
     Math.pow(spireHeight, aiParams.SPIRE_HEIGHT_EXPONENT);
@@ -754,15 +819,11 @@ export function getValueOfPossibility(
     correctedSurface,
     totalHeightCorrected,
   ] = utils.correctSurfaceForExtremeGaps(surfaceArray);
-  const levelAfterPlacement = utils.getLevelAfterLineClears(
-    level,
-    lines,
-    numLinesCleared
-  );
-  const maxSafeCol9Height = Math.max(
-    4,
-    aiParams.MAX_4_TAP_LOOKUP[levelAfterPlacement] - 5
-  );
+  const levelAfterPlacement =
+    aiMode === AiMode.IMMINENT_DEATH
+      ? level
+      : utils.getLevelAfterLineClears(level, lines, numLinesCleared);
+  const maxSafeCol9Height = utils.getMaxSafeCol9(levelAfterPlacement, aiParams);
   const estimatedBurnsDueToEarlyDoubleWell = estimateBurnsDueToEarlyDoubleWell(
     surfaceArray,
     maxSafeCol9Height
@@ -805,10 +866,11 @@ export function getValueOfPossibility(
     aiParams
   );
   const spireHeight = getSpireHeight(surfaceArray, scareHeight);
-  const avgHeightAboveScareLine = getAverageHeightAboveScareLine(
-    aiMode == AiMode.KILLSCREEN ? surfaceArrayWithCol10 : surfaceArray,
-    scareHeight
+  const averageHeight = getAverageHeight(
+    aiMode == AiMode.KILLSCREEN ? surfaceArrayWithCol10 : surfaceArray
   );
+  const avgHeightAboveScareLine = Math.max(0, averageHeight - scareHeight);
+
   const maxDirtyTetrisHeight = aiParams.MAX_DIRTY_TETRIS_HEIGHT * scareHeight;
   const tetrisReady = isTetrisReadyRightWell(boardAfter);
   const tripleReady = isTripleReady(boardAfter);
@@ -875,18 +937,20 @@ export function getValueOfPossibility(
       totalHeightCorrected,
       aiParams
     );
-  let killscreenSurfaceLeftFactor = aiMode !== AiMode.KILLSCREEN ? 0 :
-    aiParams.LEFT_SURFACE_COEF *
-    getLeftSurfaceValue(
-      boardAfter,
-      surfaceArrayWithCol10,
-      holeCells,
-      aiParams,
-      level,
-      minReachableX,
-      maxReachableX,
-      /* considerEventualSurface= */ true
-    );
+  let killscreenSurfaceLeftFactor =
+    aiMode !== AiMode.KILLSCREEN
+      ? 0
+      : aiParams.LEFT_SURFACE_COEF *
+        getLeftSurfaceValue(
+          boardAfter,
+          surfaceArrayWithCol10,
+          holeCells,
+          aiParams,
+          level,
+          minReachableX,
+          maxReachableX,
+          /* considerEventualSurface= */ true
+        );
   const tetrisReadyFactor =
     aiParams.TETRIS_READY_COEF *
     ((tetrisReady ? 1 : 0) + (IS_DROUGHT_MODE && tripleReady ? 1 : 0));
@@ -894,8 +958,23 @@ export function getValueOfPossibility(
   const holeWeightFactor =
     (rowsNeedingToBurn.size + 0 * rowsNeedingToBurnIfTucksFail.size) *
     aiParams.HOLE_WEIGHT_COEF;
-  const lineClearFactor = getLineClearValue(numLinesCleared, aiParams);
-  const guaranteedBurnsFactor = guaranteedBurns * aiParams.BURN_COEF;
+  const lineClearFactor = getLineClearValue(
+    numLinesCleared,
+    lines,
+    aiParams,
+    aiMode
+  );
+  const guaranteedBurnsFactor =
+    aiMode === AiMode.NEAR_KILLSCREEN
+      ? Math.min(
+          0,
+          ratePreKillscreenLineClears(
+            lines + numLinesCleared,
+            guaranteedBurns,
+            aiParams
+          )
+        )
+      : guaranteedBurns * aiParams.BURN_COEF;
   const spireHeightFactor =
     aiParams.SPIRE_HEIGHT_COEF *
     Math.pow(spireHeight, aiParams.SPIRE_HEIGHT_EXPONENT);
@@ -934,7 +1013,7 @@ export function getValueOfPossibility(
   const inaccessibleRightFactor =
     (1 - rightAccessibility) * aiParams.INACCESSIBLE_RIGHT_COEF;
   const inputCostFactor = possibility.inputCost;
-  const levelCorrectionFactor = levelAfterPlacement >= 29 ? 100 : 0;
+  const levelCorrectionFactor = levelAfterPlacement >= 29 ? 50 : 0;
 
   const factors = {
     surfaceFactor,

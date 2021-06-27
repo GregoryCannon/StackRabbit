@@ -206,6 +206,17 @@ export class PreComputeManager {
     possibleMoves: Array<PossibilityChain>,
     inputFrameTimeline: string
   ) {
+    if (initialSearchState.reactionTime === 0) {
+      this.phantomPlacements = [
+        {
+          inputSequence: "",
+          initialPlacement: null,
+          adjustmentSearchState: initialSearchState,
+        },
+      ];
+      return;
+    }
+
     const seenInputSequences = new Set();
     const phantomPlacements: Array<PhantomPlacement> = [];
 
@@ -231,7 +242,7 @@ export class PreComputeManager {
         // Add a new phantom placement
         phantomPlacements.push({
           inputSequence: newInputSequence,
-          defaultPlacement: possibility,
+          initialPlacement: possibility,
           adjustmentSearchState: adjSearchState,
         });
         seenInputSequences.add(newInputSequence);
@@ -297,31 +308,36 @@ export class PreComputeManager {
   _precompileAdjustmentMoves() {
     console.time("Get adjustment moves");
     for (const phantomPlacement of this.phantomPlacements) {
-      const adjustmentLookup = new Map();
-      for (const pieceId of POSSIBLE_NEXT_PIECES) {
-        // If it's already done a tuck or spin, it can't do any more inputs
-        if (phantomPlacement.defaultPlacement.inputCost !== 0) {
-          adjustmentLookup.set(pieceId, []);
-          continue;
-        }
-
-        // Calculate the possible adjustments for each piece
-        const s = phantomPlacement.adjustmentSearchState;
-        let possibleAdjs = getPossibleMoves(
-          s.board,
-          s.currentPieceId,
-          s.level,
-          s.existingXOffset,
-          s.existingYOffset,
-          s.framesAlreadyElapsed,
-          this.inputFrameTimeline,
-          s.existingRotation,
-          s.canFirstFrameShift,
-          /* shouldLog= */ false
+      // If it's already done a tuck or spin, it can't do any more inputs
+      if (
+        phantomPlacement.initialPlacement &&
+        phantomPlacement.initialPlacement.inputCost !== 0
+      ) {
+        console.log(
+          "NO ADJUSTMENTS, already did tuck",
+          phantomPlacement.initialPlacement.inputSequence
         );
-        adjustmentLookup.set(pieceId, possibleAdjs);
+        phantomPlacement.possibleAdjustmentsLookup = [];
+        continue;
       }
-      phantomPlacement.possibleAdjustmentsLookup = adjustmentLookup;
+
+      // Calculate the possible adjustments from the intermediate state
+      const s = phantomPlacement.adjustmentSearchState;
+      let possibleAdjs = getPossibleMoves(
+        s.board,
+        s.currentPieceId,
+        s.level,
+        s.existingXOffset,
+        s.existingYOffset,
+        s.framesAlreadyElapsed,
+        this.inputFrameTimeline,
+        s.existingRotation,
+        s.canFirstFrameShift,
+        /* shouldLog= */ false
+      );
+
+      console.log("NUM ADJUSTMENTS", possibleAdjs.length);
+      phantomPlacement.possibleAdjustmentsLookup = possibleAdjs;
     }
     console.timeEnd("Get adjustment moves");
     console.log("DONE PRECOMPILE ADJ");
@@ -341,16 +357,11 @@ export class PreComputeManager {
       const responseObj = {};
       for (const pieceId of POSSIBLE_NEXT_PIECES) {
         // Figure out what adjustment you'd do for that piece
-        let maxValue = this.results[pieceId][
-          phantomPlacement.defaultPlacement.lockPositionEncoded
-        ];
+        let maxValue = Number.MIN_SAFE_INTEGER;
         let maxPossibility: PossibilityChain = null;
-        for (const adjPossibility of phantomPlacement.possibleAdjustmentsLookup.get(
-          pieceId
-        )) {
+        for (const adjPossibility of phantomPlacement.possibleAdjustmentsLookup) {
           // Combine the input cost with the placement value
           const value =
-            // -0.1 * countInputs(adjPossibility.placement) +
             getAdjustmentInputCost(adjPossibility) +
             this.results[pieceId][adjPossibility.lockPositionEncoded];
           if (
@@ -359,7 +370,7 @@ export class PreComputeManager {
             )
           ) {
             console.log({
-              ...phantomPlacement.defaultPlacement,
+              ...phantomPlacement.initialPlacement,
               boardAfter: null,
             });
             console.log({ ...adjPossibility, boardAfter: null });
@@ -402,7 +413,7 @@ export class PreComputeManager {
       if (phantomPlacementValue > bestPhantomPlacementValue) {
         overallResponse = formatPrecomputeResult(
           responseObj,
-          phantomPlacement.defaultPlacement
+          phantomPlacement.initialPlacement
         );
         bestPhantomPlacementValue = phantomPlacementValue;
       }
@@ -413,6 +424,7 @@ export class PreComputeManager {
     if (this.onResultCallback === null) {
       throw new Error("No result callback provided");
     }
+    console.log("SAVING RESPONSE:", overallResponse);
     this.onResultCallback(overallResponse);
   }
 

@@ -5,7 +5,7 @@ import * as express from "express";
 const port = 3000;
 const ALLOW_MULTITHREAD = true;
 
-function initExpressServer(requestHandler){
+function initExpressServer(requestHandler) {
   const app = express();
   app.get("*", function (req: any, res: any) {
     // Log the request
@@ -22,13 +22,13 @@ function initExpressServer(requestHandler){
     res.setHeader("Content-Type", "text/plain");
     res.statusCode = responseCode;
     res.end(response);
-  })
+  });
 
   app.listen(port);
   console.log("Listening on port", port);
 }
 
-if (ALLOW_MULTITHREAD){
+if (ALLOW_MULTITHREAD) {
   // Create an object to manage the worker threads involved in heavy placement computation
   const precomputer = new PreComputeManager();
 
@@ -39,5 +39,5 @@ if (ALLOW_MULTITHREAD){
   });
 } else {
   const requestHandler = new RequestHandler(null);
-    initExpressServer(requestHandler);
+  initExpressServer(requestHandler);
 }
