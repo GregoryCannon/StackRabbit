@@ -1,4 +1,4 @@
-const utils = require("../../built/src/server/utils");
+// const utils = require("../../built/src/server/utils");
 
 const { NUM_COLUMN, NUM_ROW, SquareState } = require("./constants");
 
@@ -60,14 +60,14 @@ const HOLE_PROBABILITIES = {
  * Loads a board with holes in it, in-place.
  */
 BoardGenerator.prototype.loadDigBoard = function () {
-  // this.loadStandardBoard();
-  const digBoard = utils.generateDigPracticeBoard(5, 6);
-  for (let r = 0; r < NUM_ROW; r++) {
-    for (let c = 0; c < NUM_COLUMN; c++) {
-      this.board[r][c] = digBoard[r][c];
-    }
-  }
-  return;
+  this.loadStandardBoard();
+  // const digBoard = utils.generateDigPracticeBoard(5, 6);
+  // for (let r = 0; r < NUM_ROW; r++) {
+  //   for (let c = 0; c < NUM_COLUMN; c++) {
+  //     this.board[r][c] = digBoard[r][c];
+  //   }
+  // }
+  // return;
 
   for (let row = 0; row < NUM_ROW; row++) {
     let numHoles;

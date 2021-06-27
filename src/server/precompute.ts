@@ -1,4 +1,3 @@
-import { getPartialValue } from "./evaluator";
 import { getBestMove, getSearchStateAfter, getSortedMoveList } from "./main";
 import { getPossibleMoves } from "./move_search";
 import {
@@ -345,7 +344,7 @@ export class PreComputeManager {
         let maxValue = this.results[pieceId][
           phantomPlacement.defaultPlacement.lockPositionEncoded
         ];
-        let maxPossibility: PossibilityChain = phantomPlacement.defaultPlacement;
+        let maxPossibility: PossibilityChain = null;
         for (const adjPossibility of phantomPlacement.possibleAdjustmentsLookup.get(
           pieceId
         )) {
@@ -380,7 +379,7 @@ export class PreComputeManager {
             );
           }
           // Check if this is the best adjustment
-          if (value > maxValue) {
+          if (value >= maxValue) {
             maxValue = value;
             maxPossibility = {
               ...adjPossibility,
