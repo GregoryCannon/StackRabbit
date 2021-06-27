@@ -11,6 +11,8 @@ import {
   getParams,
   IS_DROUGHT_MODE,
   IS_NON_RIGHT_WELL,
+  KILLSCREEN_LINES,
+  LINE_CAP,
   WELL_COLUMN,
 } from "./params";
 import * as utils from "./utils";
@@ -533,7 +535,7 @@ function ratePreKillscreenLineClears(
   numLinesCleared: number,
   aiParams
 ) {
-  const before = linesBefore - 210;
+  const before = linesBefore - (KILLSCREEN_LINES - 20);
   const after = before + numLinesCleared;
   if (
     (before <= 7 && after > 7) ||
@@ -1013,7 +1015,7 @@ export function getValueOfPossibility(
   const inaccessibleRightFactor =
     (1 - rightAccessibility) * aiParams.INACCESSIBLE_RIGHT_COEF;
   const inputCostFactor = possibility.inputCost;
-  const levelCorrectionFactor = levelAfterPlacement >= 29 ? 50 : 0;
+  const levelCorrectionFactor = levelAfterPlacement >= 29 && aiMode == AiMode.NEAR_KILLSCREEN ? 50 : 0;
 
   const factors = {
     surfaceFactor,

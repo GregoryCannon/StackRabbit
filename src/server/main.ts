@@ -6,7 +6,7 @@ import { getPossibleMoves } from "./move_search";
 import {
   EVALUATION_BREADTH,
   IS_DROUGHT_MODE,
-  modifyParamsForFlexibleAggresion,
+  LINE_CAP,
 } from "./params";
 import * as utils from "./utils";
 import { POSSIBLE_NEXT_PIECES } from "./utils";
@@ -54,6 +54,9 @@ export function getSortedMoveList(
   hypotheticalSearchDepth: number
 ): MoveSearchResult {
   // Add additional info to the base params (tap speed, dig/scoring mode, etc.)
+  if (searchState.lines >= LINE_CAP){
+    inputFrameTimeline = "." // Manually top out
+  }
   let aiParams = addTapInfoToAiParams(
     initialAiParams,
     searchState.level,
@@ -64,6 +67,7 @@ export function getSortedMoveList(
     searchState.lines,
     searchState.level,
     searchState.currentPieceId,
+    inputFrameTimeline,
     aiParams
   );
   // Update the params based on level, AI mode, etc.

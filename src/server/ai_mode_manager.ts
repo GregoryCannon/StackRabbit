@@ -1,4 +1,5 @@
-import { IS_PAL, WELL_COLUMN } from "./params";
+import { calculateTapHeight } from "./board_helper";
+import { IS_PAL, KILLSCREEN_LEVEL, KILLSCREEN_LINES, LINE_CAP, NO_LIMIT, WELL_COLUMN } from "./params";
 import {
   getScareHeight,
   getSurfaceArrayAndHoles,
@@ -13,10 +14,12 @@ export function getAiMode(
   lines,
   level,
   currentPieceId: PieceId,
-  aiParams
+  inputFrameTimeline: string,
+  aiParams: AiParams
 ) {
-  const killscreenLevel = IS_PAL ? 19 : 29;
-  if (level >= killscreenLevel && aiParams.MAX_5_TAP_LOOKUP[level] <= 4) {
+  const linesOutOn29 = calculateTapHeight(29, inputFrameTimeline, 5) <= 4;
+
+  if (linesOutOn29 && level >= KILLSCREEN_LEVEL) {
     return AiMode.KILLSCREEN;
   }
   const surfaceArray = getSurfaceArrayAndHoles(board)[0];
@@ -34,16 +37,13 @@ export function getAiMode(
       aiParams
     )
   ) {
-    return lines >= 226 ? AiMode.DIG_INTO_KILLSCREEN : AiMode.DIG;
+    return lines >= 229 ? AiMode.NEAR_KILLSCREEN : AiMode.DIG;
   }
-  if (level >= killscreenLevel) {
+  if (level >= KILLSCREEN_LEVEL && LINE_CAP == NO_LIMIT) {
     // This is checked after dig mode so that right well killscreen AI can still dig
     return AiMode.KILLSCREEN_FOR_TETRISES;
   }
-  if (
-    (lines >= 217 && level === killscreenLevel - 1) ||
-    level === killscreenLevel - 2
-  ) {
+  if (lines >= (linesOutOn29 ? KILLSCREEN_LINES : LINE_CAP) - 12) {
     return AiMode.NEAR_KILLSCREEN;
   }
 

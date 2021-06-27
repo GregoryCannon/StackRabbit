@@ -1,8 +1,10 @@
 import { evaluateBoard, fastEvalBoard } from "./evaluator";
 
-// Each index corresponds to the level you're starting search at while doing the pruning.
+export const NO_LIMIT = Number.MAX_SAFE_INTEGER
+
+// Each index corresponds to the depth you're starting search at while doing the pruning.
 export const SEARCH_BREADTH = {
-  2: 999, // Don't prune on the before the second stage ("bad" placements could be a floating burn setup)
+  2: 999, // Don't prune before the second stage ("bad" placements could be a floating burn setup)
   3: 8 /* This breadth refers to the first hypothetical level, regardless of whether there was 1 or 2 concrete levels before */,
 };
 
@@ -12,11 +14,22 @@ export const EVALUATION_BREADTH = {
   3: 10 /* This breadth refers to the first hypothetical level, regardless of whether there was 1 or 2 concrete levels before */,
 };
 
+/*--------------------------------
+      Global configuration
+---------------------------------*/
+
+export const IS_DROUGHT_MODE = false;
+export const LINE_CAP = NO_LIMIT;
+
+// Rarely changed
 export const IS_PAL = false;
 export const WELL_COLUMN = 9; // 0-indexed
-export const IS_NON_RIGHT_WELL = false;
 export const CAN_TUCK = true;
-export const IS_DROUGHT_MODE = false;
+
+// Calculated automatically
+export const IS_NON_RIGHT_WELL = WELL_COLUMN !== 9;
+export const KILLSCREEN_LINES = IS_PAL ? 130 : 230;
+export const KILLSCREEN_LEVEL = IS_PAL ? 19 : 29
 
 /*--------------------------------
   State-based param modification
@@ -106,7 +119,7 @@ export const DEFAULT_PARAM_MODS = {
     AVG_HEIGHT_COEF: 0,
     SPIRE_HEIGHT_COEF: 0,
     INACCESSIBLE_LEFT_COEF: 0,
-    INACCESSIBLE_RIGHT_COEF: 0,
+    INACCESSIBLE_RIGHT_COEF: -30,
     TETRIS_COEF: 400, // In case of a crazy center well or something
   },
   KILLSCREEN: {
@@ -128,7 +141,7 @@ export const DEFAULT_PARAM_MODS = {
     SURFACE_COEF: 0.5,
   },
   KILLSCREEN_FOR_TETRISES: {
-    // BURN_COEF: -4,
+    BURN_COEF: -4, // No need to be aggro when there's no line cap
     // HIGH_COL_9_COEF: -2,
     // HIGH_COL_9_EXP: 1.6,
   },
@@ -263,10 +276,7 @@ const MEDIUM_LOW_TAP_SPEED_MODIFICATIONS = {
 };
 
 const AGGRO_PARAMS = applyModsToParams(DEFAULT_PARAMS, AGGRO_PATCH);
-const FULL_AGGRO_PARAMS = applyModsToParams(
-  DEFAULT_PARAMS,
-  FULL_AGGRO_PATCH
-);
+const FULL_AGGRO_PARAMS = applyModsToParams(DEFAULT_PARAMS, FULL_AGGRO_PATCH);
 const DROUGHT_CODE_PARAMS = applyModsToParams(
   DEFAULT_PARAMS,
   DROUGHT_CODE_PATCH
