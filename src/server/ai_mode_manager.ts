@@ -1,5 +1,12 @@
 import { calculateTapHeight } from "./board_helper";
-import { IS_PAL, KILLSCREEN_LEVEL, KILLSCREEN_LINES, LINE_CAP, NO_LIMIT, WELL_COLUMN } from "./params";
+import {
+  IS_PAL,
+  KILLSCREEN_LEVEL,
+  KILLSCREEN_LINES,
+  LINE_CAP,
+  NO_LIMIT,
+  WELL_COLUMN,
+} from "./params";
 import {
   getScareHeight,
   getSurfaceArrayAndHoles,
@@ -131,7 +138,7 @@ function shouldUseDigMode(
     if (
       blockingWell &&
       NUM_ROW - row <= maxDirtyTetrisHeight &&
-      numRowsOfGarbage > 3
+      numRowsOfGarbage > 2
     ) {
       return false;
     }

@@ -389,7 +389,7 @@ export function rateLeftAccessibility(
   const col3Height = surfaceArray[2];
 
   const avgHeightOfMiddle =
-    surfaceArray.slice(3, 7).reduce((x, y) => x + y) / 4;
+    surfaceArray.slice(2, 8).reduce((x, y) => x + y) / 6;
 
   if (aiMode === AiMode.KILLSCREEN) {
     // On killscreen, we mainly access the left with 4-taps. So we need either
@@ -398,7 +398,7 @@ export function rateLeftAccessibility(
     if (
       col1Height >= col2Height &&
       col1Height > aiParams.MAX_4_TAP_LOOKUP[level] &&
-      col1Height >= avgHeightOfMiddle
+      col1Height >= avgHeightOfMiddle - 1
     ) {
       return 1;
     }
@@ -418,23 +418,34 @@ export function rateLeftAccessibility(
   // 2) access to the left with a 5 tap
   if (
     col1Height >= col2Height &&
-    col1Height > aiParams.MAX_5_TAP_LOOKUP[level] &&
-    col1Height >= avgHeightOfMiddle
+    col1Height > aiParams.MAX_5_TAP_LOOKUP[level]
+    // col1Height >= avgHeightOfMiddle - 1
   ) {
     return 1;
   }
+  // If we can 5 tap, then we're fine
+  if (canDoPlacement(board, level, "T", 3, -5, aiParams.INPUT_FRAME_TIMELINE)) {
+    return 1;
+  }
+  // If an O can reach the left, then we're mostly fine
+  if (
+    col1Height === col2Height &&
+    canDoPlacement(board, level, "O", 0, -4, aiParams.INPUT_FRAME_TIMELINE)
+  ) {
+    return 0.9;
+  }
   // If an L can reach the left, then we're fine
-  // Observe that other 4-tap cases, like O & J are covered in the previous case
   if (
     col1Height === col2Height - 1 &&
     col2Height == col3Height &&
     canDoPlacement(board, level, "L", 0, -4, aiParams.INPUT_FRAME_TIMELINE)
   ) {
-    return 1;
+    return 0.9;
   }
   return canDoPlacement(board, level, "T", 3, -5, aiParams.INPUT_FRAME_TIMELINE)
     ? 1
     : 0;
+  return 0;
 }
 
 /** Returns true if the tap speed is not sufficient to get a long bar to the right. */

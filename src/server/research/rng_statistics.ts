@@ -1,6 +1,6 @@
 /** An insight into what the odds are of having frequent enough bars to have a perfect game */
 
-import { getPieceSequence } from "../lite_game_simulator";
+import { getPieceSequence } from "../piece_rng";
 
 /** Runs a simulation and returns the number of lines it was capable of playing perfect. */
 function runSimulation() {

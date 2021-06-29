@@ -1,6 +1,8 @@
 import { getBestMove } from "./main";
-import { getParamMods, getParams } from "./params";
+import { getParamMods, getParams, IS_DROUGHT_MODE } from "./params";
+import { getPieceSequence, getRandomPiece } from "./piece_rng";
 import { predictSearchStateAtAdjustmentTime } from "./precompute";
+import { POSSIBLE_NEXT_PIECES } from "./utils";
 
 const main = require("./main");
 const utils = require("./utils");
@@ -241,28 +243,6 @@ export function getEmptyBoard() {
     }
   }
   return board;
-}
-
-export function getPieceSequence() {
-  let sequence = [];
-  for (let writeIndex = 0; writeIndex < 2000; writeIndex++) {
-    const prevPieceId = writeIndex == 0 ? null : sequence[writeIndex - 1];
-    sequence[writeIndex] = getRandomPiece(prevPieceId);
-  }
-  return sequence;
-}
-
-// Get the ID of a random piece, following the original RNG of NES tetris
-function getRandomPiece(previousPieceId) {
-  const PIECE_LIST = ["I", "O", "L", "J", "T", "S", "Z"];
-  // Roll once 0-7, where 7 is a dummy value
-  let r = Math.floor(Math.random() * (PIECE_LIST.length + 1));
-  const tempPieceId = r !== PIECE_LIST.length ? PIECE_LIST[r] : "";
-  if (r == PIECE_LIST.length || tempPieceId === previousPieceId) {
-    // Reroll once for repeats (or dummy) to reduce repeated pieces
-    r = Math.floor(Math.random() * PIECE_LIST.length);
-  }
-  return PIECE_LIST[r];
 }
 
 function runScoreExperiment(numTrials) {

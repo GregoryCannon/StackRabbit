@@ -1,4 +1,5 @@
-import { IS_PAL, WELL_COLUMN } from "./params";
+import { off } from "process";
+import { CAN_TUCK, IS_PAL, WELL_COLUMN } from "./params";
 
 export const NUM_ROW = 20;
 export const NUM_COLUMN = 10;
@@ -180,6 +181,9 @@ function isEmptyCellAboveStack(row, col, board, surfaceArray) {
 
 /** Detects holes that could potentially be tucked into */
 export function isTuckSetup(row, col, board, surfaceArray): [boolean, number] {
+  if (!CAN_TUCK) {
+    return [false, 0];
+  }
   if (
     isEmptyCellAboveStack(row, col + 1, board, surfaceArray) &&
     isEmptyCellAboveStack(row, col + 2, board, surfaceArray)
@@ -366,7 +370,14 @@ export function parseBoard(boardStr: string): Board {
 }
 
 export function getMaxSafeCol9(level: number, aiParams: AiParams) {
-  return Math.max(4, aiParams.MAX_4_TAP_LOOKUP[level] - 5);
+  const max4TapHeight = aiParams.MAX_4_TAP_LOOKUP[level];
+  let offset;
+  if (max4TapHeight <= 10) {
+    offset = -4;
+  } else {
+    offset = -5;
+  }
+  return Math.max(4, max4TapHeight + offset);
 }
 
 export function getScareHeight(

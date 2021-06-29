@@ -356,7 +356,9 @@ export class PreComputeManager {
       const responseObj = {};
       for (const pieceId of POSSIBLE_NEXT_PIECES) {
         // Figure out what adjustment you'd do for that piece
-        let maxValue = this.results[pieceId][phantomPlacement.initialPlacement.lockPositionEncoded];
+        let maxValue = this.results[pieceId][
+          phantomPlacement.initialPlacement.lockPositionEncoded
+        ];
         let maxPossibility: PossibilityChain = null;
         for (const adjPossibility of phantomPlacement.possibleAdjustmentsLookup) {
           // Combine the input cost with the placement value

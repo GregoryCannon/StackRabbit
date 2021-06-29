@@ -4,12 +4,12 @@
 
 import {
   getEmptyBoard,
-  getPieceSequence,
   hasToppedOut,
   REWARDS,
 } from "../lite_game_simulator";
 import { getBestMove } from "../main";
 import { applyModsToParams } from "../params";
+import { getPieceSequence } from "../piece_rng";
 import { cloneBoard, logBoard } from "../utils";
 
 const { getParams, getParamMods } = require("./params");

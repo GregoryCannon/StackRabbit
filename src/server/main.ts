@@ -3,11 +3,7 @@ const aiModeManager = require("./ai_mode_manager");
 const boardHelper = require("./board_helper");
 const { SEARCH_BREADTH, modifyParamsForAiMode } = require("./params");
 import { getPossibleMoves } from "./move_search";
-import {
-  EVALUATION_BREADTH,
-  IS_DROUGHT_MODE,
-  LINE_CAP,
-} from "./params";
+import { EVALUATION_BREADTH, IS_DROUGHT_MODE, LINE_CAP } from "./params";
 import * as utils from "./utils";
 import { POSSIBLE_NEXT_PIECES } from "./utils";
 
@@ -54,8 +50,8 @@ export function getSortedMoveList(
   hypotheticalSearchDepth: number
 ): MoveSearchResult {
   // Add additional info to the base params (tap speed, dig/scoring mode, etc.)
-  if (searchState.lines >= LINE_CAP){
-    inputFrameTimeline = "." // Manually top out
+  if (searchState.lines >= LINE_CAP) {
+    inputFrameTimeline = "."; // Manually top out
   }
   let aiParams = addTapInfoToAiParams(
     initialAiParams,

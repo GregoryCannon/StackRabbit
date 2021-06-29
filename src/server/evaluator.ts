@@ -556,6 +556,18 @@ function ratePreKillscreenLineClears(
   }
 }
 
+function getLevelCorrectionFactor(levelAfterPlacement, lines, aiMode: AiMode) {
+  // Penalize hitting the line cap (Tetrises still will because of large reward)
+  if (lines >= LINE_CAP) {
+    return -150;
+  }
+  // Reward transitioning safely into killscreen
+  if (levelAfterPlacement >= 29 && aiMode == AiMode.NEAR_KILLSCREEN) {
+    return 50;
+  }
+  return 0;
+}
+
 function getBuiltOutLeftFactor(
   boardAfter: Board,
   surfaceArray: Array<number>,
@@ -1015,7 +1027,11 @@ export function getValueOfPossibility(
   const inaccessibleRightFactor =
     (1 - rightAccessibility) * aiParams.INACCESSIBLE_RIGHT_COEF;
   const inputCostFactor = possibility.inputCost;
-  const levelCorrectionFactor = levelAfterPlacement >= 29 && aiMode == AiMode.NEAR_KILLSCREEN ? 50 : 0;
+  const levelCorrectionFactor = getLevelCorrectionFactor(
+    levelAfterPlacement,
+    lines + numLinesCleared,
+    aiMode
+  );
 
   const factors = {
     surfaceFactor,

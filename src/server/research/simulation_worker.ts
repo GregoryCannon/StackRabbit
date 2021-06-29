@@ -14,10 +14,9 @@ import {
   SIM_MAX_4_TAP_HEIGHT,
   TRAINING_TIME_MINS,
 } from "./simulation_testing";
-import * as fs from "fs"
 // const pieceSequences = fs.readFileSync("docs/sequence_pool.txt").toString();
+// const SEQUENCE_OFFSET = 2000; // An offset into the piece sequence file to get new RNG
 
-const SEQUENCE_OFFSET = 2000; // An offset into the piece sequence file to get new RNG
 const MS_PER_MIN = 60000;
 let threadId = -1;
 
@@ -97,7 +96,7 @@ function measureAverageScore(isKillscreen) {
   let scores = [];
   for (let i = 0; Date.now() < endTimeMs; i++) {
     // Start of iteration
-    if (i % 1 === 0){
+    if (i % 10 === 0) {
       console.log(`${threadId}: Iteration ${i + 1}`);
       console.log(
         `${threadId}: ${((Date.now() - startTimeMs) / MS_PER_MIN).toFixed(
@@ -118,7 +117,7 @@ function measureAverageScore(isKillscreen) {
       /* presetSequence= */ null,
       /* shouldAdjust= */ !isKillscreen,
       /* isDig= */ false,
-      /* maxLines= */ 130,
+      /* maxLines= */ 230,
       null,
       /* shouldLog= */ false
     );
