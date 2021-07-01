@@ -76,10 +76,17 @@ function getMoveData(
     /* hypotheticalSearchDepth= */ 1
   )[0];
   if (initalMoves.length === 0) {
-    return null;
+    return [];
   }
 
   initalMoves = initalMoves.slice(0, 5);
+
+  // If this was a NNB query, we're done
+  if (searchState.nextPieceId == null){
+    return initalMoves.map(x => [x, []]);
+  }
+
+  // Otherwise search for adjustments from each of the initial placements
   for (const initialMove of initalMoves) {
     const newSearchState = predictSearchStateAtAdjustmentTime(
       searchState,
