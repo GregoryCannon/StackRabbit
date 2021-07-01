@@ -23,6 +23,84 @@ interface SimParams {
   canFirstFrameShift: boolean;
 }
 
+const testResponseObj = [
+  {
+    piece: "T",
+    inputSequence: "I...R...R.......................********",
+    isSpecialMove: false,
+    totalValue: 31.424,
+    adjustments: [
+      {
+        piece: "T",
+        inputSequence: "..B..........***********",
+        totalValue: 33.71,
+        isSpecialMove: true,
+        followUp: {
+          piece: "L",
+          inputSequence: "A...A...........**********",
+          totalValue: 29.411,
+        },
+      },
+      {
+        piece: "T",
+        inputSequence: ".............***********",
+        totalValue: 32.589,
+        isSpecialMove: false,
+        followUp: {
+          piece: "L",
+          inputSequence: "A...A...........**********",
+          totalValue: 28.395,
+        },
+      },
+    ],
+  },
+  {
+    piece: "T",
+    inputSequence: "E...E...L...L......................********",
+    isSpecialMove: false,
+    totalValue: 26.335,
+    adjustments: [
+      {
+        piece: "T",
+        inputSequence: ".............***********",
+        isSpecialMove: false,
+        totalValue: 30.689,
+        followUp: {
+          piece: "L",
+          inputSequence: "A...A...........**********",
+          totalValue: 28.395,
+        },
+      },
+    ],
+  },
+];
+
+/* ----------- Engine Lookup Data Structures ----------- */
+
+type EngineResult = Array<
+  [
+    /* defaultPlacement: */ PossibilityChain,
+    /* adjustments: */ Array<PossibilityChain>
+  ]
+>;
+
+interface FormattedMove {
+  piece: PieceId;
+  inputSequence: string;
+  isSpecialMove: boolean;
+  totalValue: number;
+}
+
+interface FormattedAdjustment extends FormattedMove {
+  followUp: FormattedMove;
+}
+
+interface FormattedInitialMove extends FormattedMove {
+  adjustments: Array<FormattedAdjustment>;
+}
+
+type EngineResponseJson = Array<FormattedInitialMove>;
+
 /* ----------- Move Search-Related Types ------------ */
 
 type MoveSearchResult = [Array<PossibilityChain>, Array<PossibilityChain>]; // [bestMoves, prunedMoves]

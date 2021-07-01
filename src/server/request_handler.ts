@@ -1,5 +1,6 @@
 import { PIECE_LOOKUP } from "../../src/web_client/tetrominoes";
 import { getBoardAndLinesClearedAfterPlacement } from "./board_helper";
+import { engineLookup } from "./engine_lookup";
 import { rateSurface } from "./evaluator";
 import { LINE_CAP } from "./params";
 import { PreComputeManager } from "./precompute";
@@ -52,6 +53,9 @@ export class RequestHandler {
 
       case "lookup":
         return [this.handleRankLookup(requestArgs), 200];
+
+      case "engine":
+        return [this.handleEngineLookup(requestArgs), 200];
 
       case "async-nb":
         return this._wrapAsync(() =>
@@ -302,5 +306,18 @@ export class RequestHandler {
     const surfaceArray = getSurfaceArrayAndHoles(board)[0];
     console.log(surfaceArray);
     return rateSurface(surfaceArray);
+  }
+
+  handleEngineLookup(requestArgs: Array<string>) {
+    let [searchState, inputFrameTimeline] = this._parseArguments(requestArgs);
+
+    return JSON.stringify(
+      engineLookup(
+        searchState,
+        params.getParams(),
+        params.getParamMods(),
+        inputFrameTimeline
+      )
+    );
   }
 }
