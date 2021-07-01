@@ -10,19 +10,19 @@ const testResponseObj = [
   {
     piece: "O",
     inputSequence: "R.............L************",
-    totalValue: 69.8837965829672,
+    totalValue: 84.08143923062248,
     isSpecialMove: true,
     adjustments: [
       {
         piece: "O",
         inputSequence: ".........L************",
-        totalValue: 53.62217945138146,
+        totalValue: 64.88571919154421,
         isSpecialMove: true,
         followUp: {
           piece: "T",
           inputSequence: "E..........**************",
           isSpecialMove: false,
-          totalValue: 53.722179451381464,
+          totalValue: 64.88571919154421,
         },
       },
     ],
@@ -30,19 +30,19 @@ const testResponseObj = [
   {
     piece: "O",
     inputSequence: "R.R.R.R.......**************",
-    totalValue: -15.923681102753307,
+    totalValue: 19.507274064433354,
     isSpecialMove: false,
     adjustments: [
       {
         piece: "O",
         inputSequence: ".L.L.....L************",
-        totalValue: 53.62217945138146,
+        totalValue: 64.88571919154421,
         isSpecialMove: true,
         followUp: {
           piece: "T",
           inputSequence: "E..........**************",
           isSpecialMove: false,
-          totalValue: 53.722179451381464,
+          totalValue: 64.88571919154421,
         },
       },
     ],
@@ -50,19 +50,19 @@ const testResponseObj = [
   {
     piece: "O",
     inputSequence: "L.........****************",
-    totalValue: -37.53993578375008,
+    totalValue: -3.4830204706027224,
     isSpecialMove: false,
     adjustments: [
       {
         piece: "O",
         inputSequence: "R.R......L************",
-        totalValue: 53.62217945138146,
+        totalValue: 64.88571919154421,
         isSpecialMove: true,
         followUp: {
           piece: "T",
           inputSequence: "E..........**************",
           isSpecialMove: false,
-          totalValue: 53.722179451381464,
+          totalValue: 64.88571919154421,
         },
       },
     ],
@@ -70,19 +70,19 @@ const testResponseObj = [
   {
     piece: "O",
     inputSequence: "R..............************",
-    totalValue: 0.02033909547512991,
+    totalValue: -5.296564748843279,
     isSpecialMove: false,
     adjustments: [
       {
         piece: "O",
         inputSequence: ".........L************",
-        totalValue: 53.62217945138146,
+        totalValue: 64.88571919154421,
         isSpecialMove: true,
         followUp: {
           piece: "T",
           inputSequence: "E..........**************",
           isSpecialMove: false,
-          totalValue: 53.722179451381464,
+          totalValue: 64.88571919154421,
         },
       },
     ],
@@ -90,31 +90,31 @@ const testResponseObj = [
   {
     piece: "O",
     inputSequence: "L.L.L.....****************",
-    totalValue: -38.76164272102713,
+    totalValue: -10.346661578783154,
     isSpecialMove: false,
     adjustments: [
       {
         piece: "O",
         inputSequence: ".R.R.****************",
-        totalValue: -16.497850485002274,
+        totalValue: 1.5019318318881372,
         isSpecialMove: false,
         followUp: {
           piece: "T",
           inputSequence: "I.A...........L.************",
           isSpecialMove: true,
-          totalValue: -16.497850485002274,
+          totalValue: 1.5019318318881372,
         },
       },
       {
         piece: "O",
         inputSequence: ".....****************",
-        totalValue: -19.347708987316523,
+        totalValue: -2.78064232737919,
         isSpecialMove: false,
         followUp: {
           piece: "T",
           inputSequence: "I.A...........L.************",
           isSpecialMove: true,
-          totalValue: -19.347708987316523,
+          totalValue: -2.78064232737919,
         },
       },
     ],
@@ -161,12 +161,17 @@ EngineAnalysisManager.prototype.loadResponse = function (moveList) {
       adjScore.innerHTML = adjustment.totalValue.toFixed(1);
       let adjMove = adjRow.insertCell();
       adjMove.classList.add("notated-adj");
+      if (mainMove.inputSequence.slice(this.reactionTime) === adjustment.inputSequence){
+        adjMove.innerHTML = "(no adj.)"
+    } else {
       adjMove.innerHTML = getNotatedMove(
         adjustment.piece,
         mainMove.inputSequence.slice(0, this.reactionTime) +
           adjustment.inputSequence,
         adjustment.isSpecialMove
       );
+    }
+      
       let nextMove = adjRow.insertCell();
       nextMove.classList.add("notated-next");
       nextMove.innerHTML = getNotatedMove(
@@ -187,12 +192,18 @@ function isAnyOf(testChar, candidates) {
   return false;
 }
 
+
 const ROTATION_LETTER_LOOKUP = {
-  0: "",
-  1: "r",
-  2: "d",
-  3: "l",
-};
+  I: ["", ""],
+  O: [""],
+  L: ["d", "l", "u", "r"],
+  J: ["d", "r", "u", "l"],
+  T: ["d", "l", "u", "r"],
+  S: ["", ""],
+  Z: ["", ""],
+}
+
+
 const PIECE_WIDTH_LOOKUP = {
   I: [4, 1],
   O: [2],
@@ -223,7 +234,7 @@ function getNotatedMove(pieceStr, inputSequence, isSpecialMove) {
 
   const finalRotation =
     (rotationIndex + 4) % PIECE_WIDTH_LOOKUP[pieceStr].length;
-  const rotationLetter = ROTATION_LETTER_LOOKUP[finalRotation];
+  const rotationLetter = ROTATION_LETTER_LOOKUP[pieceStr][finalRotation];
   const leftMostCol = (pieceStr === "I" ? 4 : 5) + shiftIndex;
   let colsStr = "";
   for (let i = 0; i < PIECE_WIDTH_LOOKUP[pieceStr][finalRotation]; i++) {
