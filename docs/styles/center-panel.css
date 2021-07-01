@@ -1,0 +1,105 @@
+#center-panel {
+  display: block;
+  margin: 0 auto;
+}
+
+#game-container {
+  background: hsl(0, 0%, 79%);
+  padding: 30px;
+  position: relative;
+}
+
+#pre-game-config {
+  position: absolute;
+  background-color: black;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  padding: 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+#presets-panel-title {
+  font-size: 24px;
+}
+
+.preset-section-title {
+  text-align: center;
+}
+
+.presets-section {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+}
+
+.preset-button {
+  display: inline-block;
+  font-size: 16px;
+  padding: 2px 4px;
+}
+
+.presets-section button {
+  margin: 3px;
+}
+
+#level-select-container {
+  max-width: 200px;
+  margin-top: 30px;
+}
+
+#level-select {
+  margin: 0 auto;
+  height: 25px;
+  font-size: 18px;
+  text-align: center;
+  border-radius: 5px;
+  border: solid 1px gray;
+}
+
+#level-select-title {
+  text-align: center;
+}
+
+#level-select-container input {
+  max-width: 60px;
+  font-family: "Changa", sans-serif;
+  font-size: 20px;
+}
+
+#level-choice-buttons {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.level-button {
+  min-width: 44px;
+  min-height: 32px;
+  margin: 2px;
+  font-size: 15px;
+  padding: 2px;
+  font-family: "Press Start 2P", sans-serif;
+}
+
+#start-button {
+  margin-top: 20px;
+  padding: 4px 30px;
+  font-size: 20px;
+  background: #ff3223;
+}
+
+#start-button:hover {
+  background: #f7786f;
+}
+
+#main-canvas {
+  image-rendering: pixelated;
+  margin: auto;
+}

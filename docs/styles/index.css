@@ -76,7 +76,7 @@ button:disabled {
 
 #middle-spacer,
 #right-spacer {
-  flex-grow: 2;
+  flex-grow: 1;
 }
 
 .stats-header,
@@ -100,4 +100,23 @@ button:disabled {
   display: none;
   margin: 0 auto;
   transition: height 2s ease;
+}
+
+#bottom-panel {
+  margin-top: 24px;
+  text-align: center;
+}
+
+#credits {
+  font-family: monospace;
+  display: block;
+  padding: 5px;
+}
+
+#credits a {
+  color: white;
+}
+
+#credits a:visited {
+  color: rgb(255, 218, 169);
 }

@@ -35,9 +35,8 @@ const GameSettingsUi = require("./game_settings_ui_manager");
 
 const headerTextElement = document.getElementById("header-text");
 const preGameConfigDiv = document.getElementById("pre-game-config");
-const parityStatsDiv = document.getElementById("parity-stats");
 const mainCanvas = document.getElementById("main-canvas");
-const rightPanel = document.getElementById("right-panel");
+const centerPanel = document.getElementById("center-panel");
 
 // Create the initial empty board
 const m_board = []; // All board changes are in-place, so it is a const
@@ -446,12 +445,12 @@ export function calcParity(startCol, endCol) {
   return Math.abs(parity);
 }
 
+// Does nothing at the moment, I don't like how parity stats turned out
 function refreshStats() {
-  const leftParity = calcParity(0, 5);
-  const middleParity = calcParity(3, 7);
-  const rightParity = calcParity(5, 10);
-
-  parityStatsDiv.innerText = `Left: ${leftParity} \nMiddle: ${middleParity} \nRight: ${rightParity}`;
+  // const leftParity = calcParity(0, 5);
+  // const middleParity = calcParity(3, 7);
+  // const rightParity = calcParity(5, 10);
+  // parityStatsDiv.innerText = `Left: ${leftParity} \nMiddle: ${middleParity} \nRight: ${rightParity}`;
 }
 
 function refreshScoreHUD() {
@@ -647,7 +646,7 @@ mainCanvas.addEventListener("mousemove", function (e) {
 mainCanvas.addEventListener("mouseup", function (e) {
   m_boardEditManager.onMouseUp(e);
 });
-rightPanel.addEventListener("mouseleave", function (e) {
+centerPanel.addEventListener("mouseleave", function (e) {
   m_boardEditManager.onMouseUp(e);
 });
 
@@ -695,12 +694,15 @@ document.getElementById("preset-edit-board").addEventListener("click", (e) => {
   GameSettingsUi.loadPreset(EDIT_BOARD_PRESET);
 
   m_level = GameSettings.getStartingLevel();
+  m_lines = 0;
+  m_score = 0;
   m_boardGenerator.loadEmptyBoard();
   m_currentPiece = null; // Don't want a piece to be rendered at the top of the screen during editing
   m_canvas.drawBoard();
   m_gameState = GameState.EDIT_STARTING_BOARD;
   refreshPreGame();
   refreshHeaderText();
+  refreshScoreHUD();
 });
 
 document

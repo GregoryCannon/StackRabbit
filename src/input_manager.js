@@ -2,8 +2,6 @@ import { Direction, GameState } from "./constants.js";
 import { GetIsPaused } from "./index.js";
 const GameSettings = require("./game_settings_manager");
 
-const dasStatsDiv = document.getElementById("das-stats");
-
 // Default control setup
 let LEFT_KEYCODE = 37;
 let RIGHT_KEYCODE = 39;
@@ -222,7 +220,7 @@ InputManager.prototype.handleTappedDirection = function (direction) {
 // Updates the DAS charge and refreshes the debug text
 InputManager.prototype.setDASCharge = function (value) {
   this.dasCharge = value;
-  this.refreshDebugText();
+  // this.refreshDebugText();
 };
 
 InputManager.prototype.refreshDebugText = function () {
@@ -241,7 +239,6 @@ InputManager.prototype.refreshDebugText = function () {
     GameSettings.getDASTriggerThreshold() +
     "\n" +
     dasVisualized;
-  dasStatsDiv.innerText = debugStr;
 };
 
 // Checks if the game state allows for piece movements horizontally

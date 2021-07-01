@@ -6,8 +6,8 @@
         rel="stylesheet">
     <link href="styles/index.css" rel="stylesheet" type="text/css">
     <link href="styles/left-panel.css" rel="stylesheet" type="text/css">
+    <link href="styles/center-panel.css" rel="stylesheet" type="text/css">
     <link href="styles/right-panel.css" rel="stylesheet" type="text/css">
-    <link href="styles/bottom-panel.css" rel="stylesheet" type="text/css">
 </head>
 
 <body>
@@ -148,7 +148,7 @@
 
             <div id="left-spacer"></div>
 
-            <div id="right-panel">
+            <div id="center-panel">
                 <div id="game-container">
                     <canvas id="main-canvas" width="500" height="560"></canvas>
 
@@ -218,11 +218,11 @@
 
             <div id="middle-spacer"></div>
 
-            <div id="advanced-stats">
-                <h3 class="stats-header">DAS</h3>
-                <div class="stats-content" id="das-stats"></div>
-                <h3 class="stats-header">Parity</h3>
-                <div class="stats-content" id="parity-stats"></div>
+            <div id="right-panel">
+
+                <div id="engine-analysis"></div>
+
+                <div id="right-panel-spacer"></div>
 
                 <div id=controls-container>
                     <div class="key-combo">
@@ -251,7 +251,7 @@
                         <img width=30 height=30 src="static/Win-Q.png"> </img>
                     </div>
                     <div class="key-combo">
-                        <div class="key-explanation">Undo/Redo Last Piece</div>
+                        <div class="key-explanation">Undo/Redo</div>
                         <img width=60 height=30 src="static/Win-VB.png"> </img>
                     </div>
 
