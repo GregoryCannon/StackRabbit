@@ -29,6 +29,7 @@
 
 .preset-section-title {
   text-align: center;
+  margin-top: 15px;
 }
 
 .presets-section {
@@ -92,11 +93,6 @@
   margin-top: 20px;
   padding: 4px 30px;
   font-size: 20px;
-  background: #ff3223;
-}
-
-#start-button:hover {
-  background: #f7786f;
 }
 
 #main-canvas {

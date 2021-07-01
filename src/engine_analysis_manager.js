@@ -1,129 +1,51 @@
+import { GetLevel, GetLines } from ".";
+
 const engineTable = document.getElementById("engine-table");
+const curPieceSelect = document.getElementById("engine-cur-piece");
+const nextPieceSelect = document.getElementById("engine-next-piece");
+const tapSpeedSelect = document.getElementById("engine-tap-speed");
+const reactionTimeSelect = document.getElementById("engine-reaction-time");
 
 export function EngineAnalysisManager(board) {
   this.board = board;
   this.reactionTime = 5;
-  this.loadResponse(testResponseObj);
+  // this.loadResponse(testResponseObj);
 }
 
-const testResponseObj = [
-  {
-    piece: "O",
-    inputSequence: "R.............L************",
-    totalValue: 84.08143923062248,
-    isSpecialMove: true,
-    adjustments: [
-      {
-        piece: "O",
-        inputSequence: ".........L************",
-        totalValue: 64.88571919154421,
-        isSpecialMove: true,
-        followUp: {
-          piece: "T",
-          inputSequence: "E..........**************",
-          isSpecialMove: false,
-          totalValue: 64.88571919154421,
-        },
-      },
-    ],
-  },
-  {
-    piece: "O",
-    inputSequence: "R.R.R.R.......**************",
-    totalValue: 19.507274064433354,
-    isSpecialMove: false,
-    adjustments: [
-      {
-        piece: "O",
-        inputSequence: ".L.L.....L************",
-        totalValue: 64.88571919154421,
-        isSpecialMove: true,
-        followUp: {
-          piece: "T",
-          inputSequence: "E..........**************",
-          isSpecialMove: false,
-          totalValue: 64.88571919154421,
-        },
-      },
-    ],
-  },
-  {
-    piece: "O",
-    inputSequence: "L.........****************",
-    totalValue: -3.4830204706027224,
-    isSpecialMove: false,
-    adjustments: [
-      {
-        piece: "O",
-        inputSequence: "R.R......L************",
-        totalValue: 64.88571919154421,
-        isSpecialMove: true,
-        followUp: {
-          piece: "T",
-          inputSequence: "E..........**************",
-          isSpecialMove: false,
-          totalValue: 64.88571919154421,
-        },
-      },
-    ],
-  },
-  {
-    piece: "O",
-    inputSequence: "R..............************",
-    totalValue: -5.296564748843279,
-    isSpecialMove: false,
-    adjustments: [
-      {
-        piece: "O",
-        inputSequence: ".........L************",
-        totalValue: 64.88571919154421,
-        isSpecialMove: true,
-        followUp: {
-          piece: "T",
-          inputSequence: "E..........**************",
-          isSpecialMove: false,
-          totalValue: 64.88571919154421,
-        },
-      },
-    ],
-  },
-  {
-    piece: "O",
-    inputSequence: "L.L.L.....****************",
-    totalValue: -10.346661578783154,
-    isSpecialMove: false,
-    adjustments: [
-      {
-        piece: "O",
-        inputSequence: ".R.R.****************",
-        totalValue: 1.5019318318881372,
-        isSpecialMove: false,
-        followUp: {
-          piece: "T",
-          inputSequence: "I.A...........L.************",
-          isSpecialMove: true,
-          totalValue: 1.5019318318881372,
-        },
-      },
-      {
-        piece: "O",
-        inputSequence: ".....****************",
-        totalValue: -2.78064232737919,
-        isSpecialMove: false,
-        followUp: {
-          piece: "T",
-          inputSequence: "I.A...........L.************",
-          isSpecialMove: true,
-          totalValue: -2.78064232737919,
-        },
-      },
-    ],
-  },
-];
+// const testResponseObj = [{"piece":"O","inputSequence":"R.............L************","totalValue":84.08143923062248,"isSpecialMove":true,"adjustments":[{"piece":"O","inputSequence":".........L************","totalValue":142.89100808934975,"isSpecialMove":true,"followUp":{"piece":"J","inputSequence":"I.R............*******^^^^^^^^^^^^^^^^^*****","isSpecialMove":false,"totalValue":142.89100808934975}}]},{"piece":"O","inputSequence":"R.R.R.R.......**************","totalValue":19.507274064433354,"isSpecialMove":false,"adjustments":[{"piece":"O","inputSequence":".L.L.....L************","totalValue":142.89100808934975,"isSpecialMove":true,"followUp":{"piece":"J","inputSequence":"I.R............*******^^^^^^^^^^^^^^^^^*****","isSpecialMove":false,"totalValue":142.89100808934975}},{"piece":"O","inputSequence":".L.L.....L************","totalValue":84.31114682983525,"isSpecialMove":true,"followUp":{"piece":"J","inputSequence":"F.L.L.......**************","isSpecialMove":false,"totalValue":84.31114682983525}},{"piece":"O","inputSequence":".R.......**************","totalValue":60.637072410925725,"isSpecialMove":false,"followUp":{"piece":"J","inputSequence":"I.A............L************","isSpecialMove":true,"totalValue":60.637072410925725}}]},{"piece":"O","inputSequence":"L.........****************","totalValue":-3.4830204706027224,"isSpecialMove":false,"adjustments":[{"piece":"O","inputSequence":"R.R......L************","totalValue":142.89100808934975,"isSpecialMove":true,"followUp":{"piece":"J","inputSequence":"I.R............*******^^^^^^^^^^^^^^^^^*****","isSpecialMove":false,"totalValue":142.89100808934975}},{"piece":"O","inputSequence":"R.R......L************","totalValue":84.31114682983525,"isSpecialMove":true,"followUp":{"piece":"J","inputSequence":"F.L.L.......**************","isSpecialMove":false,"totalValue":84.31114682983525}},{"piece":"O","inputSequence":"R.R.R.R.R**************","totalValue":60.53707241092572,"isSpecialMove":true,"followUp":{"piece":"J","inputSequence":"I.A............L************","isSpecialMove":true,"totalValue":60.53707241092572}},{"piece":"O","inputSequence":"R.R......L************","totalValue":59.889414555101744,"isSpecialMove":true,"followUp":{"piece":"J","inputSequence":"I.R.R.R.......**************","isSpecialMove":false,"totalValue":59.889414555101744}},{"piece":"O","inputSequence":".....****************","totalValue":42.519388983866754,"isSpecialMove":false,"followUp":{"piece":"J","inputSequence":"I.A............L************","isSpecialMove":true,"totalValue":42.519388983866754}}]},{"piece":"O","inputSequence":"R..............************","totalValue":-5.296564748843279,"isSpecialMove":false,"adjustments":[{"piece":"O","inputSequence":".........L************","totalValue":142.89100808934975,"isSpecialMove":true,"followUp":{"piece":"J","inputSequence":"I.R............*******^^^^^^^^^^^^^^^^^*****","isSpecialMove":false,"totalValue":142.89100808934975}}]},{"piece":"O","inputSequence":"L.L.L.....****************","totalValue":-10.346661578783154,"isSpecialMove":false,"adjustments":[{"piece":"O","inputSequence":".R.R.****************","totalValue":42.519388983866754,"isSpecialMove":false,"followUp":{"piece":"J","inputSequence":"I.A............L************","isSpecialMove":true,"totalValue":42.519388983866754}},{"piece":"O","inputSequence":".....****************","totalValue":31.92450660292317,"isSpecialMove":false,"followUp":{"piece":"J","inputSequence":"I.A............L************","isSpecialMove":true,"totalValue":31.92450660292317}}]}]
+
+
+EngineAnalysisManager.prototype.makeRequest = function () {
+  // Compile arguments
+  const encodedBoard = this.board.map(row => row.join("")).join("");
+  console.log(curPieceSelect, curPieceSelect.value)
+  const curPiece = curPieceSelect.value;
+  const nextPiece = nextPieceSelect.value;
+  const reactionTime = reactionTimeSelect.value;
+  const tapSpeed = tapSpeedSelect.value;
+  const url = `http://localhost:3000/engine/${encodedBoard}/${curPiece}/${nextPiece || null}/${GetLevel()}/${GetLines()}/0/0/0/0/${reactionTime}/${tapSpeed}/false`
+
+  // Make request
+  fetch(url, {mode: "cors"})
+  .then(function(response) {
+    console.log(response)
+    return response.json();
+  })
+  .then(function(text) {
+    console.log(text.length, text)
+    console.log('Request successful', text);
+    this.loadResponse(text);
+  }.bind(this))
+  .catch(function(error) {
+    console.log('Request failed', error)
+  });
+}
+
 
 /** Runs an animation to clear the lines passed in in an array.
  * Doesn't affect the actual board, those updates come at the end of the animation. */
 EngineAnalysisManager.prototype.loadResponse = function (moveList) {
+  engineTable.innerHTML = '';
   for (let i = 0; i < moveList.length; i++) {
     const mainMove = moveList[i];
 
@@ -161,17 +83,20 @@ EngineAnalysisManager.prototype.loadResponse = function (moveList) {
       adjScore.innerHTML = adjustment.totalValue.toFixed(1);
       let adjMove = adjRow.insertCell();
       adjMove.classList.add("notated-adj");
-      if (mainMove.inputSequence.slice(this.reactionTime) === adjustment.inputSequence){
-        adjMove.innerHTML = "(no adj.)"
-    } else {
-      adjMove.innerHTML = getNotatedMove(
-        adjustment.piece,
-        mainMove.inputSequence.slice(0, this.reactionTime) +
-          adjustment.inputSequence,
-        adjustment.isSpecialMove
-      );
-    }
-      
+      if (
+        mainMove.inputSequence.slice(this.reactionTime) ===
+        adjustment.inputSequence
+      ) {
+        adjMove.innerHTML = "(no adj.)";
+      } else {
+        adjMove.innerHTML = getNotatedMove(
+          adjustment.piece,
+          mainMove.inputSequence.slice(0, this.reactionTime) +
+            adjustment.inputSequence,
+          adjustment.isSpecialMove
+        );
+      }
+
       let nextMove = adjRow.insertCell();
       nextMove.classList.add("notated-next");
       nextMove.innerHTML = getNotatedMove(
@@ -192,7 +117,6 @@ function isAnyOf(testChar, candidates) {
   return false;
 }
 
-
 const ROTATION_LETTER_LOOKUP = {
   I: ["", ""],
   O: [""],
@@ -201,8 +125,7 @@ const ROTATION_LETTER_LOOKUP = {
   T: ["d", "l", "u", "r"],
   S: ["", ""],
   Z: ["", ""],
-}
-
+};
 
 const PIECE_WIDTH_LOOKUP = {
   I: [4, 1],

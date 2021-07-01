@@ -77,11 +77,11 @@
                             </td>
                             <td>
                                 <select id="das-speed-dropdown">
-                                    <option value="0">Standard DAS (6 left 19)</option>
-                                    <option value="1">Slow-Medium Tapper (7 left 19)</option>
-                                    <option value="2">Medium Tapper (8 left 19)</option>
-                                    <option value="3">Fast Tapper (9 left 19)</option>
-                                    <option value="4">4 Frame DAS (10 left 19)</option>
+                                    <option value="0">Standard DAS (10 Hz)</option>
+                                    <option value="1">11 Hz</option>
+                                    <option value="2">12 Hz</option>
+                                    <option value="3">13 Hz</option>
+                                    <option value="4">15 Hz</option>
                                 </select>
                             </td>
                         </tr>
@@ -159,14 +159,15 @@
                                 Presets
                             </h6>
 
-                            <div class="preset-section-title">Normal Play</div>
+                            <!-- <div class="preset-section-title">Normal Play</div>
                             <div class="presets-section">
                                 <button class="preset-button" id="preset-standard">Standard</button>
                                 <button class="preset-button" id="preset-standard-tap">Standard (Tapper)</button>
-                            </div>
+                            </div> -->
 
-                            <div class="preset-section-title">Specific Practice</div>
+                            <div class="preset-section-title">Practice Tetris</div>
                             <div class="presets-section">
+                                <button class="preset-button" id="preset-standard">Standard</button>
                                 <button class="preset-button" id="preset-dig-practice">Dig Practice</button>
                                 <button class="preset-button" id="preset-drought">Drought Practice</button>
                                 <button class="preset-button" id="preset-killscreen">Killscreen Practice</button>
@@ -177,8 +178,8 @@
                             <div class="preset-section-title">Exploration</div>
                             <div class="presets-section">
                                 <button class="preset-button" id="preset-edit-board">Edit Board</button>
-                                <button class="preset-button" id="preset-custom-sequence">Custom
-                                    Sequence</button>
+                                <!-- <button class="preset-button" id="preset-custom-sequence">Custom
+                                    Sequence</button> -->
                             </div>
 
                             <!-- Unused -->
@@ -188,7 +189,7 @@
                         </div>
                         <div id="level-select-container">
                             <div id="level-select-title"><span>Level: </span><input id="level-select" type="number"
-                                    value="15"></input></div>
+                                    value="18"></input></div>
                             <div id="level-choice-buttons">
                                 <button class="level-button" id="level-0">0</button>
                                 <button class="level-button" id="level-5">5</button>
@@ -208,12 +209,6 @@
                         </center>
                     </div>
                 </div>
-
-
-                <div id="bottom-panel">
-                    <div id="credits">Developed by Greg Cannon with help from Christian Harris.<br> Source code
-                        available on <a href="https://github.com/GregoryCannon/TetrisTrainer">Github</a>.</div>
-                </div>
             </div>
 
             <div id="middle-spacer"></div>
@@ -222,6 +217,63 @@
 
                 <div id="engine-analysis">
                     <h3>StackRabbit Analysis</h3>
+                        <div id="engine-config">
+                            <div id="engine-config-left">
+                                <div>
+                                    <span>Current: </span>
+                                    <select id="engine-cur-piece">
+                                        <option value="I">I</option>
+                                        <option selected value="O">O</option>
+                                        <option value="L">L</option>
+                                        <option value="J">J</option>
+                                        <option value="T">T</option>
+                                        <option value="S">S</option>
+                                        <option value="Z">Z</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <span>Next: </span>
+                                    <select id="engine-next-piece">
+                                        <option value="">none</option>
+                                        <option value="I">I</option>
+                                        <option value="O">O</option>
+                                        <option value="L">L</option>
+                                        <option value="J">J</option>
+                                        <option value="T">T</option>
+                                        <option value="S">S</option>
+                                        <option value="Z">Z</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <span>Hz: </span>
+                                    <select id="engine-tap-speed">
+                                        <option value="X.....">10 Hz</option>
+                                        <option value="X.....X....X....">11 Hz</option>
+                                        <option value="X...." selected>12 hz</option>
+                                        <option value="X....X...">13 Hz</option>
+                                        <option value="X....X...X...">13.5 Hz</option>
+                                        <option value="X....X...X...X...">14 Hz</option>
+                                        <option value="X...">15 Hz</option>
+                                        <option value="X..">20 Hz</option>
+                                        <option value="X.">30 Hz</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <span>Reaction: </span>
+                                    <select id="engine-reaction-time">
+                                        <option value="0">0ms</option>
+                                        <option value="15">250ms</option>
+                                        <option value="18">300ms</option>
+                                        <option selected value="21">350ms</option>
+                                        <option value="24">400ms</option>
+                                        <option value="99">infinite</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div>
+                                <button class="button-primary" id="engine-calculate-button">Calculate</button>
+                            </div>
+                        </div>
                     <table cellspacing=0 id="engine-table">
                        
                     </table>
@@ -229,48 +281,50 @@
 
                 <div id="right-panel-spacer"></div>
 
-                <div id=controls-container>
-                    <div class="key-combo">
-                        <div class="key-explanation">Rotate pieces</div>
-                        <img width=60 height=30 src="static/Win-ZX.png"></img>
-                    </div>
-
-                    <div class="key-combo">
-                        <div class="key-explanation">Move pieces</div>
-                        <img width=100 height=30 src="static/Win-Arrows.png"> </img>
-                    </div>
-                    <div class="key-combo">
-                        <div class="key-explanation">Edit board</div>
-                        <img width=30 height=30 src="static/Mouse icon.png"> </img>
-                    </div>
-                    <div class="key-combo">
-                        <div class="key-explanation">Start/Pause</div>
-                        <img width=60 height=30 src="static/Win-Enter.png"> </img>
-                    </div>
-                    <div class="key-combo">
-                        <div class="key-explanation">Restart</div>
-                        <img width=30 height=30 src="static/Win-R.png"> </img>
-                    </div>
-                    <div class="key-combo">
-                        <div class="key-explanation">Quit to Menu</div>
-                        <img width=30 height=30 src="static/Win-Q.png"> </img>
-                    </div>
-                    <div class="key-combo">
-                        <div class="key-explanation">Undo/Redo</div>
-                        <img width=60 height=30 src="static/Win-VB.png"> </img>
-                    </div>
-
-                </div>
+                
             </div>
 
             <div id="right-spacer"></div>
         </div>
-    </div>
 
+        <div id=controls-container>
+            <div class="key-combo">
+                <div class="key-explanation">Rotate pieces</div>
+                <img width=60 height=30 src="static/Win-ZX.png"></img>
+            </div>
 
+            <div class="key-combo">
+                <div class="key-explanation">Move pieces</div>
+                <img width=100 height=30 src="static/Win-Arrows.png"> </img>
+            </div>
+            <div class="key-combo">
+                <div class="key-explanation">Edit board</div>
+                <img width=30 height=30 src="static/Mouse icon.png"> </img>
+            </div>
+            <div class="key-combo">
+                <div class="key-explanation">Start/Pause</div>
+                <img width=60 height=30 src="static/Win-Enter.png"> </img>
+            </div>
+            <div class="key-combo">
+                <div class="key-explanation">Restart</div>
+                <img width=30 height=30 src="static/Win-R.png"> </img>
+            </div>
+            <div class="key-combo">
+                <div class="key-explanation">Quit to Menu</div>
+                <img width=30 height=30 src="static/Win-Q.png"> </img>
+            </div>
+            <div class="key-combo">
+                <div class="key-explanation">Undo/Redo</div>
+                <img width=60 height=30 src="static/Win-VB.png"> </img>
+            </div>
+
+        </div>
     </div>
 
     <script src="main.js"></script>
+
+    <div id="credits">Developed by Greg Cannon.<br> Source code
+        available on <a href="https://github.com/GregoryCannon/TetrisTrainer">Github</a>.</div>
 </body>
 
 </html>

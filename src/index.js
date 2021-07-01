@@ -93,6 +93,10 @@ export const GetLevel = () => {
   return m_level;
 };
 
+export const GetLines = () => {
+  return m_lines;
+};
+
 export const GetIsPaused = () => {
   return m_isPaused;
 };
@@ -663,13 +667,13 @@ document.addEventListener("keyup", (e) => {
 
 const presetsMap = {
   "preset-standard": STANDARD_PRESET,
-  "preset-standard-tap": STANDARD_TAPPER_PRESET,
+  // "preset-standard-tap": STANDARD_TAPPER_PRESET,
   "preset-dig-practice": DIG_PRACTICE_PRESET,
   "preset-drought": DROUGHT_PRESET,
   "preset-killscreen": KILLSCREEN_PRESET,
   "preset-slow-killscreen": SLOW_KILLSCREEN_PRESET,
   "preset-slow-19": SLOW_19_PRESET,
-  "preset-custom-sequence": CUSTOM_SEQUENCE_PRESET,
+  // "preset-custom-sequence": CUSTOM_SEQUENCE_PRESET,
 };
 
 function deselectAllPresets() {
@@ -754,6 +758,10 @@ document.addEventListener("keydown", (e) => {
       break;
   }
 });
+
+document
+  .getElementById("engine-calculate-button")
+  .addEventListener("click", (e) => m_engineAnalysisManager.makeRequest());
 
 /**
  * SCRIPT START

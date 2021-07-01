@@ -6,13 +6,36 @@
   align-items: flex-end;
   height: 540px;
   overflow: scroll;
+  padding-right: 10px;
 }
 
 #right-panel-spacer {
   flex-grow: 1;
 }
 
-/* StackRabbit Analysis */
+/* StackRabbit Config */
+
+#engine-config {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  font-size: 14px;
+}
+
+#engine-config-left {
+  text-align: right;
+}
+
+#engine-config button {
+  margin: auto 15px;
+  font-size: 16px;
+}
+
+#engine-config select {
+  min-width: 45px;
+}
+
+/* StackRabbit Analysis Results*/
 
 #engine-analysis {
   width: 100%;
@@ -39,6 +62,7 @@
 .ranking {
   padding: 6px 6px;
   background: rgb(143, 143, 143);
+  max-width: 20px;
 }
 
 .notated-move, .notated-adj, .notated-next, .eval-score {
@@ -48,6 +72,7 @@
 .eval-score {
   background: rgb(143, 143, 143);
   text-align: center;
+  max-width: 26px;
 }
 
 .eval-score-adj {
@@ -71,14 +96,15 @@
 
 #controls-container {
   margin-top: 40px;
-  display: inline-flex;
+  display: flex;
   flex-direction: row;
   flex-wrap: wrap;
   justify-content: center;
   padding: 4px;
   background-color: white;
-  max-width: 275px;
+  /* max-width: 275px; */
   color: black;
+  text-align: center;
 }
 
 .key-combo {

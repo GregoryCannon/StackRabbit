@@ -35,13 +35,23 @@ h1 {
 button {
   color: white;
   border: none;
-  background-color: #f38805;
+  /* background-color: #f38805; */
+  background-color: #2f647d;
   border-radius: 5px;
   font-family: "Changa", sans-serif;
 }
 
 button:hover {
-  background-color: #f1a13e;
+  background-color: #d4984e;
+}
+
+.button-primary {
+background: #d96a00;
+/* background: #ff3223; */
+}
+
+.button-primary:hover {
+background: #f7786f;
 }
 
 button:focus {
@@ -59,7 +69,7 @@ button:disabled {
 
 .selected,
 .selected:hover {
-  background-color: rgb(255, 73, 73);
+  background-color: #d96a00;
 }
 
 #main-area {
@@ -102,15 +112,12 @@ button:disabled {
   transition: height 2s ease;
 }
 
-#bottom-panel {
-  margin-top: 24px;
-  text-align: center;
-}
-
 #credits {
   font-family: monospace;
   display: block;
   padding: 5px;
+  margin: 20px auto;;
+  text-align: center;
 }
 
 #credits a {
