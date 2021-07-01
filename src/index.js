@@ -17,6 +17,7 @@ import { InputManager } from "./input_manager.js";
 import { BoardEditManager } from "./board_edit_manager.js";
 import { BoardGenerator } from "./board_generator.js";
 import { HistoryManager } from "./history_manager.js";
+import { EngineAnalysisManager } from "./engine_analysis_manager.js";
 import "./ui_manager";
 import {
   CUSTOM_SEQUENCE_PRESET,
@@ -55,6 +56,7 @@ let m_boardGenerator = new BoardGenerator(m_board);
 let m_pieceSelector = new PieceSelector();
 let m_boardLoader = new BoardLoader(m_board, m_canvas);
 let m_historyManager = new HistoryManager();
+let m_engineAnalysisManager = new EngineAnalysisManager(m_board);
 
 // State relevant to game itself
 let m_currentPiece;
