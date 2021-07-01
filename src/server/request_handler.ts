@@ -1,6 +1,7 @@
 import { PIECE_LOOKUP } from "../../src/web_client/tetrominoes";
 import { getBoardAndLinesClearedAfterPlacement } from "./board_helper";
 import { rateSurface } from "./evaluator";
+import { LINE_CAP } from "./params";
 import { PreComputeManager } from "./precompute";
 import {
   formatPossibility,
@@ -173,6 +174,11 @@ export class RequestHandler {
         existingYOffset + (currentPieceId === "I" ? -2 : -1)
       )[0]
     );
+
+    // Manually top out if past line cap
+    if (lines >= LINE_CAP) {
+      inputFrameTimeline = "."; // Manually top out
+    }
 
     return [
       {

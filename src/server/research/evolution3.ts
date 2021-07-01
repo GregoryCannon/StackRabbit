@@ -2,11 +2,7 @@
  * A grid search / gradient descent algorithm for choosing the best parameter set.
  */
 
-import {
-  getEmptyBoard,
-  hasToppedOut,
-  REWARDS,
-} from "../lite_game_simulator";
+import { getEmptyBoard, hasToppedOut, REWARDS } from "../lite_game_simulator";
 import { getBestMove } from "../main";
 import { applyModsToParams } from "../params";
 import { getPieceSequence } from "../piece_rng";

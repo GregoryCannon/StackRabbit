@@ -19,7 +19,7 @@ export const EVALUATION_BREADTH = {
 ---------------------------------*/
 
 export const IS_DROUGHT_MODE = false;
-export const LINE_CAP = 230;
+export const LINE_CAP = 330;
 
 // Rarely changed
 export const IS_PAL = false;
@@ -276,7 +276,7 @@ export const NO_DIRTIES_PARAMS = applyModsToParams(
 
 export function getParams(): InitialAiParams {
   return applyModsToParams(DEFAULT_PARAMS, EXHIBITION_PATCH);
-  return
+  return;
 }
 
 export function getParamMods(): ParamMods {

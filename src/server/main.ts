@@ -50,9 +50,6 @@ export function getSortedMoveList(
   hypotheticalSearchDepth: number
 ): MoveSearchResult {
   // Add additional info to the base params (tap speed, dig/scoring mode, etc.)
-  if (searchState.lines >= LINE_CAP) {
-    inputFrameTimeline = "."; // Manually top out
-  }
   let aiParams = addTapInfoToAiParams(
     initialAiParams,
     searchState.level,

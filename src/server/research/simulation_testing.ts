@@ -31,7 +31,6 @@ export const OPENER_TEST_BOARD = parseBoard(
 export const TRAINING_TIME_MINS = 15;
 const NUM_THREADS = 8;
 
-
 /* ------------------------------
     Worker thread setup
 --------------------------------- */
