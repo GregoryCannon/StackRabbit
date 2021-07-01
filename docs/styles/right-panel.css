@@ -5,6 +5,7 @@
   flex-direction: column;
   align-items: flex-end;
   height: 540px;
+  overflow: scroll;
 }
 
 #right-panel-spacer {
@@ -69,6 +70,7 @@
 /* Controls */
 
 #controls-container {
+  margin-top: 40px;
   display: inline-flex;
   flex-direction: row;
   flex-wrap: wrap;
