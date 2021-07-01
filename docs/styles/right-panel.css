@@ -1,11 +1,10 @@
-
-
 #right-panel {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   height: 540px;
-  overflow: scroll;
+  overflow-y: scroll;
+  overflow-x: hidden;
   padding-right: 10px;
 }
 
