@@ -101,15 +101,11 @@ function getMoveData(
       continue;
     }
 
-    // console.log(adjustments);
-    console.log(initialMove.lockPositionEncoded);
-    console.log(adjustments.map((x) => x.inputSequence));
-
     const sameAsInitial = adjustments.filter(
       (x) => x.lockPositionEncoded === initialMove.lockPositionEncoded
     );
     if (sameAsInitial.length > 0) {
-      const valueOfDefault = sameAsInitial[0].totalValue;
+      const valueOfDefault = sameAsInitial[0].expectedValue;
       result.push([
         initialMove,
         adjustments.filter((x) => x.totalValue >= valueOfDefault),

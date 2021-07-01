@@ -209,8 +209,10 @@ function searchHypothetically(
 
     // Attach the EV to the original possibility
     chain.expectedValue = expectedValue;
+    chain.totalValue = expectedValue;
     if (chain.innerPossibility) {
       chain.innerPossibility.expectedValue = expectedValue;
+      chain.innerPossibility.totalValue = expectedValue;
     }
 
     hypotheticalResults.push({
