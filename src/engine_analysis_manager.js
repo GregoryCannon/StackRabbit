@@ -20,20 +20,20 @@ EngineAnalysisManager.prototype.makeRequest = function () {
   const nextPiece = nextPieceSelect.value;
   this.reactionTime = reactionTimeSelect.value;
   const tapSpeed = tapSpeedSelect.value;
-  const url = `http://localhost:3000/engine/${encodedBoard}/${curPiece}/${
+  const url = `https://stackrabbit-317705.wm.r.appspot.com/engine/${encodedBoard}/${curPiece}/${
     nextPiece || null
   }/${GetLevel()}/${GetLines()}/0/0/0/0/${this.reactionTime}/${tapSpeed}/false`;
 
   // Make request
   fetch(url, { mode: "cors" })
     .then(function (response) {
-      console.log(response);
+      // console.log(response);
       return response.json();
     })
     .then(
       function (text) {
-        console.log(text.length, text);
-        console.log("Request successful", text);
+        // console.log(text.length, text);
+        // console.log("Request successful", text);
         this.loadResponse(text);
       }.bind(this)
     )
@@ -121,7 +121,7 @@ const ROTATION_LETTER_LOOKUP = {
   I: ["", ""],
   O: [""],
   L: ["d", "l", "u", "r"],
-  J: ["d", "r", "u", "l"],
+  J: ["d", "l", "u", "r"],
   T: ["d", "l", "u", "r"],
   S: ["", ""],
   Z: ["", ""],
@@ -175,5 +175,3 @@ function getNotatedMove(pieceStr, inputSequence, isSpecialMove) {
   }
   return `${pieceStr} ${rotationLetter}${colsStr}${isSpecialMove ? "*" : ""}`;
 }
-
-console.log(getNotatedMove("T", "E...E...L...L.......********", true));
