@@ -12,8 +12,10 @@ export function EngineAnalysisManager(board) {
 
 EngineAnalysisManager.prototype.makeRequest = function () {
   // Compile arguments
-  const encodedBoard = this.board.map((row) => row.join("")).join("");
-  console.log(curPieceSelect, curPieceSelect.value);
+  const encodedBoard = this.board
+    .map((row) => row.slice(0, 10).join(""))
+    .join("")
+    .replace(/2|3/g, "1");
   const curPiece = curPieceSelect.value;
   const nextPiece = nextPieceSelect.value;
   this.reactionTime = reactionTimeSelect.value;
