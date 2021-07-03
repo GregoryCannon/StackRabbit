@@ -23,7 +23,9 @@ EngineAnalysisManager.prototype.makeRequest = function () {
   const tapSpeed = tapSpeedSelect.value;
   const url = `https://stackrabbit-317705.wm.r.appspot.com/engine/${encodedBoard}/${curPiece}/${
     nextPiece || null
-  }/${GetLevel()}/${GetLines()}/0/0/0/0/${this.reactionTime}/${tapSpeed}/false`;
+  }/${GetLevel() || 18}/${GetLines() || 0}/0/0/0/0/${
+    this.reactionTime
+  }/${tapSpeed}/false`;
 
   // Make request
   fetch(url, { mode: "cors" })
@@ -40,9 +42,10 @@ EngineAnalysisManager.prototype.makeRequest = function () {
     )
     .catch(function (error) {
       console.log("Request failed", error);
-      backendErrorText.style.visibility = "visible"
-      backendErrorText.innerHTML = "Server error.<br/> I'm working on fixing an issue with some browsers, but for the moment, <br/><em>try using Chrome</em>"
-      engineTable.style.visibility = "hidden"
+      backendErrorText.style.visibility = "visible";
+      backendErrorText.innerHTML =
+        "Server error.<br/> I'm working on fixing an issue with some browsers, but for the moment, <br/><em>try using Chrome</em>";
+      engineTable.style.visibility = "hidden";
     });
 };
 
@@ -50,8 +53,8 @@ EngineAnalysisManager.prototype.makeRequest = function () {
  * Doesn't affect the actual board, those updates come at the end of the animation. */
 EngineAnalysisManager.prototype.loadResponse = function (moveList) {
   engineTable.innerHTML = "";
-  backendErrorText.style.visibility = "hidden"
-  engineTable.style.visibility = "visible"
+  backendErrorText.style.visibility = "hidden";
+  engineTable.style.visibility = "visible";
   for (let i = 0; i < moveList.length; i++) {
     const mainMove = moveList[i];
 
