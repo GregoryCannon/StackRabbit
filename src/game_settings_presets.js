@@ -16,7 +16,7 @@ export const SITE_DEFAULTS = Object.freeze({
   PieceSequence: "",
   Transition10Lines: false,
   StartingBoardType: StartingBoardType.EMPTY,
-  StartingLevel: 15,
+  StartingLevel: 18,
 });
 
 // No overrides

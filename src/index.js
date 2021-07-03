@@ -78,6 +78,11 @@ let m_linesPendingClear;
 let m_pendingPoints;
 let m_gameLoopFrameCount;
 
+// Monitor speed sampling
+let m_monitorSampleStartTime = null;
+let m_sampleFramesLeft = 100;
+let m_monitorStatus = null;
+
 // State relevant to debugging
 let m_totalMsElapsed;
 let m_numFrames;
@@ -395,7 +400,27 @@ function runOneFrame() {
 
 // 60 FPS game loop
 function gameLoop() {
-  m_gameLoopFrameCount -= 1;
+  // Check for weird refresh rates
+  if (m_sampleFramesLeft === 10) {
+    m_monitorSampleStartTime = window.performance.now();
+  } else if (m_sampleFramesLeft === 0) {
+    const timeDiffMs = window.performance.now() - m_monitorSampleStartTime;
+    console.log(`Average frame length ${timeDiffMs / 10} ms`);
+    if (timeDiffMs / 10 > 25 && m_monitorStatus !== "slow") {
+      alert(
+        "Your monitor refreshes slower than 60 Hz. The game will run much slower than usual."
+      );
+      m_monitorStatus = "slow";
+    }
+    if (timeDiffMs / 10 < 12) {
+      m_monitorStatus = "fast";
+    }
+  } else if (m_sampleFramesLeft < -6000) {
+    m_sampleFramesLeft += 6000;
+  }
+  m_sampleFramesLeft--;
+
+  m_gameLoopFrameCount -= m_monitorStatus === "fast" ? 0.5 : 1;
   if (m_gameLoopFrameCount == 0) {
     m_gameLoopFrameCount = GameSettings.getFrameSkipCount();
 
