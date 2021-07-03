@@ -484,11 +484,11 @@ function refreshStats() {
   // parityStatsDiv.innerText = `Left: ${leftParity} \nMiddle: ${middleParity} \nRight: ${rightParity}`;
 }
 
-function drawNextBox(nextPiece){
-  console.log("drawing next box", nextPiece ? nextPiece.id : null)
-  m_canvas.drawNextBox(nextPiece)
-  if (nextPiece !== null){
-    m_engineAnalysisManager.updatePieces(m_currentPiece.id, m_nextPiece.id)
+function drawNextBox(nextPiece) {
+  console.log("drawing next box", nextPiece ? nextPiece.id : null);
+  m_canvas.drawNextBox(nextPiece);
+  if (nextPiece !== null) {
+    m_engineAnalysisManager.updatePieces(m_currentPiece.id, m_nextPiece.id);
   }
 }
 
@@ -552,7 +552,7 @@ function lockPiece() {
   getNewPiece();
 
   // Update the engine piece
-  m_engineAnalysisManager.updatePieces(m_currentPiece.id, null)
+  m_engineAnalysisManager.updatePieces(m_currentPiece.id, null);
 
   // Clear lines
   m_linesPendingClear = getFullRows();
@@ -625,7 +625,7 @@ function loadSnapshotFromHistory() {
     document.activeElement.blur();
     m_canvas.drawBoard();
     m_canvas.drawCurrentPiece();
-    drawNextBox(m_nextPiece)
+    drawNextBox(m_nextPiece);
     refreshHeaderText();
     refreshScoreHUD();
     refreshStats();
@@ -795,10 +795,6 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
-document
-  .getElementById("engine-calculate-button")
-  .addEventListener("click", (e) => m_engineAnalysisManager.makeRequest());
-
 /**
  * SCRIPT START
  */
@@ -818,7 +814,7 @@ document.getElementById("preset-standard").click();
 // Render after a small delay so the font loads
 window.setTimeout(() => {
   m_canvas.drawBoard();
-  drawNextBox(null)
+  drawNextBox(null);
   m_inputManager.refreshDebugText();
   refreshHeaderText();
   refreshStats();

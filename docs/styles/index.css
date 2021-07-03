@@ -50,8 +50,8 @@ background: #d96a00;
 /* background: #ff3223; */
 }
 
-.button-primary:hover {
-background: #f7786f;
+.button-primary:hover:enabled {
+background: #d4984e;
 }
 
 button:focus {

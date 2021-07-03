@@ -3,9 +3,10 @@
   flex-direction: column;
   align-items: flex-end;
   height: 540px;
+  width: 270px;
   overflow-y: scroll;
   overflow-x: hidden;
-  padding-right: 10px;
+  padding-right: 8px;
 }
 
 #right-panel-spacer {

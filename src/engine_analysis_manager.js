@@ -6,20 +6,25 @@ const nextPieceSelect = document.getElementById("engine-next-piece");
 const tapSpeedSelect = document.getElementById("engine-tap-speed");
 const reactionTimeSelect = document.getElementById("engine-reaction-time");
 const backendErrorText = document.getElementById("engine-backend-error");
+const requestButton = document.getElementById("engine-calculate-button");
 
 export function EngineAnalysisManager(board) {
   this.board = board;
   this.curPiece = "O";
   this.nextPiece = "";
+  requestButton.addEventListener("click", (e) => this.makeRequest());
 }
 
-EngineAnalysisManager.prototype.updatePieces = function (curPieceId, nextPieceId) {
-  console.log(curPieceId, nextPieceId)
+EngineAnalysisManager.prototype.updatePieces = function (
+  curPieceId,
+  nextPieceId
+) {
+  console.log(curPieceId, nextPieceId);
   this.curPiece = curPieceId || "";
   this.nextPiece = nextPieceId || "";
   curPieceSelect.value = this.curPiece;
   nextPieceSelect.value = this.nextPiece;
-}
+};
 
 EngineAnalysisManager.prototype.makeRequest = function () {
   // Compile arguments
@@ -57,6 +62,15 @@ EngineAnalysisManager.prototype.makeRequest = function () {
         "Server error.<br/> There was previously an issue in some browsers, that should be fixed now.<br/>Try clearing your browser cache (to load the new version), or if it's still not working, try using Chrome.</em>";
       engineTable.style.visibility = "hidden";
     });
+
+  // Temporarily disable the button to prevent spamming
+  requestButton.disabled = true;
+  setTimeout(() => {
+    requestButton.disabled = false;
+  }, 2000);
+
+  // Reset focus (so pressing 'enter' doesn't make subsequent requests)
+  document.activeElement.blur();
 };
 
 /** Runs an animation to clear the lines passed in in an array.
