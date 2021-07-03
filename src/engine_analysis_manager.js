@@ -5,6 +5,7 @@ const curPieceSelect = document.getElementById("engine-cur-piece");
 const nextPieceSelect = document.getElementById("engine-next-piece");
 const tapSpeedSelect = document.getElementById("engine-tap-speed");
 const reactionTimeSelect = document.getElementById("engine-reaction-time");
+const backendErrorText = document.getElementById("engine-backend-error");
 
 export function EngineAnalysisManager(board) {
   this.board = board;
@@ -39,6 +40,9 @@ EngineAnalysisManager.prototype.makeRequest = function () {
     )
     .catch(function (error) {
       console.log("Request failed", error);
+      backendErrorText.style.visibility = "visible"
+      backendErrorText.innerHTML = "Server error.<br/> I'm working on fixing an issue with some browsers, but for the moment, <br/><em>try using Chrome</em>"
+      engineTable.style.visibility = "hidden"
     });
 };
 
@@ -46,6 +50,8 @@ EngineAnalysisManager.prototype.makeRequest = function () {
  * Doesn't affect the actual board, those updates come at the end of the animation. */
 EngineAnalysisManager.prototype.loadResponse = function (moveList) {
   engineTable.innerHTML = "";
+  backendErrorText.style.visibility = "hidden"
+  engineTable.style.visibility = "visible"
   for (let i = 0; i < moveList.length; i++) {
     const mainMove = moveList[i];
 

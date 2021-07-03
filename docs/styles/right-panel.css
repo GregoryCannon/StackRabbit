@@ -36,6 +36,13 @@
 
 /* StackRabbit Analysis Results*/
 
+#engine-backend-error {
+  color: red;
+  font-family: Verdana, Geneva, Tahoma, sans-serif;
+  width: 240px;
+  margin-top: 50px;
+}
+
 #engine-analysis {
   width: 100%;
   text-align: center;
