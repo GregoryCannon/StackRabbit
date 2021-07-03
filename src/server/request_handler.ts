@@ -2,7 +2,7 @@ import { PIECE_LOOKUP } from "../../src/web_client/tetrominoes";
 import { getBoardAndLinesClearedAfterPlacement } from "./board_helper";
 import { engineLookup } from "./engine_lookup";
 import { rateSurface } from "./evaluator";
-import { LINE_CAP } from "./params";
+import { LINE_CAP, SHOULD_LOG } from "./params";
 import { PreComputeManager } from "./precompute";
 import {
   formatPossibility,
@@ -13,8 +13,6 @@ import {
 
 const mainApp = require("./main");
 const params = require("./params");
-
-const SHOULD_LOG_ALL = false;
 
 export class RequestHandler {
   preComputeManager: PreComputeManager;
@@ -231,7 +229,7 @@ export class RequestHandler {
     // Get the best move
     const bestMove = mainApp.getBestMove(
       searchState,
-      SHOULD_LOG_ALL,
+      SHOULD_LOG,
       params.getParams(),
       params.getParamMods(),
       inputFrameTimeline,
@@ -256,7 +254,7 @@ export class RequestHandler {
     // Get the best move
     const bestMove = mainApp.getBestMove(
       searchState,
-      SHOULD_LOG_ALL,
+      SHOULD_LOG,
       params.getParams(),
       params.getParamMods(),
       inputFrameTimeline,
@@ -282,7 +280,7 @@ export class RequestHandler {
 
     this.preComputeManager.finessePrecompute(
       searchState,
-      SHOULD_LOG_ALL,
+      SHOULD_LOG,
       params.getParams(),
       params.getParamMods(),
       inputFrameTimeline,

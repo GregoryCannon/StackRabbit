@@ -1,4 +1,4 @@
-import { getBestMove, getSortedMoveList } from "./main";
+import { getSortedMoveList } from "./main";
 import { predictSearchStateAtAdjustmentTime } from "./precompute";
 
 export function engineLookup(
@@ -13,7 +13,6 @@ export function engineLookup(
     paramMods,
     inputFrameTimeline
   );
-  console.log(baseResult);
   return formatEngineResult(
     baseResult,
     searchState.currentPieceId,
@@ -119,7 +118,7 @@ function getMoveData(
       ]);
     } else {
       // The default placement literally got pruned out, lol
-      result.push([initialMove, adjustments.slice(0, 1)]);
+      result.push([initialMove, adjustments.slice(0, 3)]);
     }
   }
   return result;
