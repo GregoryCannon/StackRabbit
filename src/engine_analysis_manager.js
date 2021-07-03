@@ -9,6 +9,16 @@ const backendErrorText = document.getElementById("engine-backend-error");
 
 export function EngineAnalysisManager(board) {
   this.board = board;
+  this.curPiece = "O";
+  this.nextPiece = "";
+}
+
+EngineAnalysisManager.prototype.updatePieces = function (curPieceId, nextPieceId) {
+  console.log(curPieceId, nextPieceId)
+  this.curPiece = curPieceId || "";
+  this.nextPiece = nextPieceId || "";
+  curPieceSelect.value = this.curPiece;
+  nextPieceSelect.value = this.nextPiece;
 }
 
 EngineAnalysisManager.prototype.makeRequest = function () {
@@ -44,7 +54,7 @@ EngineAnalysisManager.prototype.makeRequest = function () {
       console.log("Request failed", error);
       backendErrorText.style.visibility = "visible";
       backendErrorText.innerHTML =
-        "Server error.<br/> I'm working on fixing an issue with some browsers, but for the moment, <br/><em>try using Chrome</em>";
+        "Server error.<br/> There was previously an issue in some browsers, that should be fixed now.<br/>Try clearing your browser cache (to load the new version), or if it's still not working, try using Chrome.</em>";
       engineTable.style.visibility = "hidden";
     });
 };

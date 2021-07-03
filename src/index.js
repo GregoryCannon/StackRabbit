@@ -175,7 +175,6 @@ function removeFullRows() {
 
     // Update the board
     m_canvas.drawBoard();
-    m_canvas.drawNextBox(m_nextPiece);
   }
 }
 
@@ -201,10 +200,6 @@ function getNewPiece() {
   // Piece status is drawn first, since the read index increments when the next
   // piece is selected
   m_nextPiece = new Piece(m_pieceSelector.getNextPiece(), m_board);
-
-  // Draw the new piece in the next box
-  m_canvas.drawNextBox(m_nextPiece);
-  m_canvas.drawPieceStatusDisplay(m_pieceSelector.getStatusDisplay());
 }
 
 function resetGameVariables() {
@@ -220,6 +215,8 @@ function resetGameVariables() {
   m_pieceSelector.generatePieceSequence();
   m_nextPiece = new Piece(m_pieceSelector.getNextPiece(), m_board);
   getNewPiece();
+  drawNextBox(m_nextPiece);
+  m_canvas.drawPieceStatusDisplay(m_pieceSelector.getStatusDisplay());
 
   m_score = 0;
   m_tetrisCount = 0;
@@ -307,6 +304,9 @@ function updateGameState() {
 
     // Draw the next piece, since it's the end of ARE (and that's how NES does it)
     m_canvas.drawCurrentPiece();
+    drawNextBox(m_nextPiece);
+    m_canvas.drawPieceStatusDisplay(m_pieceSelector.getStatusDisplay());
+
     // Checked here because the game over condition depends on the newly spawned piece
     if (isGameOver()) {
       m_gameState = GameState.GAME_OVER;
@@ -484,6 +484,14 @@ function refreshStats() {
   // parityStatsDiv.innerText = `Left: ${leftParity} \nMiddle: ${middleParity} \nRight: ${rightParity}`;
 }
 
+function drawNextBox(nextPiece){
+  console.log("drawing next box", nextPiece ? nextPiece.id : null)
+  m_canvas.drawNextBox(nextPiece)
+  if (nextPiece !== null){
+    m_engineAnalysisManager.updatePieces(m_currentPiece.id, m_nextPiece.id)
+  }
+}
+
 function refreshScoreHUD() {
   m_canvas.drawLevelDisplay(m_level);
   m_canvas.drawScoreDisplay(m_score);
@@ -542,6 +550,9 @@ function lockPiece() {
 
   // Get a new piece but --don't render it-- till after ARE
   getNewPiece();
+
+  // Update the engine piece
+  m_engineAnalysisManager.updatePieces(m_currentPiece.id, null)
 
   // Clear lines
   m_linesPendingClear = getFullRows();
@@ -614,7 +625,7 @@ function loadSnapshotFromHistory() {
     document.activeElement.blur();
     m_canvas.drawBoard();
     m_canvas.drawCurrentPiece();
-    m_canvas.drawNextBox(m_nextPiece);
+    drawNextBox(m_nextPiece)
     refreshHeaderText();
     refreshScoreHUD();
     refreshStats();
@@ -807,10 +818,10 @@ document.getElementById("preset-standard").click();
 // Render after a small delay so the font loads
 window.setTimeout(() => {
   m_canvas.drawBoard();
-  m_canvas.drawNextBox(null);
+  drawNextBox(null)
   m_inputManager.refreshDebugText();
   refreshHeaderText();
   refreshStats();
   refreshScoreHUD();
   gameLoop();
-}, 20);
+}, 200);
