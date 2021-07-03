@@ -333,6 +333,9 @@ function isTripleReady(board) {
   // Check if the 3 rows intersecting the L are filled
   for (let checkRow = row - 1; checkRow <= row + 1; checkRow++) {
     for (let checkCol = 0; checkCol < 9; checkCol++) {
+      if (checkRow === row - 1 && checkCol === 8) {
+        continue;
+      }
       if (
         checkRow < 0 ||
         checkRow >= NUM_ROW ||
@@ -967,7 +970,7 @@ export function getValueOfPossibility(
         );
   const tetrisReadyFactor =
     aiParams.TETRIS_READY_COEF *
-    ((tetrisReady ? 1 : 0) + (IS_DROUGHT_MODE && tripleReady ? 1 : 0));
+    ((tetrisReady ? 1 : 0) + (IS_DROUGHT_MODE && tripleReady ? 0.25 : 0));
   const holeFactor = numHoles * aiParams.HOLE_COEF;
   const holeWeightFactor =
     (rowsNeedingToBurn.size + 0 * rowsNeedingToBurnIfTucksFail.size) *

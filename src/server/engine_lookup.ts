@@ -82,8 +82,8 @@ function getMoveData(
   initalMoves = initalMoves.slice(0, 5);
 
   // If this was a NNB query, we're done
-  if (searchState.nextPieceId == null){
-    return initalMoves.map(x => [x, []]);
+  if (searchState.nextPieceId == null) {
+    return initalMoves.map((x) => [x, []]);
   }
 
   // Otherwise search for adjustments from each of the initial placements

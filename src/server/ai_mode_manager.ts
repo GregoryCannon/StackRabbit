@@ -146,7 +146,7 @@ function shouldUseDigMode(
       (currentPieceId === "I" &&
         row >= tetrisZoneStart &&
         row <= tetrisZoneEnd) ||
-      numRowsOfGarbage <= 3 ||
+      numRowsOfGarbage < 3 ||
       maxDirtyTetrisHeight == 0
     );
   }

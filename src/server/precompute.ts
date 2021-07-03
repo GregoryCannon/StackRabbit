@@ -1,5 +1,7 @@
 import { getBestMove, getSearchStateAfter, getSortedMoveList } from "./main";
 import { getPossibleMoves } from "./move_search";
+import { IS_DROUGHT_MODE } from "./params";
+import { getPieceProbability } from "./piece_rng";
 import {
   formatPossibility,
   GetGravity,
@@ -35,6 +37,7 @@ export class PreComputeManager {
   phantomPlacements: Array<PhantomPlacement>;
   inputFrameTimeline: string;
   aiParams: InitialAiParams;
+  lastSeenPiece: PieceId;
 
   constructor() {
     this.workers = [];
@@ -50,6 +53,7 @@ export class PreComputeManager {
     this.phantomPlacements = null;
     this.inputFrameTimeline = null;
     this.aiParams = null;
+    this.lastSeenPiece = null;
 
     this._onMessage = this._onMessage.bind(this);
     this._calculatePhantomPlacements = this._calculatePhantomPlacements.bind(
@@ -85,6 +89,7 @@ export class PreComputeManager {
     this.pendingResults = POSSIBLE_NEXT_PIECES.length;
     this.inputFrameTimeline = inputFrameTimeline;
     this.aiParams = initialAiParams;
+    this.lastSeenPiece = searchState.currentPieceId;
 
     // Get a backup placement, in case computation is slow
     const [possibleMoves, _] = getSortedMoveList(
@@ -408,7 +413,9 @@ export class PreComputeManager {
 
         // Save the adjustment you'd make if this ends up being the highest
         responseObj[pieceId] = maxPossibility;
-        totalValue += maxValue;
+        totalValue +=
+          maxValue *
+          getPieceProbability(this.lastSeenPiece, pieceId, IS_DROUGHT_MODE);
       }
 
       // Check if this is the new best phantom placement

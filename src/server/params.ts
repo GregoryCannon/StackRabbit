@@ -85,7 +85,7 @@ export const DEFAULT_PARAM_MODS = {
     HOLE_WEIGHT_COEF: -8,
     HOLE_COEF: -50,
     AVG_HEIGHT_COEF: -8,
-    HIGH_COL_9_COEF: -1,
+    HIGH_COL_9_COEF: IS_DROUGHT_MODE ? -3 : -1,
     UNABLE_TO_BURN_COEF: 0,
   },
   DIG_INTO_KILLSCREEN: {
@@ -204,9 +204,10 @@ const PLAY_PERFECT_PARAMS: InitialAiParams = {
 };
 
 const DROUGHT_CODE_PATCH = {
-  BURN_COEF: -6,
-  EXTREME_GAP_COEF: -20,
-  AVG_HEIGHT_COEF: -10,
+  BURN_COEF: -10,
+  EXTREME_GAP_COEF: -5,
+  AVG_HEIGHT_COEF: -8,
+  UNABLE_TO_BURN_COEF: -0.7,
   HIGH_COL_9_COEF: -10,
   TETRIS_READY_COEF: 25,
   TETRIS_COEF: 100,
@@ -275,7 +276,10 @@ export const NO_DIRTIES_PARAMS = applyModsToParams(
 );
 
 export function getParams(): InitialAiParams {
-  return applyModsToParams(DEFAULT_PARAMS, EXHIBITION_PATCH);
+  return applyModsToParams(
+    DEFAULT_PARAMS,
+    IS_DROUGHT_MODE ? DROUGHT_CODE_PATCH : EXHIBITION_PATCH
+  );
   return;
 }
 
