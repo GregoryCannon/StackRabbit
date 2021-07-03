@@ -61,7 +61,7 @@
 .ranking {
   padding: 6px 6px;
   background: rgb(143, 143, 143);
-  max-width: 20px;
+  width: 1px;
 }
 
 .notated-move, .notated-adj, .notated-next, .eval-score {
