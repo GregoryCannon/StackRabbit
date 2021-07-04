@@ -4,6 +4,7 @@ const boardHelper = require("./board_helper");
 const { SEARCH_BREADTH, modifyParamsForAiMode } = require("./params");
 import { getPossibleMoves } from "./move_search";
 import { EVALUATION_BREADTH, IS_DROUGHT_MODE, LINE_CAP } from "./params";
+import { getPieceProbability } from "./piece_rng";
 import * as utils from "./utils";
 import { POSSIBLE_NEXT_PIECES } from "./utils";
 
@@ -58,6 +59,7 @@ export function getSortedMoveList(
     aiMode,
     searchDepth
   );
+  const lastSeenPiece = searchDepth === 1 ? searchState.currentPieceId : searchState.nextPieceId;
 
   if (hypotheticalSearchDepth == 0) {
     return [bestConcrete, prunedConcrete];
@@ -71,6 +73,7 @@ export function getSortedMoveList(
     }
     const bestHypothetical = searchHypothetically(
       bestConcrete,
+      lastSeenPiece,
       aiParams,
       aiMode,
       hypotheticalSearchDepth,
@@ -187,6 +190,7 @@ function normalize(weightVector) {
 
 function searchHypothetically(
   possibilityChains: Array<PossibilityChain>,
+  lastSeenPiece: PieceId,
   aiParams: AiParams,
   aiMode: AiMode,
   hypotheticalSearchDepth: number,
@@ -210,10 +214,11 @@ function searchHypothetically(
       aiMode
     );
 
-    const expectedValue = getExpectedValue(bestMovesList);
+    const [expectedValue, evExplanation] = getExpectedValue(bestMovesList, lastSeenPiece);
 
     // Attach the EV to the original possibility
     chain.expectedValue = expectedValue;
+    chain.evExplanation = evExplanation;
     chain.totalValue = expectedValue;
     if (chain.innerPossibility) {
       chain.innerPossibility.expectedValue = expectedValue;
@@ -408,7 +413,8 @@ function getBestMovesForAllPossibleSequences(
       continue;
     }
 
-    let hypotheticalLine = []; // The string of NNB moves
+    let hypotheticalLine = []; // The string of NNB moves]
+    let hypotheticalLineAsInputs = [];
     let totalValueOfLine = concretePartialValue;
     let loopSearchState = { ...searchState };
     for (let i = 0; i < sequence.length; i++) {
@@ -434,6 +440,7 @@ function getBestMovesForAllPossibleSequences(
       }
 
       hypotheticalLine.push(bestMove.placement);
+      hypotheticalLineAsInputs.push(bestMove.inputSequence)
       loopSearchState = getSearchStateAfter(loopSearchState, bestMove);
     }
 
@@ -441,6 +448,7 @@ function getBestMovesForAllPossibleSequences(
       pieceSequence: sequence,
       resultingValue: totalValueOfLine,
       moveSequence: hypotheticalLine,
+      moveSequenceAsInputs: hypotheticalLineAsInputs
     });
   }
 
@@ -452,27 +460,18 @@ function getBestMovesForAllPossibleSequences(
 
 function getExpectedValue(
   bestMovesList: Array<HypotheticalBestMove>,
-  weightVector: Array<number> = null
-) {
-  // Get a weighted EV based on the weight vector
-  if (
-    weightVector !== null &&
-    (weightVector.length !== bestMovesList.length || weightVector.length === 0)
-  ) {
-    throw new Error(
-      "Weight vector length 0 or doesn't match hypotheticals: " +
-        weightVector.length +
-        " " +
-        bestMovesList.length
-    );
-  }
+  lastSeenPiece: PieceId
+) : [number, string] {
   let total = 0;
+  let explanation = "";
   const len = bestMovesList.length;
   for (let i = 0; i < len; i++) {
+    const prob = getPieceProbability(lastSeenPiece, bestMovesList[i].pieceSequence[0] as PieceId, IS_DROUGHT_MODE)
     total +=
-      bestMovesList[i].resultingValue * (weightVector ? weightVector[i] : 1);
+      bestMovesList[i].resultingValue * prob;
+    explanation += `If ${bestMovesList[i].pieceSequence} (${(prob * 100).toFixed(1)}%), do {${bestMovesList[i].moveSequenceAsInputs}}. Value: ${bestMovesList[i].resultingValue.toFixed(1)}\n`;
   }
-  return total / len;
+  return [total, explanation];
 }
 
 export function logExpectedValueResults(

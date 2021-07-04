@@ -156,6 +156,7 @@ interface PossibilityChain extends Possibility {
   partialValue?: number; // If it has subsequent moves, the value of just the line clears involved in this move
   innerPossibility?: PossibilityChain; // The subsequent move in the chain, or null if this is the end of the chain
   expectedValue?: number; // If hypothetical analysis has been done, the EV of this possibility chain.
+  evExplanation?: string;
 }
 
 interface HypotheticalResult {
@@ -167,6 +168,7 @@ interface HypotheticalResult {
 interface HypotheticalBestMove {
   pieceSequence: string;
   moveSequence: Array<Placement>;
+  moveSequenceAsInputs: Array<string>;
   resultingValue: number;
 }
 
