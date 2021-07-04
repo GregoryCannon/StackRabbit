@@ -49,25 +49,7 @@ export function getSortedMoveList(
   searchDepth: number,
   hypotheticalSearchDepth: number
 ): MoveSearchResult {
-  // Add additional info to the base params (tap speed, dig/scoring mode, etc.)
-  let aiParams = addTapInfoToAiParams(
-    initialAiParams,
-    searchState.level,
-    inputFrameTimeline
-  );
-  const aiMode = aiModeManager.getAiMode(
-    searchState.board,
-    searchState.lines,
-    searchState.level,
-    searchState.currentPieceId,
-    inputFrameTimeline,
-    aiParams
-  );
-  // Update the params based on level, AI mode, etc.
-  if (searchState.level >= 19 && aiParams.BURN_COEF_POST !== undefined) {
-    aiParams.BURN_COEF = aiParams.BURN_COEF_POST;
-  }
-  aiParams = modifyParamsForAiMode(aiParams, aiMode, paramMods);
+  const [aiParams, aiMode] = preProcessAiParams(initialAiParams, searchState, inputFrameTimeline, paramMods);
 
   let [bestConcrete, prunedConcrete] = searchConcretely(
     searchState,
@@ -96,6 +78,29 @@ export function getSortedMoveList(
     );
     return [bestHypothetical, prunedConcrete];
   }
+}
+
+export function preProcessAiParams(initialAiParams: InitialAiParams, searchState: SearchState, inputFrameTimeline: string, paramMods: ParamMods) : [AiParams, AiMode]{
+  // Add additional info to the base params (tap speed, dig/scoring mode, etc.)
+  let aiParams = addTapInfoToAiParams(
+    initialAiParams,
+    searchState.level,
+    inputFrameTimeline
+  );
+  const aiMode = aiModeManager.getAiMode(
+    searchState.board,
+    searchState.lines,
+    searchState.level,
+    searchState.currentPieceId,
+    inputFrameTimeline,
+    aiParams
+  );
+  // Update the params based on level, AI mode, etc.
+  if (searchState.level >= 19 && aiParams.BURN_COEF_POST !== undefined) {
+    aiParams.BURN_COEF = aiParams.BURN_COEF_POST;
+  }
+  aiParams = modifyParamsForAiMode(aiParams, aiMode, paramMods);
+  return [aiParams, aiMode];
 }
 
 /** Does a full search of all possible placements given an board and maybe a next piece.

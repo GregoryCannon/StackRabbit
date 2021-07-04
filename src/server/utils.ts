@@ -1,5 +1,5 @@
-import { off } from "process";
 import { CAN_TUCK, IS_PAL, WELL_COLUMN } from "./params";
+let performance = null;
 
 export const NUM_ROW = 20;
 export const NUM_COLUMN = 10;

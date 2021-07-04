@@ -1,5 +1,3 @@
-import { evaluateBoard, fastEvalBoard } from "./evaluator";
-
 export const NO_LIMIT = Number.MAX_SAFE_INTEGER;
 
 // Each index corresponds to the depth you're starting search at while doing the pruning.

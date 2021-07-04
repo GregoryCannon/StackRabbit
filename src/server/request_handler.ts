@@ -31,7 +31,8 @@ export class RequestHandler {
   }
 
   routeRequest(req): [string, number] {
-    const [_, requestType, ...requestArgs] = req.url.split("/");
+    const requestArgs = req.url.split("/").slice(1);
+    const requestType = requestArgs[0];
 
     switch (requestType) {
       case "ping":
@@ -93,6 +94,7 @@ export class RequestHandler {
   _parseArguments(requestArgs): [SearchState, string] {
     // Parse and validate inputs
     let [
+      requestType,
       boardStr,
       currentPieceId,
       nextPieceId,
@@ -151,7 +153,7 @@ export class RequestHandler {
     if (level < 18 || level > 30) {
       console.log("WARNING - Unusual level:", level);
     }
-    if (lines < 10 && level !== 18 && level !== 19 && level !== 29) {
+    if (requestType !== "engine" && lines < 10 && level !== 18 && level !== 19 && level !== 29) {
       throw new Error(
         `Unsupported starting level: ${level}. Supported starts: 18, 19, 29`
       );
