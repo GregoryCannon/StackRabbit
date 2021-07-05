@@ -1,6 +1,6 @@
 const mainCanvas = document.getElementById("main-canvas");
 
-import { SQUARE_SIZE, SquareState } from "./constants.js";
+import { SQUARE_SIZE, SquareState, NUM_COLUMN, NUM_ROW } from "./constants.js";
 
 export function BoardEditManager(board, canvas) {
   this.board = board;
@@ -41,6 +41,7 @@ BoardEditManager.prototype.toggleCell = function (r, c) {
       : SquareState.EMPTY;
   this.canvas.drawBoard();
   this.canvas.drawCurrentPiece();
+  logRank(this.board);
 };
 
 BoardEditManager.prototype.onMouseDown = function (event) {
@@ -70,4 +71,14 @@ BoardEditManager.prototype.onMouseDrag = function (event) {
 BoardEditManager.prototype.onMouseUp = function (event) {
   this.mouseIsDown = false;
   this.squaresToggled = new Set();
+};
+
+const logRank = async function (board) {
+  const encodedBoard = board
+    .map((row) => row.slice(0, 10).join(""))
+    .join("")
+    .replace(/2|3/g, "1");
+  console.log(encodedBoard);
+  const result = await fetch(`http://127.0.0.1:3000/lookup/${encodedBoard}`);
+  console.log(await result.text());
 };

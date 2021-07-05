@@ -19,7 +19,6 @@ export function PieceSelector() {
 PieceSelector.prototype.generatePieceSequence = function () {
   // Get piece sequence (with spaces trimmed)
   const pieceSequenceStr = GameSettings.getPieceSequence();
-  console.log("peice sequence:", pieceSequenceStr);
 
   let writeIndex = 0;
 
@@ -37,8 +36,6 @@ PieceSelector.prototype.generatePieceSequence = function () {
     this.sequence[writeIndex] = getRandomPiece(prevPieceId);
     writeIndex++;
   }
-
-  console.log(this.sequence);
 
   this.readIndex = 0;
   this.startOfRandomSequence = pieceSequenceStr.length;

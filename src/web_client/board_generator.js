@@ -1,3 +1,5 @@
+// const utils = require("../../built/src/server/utils");
+
 const { NUM_COLUMN, NUM_ROW, SquareState } = require("./constants");
 
 export function BoardGenerator(board, canvas) {
@@ -59,6 +61,13 @@ const HOLE_PROBABILITIES = {
  */
 BoardGenerator.prototype.loadDigBoard = function () {
   this.loadStandardBoard();
+  // const digBoard = utils.generateDigPracticeBoard(5, 6);
+  // for (let r = 0; r < NUM_ROW; r++) {
+  //   for (let c = 0; c < NUM_COLUMN; c++) {
+  //     this.board[r][c] = digBoard[r][c];
+  //   }
+  // }
+  // return;
 
   for (let row = 0; row < NUM_ROW; row++) {
     let numHoles;
@@ -72,7 +81,7 @@ BoardGenerator.prototype.loadDigBoard = function () {
     }
 
     for (let i = 0; i < numHoles; i++) {
-      this.board[row][getRandomInt(0, NUM_COLUMN)] = SquareState.EMPTY;
+      this.board[row][getRandomInt(0, NUM_COLUMN - 1)] = SquareState.EMPTY;
     }
   }
 };

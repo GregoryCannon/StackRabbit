@@ -7,6 +7,7 @@ export const SettingType = Object.freeze({
 });
 
 export const SITE_DEFAULTS = Object.freeze({
+  AIPlayerEnabled: false,
   DASSpeed: DASSpeed.STANDARD,
   DASBehavior: DASBehavior.STANDARD,
   DroughtModeEnabled: false,
@@ -115,5 +116,12 @@ export const CUSTOM_SEQUENCE_PRESET = {
   PieceSequence: {
     type: SettingType.DEFAULT,
     value: "",
+  },
+};
+
+export const AI_PLAYER_PRESET = {
+  AIPlayerEnabled: {
+    type: SettingType.REQUIRED,
+    value: true,
   },
 };

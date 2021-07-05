@@ -18,12 +18,20 @@ export function getStartingLevel() {
 
 /* -------- GAMEPLAY --------- */
 
+export function isAIPlaying() {
+  return Ui.getAIPlayerEnabled();
+}
+
 export function shouldShowDiggingHints() {
   return Ui.getDiggingHintsEnabled();
 }
 
 export function shouldShowParityHints() {
   return Ui.getParityHintsEnabled();
+}
+
+export function isNoAdjustmentMode() {
+  return Ui.getNoAdjustmentsModeEnabled();
 }
 
 export function getGameSpeedMultiplier() {

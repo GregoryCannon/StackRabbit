@@ -1,11 +1,7 @@
 import { DASSpeed, DASBehavior, StartingBoardType } from "./constants";
-import {
-  SettingType,
-  SITE_DEFAULTS,
-  STANDARD_PRESET,
-  STANDARD_TAPPER_PRESET,
-} from "./game_settings_presets";
+import { SettingType, SITE_DEFAULTS } from "./game_settings_presets";
 
+const aiPlayerCheckbox = document.getElementById("ai-player-checkbox");
 const dasSpeedDropdown = document.getElementById("das-speed-dropdown");
 const dasBehaviorDropdown = document.getElementById("das-behavior-dropdown");
 const gameSpeedDropdown = document.getElementById("game-speed-dropdown");
@@ -14,6 +10,9 @@ const droughtCheckbox = document.getElementById("drought-checkbox");
 const diggingHintsCheckbox = document.getElementById("digging-hints-checkbox");
 const parityHintsCheckbox = document.getElementById("parity-hints-checkbox");
 const transition10Checkbox = document.getElementById("transition-10-checkbox");
+const noAdjustmentsCheckbox = document.getElementById(
+  "no-adjustments-checkbox"
+);
 const pieceSequenceText = document.getElementById("piece-sequence");
 const levelSelectElement = document.getElementById("level-select");
 
@@ -94,6 +93,7 @@ function addOnChangeListeners() {
     playerSettings["ParityHintsEnabled"] = getParityHintsEnabled();
     saveUserPreferencesToCookie();
   });
+  // AI player checkbox does not save to cookie for obvious reasons
 
   // Also update the level select buttons
   levelSelectElement.addEventListener("change", (e) => {
@@ -116,6 +116,8 @@ addOnChangeListeners();
 
 function setSetting(settingName, value) {
   switch (settingName) {
+    case "AIPlayerEnabled":
+      aiPlayerCheckbox.checked = value;
     case "DASSpeed":
       dasSpeedDropdown.value = DAS_SPEED_LIST.findIndex((x) => x == value);
       break;
@@ -163,6 +165,10 @@ export function getTransition10Lines() {
   return transition10Checkbox.checked;
 }
 
+export function getAIPlayerEnabled() {
+  return aiPlayerCheckbox.checked;
+}
+
 export function getDroughtModeEnabled() {
   return droughtCheckbox.checked;
 }
@@ -173,6 +179,10 @@ export function getDiggingHintsEnabled() {
 
 export function getParityHintsEnabled() {
   return parityHintsCheckbox.checked;
+}
+
+export function getNoAdjustmentsModeEnabled() {
+  return noAdjustmentsCheckbox.checked;
 }
 
 export function getGameSpeedMultiplier() {
@@ -209,6 +219,7 @@ export function getStartingBoardType() {
 
 export function loadPreset(presetObj) {
   const settingsList = [
+    ["AIPlayerEnabled", aiPlayerCheckbox],
     ["DASSpeed", dasSpeedDropdown],
     ["DASBehavior", dasBehaviorDropdown],
     ["DroughtModeEnabled", droughtCheckbox],

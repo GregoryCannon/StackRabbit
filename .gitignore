@@ -1,3 +1,18 @@
+# Manually added
+raw_data/
+*.txt
+*.exe
+*.c
+.vscode/
+built/
+src/server/fceux/reference_only/
+
+# Media
+*.avi
+*.png
+*.zip
+src/console_client/__pycache__/
+
 # Logs
 logs
 *.log

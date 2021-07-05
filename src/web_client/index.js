@@ -20,6 +20,7 @@ import { HistoryManager } from "./history_manager.js";
 import { EngineAnalysisManager } from "./engine_analysis_manager.js";
 import "./ui_manager";
 import {
+  AI_PLAYER_PRESET,
   CUSTOM_SEQUENCE_PRESET,
   DIG_PRACTICE_PRESET,
   DROUGHT_PRESET,
@@ -31,6 +32,7 @@ import {
   STANDARD_TAPPER_PRESET,
 } from "./game_settings_presets.js";
 import { PIECE_LOOKUP } from "./tetrominoes.js";
+import { AIPlayer } from "./ai_player.js";
 const GameSettings = require("./game_settings_manager");
 const GameSettingsUi = require("./game_settings_ui_manager");
 
@@ -57,6 +59,7 @@ let m_pieceSelector = new PieceSelector();
 let m_boardLoader = new BoardLoader(m_board, m_canvas);
 let m_historyManager = new HistoryManager();
 let m_engineAnalysisManager = new EngineAnalysisManager(m_board);
+let m_aiPlayer = null; // Instantiated if/when the setting is enabled
 
 // State relevant to game itself
 let m_currentPiece;
@@ -178,6 +181,13 @@ function removeFullRows() {
   }
 }
 
+function filledIfExists(row, col, board) {
+  if (col < 0 || col >= NUM_COLUMN || row < 0 || row >= NUM_ROW) {
+    return true;
+  }
+  return board[row][col] != SquareState.EMPTY;
+}
+
 function isGameOver() {
   // If the current piece collides with the existing board as it spawns in, you die
   const currentTetromino = m_currentPiece.activeTetromino;
@@ -185,7 +195,7 @@ function isGameOver() {
     for (let c = 0; c < currentTetromino[r].length; c++) {
       if (
         currentTetromino[r][c] &&
-        m_board[m_currentPiece.y + r][m_currentPiece.x + c]
+        filledIfExists(m_currentPiece.y + r, m_currentPiece.x + c, m_board)
       ) {
         return true;
       }
@@ -275,6 +285,7 @@ function startGame() {
   document.activeElement.blur();
   m_canvas.drawBoard();
   m_canvas.drawCurrentPiece();
+  m_canvas.drawNextBox(GameSettings.isNoAdjustmentMode() ? null : m_nextPiece);
   refreshHeaderText();
   refreshScoreHUD();
   refreshStats();
@@ -288,6 +299,15 @@ function updateGameState() {
   // FIRST PIECE -> RUNNING
   if (m_gameState == GameState.FIRST_PIECE && m_firstPieceDelay == 0) {
     m_gameState = GameState.RUNNING;
+    if (GameSettings.isAIPlaying()) {
+      m_aiPlayer.placeCurrentPiece(
+        m_currentPiece,
+        m_nextPiece,
+        m_board,
+        m_level,
+        m_lines
+      );
+    }
   }
   // LINE CLEAR -> ARE
   else if (m_gameState == GameState.LINE_CLEAR && m_lineClearFrames == 0) {
@@ -302,9 +322,9 @@ function updateGameState() {
 
     saveSnapshotToHistory();
 
-    // Draw the next piece, since it's the end of ARE (and that's how NES does it)
+    // Draw the new pieces
     m_canvas.drawCurrentPiece();
-    drawNextBox(m_nextPiece);
+    drawNextBox(GameSettings.isNoAdjustmentMode() ? null : m_nextPiece);
     m_canvas.drawPieceStatusDisplay(m_pieceSelector.getStatusDisplay());
 
     // Checked here because the game over condition depends on the newly spawned piece
@@ -315,13 +335,22 @@ function updateGameState() {
 
       // debugging
       console.log(
-        "Average:",
+        "Average frame calculation time:",
         (m_totalMsElapsed / m_numFrames).toFixed(3),
         "Max:",
         m_maxMsElapsed.toFixed(3)
       );
     } else {
       m_gameState = GameState.RUNNING;
+      if (GameSettings.isAIPlaying()) {
+        m_aiPlayer.placeCurrentPiece(
+          m_currentPiece,
+          m_nextPiece,
+          m_board,
+          m_level,
+          m_lines
+        );
+      }
     }
   } else if (m_gameState == GameState.RUNNING) {
     // RUNNING -> LINE CLEAR
@@ -361,11 +390,20 @@ function runOneFrame() {
           // Clear the lines for real and shift stuff down
           removeFullRows();
         }
+        // If we're in no-adjustment mode (has extra long entry delay), animate a waiting bar
+        if (GameSettings.isNoAdjustmentMode()) {
+          m_canvas.drawNextBoxWaitingLine(m_ARE + m_lineClearFrames);
+        }
         break;
 
       case GameState.ARE:
         // Waiting for next piece
         m_ARE -= 1;
+
+        // If we're in no-adjustment mode (has extra long entry delay), animate a waiting bar
+        if (GameSettings.isNoAdjustmentMode()) {
+          m_canvas.drawNextBoxWaitingLine(m_ARE);
+        }
         break;
 
       case GameState.RUNNING:
@@ -544,6 +582,9 @@ function lockPiece() {
   m_currentPiece.lock();
   m_inputManager.onPieceLock();
   m_canvas.drawBoard();
+  if (GameSettings.isNoAdjustmentMode()) {
+    m_canvas.drawNextBox(m_nextPiece);
+  }
 
   // Refresh board-based stats
   refreshStats();
@@ -569,7 +610,12 @@ function lockPiece() {
   /* ARE (frame delay before next piece) is 10 frames for 0-2 height, then an additional
       2 frames for each group of 4 above that.
         E.g. 9 high would be: 10 + 2 + 2 = 14 frames */
-  m_ARE = 10 + Math.floor((lockHeight + 2) / 4) * 2;
+  m_ARE = Math.min(18, 10 + Math.floor((lockHeight + 2) / 4) * 2);
+
+  // Add additional ARE in no-adjustment-mode
+  if (GameSettings.isNoAdjustmentMode()) {
+    m_ARE += m_lineClearFrames > 0 ? 0 : 18;
+  }
 }
 
 function saveSnapshotToHistory() {
@@ -625,7 +671,7 @@ function loadSnapshotFromHistory() {
     document.activeElement.blur();
     m_canvas.drawBoard();
     m_canvas.drawCurrentPiece();
-    drawNextBox(m_nextPiece);
+    drawNextBox(m_nextPGameSettings.isNoAdjustmentMode() ? null : m_nextPieceiece);
     refreshHeaderText();
     refreshScoreHUD();
     refreshStats();
@@ -710,6 +756,7 @@ const presetsMap = {
   "preset-slow-killscreen": SLOW_KILLSCREEN_PRESET,
   "preset-slow-19": SLOW_19_PRESET,
   // "preset-custom-sequence": CUSTOM_SEQUENCE_PRESET,
+  "preset-ai-player": AI_PLAYER_PRESET,
 };
 
 function deselectAllPresets() {
@@ -746,6 +793,18 @@ document.getElementById("preset-edit-board").addEventListener("click", (e) => {
   refreshHeaderText();
   refreshScoreHUD();
 });
+document
+  .getElementById("preset-ai-player")
+  .addEventListener("click", async (e) => {
+    if (m_aiPlayer == null) {
+      m_aiPlayer = new AIPlayer(
+        movePieceLeft,
+        movePieceRight,
+        rotatePieceRight
+      );
+      console.log("Loaded AI player!");
+    }
+  });
 
 document
   .getElementById("start-button")
