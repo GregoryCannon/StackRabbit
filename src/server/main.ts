@@ -229,11 +229,13 @@ function searchHypothetically(
 
     // Attach the EV to the original possibility
     chain.expectedValue = expectedValue;
-    chain.hypotheticalLines = hypotheticalLines;
     chain.totalValue = expectedValue;
     if (chain.innerPossibility) {
       chain.innerPossibility.expectedValue = expectedValue;
       chain.innerPossibility.totalValue = expectedValue;
+      chain.innerPossibility.hypotheticalLines = hypotheticalLines;
+    } else {
+      chain.hypotheticalLines = hypotheticalLines;
     }
   }
 

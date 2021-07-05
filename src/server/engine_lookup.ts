@@ -27,6 +27,9 @@ function formatEngineResult(
 ): EngineResponseJson {
   return engineResult.map((mainMove) => {
     const [possibility, adjustmentList] = mainMove;
+    if (adjustmentList.length > 0){
+      console.log("LINES", possibility.hypotheticalLines.length, adjustmentList[0].hypotheticalLines);
+    }
     return {
       piece: curPiece,
       inputSequence: possibility.inputSequence,
