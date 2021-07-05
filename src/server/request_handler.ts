@@ -153,7 +153,13 @@ export class RequestHandler {
     if (level < 18 || level > 30) {
       console.log("WARNING - Unusual level:", level);
     }
-    if (requestType !== "engine" && lines < 10 && level !== 18 && level !== 19 && level !== 29) {
+    if (
+      requestType !== "engine" &&
+      lines < 10 &&
+      level !== 18 &&
+      level !== 19 &&
+      level !== 29
+    ) {
       throw new Error(
         `Unsupported starting level: ${level}. Supported starts: 18, 19, 29`
       );

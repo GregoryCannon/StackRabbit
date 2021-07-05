@@ -34,14 +34,14 @@ function formatEngineResult(
       isSpecialMove: possibility.inputCost !== 0,
       evalScore: possibility.evalScore,
       evalExplanation: possibility.evalExplanation,
-      evExplanation: possibility.evExplanation,
+      hypotheticalLines: possibility.hypotheticalLines,
       adjustments: adjustmentList.map((adjPos: PossibilityChain) => ({
         piece: curPiece,
         inputSequence: adjPos.inputSequence,
         totalValue: adjPos.totalValue,
         evalScore: adjPos.innerPossibility.evalScore,
         evalExplanation: adjPos.innerPossibility.evalExplanation,
-        evExplanation: adjPos.innerPossibility.evExplanation,
+        hypotheticalLines: adjPos.innerPossibility.hypotheticalLines,
         isSpecialMove: adjPos.inputCost !== 0,
         followUp: adjPos.innerPossibility
           ? {

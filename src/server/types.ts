@@ -23,58 +23,6 @@ interface SimParams {
   canFirstFrameShift: boolean;
 }
 
-const testResponseObj = [
-  {
-    piece: "T",
-    inputSequence: "I...R...R.......................********",
-    isSpecialMove: false,
-    totalValue: 31.424,
-    adjustments: [
-      {
-        piece: "T",
-        inputSequence: "..B..........***********",
-        totalValue: 33.71,
-        isSpecialMove: true,
-        followUp: {
-          piece: "L",
-          inputSequence: "A...A...........**********",
-          totalValue: 29.411,
-        },
-      },
-      {
-        piece: "T",
-        inputSequence: ".............***********",
-        totalValue: 32.589,
-        isSpecialMove: false,
-        followUp: {
-          piece: "L",
-          inputSequence: "A...A...........**********",
-          totalValue: 28.395,
-        },
-      },
-    ],
-  },
-  {
-    piece: "T",
-    inputSequence: "E...E...L...L......................********",
-    isSpecialMove: false,
-    totalValue: 26.335,
-    adjustments: [
-      {
-        piece: "T",
-        inputSequence: ".............***********",
-        isSpecialMove: false,
-        totalValue: 30.689,
-        followUp: {
-          piece: "L",
-          inputSequence: "A...A...........**********",
-          totalValue: 28.395,
-        },
-      },
-    ],
-  },
-];
-
 /* ----------- Engine Lookup Data Structures ----------- */
 
 type EngineResult = Array<
@@ -156,17 +104,18 @@ interface PossibilityChain extends Possibility {
   partialValue?: number; // If it has subsequent moves, the value of just the line clears involved in this move
   innerPossibility?: PossibilityChain; // The subsequent move in the chain, or null if this is the end of the chain
   expectedValue?: number; // If hypothetical analysis has been done, the EV of this possibility chain.
-  evExplanation?: string;
+  hypotheticalLines?: Array<HypotheticalLine>;
 }
 
 interface HypotheticalResult {
   expectedValue: number;
-  bestMoves: Array<HypotheticalBestMove>;
+  lines: Array<HypotheticalLine>;
   possibilityChain: PossibilityChain;
 }
 
-interface HypotheticalBestMove {
+interface HypotheticalLine {
   pieceSequence: string;
+  probability: number;
   moveSequence: Array<Placement>;
   moveSequenceAsInputs: Array<string>;
   resultingValue: number;

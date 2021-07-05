@@ -16,7 +16,7 @@ export const EVALUATION_BREADTH = {
       Global configuration
 ---------------------------------*/
 
-export const SHOULD_LOG = false;
+export const SHOULD_LOG = true;
 
 export const IS_DROUGHT_MODE = false;
 export const LINE_CAP = 330;

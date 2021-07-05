@@ -3,7 +3,7 @@ import { RequestHandler } from "./request_handler";
 import * as express from "express";
 
 const IS_DEPLOY = false;
-const TETRIS_TRAINER_URL = "https://gregorycannon.github.io"
+const TETRIS_TRAINER_URL = "https://gregorycannon.github.io";
 
 const port = IS_DEPLOY ? 8080 : 3000;
 const ALLOW_MULTITHREAD = !IS_DEPLOY;
@@ -13,7 +13,10 @@ function initExpressServer(requestHandler) {
 
   // Set CORS policy
   app.use((req, res, next) => {
-    res.setHeader("Access-Control-Allow-Origin", IS_DEPLOY ? TETRIS_TRAINER_URL : "*");
+    res.setHeader(
+      "Access-Control-Allow-Origin",
+      IS_DEPLOY ? TETRIS_TRAINER_URL : "*"
+    );
     next();
   });
 

@@ -316,7 +316,12 @@ export class PreComputeManager {
       // If it's already done a tuck or spin, it can't do any more inputs
       if (
         phantomPlacement.initialPlacement &&
-        phantomPlacement.initialPlacement.inputCost !== 0
+        phantomPlacement.initialPlacement.inputCost !== 0 &&
+        !hasInputs(
+          phantomPlacement.initialPlacement.inputSequence.slice(
+            phantomPlacement.adjustmentSearchState.reactionTime
+          )
+        )
       ) {
         console.log(
           "NO ADJUSTMENTS, already did tuck",
@@ -463,6 +468,16 @@ function formatPrecomputeResult(results, defaultPlacement) {
 function isAnyOf(str, possible) {
   for (const candidate of possible) {
     if (str === candidate) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Check if an input string contains a non-zero number of inputs
+function hasInputs(inputSequence: string) {
+  for (const inputChar of inputSequence) {
+    if (isAnyOf(inputChar, "EFIGLRAB")) {
       return true;
     }
   }

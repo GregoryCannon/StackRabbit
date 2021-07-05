@@ -49,6 +49,24 @@ export function getPieceProbability(
     : TRANSITIONS[index1][index2] / 64;
 }
 
+export function getSequenceProbability(
+  sequence: string,
+  lastSeenPiece: PieceId,
+  isDroughtCode: boolean
+) {
+  let probability = 1;
+  for (let i = 0; i < sequence.length; i++) {
+    const prevPiece = i === 0 ? lastSeenPiece : sequence[i - 1];
+    const nextPiece = sequence[i];
+    probability *= getPieceProbability(
+      prevPiece as PieceId,
+      nextPiece as PieceId,
+      isDroughtCode
+    );
+  }
+  return probability;
+}
+
 export function getRandomPiece(prevPiece: PieceId, isDroughtCode: boolean) {
   const transitions = isDroughtCode ? TRANSITIONS_DROUGHT_CODE : TRANSITIONS;
   const index1 = PIECE_INDICES[prevPiece];
