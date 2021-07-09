@@ -1,5 +1,37 @@
 var fs = require("fs");
 
+
+function convertToCFormat() {
+  const ranks_NoNextBox_NoBars = fs.readFileSync(
+    "docs/condensed_NoNextBox_NoBars.txt",
+    "utf8"
+  );
+  var readable = fs.createReadStream("docs/condensed_NoNextBox_NoBars.txt", {
+    encoding: "utf8",
+    fd: null,
+  });
+
+  fs.appendFileSync("docs/ranksOutput.cc", "short surfaceRanksRaw[] = {\n");
+  let countRead = 0;
+  let line = "";
+  for (let i = 0; i * 2 < ranks_NoNextBox_NoBars.length; i++) {
+    if (countRead % 100000 == 0) {
+      console.log(countRead / 1000000); // chunk is two bytes
+    }
+    chunk = ranks_NoNextBox_NoBars.substr(i * 2, 2);
+    line += parseInt(chunk, 36) + ","
+    if (countRead % 20 === 19) {
+      fs.appendFileSync("docs/ranksOutput.cc", line + "\n");
+      line = "";
+    }
+    countRead++;
+  }
+
+  console.log("finishing");
+  fs.appendFileSync("docs/ranksOutput.cc", "};");
+}
+
+
 function splitNextBoxData() {
   var readable = fs.createReadStream("docs/condensed_NextBox_NoBars.txt", {
     encoding: "utf8",
