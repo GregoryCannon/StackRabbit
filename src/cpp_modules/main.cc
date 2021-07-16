@@ -5,6 +5,7 @@
 // I don't know why, but including the .h files doesn't work with node-gyp.
 // I wish I could do it to follow best practices, but this is what works.
 #include "move_search.cc"
+#include "data/pieceRange.cc"
 // #include "data/ranksOutput.cc"
 
 namespace NodeWiring {
@@ -35,14 +36,14 @@ void Method(const FunctionCallbackInfo<Value> &args) {
     numPlacements += moveSearch(board, surface, PIECE_L);
   }
 
-  // Print ranks
-  // for (int i = 0; i < 100; i++) {
-  //    printf("ranks %d\n", surfaceRanksRaw[i]);
-  // }
+    // Print ranks
+    // for (int i = 0; i < 100; i++) {
+    //    printf("ranks %d\n", surfaceRanksRaw[i]);
+    // }
 
-  //-----------------
+    //-----------------
 
-  auto response = Number::New(isolate, numPlacements);
+    auto response = Number::New(isolate, numPlacements);
   args.GetReturnValue().Set(response);
 }
 

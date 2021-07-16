@@ -31,18 +31,21 @@ int shouldPerformInputsThisFrame(int frameIndex, char *inputFrameTimeline) {
  * Checks for collisions with the board and the edges of the screen
  */
 int collision(int board[20], Piece piece, int x, int y, int rotIndex) {
+  if (y > piece.maxYByRotation[rotIndex]){
+    return 1;
+  }
   for (int r = 0; r < 4; r++) {
-    int pieceRow = piece.rowsByRotation[rotIndex][r];
-    // Right wall collisions
-    // (check if 1 to the left of the desired spot intersects col 10)
-    if (SHIFT(pieceRow, x - 1) & 1) {
-      return 1;
-    }
-    // Handle the floor & ceiling behaviors
+    // Don't collide above ceiling
     if (y + r < 0) {
       continue;
     }
-    if (y + r >= 20) {
+    int pieceRow = piece.rowsByRotation[rotIndex][r];
+    if (pieceRow == 0){
+      continue;
+    }
+    // Right wall collisions
+    // (check if 1 to the left of the desired spot intersects col 10)
+    if (SHIFT(pieceRow, x - 1) & 1) {
       return 1;
     }
     // Board & left wall collisions
