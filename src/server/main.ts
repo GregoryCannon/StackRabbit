@@ -493,12 +493,12 @@ export function logExpectedValueResults(
         2
       )}, Original Value: ${result.totalValue.toFixed(2)}`
     );
-    const numMoves = result.hypotheticalLines.length;
+    const lines = result.innerPossibility ? result.innerPossibility.hypotheticalLines : result.hypotheticalLines;
     for (const [
       i,
       hypotheticalBestMove,
-    ] of result.hypotheticalLines.entries()) {
-      if (i < 4 || i >= numMoves - 4) {
+    ] of lines.entries()) {
+      if (i < 4 || i >= lines.length - 4) {
         console.log(
           `If ${
             hypotheticalBestMove.pieceSequence

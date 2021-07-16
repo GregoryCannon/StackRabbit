@@ -16,10 +16,10 @@ export const EVALUATION_BREADTH = {
       Global configuration
 ---------------------------------*/
 
-export const SHOULD_LOG = true;
+export const SHOULD_LOG = false;
 
 export const IS_DROUGHT_MODE = false;
-export const LINE_CAP = 330;
+export const LINE_CAP = NO_LIMIT;
 
 // Rarely changed
 export const IS_PAL = false;
@@ -224,6 +224,12 @@ const EXHIBITION_PATCH = {
   UNABLE_TO_BURN_COEF: -0.5,
 };
 
+const SAFE_PATCH = {
+  AVG_HEIGHT_COEF: -7,
+  HIGH_COL_9_COEF: -5,
+  UNABLE_TO_BURN_COEF: -0.5,
+}
+
 const EXHIBITION_AGGRO_PATCH = {
   BURN_COEF: -15,
   BURN_COEF_POST: -15,
@@ -278,7 +284,7 @@ export const NO_DIRTIES_PARAMS = applyModsToParams(
 export function getParams(): InitialAiParams {
   return applyModsToParams(
     DEFAULT_PARAMS,
-    IS_DROUGHT_MODE ? DROUGHT_CODE_PATCH : EXHIBITION_PATCH
+    SAFE_PATCH
   );
   return;
 }

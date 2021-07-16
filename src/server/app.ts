@@ -30,7 +30,7 @@ function initExpressServer(requestHandler) {
 
     // Send response
     console.timeEnd("Full request");
-    console.log("Sending response:", response, responseCode);
+    // console.log("Sending response:", response, responseCode);
     res.setHeader("Content-Type", "text/plain");
     res.statusCode = responseCode;
     res.end(response);
