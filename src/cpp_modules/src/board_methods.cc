@@ -1,18 +1,14 @@
-#include "tetrominoes.cc"
+#include "../include/board_methods.h"
+
 #include <iostream>
 #include <stdio.h>
 #include <stdlib.h>
 
-int t_piece[] = {32, 112};
-char *t_piece_ary[] = {"00100", "01110"};
-
-int testRow[] = {0, 0, 1, 1, 0, 1, 1, 0, 1, 0};
-
-void encodeBoard(char *encodedBoard, int outBoard[20]) {
+void encodeBoard(char *boardStr, int outBoard[20]) {
   for (int i = 0; i < 20; i++) {
     int acc = 0;
     for (int j = 0; j < 10; j++) {
-      char c = encodedBoard[i * 10 + j];
+      char c = boardStr[i * 10 + j];
       // printf("%c", c);
       acc *= 2;
       if (c == '1') {
@@ -50,25 +46,5 @@ void printBoard(int board[20]) {
       thisRow = thisRow >> 1;
     }
     printf("%s\n", line);
-  }
-}
-
-void testPieces(int board[20]) {
-  Piece piece = PIECE_Z;
-  for (int i = 0; i < 4; i++) {
-    // Skip non-valid rotations
-    if (piece.rowsByRotation[i][0] == -1) {
-      continue;
-    }
-
-    int newBoard[20];
-    duplicateBoard(board, newBoard);
-
-    // Add the piece to the new board
-    for (int r = 0; r < 4; r++) {
-      newBoard[r] = newBoard[r] | piece.rowsByRotation[i][r];
-    }
-
-    printBoard(newBoard);
   }
 }

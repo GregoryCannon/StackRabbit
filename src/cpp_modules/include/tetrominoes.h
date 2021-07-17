@@ -1,12 +1,7 @@
-struct Piece {
-  char id;
-  int index;
-  int rowsByRotation[4][4];
-  int topSurfaceByRotation[4][4];
-  int bottomSurfaceByRotation[4][4];
-  int maxYByRotation[4];
-  int initialY;
-};
+#ifndef TETROMINOES
+#define TETROMINOES
+
+#include "types.h"
 
 const Piece PIECE_I{ 'I', 0, {
   {0, 0, 480, 0},     // e.g. 120 = 0001111000
@@ -133,3 +128,7 @@ const Piece PIECE_Z{ 'Z', 6, {
   {-1, -1, -1, -1},
 },{ 17, 17, -1, -1},  
     -1 };
+
+const Piece PIECE_LIST[7] = {PIECE_I, PIECE_O, PIECE_L, PIECE_J, PIECE_T, PIECE_S, PIECE_Z};
+
+#endif

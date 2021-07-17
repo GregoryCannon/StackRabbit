@@ -4,8 +4,10 @@
 
 // I don't know why, but including the .h files doesn't work with node-gyp.
 // I wish I could do it to follow best practices, but this is what works.
-#include "move_search.cc"
-#include "data/pieceRange.cc"
+#include "../src/move_search.cc"
+#include "../src/board_methods.cc"
+#include "../src/eval.cc"
+#include "../include/tetrominoes.h"
 // #include "data/ranksOutput.cc"
 
 namespace NodeWiring {
@@ -33,17 +35,21 @@ void Method(const FunctionCallbackInfo<Value> &args) {
   // testPieces(board);
   int numPlacements = 0;
   for (int i = 0; i < 10000; i++) {
-    numPlacements += moveSearch(board, surface, PIECE_L);
+    std::vector<SimState> lockPlacements;
+    numPlacements += moveSearch(board, surface, PIECE_L, lockPlacements);
   }
 
-    // Print ranks
-    // for (int i = 0; i < 100; i++) {
-    //    printf("ranks %d\n", surfaceRanksRaw[i]);
-    // }
+  // Print ranks
+  // for (int i = 0; i < 20; i++) {
+  //    printf("ranks %d\n", surfaceRanksRaw[i]);
+  // }
 
-    //-----------------
+  //-----------------
+  // int surfaceLook[] = {3, 2, 1, 1, 0, 0, 0, 0, 2, 0};
+  // float score = lookupSurface(surfaceLook);
+  // printf("surface score: %f\n", score);
 
-    auto response = Number::New(isolate, numPlacements);
+  auto response = Number::New(isolate, numPlacements);
   args.GetReturnValue().Set(response);
 }
 
