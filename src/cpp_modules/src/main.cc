@@ -1,59 +1,48 @@
-#include <node.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 
-// I don't know why, but including the .h files doesn't work with node-gyp.
-// I wish I could do it to follow best practices, but this is what works.
-#include "../src/move_search.cc"
-#include "../src/board_methods.cc"
-#include "../src/eval.cc"
+#include "../include/piece_ranges.h"
 #include "../include/tetrominoes.h"
+// I have to include the C++ files here due to a complication of node-gyp. Consider this the equivalent
+// of listing all the C++ sources in the makefile (Node-gyp seems to only work with 1 source rn).
+#include "board_methods.cc"
+#include "eval.cc"
+#include "move_search.cc"
+#include "playout.cc"
 // #include "data/ranksOutput.cc"
 
-namespace NodeWiring {
-using v8::FunctionCallbackInfo;
-using v8::Isolate;
-using v8::Local;
-using v8::Number;
-using v8::Object;
-using v8::Value;
+int mainProcess(char * inputStr) {
 
-void Method(const FunctionCallbackInfo<Value> &args) {
-  Isolate *isolate = args.GetIsolate();
+  // printf("%s\n", inputStr);
 
-  //-----------------
-
-  char *testBoardStr =
-      "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
-      "00000000000000000011000000001100000000111100000011110000001111110000111110000011111001101111110110";
-
-  int board[20] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1023, 1023};
+  // int board[20] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 991, 990, 991};
+  int board[20] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1022, 1022, 1022};
   int surface[10];
   getSurfaceArray(board, surface);
-  // encodeBoard(testBoardStr, board);
-  // printBoard(board);
-  // testPieces(board);
+
   int numPlacements = 0;
+  SimState result;
+
   for (int i = 0; i < 10000; i++) {
     std::vector<SimState> lockPlacements;
-    numPlacements += moveSearch(board, surface, PIECE_L, lockPlacements);
+    numPlacements += moveSearch(board, surface, PIECE_S, lockPlacements);
+    result = pickLockPlacement(board, surface, lockPlacements);
   }
+
+  // for (int i = 0; i < 12; i++) {
+  //   printf("%d %d\n", i - 6, X_BOUNDS_COLLISION_TABLE[6][1][i]);
+  // }
 
   // Print ranks
   // for (int i = 0; i < 20; i++) {
   //    printf("ranks %d\n", surfaceRanksRaw[i]);
   // }
 
-  //-----------------
-  // int surfaceLook[] = {3, 2, 1, 1, 0, 0, 0, 0, 2, 0};
-  // float score = lookupSurface(surfaceLook);
-  // printf("surface score: %f\n", score);
-
-  auto response = Number::New(isolate, numPlacements);
-  args.GetReturnValue().Set(response);
+  // return result.x;
+  printf("Done\n");
+  return result.rotationIndex * 100 + (result.x - SPAWN_X);
+  // char *responseStr;
+  // return sprintf(responseStr, "%d, %d | out of %d", result.rotationIndex, result.x - SPAWN_X,
+  // numPlacements);
 }
-
-void Initialize(Local<Object> exports) { NODE_SET_METHOD(exports, "calc", Method); }
-
-NODE_MODULE(NODE_GYP_MODULE_NAME, Initialize);
-} // namespace NodeWiring

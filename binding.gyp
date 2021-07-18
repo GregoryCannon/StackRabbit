@@ -3,7 +3,7 @@
         {
             'target_name': 'cRabbit', 
             'sources': [
-                'src/cpp_modules/src/main.cc'
+                'src/cpp_modules/src/module.cc'
             ],
             'conditions': [['OS == "mac"', {} ]],
             "include_dirs": [

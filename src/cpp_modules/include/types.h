@@ -19,4 +19,26 @@ struct SimState {
   Piece piece;
 };
 
+/**
+ * The relative weights of all the eval factors.
+ */
+struct FastEvalWeights {
+  float avgHeightCoef;
+  float burnCoef;
+  float coveredWellCoef;
+  float highCol9Coef;
+  float holeCoef;
+  float tetrisCoef;
+  float spireHeightCoef;
+  float surfaceCoef;
+};
+
+/**
+ * Any meta-information that might affect how things are evaluated.
+ * e.g. how fast the agent can tap
+ */
+struct EvalContext {
+  float scareHeight;
+};
+
 #endif

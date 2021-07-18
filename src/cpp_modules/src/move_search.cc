@@ -23,7 +23,10 @@ int shouldPerformInputsThisFrame(int frameIndex, char *inputFrameTimeline) {
  * Checks for collisions with the board and the edges of the screen
  */
 int collision(int board[20], Piece piece, int x, int y, int rotIndex) {
-  if (y > piece.maxYByRotation[rotIndex]){
+  if (y > piece.maxYByRotation[rotIndex]) {
+    return 1;
+  }
+  if (X_BOUNDS_COLLISION_TABLE[piece.index][rotIndex][x + X_BOUNDS_COLLISION_TABLE_OFFSET]) {
     return 1;
   }
   for (int r = 0; r < 4; r++) {
@@ -32,17 +35,11 @@ int collision(int board[20], Piece piece, int x, int y, int rotIndex) {
       continue;
     }
     int pieceRow = piece.rowsByRotation[rotIndex][r];
-    if (pieceRow == 0){
+    if (pieceRow == 0) {
       continue;
     }
-    // Right wall collisions
-    // (check if 1 to the left of the desired spot intersects col 10)
-    if (SHIFTBY(pieceRow, x - 1) & 1) {
-      return 1;
-    }
-    // Board & left wall collisions
-    // (check if the piece intersects either the board, or a wall 1 to the left of the board)
-    if (SHIFTBY(pieceRow, x) & (board[y + r] | 1024)) {
+    // Board collisions
+    if (SHIFTBY(pieceRow, x) & board[y + r]) {
       return 1;
     }
   }
@@ -174,8 +171,8 @@ void explorePlacementsNearSpawn(int board[20],
 }
 
 /**
- * Optimized method to convert legal placements to lock placements. 
- * (!!) Doesn't allow for tucks. 
+ * Optimized method to convert legal placements to lock placements.
+ * (!!) Doesn't allow for tucks.
  */
 void getLockPlacementsFast(vector<SimState> &legalPlacements,
                            int board[20],
@@ -183,12 +180,19 @@ void getLockPlacementsFast(vector<SimState> &legalPlacements,
                            vector<SimState> &lockPlacements) {
   for (auto simState : legalPlacements) {
     int *bottomSurface = simState.piece.bottomSurfaceByRotation[simState.rotationIndex];
-    int rowsToShift = 0;
+    int rowsToShift = 99999;
     for (int c = 0; c < 4; c++) {
+      if (bottomSurface[c] == -1) {
+        continue; // Skip columns that the piece doesn't occupy
+      }
       // Check how high the piece is above the stack
       int currentUnderSurface = 20 - bottomSurface[c] - simState.y;
       int colHeight = surfaceArray[simState.x + c];
-      rowsToShift = std::max(rowsToShift, currentUnderSurface - colHeight);
+      // printf("Possibility %d %d will end at y %d\n",
+      //        simState.rotationIndex,
+      //        simState.x - SPAWN_X,
+      //        simState.y + currentUnderSurface - colHeight);
+      rowsToShift = min(rowsToShift, currentUnderSurface - colHeight);
     }
     // Shift down to its lock position
     simState.y += rowsToShift;
@@ -254,7 +258,7 @@ int moveSearch(int board[20], int surfaceArray[10], Piece piece, OUT vector<SimS
 
     // Initialize the starting state
     SimState simState = {INITIAL_X, piece.initialY, /* rotationIndex= */ 0, /* frameIndex= */ 0, piece};
-    int gravity = 1;
+    int gravity = 3;
 
     // Check for immediate collision on spawn
     if (rotIndex == 0) {
@@ -270,10 +274,11 @@ int moveSearch(int board[20], int surfaceArray[10], Piece piece, OUT vector<SimS
     exploreHorizontally(board, simState, 1, 99, rotIndex, "X...", gravity, legalMidairPlacements);
     // Then double check for some we missed near spawn
     explorePlacementsNearSpawn(board, simState, rotIndex, "X...", gravity, legalMidairPlacements);
-
-    // Let the pieces fall until they lock
-    // exploreLegalPlacementsUntilLock(legalPlacements, board, gravity, "X...", lockPlacements);
-    getLockPlacementsFast(legalMidairPlacements, board, surfaceArray, lockPlacements);
   }
-  return legalMidairPlacements.size();
+  
+  // Let the pieces fall until they lock
+  // exploreLegalPlacementsUntilLock(legalPlacements, board, gravity, "X...", lockPlacements);
+  getLockPlacementsFast(legalMidairPlacements, board, surfaceArray, lockPlacements);
+
+  return lockPlacements.size();
 }

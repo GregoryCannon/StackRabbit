@@ -3,6 +3,8 @@ raw_data/
 *.txt
 *.exe
 *.c
+src/cpp_modules/data/
+src/cpp_modules/unused/
 .vscode/
 built/
 src/server/fceux/reference_only/
