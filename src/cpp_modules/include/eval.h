@@ -3,6 +3,6 @@
 
 #include <vector>
 #include "types.h"
-float fastEval(int board[20], int surfaceArray[10], SimState lockPlacement, int wellColumn, FastEvalWeights weights);
+float fastEval(GameState gameState, SimState lockPlacement, EvalContext evalContext, FastEvalWeights weights);
 
 #endif

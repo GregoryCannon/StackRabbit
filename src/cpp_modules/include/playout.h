@@ -5,7 +5,11 @@
 #include "utils.h"
 #include <vector>
 
-SimState
-pickLockPosition(int board[20], int surfaceArray[10], Piece piece, OUT std::vector<SimState> &lockPlacements);
+SimState pickLockPlacement(GameState gameState,
+                           EvalContext evalContext,
+                           FastEvalWeights evalWeights,
+                           OUT std::vector<SimState> &lockPlacements);
+
+void playSequence(GameState gameState, int pieceSequence[10]);
 
 #endif

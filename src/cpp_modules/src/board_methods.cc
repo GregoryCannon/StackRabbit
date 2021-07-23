@@ -23,7 +23,7 @@ void getSurfaceArray(int board[20], int outSurface[10]) {
   for (int col = 0; col < 10; col++) {
     int colMask = 1 << (9 - col);
     int row = 0;
-    while (!(board[row] & colMask) && row < 20){
+    while (!(board[row] & colMask) && row < 20) {
       row++;
     }
     outSurface[col] = 20 - row;
@@ -47,4 +47,11 @@ void printBoard(int board[20]) {
     }
     printf("%s\n", line);
   }
+}
+
+void printSurface(int surfaceArray[10]) {
+  for (int i = 0; i < 9; i++) {
+    printf("%d ", surfaceArray[i]);
+  }
+  printf("%d\n", surfaceArray[9]);
 }

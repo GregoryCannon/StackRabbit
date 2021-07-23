@@ -9,6 +9,6 @@ void duplicateBoard(int inBoard[20], int outBoard[20]);
 
 void printBoard(int board[20]);
 
-void testPieces(int board[20]);
+void printSurface(int surfaceArray[10]);
 
 #endif

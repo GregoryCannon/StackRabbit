@@ -11,6 +11,20 @@ struct Piece {
   int initialY;
 };
 
+/**
+ * A representation of the overall state of the game, like a freeze frame before each piece spawns.
+ */
+struct GameState {
+  int board[20];  // Each int represent a row, where the last 10 bits of the int represent the cells.
+  int surfaceArray[10];
+  int adjustedNumHoles; // A count of how many holes there are, with adjustments for the height of holes.
+  int holeMap[20]; // Each int also a row, but with 0/1 bits corresponding to whether the cell is a hole.
+};
+
+/**
+ * The internal state of a move search simulation
+ * (looping through pretend frames and seeing how the piece can move). 
+ */
 struct SimState {
   int x;
   int y;
@@ -39,6 +53,18 @@ struct FastEvalWeights {
  */
 struct EvalContext {
   float scareHeight;
+  int wellColumn;
+  int countWellHoles;
+};
+
+struct FastEvalResult {
+  float evalScore;
+  GameState resultingState;
+};
+
+struct Possibility {
+  SimState lockPlacement;
+  GameState resultingState;
 };
 
 #endif

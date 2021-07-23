@@ -11,7 +11,7 @@ using namespace std;
 
 typedef array<array<array<int, 12>, 4>, 7> xtable;
 
-constexpr xtable getRangeXTable() {
+xtable getRangeXTable() {
   xtable table = {};
   for (int p = 0; p < 7; p++) {
     for (int rot = 0; rot < 4; rot++) {
