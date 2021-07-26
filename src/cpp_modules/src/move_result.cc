@@ -11,11 +11,11 @@ int getNewSurfaceAndNumNewHoles(int surfaceArray[10],
   int numNewHoles = 0;
   int *bottomSurface = lockPlacement.piece.bottomSurfaceByRotation[lockPlacement.rotationIndex];
   for (int i = 0; i < 4; i++) {
-    if (bottomSurface[i] == -1){
+    if (bottomSurface[i] == -1) {
       continue;
     }
     // Maybe skip well holes
-    if (!evalContext.countWellHoles && lockPlacement.x + i == evalContext.wellColumn){
+    if (!evalContext.countWellHoles && lockPlacement.x + i == evalContext.wellColumn) {
       continue;
     }
     // Add a hole for each cell of difference between the bottom of the piece and the stack
@@ -32,7 +32,13 @@ int getNewSurfaceAndNumNewHoles(int surfaceArray[10],
   return numNewHoles;
 }
 
-void updateSurfaceAfterLineClears(int surfaceArray[10], int board[20], int numLinesCleared) {
+/**
+ * Manually finds the surface heights and holes after lines have been cleared (since usual prediction tricks
+ * don't apply).
+ * @returns the new hole count
+ */
+int updateSurfaceAndHolesAfterLineClears(int surfaceArray[10], int board[20], int numLinesCleared) {
+  int numHoles = 0;
   for (int c = 0; c < 10; c++) {
     int mask = 1 << (9 - c);
     int r = 20 - surfaceArray[c];
@@ -40,7 +46,14 @@ void updateSurfaceAfterLineClears(int surfaceArray[10], int board[20], int numLi
       r++;
     }
     surfaceArray[c] = 20 - r;
+    while (r < 20) {
+      if (!(board[r] & mask)) {
+        numHoles++;
+      }
+      r++;
+    }
   }
+  return numHoles;
 }
 
 /**
@@ -84,15 +97,19 @@ int getNewBoardAndLinesCleared(int board[20], SimState lockPlacement, OUT int ne
 
 /** Gets the game state after completing a given move */
 GameState advanceGameState(GameState gameState, SimState lockPlacement, EvalContext evalContext) {
-  GameState nextState = {{}, {}, gameState.adjustedNumHoles, {}};
+  GameState newState = {{}, {}, gameState.adjustedNumHoles, gameState.lines};
 
-  int numLinesCleared = getNewBoardAndLinesCleared(gameState.board, lockPlacement, nextState.board);
+  int numLinesCleared = getNewBoardAndLinesCleared(gameState.board, lockPlacement, newState.board);
+  newState.lines += numLinesCleared;
+
   int numNewHoles =
-        getNewSurfaceAndNumNewHoles(gameState.surfaceArray, lockPlacement, evalContext, nextState.surfaceArray);
-  if (numLinesCleared > 0){
-    updateSurfaceAfterLineClears(nextState.surfaceArray, nextState.board, numLinesCleared);
+      getNewSurfaceAndNumNewHoles(gameState.surfaceArray, lockPlacement, evalContext, newState.surfaceArray);
+  if (numLinesCleared > 0) {
+    newState.adjustedNumHoles =
+        updateSurfaceAndHolesAfterLineClears(newState.surfaceArray, newState.board, numLinesCleared);
+  } else {
+    newState.adjustedNumHoles += numNewHoles;
   }
-  
-  nextState.adjustedNumHoles += numNewHoles;
-  return nextState;
+
+  return newState;
 }

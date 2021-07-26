@@ -1,4 +1,5 @@
 #include "../include/move_search.h"
+#include "../include/piece_ranges.h"
 
 #include <algorithm>
 #include <cmath>
@@ -13,7 +14,7 @@ using namespace std;
  * Given a string such as X.... that represents a loop of which frames are allowed for inputs,
  * determines if a given frame index is an input frame
  */
-int shouldPerformInputsThisFrame(int frameIndex, char *inputFrameTimeline) {
+int shouldPerformInputsThisFrame(int frameIndex, char const *inputFrameTimeline) {
   int len = strlen(inputFrameTimeline);
   int index = frameIndex % len;
   return inputFrameTimeline[index] == 'X';
@@ -71,7 +72,7 @@ int exploreHorizontally(int board[20],
                         int shiftIncrement,
                         int maxShifts,
                         int goalRotationIndex,
-                        char *inputFrameTimeline,
+                        char const *inputFrameTimeline,
                         int gravity,
                         vector<SimState> &legalPlacements) {
   int rangeCurrent = 0;
@@ -79,6 +80,7 @@ int exploreHorizontally(int board[20],
   // Loop through hypothetical frames
   while (simState.x != INITIAL_X + maxShifts || simState.rotationIndex != goalRotationIndex) {
     int isInputFrame = shouldPerformInputsThisFrame(simState.frameIndex, inputFrameTimeline);
+    // int isInputFrame = !(simState.frameIndex & 3);
     int isGravityFrame =
         simState.frameIndex % gravity == gravity - 1; // Returns true every Nth frame, where N = gravity
     // Event trackers to handle the ordering of a few edge cases (explained more below)
@@ -157,7 +159,7 @@ int exploreHorizontally(int board[20],
 void explorePlacementsNearSpawn(int board[20],
                                 SimState simState,
                                 int rotationIndex,
-                                char *inputFrameTimeline,
+                                char const *inputFrameTimeline,
                                 int gravity,
                                 vector<SimState> &legalPlacements) {
   int rangeStart = rotationIndex == 2 ? -1 : 0;
@@ -207,7 +209,7 @@ void getLockPlacementsFast(vector<SimState> &legalPlacements,
 void exploreLegalPlacementsUntilLock(vector<SimState> &legalPlacements,
                                      int board[20],
                                      int gravity,
-                                     char *inputFrameTimeline,
+                                     char const *inputFrameTimeline,
                                      vector<SimState> lockStates) {
   int bestValue = -99999999;
   vector<SimState> potentialTuckSpinStates;

@@ -18,7 +18,7 @@ struct GameState {
   int board[20];  // Each int represent a row, where the last 10 bits of the int represent the cells.
   int surfaceArray[10];
   int adjustedNumHoles; // A count of how many holes there are, with adjustments for the height of holes.
-  int holeMap[20]; // Each int also a row, but with 0/1 bits corresponding to whether the cell is a hole.
+  int lines;
 };
 
 /**
@@ -52,6 +52,7 @@ struct FastEvalWeights {
  * e.g. how fast the agent can tap
  */
 struct EvalContext {
+  int inputFrameTimeline;
   float scareHeight;
   int wellColumn;
   int countWellHoles;

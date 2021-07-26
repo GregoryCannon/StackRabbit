@@ -13,28 +13,23 @@
 #include "playout.cc"
 // #include "data/ranksOutput.cc"
 
-int mainProcess(char *inputStr) {
+int mainProcess(char const *inputStr) {
 
   // printf("%s\n", inputStr);
 
-  // GameState startingGameState = {
-  //     /* board= */ {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1022, 1022, 1022},
-  //     /* surfaceArray= */ {},
-  //     /* adjustedNumHole= */ 0,
-  //     /* holeMap= */ {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}};
   GameState startingGameState = {
-      /* board= */ {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 48, 766, 1022},
+      /* board= */ {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1022, 1022, 1022},
       /* surfaceArray= */ {},
       /* adjustedNumHole= */ 0,
-      /* holeMap= */ {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}};
+      0};
   getSurfaceArray(startingGameState.board, startingGameState.surfaceArray);
 
   int numPlacements = 0;
 
-  for (int i = 0; i < 1; i++) {
+  for (int i = 0; i < 10000; i++) {
     // int sequence[10] = {0, 4, 2, 4, 6, 6, 1, 4, 5, 2};
-    // int sequence[10] = {0, 1, 2, 3, 4, 5, 6, 0, 2, 5};
-    int sequence[10] = {2, 2, 2, 2, 2, 2, 2, 2, 2, 2};
+    int sequence[10] = {0, 1, 2, 3, 4, 5, 6, 0, 2, 5};
+    // int sequence[10] = {2, 2, 2, 2, 2, 2, 2, 2, 2, 2};
     playSequence(startingGameState, sequence);
   }
 

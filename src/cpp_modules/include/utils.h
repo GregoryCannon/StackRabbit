@@ -4,7 +4,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 
-#define LOGGING_ENABLED 1
+#define LOGGING_ENABLED 0
 
 // No-op used to mark output parameters
 #define OUT
@@ -20,11 +20,12 @@
 #define FULL_ROW 1023 // = 1111111111
 
 void maybePrint(const char *format, ...) {
+  if (!LOGGING_ENABLED){
+    return;
+  }
   va_list args;
   va_start(args, format);
-  if (LOGGING_ENABLED) {
-    vprintf(format, args);
-  }
+  vprintf(format, args);
   va_end(args);
 }
 

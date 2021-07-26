@@ -6,11 +6,14 @@ const FastEvalWeights DEBUG_WEIGHTS = {
     /* burnCoef= */ -5,
     0,
     0,
-    /* holeCoef= */ -30,
+    /* holeCoef= */ -40,
     /* tetrisCoef= */ 40,
     0,
     /* surface= */ 1};
-const EvalContext DEBUG_CONTEXT = {/* scareHeight= */ 5, /* wellColumn= */ 9, /* countWellHoles= */ false};
+const EvalContext DEBUG_CONTEXT = {/* inputFrameTimeline= */ 1 << 4,
+                                   /* scareHeight= */ 5,
+                                   /* wellColumn= */ 9,
+                                   /* countWellHoles= */ false};
 
 SimState pickLockPlacement(GameState gameState,
                            EvalContext evalContext,
@@ -40,6 +43,7 @@ void playSequence(GameState gameState, int pieceSequence[10]) {
     // Update the state
     gameState = advanceGameState(gameState, bestMove, DEBUG_CONTEXT);
 
-    maybePrint("\nBest placement: %d %d\n\n\n\n\n\n\n\n", bestMove.rotationIndex, bestMove.x - SPAWN_X);
+    // printBoard(gameState.board);
+    // printf("Best placement: %d %d\n\n", bestMove.rotationIndex, bestMove.x - SPAWN_X);
   }
 }

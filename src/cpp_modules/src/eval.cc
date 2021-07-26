@@ -75,20 +75,22 @@ float fastEval(GameState gameState,
                EvalContext evalContext,
                FastEvalWeights weights) {
   // Get the game state to evaluate
-  GameState newState = {{}, {}, gameState.adjustedNumHoles, {}};
-  int numLinesCleared = getNewBoardAndLinesCleared(gameState.board, lockPlacement, newState.board);
+  GameState newState = {{}, {}, gameState.adjustedNumHoles, gameState.lines};
+  int numLinesCleared = getNewBoardAndLinesCleared(gameState.board, lockPlacement, newState.board);  
   int numNewHoles =
       getNewSurfaceAndNumNewHoles(gameState.surfaceArray, lockPlacement, evalContext, newState.surfaceArray);
   if (numLinesCleared > 0) {
-    updateSurfaceAfterLineClears(newState.surfaceArray, newState.board, numLinesCleared);
+    newState.adjustedNumHoles =
+        updateSurfaceAndHolesAfterLineClears(newState.surfaceArray, newState.board, numLinesCleared);
+  } else {
+    newState.adjustedNumHoles += numNewHoles;
   }
-  newState.adjustedNumHoles += numNewHoles;
 
   // Calculate all the factors
   float surfaceFactor = weights.surfaceCoef * rateSurface(newState.surfaceArray);
   float avgHeightFactor = getAverageHeightFactor(newState.surfaceArray, evalContext.wellColumn, weights);
   float lineClearFactor = numLinesCleared == 4 ? weights.tetrisCoef : weights.burnCoef * numLinesCleared;
-  float holeFactor = weights.holeCoef * (gameState.adjustedNumHoles + numNewHoles);
+  float holeFactor = weights.holeCoef * newState.adjustedNumHoles;
   float coveredWellBurnFactor = getCoveredWellBurnFactor(newState.board, evalContext.wellColumn, weights);
 
   float total = surfaceFactor + avgHeightFactor + lineClearFactor + holeFactor + coveredWellBurnFactor;

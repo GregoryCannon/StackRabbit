@@ -9,7 +9,11 @@ int getNewSurfaceAndNumNewHoles(int surfaceArray[10],
                                 EvalContext evalContext,
                                 OUT int newSurface[10]);
 
-void updateSurfaceAfterLineClears(int surfaceArray[10], int board[20], int numLinesCleared);
+/**
+ * Manually finds the surface heights and holes after lines have been cleared (since usual prediction tricks don't apply).
+ * @returns the new hole count
+ */
+int updateSurfaceAndHolesAfterLineClears(int surfaceArray[10], int board[20], int numLinesCleared);
 
 /**
  * Calculates the resulting board after placing a piece in a specified spot.
