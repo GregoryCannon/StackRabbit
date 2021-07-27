@@ -80,6 +80,7 @@ int exploreHorizontally(int board[20],
   // Loop through hypothetical frames
   while (simState.x != INITIAL_X + maxShifts || simState.rotationIndex != goalRotationIndex) {
     int isInputFrame = shouldPerformInputsThisFrame(simState.frameIndex, inputFrameTimeline);
+    // int isInputFrame = !(simState.frameIndex & 3);
     int isGravityFrame =
         simState.frameIndex % gravity == gravity - 1; // Returns true every Nth frame, where N = gravity
     // Event trackers to handle the ordering of a few edge cases (explained more below)
@@ -197,7 +198,7 @@ void getLockPlacementsFast(vector<SimState> &legalPlacements,
   }
 }
 
-int moveSearch(int board[20], int surfaceArray[10], Piece piece, OUT vector<SimState> &lockPlacements) {
+int moveSearch(GameState gameState, Piece piece, OUT std::vector<SimState> &lockPlacements) {
   vector<SimState> legalMidairPlacements;
 
   for (int rotIndex = 0; rotIndex < 4; rotIndex++) {
@@ -212,7 +213,7 @@ int moveSearch(int board[20], int surfaceArray[10], Piece piece, OUT vector<SimS
 
     // Check for immediate collision on spawn
     if (rotIndex == 0) {
-      if (collision(board, piece, simState.x, simState.y, simState.rotationIndex)) {
+      if (collision(gameState.board, piece, simState.x, simState.y, simState.rotationIndex)) {
         return 0;
       }
       // Otherwise the starting state is a legal placement
@@ -220,15 +221,15 @@ int moveSearch(int board[20], int surfaceArray[10], Piece piece, OUT vector<SimS
     }
 
     // Search for placements as far as possible to both sides
-    exploreHorizontally(board, simState, -1, -99, rotIndex, "X...", gravity, legalMidairPlacements);
-    exploreHorizontally(board, simState, 1, 99, rotIndex, "X...", gravity, legalMidairPlacements);
+    exploreHorizontally(gameState.board, simState, -1, -99, rotIndex, "X...", gravity, legalMidairPlacements);
+    exploreHorizontally(gameState.board, simState, 1, 99, rotIndex, "X...", gravity, legalMidairPlacements);
     // Then double check for some we missed near spawn
-    explorePlacementsNearSpawn(board, simState, rotIndex, "X...", gravity, legalMidairPlacements);
+    explorePlacementsNearSpawn(gameState.board, simState, rotIndex, "X...", gravity, legalMidairPlacements);
   }
-  
+
   // Let the pieces fall until they lock
   // exploreLegalPlacementsUntilLock(legalPlacements, board, gravity, "X...", lockPlacements);
-  getLockPlacementsFast(legalMidairPlacements, board, surfaceArray, lockPlacements);
+  getLockPlacementsFast(legalMidairPlacements, gameState.board, gameState.surfaceArray, lockPlacements);
 
   return lockPlacements.size();
 }

@@ -20,11 +20,12 @@
 #define FULL_ROW 1023 // = 1111111111
 
 void maybePrint(const char *format, ...) {
+  if (!LOGGING_ENABLED){
+    return;
+  }
   va_list args;
   va_start(args, format);
-  if (LOGGING_ENABLED) {
-    vprintf(format, args);
-  }
+  vprintf(format, args);
   va_end(args);
 }
 

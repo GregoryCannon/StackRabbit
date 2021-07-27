@@ -11,18 +11,32 @@ struct Piece {
   int initialY;
 };
 
-typedef struct {
+/**
+ * A representation of the overall state of the game, like a freeze frame before each piece spawns.
+ */
+struct GameState {
+  int board[20];  // Each int represent a row, where the last 10 bits of the int represent the cells.
+  int surfaceArray[10];
+  int adjustedNumHoles; // A count of how many holes there are, with adjustments for the height of holes.
+  int lines;
+};
+
+/**
+ * The internal state of a move search simulation
+ * (looping through pretend frames and seeing how the piece can move). 
+ */
+struct SimState {
   int x;
   int y;
   int rotationIndex;
   int frameIndex;
   Piece piece;
-} SimState;
+};
 
 /**
  * The relative weights of all the eval factors.
  */
-typedef struct {
+struct FastEvalWeights {
   float avgHeightCoef;
   float burnCoef;
   float coveredWellCoef;
@@ -31,14 +45,27 @@ typedef struct {
   float tetrisCoef;
   float spireHeightCoef;
   float surfaceCoef;
-} FastEvalWeights;
+};
 
 /**
  * Any meta-information that might affect how things are evaluated.
  * e.g. how fast the agent can tap
  */
 struct EvalContext {
+  int inputFrameTimeline;
   float scareHeight;
+  int wellColumn;
+  int countWellHoles;
+};
+
+struct FastEvalResult {
+  float evalScore;
+  GameState resultingState;
+};
+
+struct Possibility {
+  SimState lockPlacement;
+  GameState resultingState;
 };
 
 #endif

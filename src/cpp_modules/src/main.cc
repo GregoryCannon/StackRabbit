@@ -8,31 +8,30 @@
 // of listing all the C++ sources in the makefile (Node-gyp seems to only work with 1 source rn).
 #include "board_methods.cc"
 #include "eval.cc"
+#include "move_result.cc"
 #include "move_search.cc"
 #include "playout.cc"
 // #include "data/ranksOutput.cc"
 
-int mainProcess(char const * inputStr) {
+int mainProcess(char const *inputStr) {
 
   printf("%s\n", inputStr);
 
-  // int board[20] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 991, 990, 991};
-  int board[20] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1022, 1022, 1022};
-  int surface[10];
-  getSurfaceArray(board, surface);
+  GameState startingGameState = {
+      /* board= */ {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1022, 1022, 1022},
+      /* surfaceArray= */ {},
+      /* adjustedNumHole= */ 0,
+      0};
+  getSurfaceArray(startingGameState.board, startingGameState.surfaceArray);
 
   int numPlacements = 0;
-  SimState result;
 
   for (int i = 0; i < 1; i++) {
-    std::vector<SimState> lockPlacements;
-    numPlacements += moveSearch(board, surface, PIECE_T, lockPlacements);
-    result = pickLockPlacement(board, surface, lockPlacements);
+    // int sequence[10] = {0, 4, 2, 4, 6, 6, 1, 4, 5, 2};
+    int sequence[10] = {0, 1, 2, 3, 4, 5, 6, 0, 2, 5};
+    // int sequence[10] = {2, 2, 2, 2, 2, 2, 2, 2, 2, 2};
+    playSequence(startingGameState, sequence);
   }
-
-  // for (int i = 0; i < 12; i++) {
-  //   printf("%d %d\n", i - 6, X_BOUNDS_COLLISION_TABLE[6][1][i]);
-  // }
 
   // Print ranks
   // for (int i = 0; i < 20; i++) {
@@ -40,12 +39,8 @@ int mainProcess(char const * inputStr) {
   // }
 
   printf("Done\n");
-  return result.rotationIndex * 100 + (result.x - SPAWN_X);
-  // char *responseStr;
-  // return sprintf(responseStr, "%d, %d | out of %d", result.rotationIndex, result.x - SPAWN_X,
-  // numPlacements);
+  return 1;
+  // return result.rotationIndex * 100 + (result.x - SPAWN_X);
 }
 
-int main(){
-  return mainProcess("bop");
-}
+int main() { mainProcess("Bananas"); }
