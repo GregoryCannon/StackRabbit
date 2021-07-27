@@ -24,13 +24,10 @@ int mainProcess(char const *inputStr) {
       0};
   getSurfaceArray(startingGameState.board, startingGameState.surfaceArray);
 
-  int numPlacements = 0;
-
+  int result = 0;
   for (int i = 0; i < 1; i++) {
-    // int sequence[10] = {0, 4, 2, 4, 6, 6, 1, 4, 5, 2};
-    int sequence[10] = {0, 1, 2, 3, 4, 5, 6, 0, 2, 5};
-    // int sequence[10] = {2, 2, 2, 2, 2, 2, 2, 2, 2, 2};
-    playSequence(startingGameState, sequence);
+    int sequence[10] = {0, 1, 2, 3, 4, 5, 6, 0, 2, 5}; // A balanced sample of the pieces, performance-wise
+    result = static_cast<int>(playSequence(startingGameState, sequence));
   }
 
   // Print ranks
@@ -38,8 +35,8 @@ int mainProcess(char const *inputStr) {
   //    printf("ranks %d\n", surfaceRanksRaw[i]);
   // }
 
-  printf("Done\n");
-  return 1;
+  // printf("Done\n");
+  return result;
   // return result.rotationIndex * 100 + (result.x - SPAWN_X);
 }
 

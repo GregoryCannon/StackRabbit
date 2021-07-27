@@ -5,6 +5,7 @@
 #include <stdio.h>
 
 #define LOGGING_ENABLED 0
+#define PLAYOUT_LOGGING_ENABLED 1
 
 // No-op used to mark output parameters
 #define OUT

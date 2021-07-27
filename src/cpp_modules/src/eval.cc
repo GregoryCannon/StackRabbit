@@ -13,9 +13,12 @@ const int USE_RANKS = 0;
  * A crude way to evaluate a surface for when I'm debugging and don't want to load the surfaces every time I
  * run.
  */
-float calculateFlatness(int surfaceArray[10]) {
+float calculateFlatness(int surfaceArray[10], int wellColumn) {
   float score = 30;
-  for (int i = 0; i < 8; i++) {
+  for (int i = 0; i < 9; i++) {
+    if (i == wellColumn || i+1 == wellColumn){
+      continue;
+    }
     int diff = surfaceArray[i + 1] - surfaceArray[i];
     if (diff != 0) {
       score -= pow(abs(diff), 2.5);
@@ -25,10 +28,10 @@ float calculateFlatness(int surfaceArray[10]) {
 }
 
 /** Gets the value of a surface. */
-float rateSurface(int surfaceArray[10]) {
+float rateSurface(int surfaceArray[10], int wellColumn) {
   // Backup option in case ranks aren't loaded
   if (!USE_RANKS) {
-    return calculateFlatness(surfaceArray);
+    return calculateFlatness(surfaceArray, wellColumn);
   }
   // Convert the surface array into the custom base-9 encoding
   int index = 0;
@@ -60,11 +63,15 @@ float getCoveredWellBurnFactor(int board[20], int wellColumn, FastEvalWeights we
   int mask = (1 << (9 - wellColumn));
   int wellCells = 0;
   for (int r = 0; r < 20; r++) {
-    if (board[r] & 1) {
+    if (board[r] & mask) {
       wellCells++;
     }
   }
   return weights.burnCoef * wellCells;
+}
+
+float getLineClearFactor(int numLinesCleared, FastEvalWeights weights){
+  return numLinesCleared == 4 ? weights.tetrisCoef : weights.burnCoef * numLinesCleared;
 }
 
 float fastEval(GameState gameState,
@@ -78,15 +85,15 @@ float fastEval(GameState gameState,
       getNewSurfaceAndNumNewHoles(gameState.surfaceArray, lockPlacement, evalContext, newState.surfaceArray);
   if (numLinesCleared > 0) {
     newState.adjustedNumHoles =
-        updateSurfaceAndHolesAfterLineClears(newState.surfaceArray, newState.board, numLinesCleared);
+        updateSurfaceAndHolesAfterLineClears(newState.surfaceArray, newState.board, numLinesCleared, evalContext);
   } else {
     newState.adjustedNumHoles += numNewHoles;
   }
 
   // Calculate all the factors
-  float surfaceFactor = weights.surfaceCoef * rateSurface(newState.surfaceArray);
+  float surfaceFactor = weights.surfaceCoef * rateSurface(newState.surfaceArray, evalContext.wellColumn);
   float avgHeightFactor = getAverageHeightFactor(newState.surfaceArray, evalContext.wellColumn, weights);
-  float lineClearFactor = numLinesCleared == 4 ? weights.tetrisCoef : weights.burnCoef * numLinesCleared;
+  float lineClearFactor = getLineClearFactor(numLinesCleared, weights);
   float holeFactor = weights.holeCoef * newState.adjustedNumHoles;
   float coveredWellBurnFactor = getCoveredWellBurnFactor(newState.board, evalContext.wellColumn, weights);
 
