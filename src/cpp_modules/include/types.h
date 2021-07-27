@@ -11,18 +11,18 @@ struct Piece {
   int initialY;
 };
 
-struct SimState {
+typedef struct {
   int x;
   int y;
   int rotationIndex;
   int frameIndex;
   Piece piece;
-};
+} SimState;
 
 /**
  * The relative weights of all the eval factors.
  */
-struct FastEvalWeights {
+typedef struct {
   float avgHeightCoef;
   float burnCoef;
   float coveredWellCoef;
@@ -31,7 +31,7 @@ struct FastEvalWeights {
   float tetrisCoef;
   float spireHeightCoef;
   float surfaceCoef;
-};
+} FastEvalWeights;
 
 /**
  * Any meta-information that might affect how things are evaluated.

@@ -18,9 +18,7 @@ float calculateFlatness(int surfaceArray[10]) {
   for (int i = 0; i < 8; i++) {
     int diff = surfaceArray[i + 1] - surfaceArray[i];
     if (diff != 0) {
-      // printf("Diff of %d => %f, so far %f\n", abs(diff), pow(abs(diff), 2.5), score);
       score -= pow(abs(diff), 2.5);
-      // printf("%f\n", score);
     }
   }
   return score;
@@ -39,7 +37,6 @@ float rateSurface(int surfaceArray[10]) {
     index *= 9;
     index += diff + 3;
   }
-  // printf("index: %d\n", index);
   return 1.0; // So it compiles without the ranks
   // return surfaceRanksRaw[index] * 0.1;
 }
@@ -92,23 +89,19 @@ int getNewBoardAndLinesCleared(int board[20], SimState lockPlacement, OUT int ne
   // Check the piece rows, bottom to top
   int *pieceRows = lockPlacement.piece.rowsByRotation[lockPlacement.rotationIndex];
   for (int i = 3; i >= 0; i--) {
-    // printf("Piece row %d = %d\n", i, SHIFTBY(pieceRows[i], lockPlacement.x));
     if (pieceRows[i] == 0) {
       newBoard[lockPlacement.y + i + numLinesCleared] = board[lockPlacement.y + i];
       continue;
     }
     int newRow = board[lockPlacement.y + i] | (SHIFTBY(pieceRows[i], lockPlacement.x));
-    // printf("New row %d\n", newRow);
     if (newRow == FULL_ROW) {
       numLinesCleared++;
       continue;
     }
-    // printf("Saving row %d as %d", lockPlacement.y + i + numLinesCleared, newRow);
     newBoard[lockPlacement.y + i + numLinesCleared] = newRow;
   }
   // Copy the rest of the rows
   for (int r = 0; r < lockPlacement.y; r++) {
-    // printf("Saving row %d as %d", r + numLinesCleared, board[r]);
     newBoard[r + numLinesCleared] = board[r];
   }
   // Add empty lines at the top of the board if needed

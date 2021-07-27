@@ -11,7 +11,7 @@ using namespace std;
 
 typedef array<array<array<int, 12>, 4>, 7> xtable;
 
-constexpr xtable getRangeXTable() {
+xtable getRangeXTable() {
   xtable table = {};
   for (int p = 0; p < 7; p++) {
     for (int rot = 0; rot < 4; rot++) {
@@ -20,14 +20,13 @@ constexpr xtable getRangeXTable() {
         int tableX = x + X_BOUNDS_COLLISION_TABLE_OFFSET;
         table[p][rot][tableX] = 0; // No collision by default
         for (int row = 0; row < 4; row++) {
-          // if (p == 0) {
-          //   printf("%d %d %d %d\n", p, rot, x, SHIFTBY(PIECE_LIST[p].rowsByRotation[rot][row], x));
-          // }
           if (SHIFTBY(PIECE_LIST[p].rowsByRotation[rot][row], x) >= 1024) {
             table[p][rot][tableX] = 1; // Mark the collision
+            break;
           }
           if (SHIFTBY(PIECE_LIST[p].rowsByRotation[rot][row], x - 1) & 1) {
             table[p][rot][tableX] = 1; // Mark the collision
+            break;
           }
         }
       }
@@ -36,6 +35,6 @@ constexpr xtable getRangeXTable() {
   return table;
 }
 
-const xtable X_BOUNDS_COLLISION_TABLE = getRangeXTable();
+xtable X_BOUNDS_COLLISION_TABLE = getRangeXTable();
 
 #endif

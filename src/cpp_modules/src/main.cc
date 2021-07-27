@@ -12,9 +12,9 @@
 #include "playout.cc"
 // #include "data/ranksOutput.cc"
 
-int mainProcess(char * inputStr) {
+int mainProcess(char const * inputStr) {
 
-  // printf("%s\n", inputStr);
+  printf("%s\n", inputStr);
 
   // int board[20] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 991, 990, 991};
   int board[20] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1022, 1022, 1022};
@@ -24,9 +24,9 @@ int mainProcess(char * inputStr) {
   int numPlacements = 0;
   SimState result;
 
-  for (int i = 0; i < 10000; i++) {
+  for (int i = 0; i < 1; i++) {
     std::vector<SimState> lockPlacements;
-    numPlacements += moveSearch(board, surface, PIECE_S, lockPlacements);
+    numPlacements += moveSearch(board, surface, PIECE_T, lockPlacements);
     result = pickLockPlacement(board, surface, lockPlacements);
   }
 
@@ -39,10 +39,13 @@ int mainProcess(char * inputStr) {
   //    printf("ranks %d\n", surfaceRanksRaw[i]);
   // }
 
-  // return result.x;
   printf("Done\n");
   return result.rotationIndex * 100 + (result.x - SPAWN_X);
   // char *responseStr;
   // return sprintf(responseStr, "%d, %d | out of %d", result.rotationIndex, result.x - SPAWN_X,
   // numPlacements);
+}
+
+int main(){
+  return mainProcess("bop");
 }

@@ -39,7 +39,7 @@ void duplicateBoard(int inBoard[20], int outBoard[20]) {
 void printBoard(int board[20]) {
   printf("----- Board start -----\n");
   for (int i = 0; i < 20; i++) {
-    char line[] = "aaaaaaaaaa";
+    char line[] = "..........";
     int thisRow = board[i];
     for (int j = 0; j < 10; j++) {
       line[9 - j] = (thisRow & 0x1) ? 'X' : '.';

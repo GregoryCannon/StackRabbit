@@ -1,6 +1,12 @@
-local http = require("socket.http")
+IS_MAC = true
+
 local os = require("os")
-require "socket"
+if (IS_MAC) then
+  require("rabbithttp")
+else
+  http = require("socket.http")
+  require "socket"
+end
 
 TIMELINE_2_HZ = "X.............................";
 TIMELINE_6_HZ = "X........";
@@ -15,7 +21,6 @@ TIMEILNE_14_HZ = "X....X...X...X...";
 TIMELINE_15_HZ = "X...";
 TIMELINE_20_HZ = "X..";
 TIMELINE_30_HZ = "X.";
-TIMELINE_KYROS = "...X.X.X.X.X.X.X.X.X"
 
 -- Config constants
 SHOULD_ADJUST = true
@@ -23,6 +28,7 @@ REACTION_TIME_FRAMES = 21
 INPUT_TIMELINE = TIMELINE_12_HZ;
 SHOULD_RECORD_GAMES = true
 MOVIE_PATH = "C:\\Users\\Greg\\Desktop\\VODs\\" -- Where to store the fm2 VODS (absolute path)
+if IS_MAC then MOVIE_PATH = "~/Documents/AI_VODs" end
 
 function resetGameScopedVariables()
   isFirstPiece = true;
@@ -178,6 +184,12 @@ end
 
 function makeHttpRequest(requestUrl)
   print(requestUrl)
+
+  -- On Mac, use custom C library for HTTP requests
+  if IS_MAC then
+    return {data= httpFetch(requestUrl), code=200}
+  end
+
   -- Helper function to compile the body of the web response
   local data = ""
   local function collect(chunk)
@@ -291,25 +303,25 @@ end
 ------- Performance Monitoring  -------- 
 ------------------------------------]]--
 
--- Monitors the number of frames run per real clock second
-function getMs()
-  return socket.gettime()*1000
-end
+-- -- Monitors the number of frames run per real clock second
+-- function getMs()
+--   return socket.gettime()*1000
+-- end
 
-framesElapsed = 0
-secsElapsed = 0
-startTime = getMs()
+-- framesElapsed = 0
+-- secsElapsed = 0
+-- startTime = getMs()
 
-function trackAndLogFps()
-  framesElapsed = framesElapsed + 1
-  local msElapsed = getMs() - startTime
-  if msElapsed > (secsElapsed + 1) * 1000 then
-    secsElapsed = secsElapsed + 1
-    if secsElapsed % 30 == 0 then
-      print("Average FPS:" .. framesElapsed / secsElapsed)
-    end
-  end
-end
+-- function trackAndLogFps()
+--   framesElapsed = framesElapsed + 1
+--   local msElapsed = getMs() - startTime
+--   if msElapsed > (secsElapsed + 1) * 1000 then
+--     secsElapsed = secsElapsed + 1
+--     if secsElapsed % 30 == 0 then
+--       print("Average FPS:" .. framesElapsed / secsElapsed)
+--     end
+--   end
+-- end
 
 --[[------------------------------------ 
 ------------ Game Events  -------------- 
@@ -467,7 +479,7 @@ function eachFrame()
     runGameFrame()
   end
 
-  trackAndLogFps()
+  -- trackAndLogFps()
 end
 
 emu.registerafter(eachFrame)

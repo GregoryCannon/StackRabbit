@@ -7,7 +7,9 @@
     "start-server": "tsc && node built/src/server/app.js",
     "start": "node built/src/server/app.js",
     "make": "prettier src/*.js --write && webpack --progress --mode=production",
-    "format": "prettier --write \"src/**/*.+(js|jsx|ts|json|css|md)\""
+    "format": "prettier --write \"src/**/*.+(js|jsx|ts|json|css|md)\"",
+    "cb": "node-gyp build",
+    "cr": "node-gyp build && node built/src/server/cmodules.js"
   },
   "author": "",
   "license": "ISC",
@@ -25,6 +27,6 @@
     "nan": "^2.14.2",
     "node-fetch": "^2.6.1",
     "prettier": "^2.0.5",
-    "typescript": "^4.2.3"
+    "typescript": "^4.3.5"
   }
 }

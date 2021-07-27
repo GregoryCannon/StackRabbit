@@ -1,4 +1,5 @@
 #include "../include/move_search.h"
+#include "../include/piece_ranges.h"
 
 #include <algorithm>
 #include <cmath>
@@ -13,7 +14,7 @@ using namespace std;
  * Given a string such as X.... that represents a loop of which frames are allowed for inputs,
  * determines if a given frame index is an input frame
  */
-int shouldPerformInputsThisFrame(int frameIndex, char *inputFrameTimeline) {
+int shouldPerformInputsThisFrame(int frameIndex, char const *inputFrameTimeline) {
   int len = strlen(inputFrameTimeline);
   int index = frameIndex % len;
   return inputFrameTimeline[index] == 'X';
@@ -71,7 +72,7 @@ int exploreHorizontally(int board[20],
                         int shiftIncrement,
                         int maxShifts,
                         int goalRotationIndex,
-                        char *inputFrameTimeline,
+                        char const *inputFrameTimeline,
                         int gravity,
                         vector<SimState> &legalPlacements) {
   int rangeCurrent = 0;
@@ -157,7 +158,7 @@ int exploreHorizontally(int board[20],
 void explorePlacementsNearSpawn(int board[20],
                                 SimState simState,
                                 int rotationIndex,
-                                char *inputFrameTimeline,
+                                char const *inputFrameTimeline,
                                 int gravity,
                                 vector<SimState> &legalPlacements) {
   int rangeStart = rotationIndex == 2 ? -1 : 0;
@@ -188,62 +189,11 @@ void getLockPlacementsFast(vector<SimState> &legalPlacements,
       // Check how high the piece is above the stack
       int currentUnderSurface = 20 - bottomSurface[c] - simState.y;
       int colHeight = surfaceArray[simState.x + c];
-      // printf("Possibility %d %d will end at y %d\n",
-      //        simState.rotationIndex,
-      //        simState.x - SPAWN_X,
-      //        simState.y + currentUnderSurface - colHeight);
       rowsToShift = min(rowsToShift, currentUnderSurface - colHeight);
     }
     // Shift down to its lock position
     simState.y += rowsToShift;
     lockPlacements.push_back(simState);
-  }
-}
-
-/**
- * Looks at each legal placement and lets the piece fall until it locks into the stack.
- * (!!) This method is SLOW! (>75% of the total movesearch runtime if it's included)
- */
-void exploreLegalPlacementsUntilLock(vector<SimState> &legalPlacements,
-                                     int board[20],
-                                     int gravity,
-                                     char *inputFrameTimeline,
-                                     vector<SimState> lockStates) {
-  int bestValue = -99999999;
-  vector<SimState> potentialTuckSpinStates;
-  int lockHeightLookup[36]; // Indexed by (rotIndex * 9) + (x + 1)
-
-  for (auto simState : legalPlacements) {
-    // Let piece drop
-    int *pieceRows = simState.piece.rowsByRotation[simState.rotationIndex];
-    int startedLookingForTucks = false;
-    int lastSeenY = -1;
-
-    while (true) {
-      int isGravityFrame =
-          simState.frameIndex % gravity == gravity - 1; // Returns true every Nth frame, where N = gravity
-
-      if (!startedLookingForTucks && shouldPerformInputsThisFrame(simState.frameIndex, inputFrameTimeline)) {
-        startedLookingForTucks = true;
-      }
-
-      if (startedLookingForTucks && simState.y != lastSeenY) {
-        potentialTuckSpinStates.push_back(simState);
-        lastSeenY = simState.y;
-      }
-
-      if (true) {
-        if (collision(board, simState.piece, simState.x, simState.y + 1, simState.rotationIndex)) {
-          lockStates.push_back(simState);
-          int encodedLockCol = simState.rotationIndex * 9 + (simState.x + 1);
-          lockHeightLookup[encodedLockCol] = simState.y;
-          break;
-        }
-        simState.y++;
-      }
-
-      simState.frameIndex++;
-    }
   }
 }
 
