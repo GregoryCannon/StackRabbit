@@ -5,7 +5,7 @@
 #include <stdio.h>
 
 #define LOGGING_ENABLED 0
-#define PLAYOUT_LOGGING_ENABLED 1
+#define PLAYOUT_LOGGING_ENABLED 0
 
 // No-op used to mark output parameters
 #define OUT
@@ -29,5 +29,21 @@ void maybePrint(const char *format, ...) {
   vprintf(format, args);
   va_end(args);
 }
+
+const FastEvalWeights DEBUG_WEIGHTS = {
+    /* avgHeightCoef= */ -1,
+    /* burnCoef= */ -10,
+    0,
+    /* deathCoef= */ -10000,
+    0,
+    /* holeCoef= */ -40,
+    /* tetrisCoef= */ 40,
+    0,
+    /* surfaceCoef= */ 1};
+const EvalContext DEBUG_CONTEXT = {
+    /* inputFrameTimeline= */ 1 << 4,
+    /* scareHeight= */ 5,
+    /* wellColumn= */ 9,
+    /* countWellHoles= */ false};
 
 #endif

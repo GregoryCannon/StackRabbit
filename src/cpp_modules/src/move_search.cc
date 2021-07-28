@@ -15,7 +15,7 @@ using namespace std;
  * determines if a given frame index is an input frame
  */
 int shouldPerformInputsThisFrame(int frameIndex, char const *inputFrameTimeline) {
-  int len = strlen(inputFrameTimeline);
+  int len = (int) strlen(inputFrameTimeline);
   int index = frameIndex % len;
   return inputFrameTimeline[index] == 'X';
 }
@@ -231,5 +231,5 @@ int moveSearch(GameState gameState, Piece piece, OUT std::vector<SimState> &lock
   // exploreLegalPlacementsUntilLock(legalPlacements, board, gravity, "X...", lockPlacements);
   getLockPlacementsFast(legalMidairPlacements, gameState.board, gameState.surfaceArray, lockPlacements);
 
-  return lockPlacements.size();
+  return (int) lockPlacements.size();
 }

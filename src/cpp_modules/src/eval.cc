@@ -4,7 +4,7 @@
 
 #include <math.h>
 #include <vector>
-// #include "data/ranksOutput.cc"
+//#include "data/ranksOutput.cc"
 using namespace std;
 
 const int USE_RANKS = 0;
@@ -75,25 +75,14 @@ float getLineClearFactor(int numLinesCleared, FastEvalWeights weights){
 }
 
 float fastEval(GameState gameState,
+               GameState newState,
                SimState lockPlacement,
                EvalContext evalContext,
                FastEvalWeights weights) {
-  // Get the game state to evaluate
-  GameState newState = {{}, {}, gameState.adjustedNumHoles, gameState.lines};
-  int numLinesCleared = getNewBoardAndLinesCleared(gameState.board, lockPlacement, newState.board);  
-  int numNewHoles =
-      getNewSurfaceAndNumNewHoles(gameState.surfaceArray, lockPlacement, evalContext, newState.surfaceArray);
-  if (numLinesCleared > 0) {
-    newState.adjustedNumHoles =
-        updateSurfaceAndHolesAfterLineClears(newState.surfaceArray, newState.board, numLinesCleared, evalContext);
-  } else {
-    newState.adjustedNumHoles += numNewHoles;
-  }
-
   // Calculate all the factors
   float surfaceFactor = weights.surfaceCoef * rateSurface(newState.surfaceArray, evalContext.wellColumn);
   float avgHeightFactor = getAverageHeightFactor(newState.surfaceArray, evalContext.wellColumn, weights);
-  float lineClearFactor = getLineClearFactor(numLinesCleared, weights);
+  float lineClearFactor = getLineClearFactor(newState.lines - gameState.lines, weights);
   float holeFactor = weights.holeCoef * newState.adjustedNumHoles;
   float coveredWellBurnFactor = getCoveredWellBurnFactor(newState.board, evalContext.wellColumn, weights);
 

@@ -1,28 +1,18 @@
 #include "../include/playout.h"
 #include "../include/eval.h"
+#include "../include/utils.h"
+using namespace std;
 
-const FastEvalWeights DEBUG_WEIGHTS = {
-    /* avgHeightCoef= */ -1,
-    /* burnCoef= */ -10,
-    0,
-    0,
-    /* holeCoef= */ -40,
-    /* tetrisCoef= */ 40,
-    0,
-    /* surfaceCoef= */ 1};
-const EvalContext DEBUG_CONTEXT = {/* inputFrameTimeline= */ 1 << 4,
-                                   /* scareHeight= */ 5,
-                                   /* wellColumn= */ 9,
-                                   /* countWellHoles= */ false};
-
+/** Selects the highest value lock placement using the fast eval function. */
 SimState pickLockPlacement(GameState gameState,
                            EvalContext evalContext,
                            FastEvalWeights evalWeights,
-                           OUT std::vector<SimState> &lockPlacements) {
-  float bestSoFar = -99999999.0F;
+                           OUT vector<SimState> &lockPlacements) {
+  float bestSoFar = evalWeights.deathCoef;
   SimState bestPlacement = {};
   for (auto lockPlacement : lockPlacements) {
-    float evalScore = fastEval(gameState, lockPlacement, evalContext, evalWeights);
+    GameState newState = advanceGameState(gameState, lockPlacement, evalContext);
+    float evalScore = fastEval(gameState, newState, lockPlacement, evalContext, evalWeights);
     if (evalScore > bestSoFar) {
       bestSoFar = evalScore;
       bestPlacement = lockPlacement;
@@ -32,22 +22,30 @@ SimState pickLockPlacement(GameState gameState,
   return bestPlacement;
 }
 
+
+/**
+ * Plays out a starting state 10 moves into the future.
+ * @returns the total value of the playout (intermediate rewards + eval of the final board)
+ */
 float playSequence(GameState gameState, int pieceSequence[10]) {
   float totalReward = 0;
   for (int i = 0; i < 10; i++) {
+    // Get the lock placements
     std::vector<SimState> lockPlacements;
-
     Piece piece = PIECE_LIST[pieceSequence[i]];
     moveSearch(gameState, piece, lockPlacements);
+    
+    // Pick the best placement
     SimState bestMove = pickLockPlacement(gameState, DEBUG_CONTEXT, DEBUG_WEIGHTS, lockPlacements);
 
     // On the last move, do a final evaluation
     if (i == 9){
-      float evalScore = fastEval(gameState, bestMove, DEBUG_CONTEXT, DEBUG_WEIGHTS);
+      GameState nextState = advanceGameState(gameState, bestMove, DEBUG_CONTEXT);
+      float evalScore = fastEval(gameState, nextState, bestMove, DEBUG_CONTEXT, DEBUG_WEIGHTS);
       if (PLAYOUT_LOGGING_ENABLED){
-        gameState = advanceGameState(gameState, bestMove, DEBUG_CONTEXT);
+        gameState = nextState;
         printBoard(gameState.board);
-        printf("Best placement: %d %d\n\n", bestMove.rotationIndex, bestMove.x - SPAWN_X);
+        printf("Best placement: %c %d, %d\n\n", bestMove.piece.id, bestMove.rotationIndex, bestMove.x - SPAWN_X);
         printf("Cumulative reward: %01f\n", totalReward);
         printf("Final eval score: %01f\n", evalScore);
       }
@@ -60,8 +58,8 @@ float playSequence(GameState gameState, int pieceSequence[10]) {
     totalReward += getLineClearFactor(gameState.lines - oldLines, DEBUG_WEIGHTS);
     if (PLAYOUT_LOGGING_ENABLED){
       printBoard(gameState.board);
-      printf("Best placement: %d %d\n\n", bestMove.rotationIndex, bestMove.x - SPAWN_X);
+      printf("Best placement: %c %d, %d\n\n", bestMove.piece.id, bestMove.rotationIndex, bestMove.x - SPAWN_X);
     }
   }
-  return -1; // Should never reach here
+  return -1; // Doesn't reach here, always returns from i == 9 case
 }

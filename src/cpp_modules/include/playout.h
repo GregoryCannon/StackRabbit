@@ -4,6 +4,7 @@
 #include "types.h"
 #include "utils.h"
 #include <vector>
+#include <list>
 
 SimState pickLockPlacement(GameState gameState,
                            EvalContext evalContext,

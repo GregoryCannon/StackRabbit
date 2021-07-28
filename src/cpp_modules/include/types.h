@@ -33,6 +33,13 @@ struct SimState {
   Piece piece;
 };
 
+/** Minimal representation of a lock location. */
+struct LockLocation {
+  int x;
+  int y;
+  int rotationIndex;
+};
+
 /**
  * The relative weights of all the eval factors.
  */
@@ -40,6 +47,7 @@ struct FastEvalWeights {
   float avgHeightCoef;
   float burnCoef;
   float coveredWellCoef;
+  float deathCoef;
   float highCol9Coef;
   float holeCoef;
   float tetrisCoef;
@@ -63,9 +71,11 @@ struct FastEvalResult {
   GameState resultingState;
 };
 
-struct Possibility {
-  SimState lockPlacement;
+struct Depth2Possibility {
+  LockLocation firstPlacement;
+  LockLocation secondPlacement;
   GameState resultingState;
+  float evalScore;
 };
 
 #endif
