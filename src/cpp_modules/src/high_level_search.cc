@@ -1,4 +1,38 @@
 #include "../include/high_level_search.h"
+#include <string>
+#include <unordered_map>
+using namespace std;
+
+#define UNEXPLORED_PENALTY -500   // A penalty for placements that weren't explored with playouts (could be worse than the eval indicates)
+#define MAP_OFFSET 20000          // An offset to make any placement better than the default 0 in the map
+
+std::string getLockValueLookupEncoded(GameState gameState, Piece firstPiece, Piece secondPiece, int keepTopN){
+  unordered_map<string, float> lockValueMap;
+
+  // Get the list of evaluated possibilities
+  list<Depth2Possibility> possibilityList;
+  searchDepth2(gameState, firstPiece, secondPiece, keepTopN, possibilityList);
+
+  int i = 0;
+  for (Depth2Possibility const& possibility : possibilityList) {
+    char buffer[10];
+    sprintf(buffer, "%d|%d|%d", possibility.firstPlacement.rotationIndex, possibility.firstPlacement.x, possibility.firstPlacement.y);
+    string lockPosEncoded = string(buffer);
+    float adjustedScore = possibility.evalScore + (i > keepTopN ? UNEXPLORED_PENALTY : 0) + MAP_OFFSET;
+
+    if (adjustedScore > lockValueMap[lockPosEncoded]) {
+      lockValueMap[lockPosEncoded] = adjustedScore;
+    }
+    i++;
+  }
+
+  // Print lookup map
+  // for( const auto& n : lockValueMap ) {
+  //   std::cout << "Key:[" << n.first << "] Value:[" << n.second - MAP_OFFSET << "]\n";
+  // }
+  return "melissa";
+}
+
 
 
 /** Searches 2-ply from a starting state, and performs a fast eval on each of the resulting states. Maintains a sorted list of the top N possibilities, and adds all the rest onto the end in no specified order. */

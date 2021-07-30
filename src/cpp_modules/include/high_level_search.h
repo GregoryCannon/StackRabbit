@@ -4,7 +4,10 @@
 #include "types.h"
 #include "utils.h"
 #include <list>
+#include <algorithm>
 
-int searchDepth2(GameState, Piece firstPiece, Piece secondPiece, int keepTopN, OUT list<Depth2Possibility> &possibilityList);
+int searchDepth2(GameState gameState, Piece firstPiece, Piece secondPiece, int keepTopN, OUT list<Depth2Possibility> &possibilityList);
+
+std::string getLockValueLookupEncoded(GameState gameState, Piece firstPiece, Piece secondPiece, int keepTopN);
 
 #endif

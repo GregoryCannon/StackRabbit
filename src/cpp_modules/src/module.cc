@@ -4,24 +4,22 @@
 using namespace v8;
 
 NAN_METHOD(Length) {
+  // Parse string arg
   Nan::MaybeLocal<String> maybeStr = Nan::To<String>(info[0]);
-  v8::Local<String> str;
-
-  if (maybeStr.ToLocal(&str) == false) {
+  v8::Local<String> inputStrNan;
+  if (maybeStr.ToLocal(&inputStrNan) == false) {
     Nan::ThrowError("Error converting first argument to string");
   }
-  char const *cString = *Nan::Utf8String(str);
+  char const * inputStr = *Nan::Utf8String(inputStrNan);
 
-  // int len = strlen(cString);
-  int numPlacements = mainProcess(cString);
-  // int numPlacements = 5;
+  std::string result = mainProcess(inputStr);
 
-  info.GetReturnValue().Set(numPlacements);
+  info.GetReturnValue().Set(Nan::New<String>(result.c_str()).ToLocalChecked());
 }
 
 NAN_MODULE_INIT(Init) {
   Nan::Set(target, Nan::New("length").ToLocalChecked(),
-      Nan::GetFunction(Nan::New<FunctionTemplate>(Length)).ToLocalChecked());
+           Nan::GetFunction(Nan::New<FunctionTemplate>(Length)).ToLocalChecked());
 }
 
 NODE_MODULE(myaddon, Init)
