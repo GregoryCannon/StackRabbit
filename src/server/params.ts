@@ -24,7 +24,7 @@ export const LINE_CAP = NO_LIMIT;
 // Rarely changed
 export const IS_PAL = false;
 export const WELL_COLUMN = 9; // 0-indexed
-export const CAN_TUCK = true;
+export const CAN_TUCK = false;
 
 // Calculated automatically
 export const IS_NON_RIGHT_WELL = WELL_COLUMN !== 9;
@@ -228,7 +228,7 @@ const SAFE_PATCH = {
   AVG_HEIGHT_COEF: -7,
   HIGH_COL_9_COEF: -5,
   UNABLE_TO_BURN_COEF: -0.5,
-}
+};
 
 const EXHIBITION_AGGRO_PATCH = {
   BURN_COEF: -15,
@@ -282,10 +282,7 @@ export const NO_DIRTIES_PARAMS = applyModsToParams(
 );
 
 export function getParams(): InitialAiParams {
-  return applyModsToParams(
-    DEFAULT_PARAMS,
-    SAFE_PATCH
-  );
+  return applyModsToParams(DEFAULT_PARAMS, SAFE_PATCH);
   return;
 }
 

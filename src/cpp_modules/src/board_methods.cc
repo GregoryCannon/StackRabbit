@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-void encodeBoard(char *boardStr, int outBoard[20]) {
+void encodeBoard(char const *boardStr, int outBoard[20]) {
   for (int i = 0; i < 20; i++) {
     int acc = 0;
     for (int j = 0; j < 10; j++) {

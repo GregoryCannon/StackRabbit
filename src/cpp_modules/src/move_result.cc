@@ -37,7 +37,7 @@ int getNewSurfaceAndNumNewHoles(int surfaceArray[10],
  * don't apply).
  * @returns the new hole count
  */
-int updateSurfaceAndHolesAfterLineClears(int surfaceArray[10], int board[20], int numLinesCleared, EvalContext evalContext) {
+int updateSurfaceAndHolesAfterLineClears(int surfaceArray[10], int board[20], EvalContext evalContext) {
   int numHoles = 0;
   for (int c = 0; c < 10; c++) {
     int mask = 1 << (9 - c);
@@ -108,7 +108,7 @@ GameState advanceGameState(GameState gameState, SimState lockPlacement, EvalCont
       getNewSurfaceAndNumNewHoles(gameState.surfaceArray, lockPlacement, evalContext, newState.surfaceArray);
   if (numLinesCleared > 0) {
     newState.adjustedNumHoles =
-        updateSurfaceAndHolesAfterLineClears(newState.surfaceArray, newState.board, numLinesCleared, evalContext);
+        updateSurfaceAndHolesAfterLineClears(newState.surfaceArray, newState.board, evalContext);
   } else {
     newState.adjustedNumHoles += numNewHoles;
   }

@@ -25,12 +25,17 @@ std::string getLockValueLookupEncoded(GameState gameState, Piece firstPiece, Pie
     }
     i++;
   }
-
-  // Print lookup map
-  // for( const auto& n : lockValueMap ) {
-  //   std::cout << "Key:[" << n.first << "] Value:[" << n.second - MAP_OFFSET << "]\n";
-  // }
-  return "melissa";
+  
+  // Encode lookup to JSON
+  std::string mapEncoded = std::string("{");
+  for( const auto& n : lockValueMap ) {
+    char buf[20];
+    sprintf(buf, "\"%s\":%f,", n.first.c_str(), n.second - MAP_OFFSET);
+    mapEncoded.append(buf);
+  }
+  mapEncoded.pop_back(); // Remove the last comma
+  mapEncoded.append("}");
+  return mapEncoded;
 }
 
 

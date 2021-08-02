@@ -26,9 +26,9 @@ TIMELINE_30_HZ = "X.";
 SHOULD_ADJUST = true
 REACTION_TIME_FRAMES = 21
 INPUT_TIMELINE = TIMELINE_12_HZ;
-SHOULD_RECORD_GAMES = true
+SHOULD_RECORD_GAMES = false
 MOVIE_PATH = "C:\\Users\\Greg\\Desktop\\VODs\\" -- Where to store the fm2 VODS (absolute path)
-if IS_MAC then MOVIE_PATH = "~/Documents/AI_VODs" end
+if IS_MAC then MOVIE_PATH = "~/Documents/AI_VODs/" end
 
 function resetGameScopedVariables()
   isFirstPiece = true;
@@ -276,7 +276,7 @@ function executeInputs()
     end
 
     local thisFrameStr = getInputForFrame(arrFrameIndex);
-    print(arrFrameIndex .. "  " .. thisFrameStr)
+    -- print(arrFrameIndex .. "  " .. thisFrameStr)
     
     inputsThisFrame.A = (thisFrameStr == "A" or thisFrameStr == "E" or thisFrameStr == "I")
     inputsThisFrame.B = (thisFrameStr == "B" or thisFrameStr == "F" or thisFrameStr == "G")

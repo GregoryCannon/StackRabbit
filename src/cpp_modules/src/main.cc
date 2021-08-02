@@ -19,7 +19,6 @@
 
 #define USE_RANDOM_SEQUENCE false
 
-
 int testPlayout(GameState startingGameState, int numRepetitions){
   if (USE_RANDOM_SEQUENCE) {
     srand(59902);
@@ -71,27 +70,51 @@ int testDepth2Search(GameState startingGameState, int numRepetitions){
 
 
 std::string mainProcess(char const *inputStr) {
-
-  printf("Input string %s\n", inputStr);
+  maybePrint("Input string %s\n", inputStr);
 
   GameState startingGameState = {
-    /* board= */ {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1022, 1022, 1022},
+    // /* board= */ {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1022, 1022, 1022},
+    /* board= */ {},
     /* surfaceArray= */ {},
     /* adjustedNumHole= */ 0,
-    0};
+    /* lines= */ 0};
+  Piece curPiece = PIECE_T;
+  Piece nextPiece = PIECE_S;
+
+  encodeBoard(inputStr, startingGameState.board);
   getSurfaceArray(startingGameState.board, startingGameState.surfaceArray);
 
-  // int result = testDepth2Search(startingGameState, 1);
-  // printf("%d\n", result);
+  // Loop through the other args
+  std::string s = std::string(inputStr + 201); // 201 = the length of the board string + 1 for the delimiter
+  std::string delim = "|";
+  auto start = 0U;
+  auto end = s.find(delim);
+  for (int i = 0; end != std::string::npos; i++) {
+    int arg = atoi(s.substr(start, end - start).c_str());
+    maybePrint("ARG %d: %d\n", i, arg);
+    switch (i) {
+    case 0:
+      startingGameState.lines = arg;
+      break;
+    case 1:
+      curPiece = PIECE_LIST[arg];
+      break;
+    case 2:
+      nextPiece = PIECE_LIST[arg];
+      break;
+    default:
+      break;
+    }
+  
+    start = (int) end + (int) delim.length();
+    end = s.find(delim, start);
+  }
 
-  getLockValueLookupEncoded(startingGameState, PIECE_S, PIECE_T, 20);
+  std::string lookupMapEncoded = getLockValueLookupEncoded(startingGameState, curPiece, nextPiece, /* keepTopN= */ 20);
+  return lookupMapEncoded;
 
   // Print ranks
   // for (int i = 0; i < 20; i++) {
   //    printf("ranks %d\n", surfaceRanksRaw[i]);
   // }
-
-  // printf("Done\n");
-  return std::string("Daffodil");
-  // return result.rotationIndex * 100 + (result.x - SPAWN_X);
 }
