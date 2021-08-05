@@ -83,6 +83,7 @@ std::string mainProcess(char const *inputStr) {
 
   encodeBoard(inputStr, startingGameState.board);
   getSurfaceArray(startingGameState.board, startingGameState.surfaceArray);
+  startingGameState.adjustedNumHoles += updateSurfaceAndHolesAfterLineClears(startingGameState.surfaceArray, startingGameState.board, DEBUG_CONTEXT);
 
   // Loop through the other args
   std::string s = std::string(inputStr + 201); // 201 = the length of the board string + 1 for the delimiter

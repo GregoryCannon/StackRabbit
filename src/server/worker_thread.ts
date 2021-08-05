@@ -86,12 +86,10 @@ function performComputationFinesse(args): Object {
   }
 
   console.timeEnd(args.piece);
-  // console.log("LOOKUP", lockPositionValueLookup);
   return lockPositionValueLookup;
 }
 
 process.on("message", (args: WorkerDataArgs) => {
-  // performComputationFinesseCpp(args);
   const result =
     args.computationType == "finesse"
       ? performComputationFinesseCpp(args)

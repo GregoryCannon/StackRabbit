@@ -25,7 +25,6 @@ std::string getLockValueLookupEncoded(GameState gameState, Piece firstPiece, Pie
     }
     i++;
   }
-  
   // Encode lookup to JSON
   std::string mapEncoded = std::string("{");
   for( const auto& n : lockValueMap ) {
@@ -48,8 +47,8 @@ int searchDepth2(GameState gameState, Piece firstPiece, Piece secondPiece, int k
   // Get the placements of the first piece
   vector<SimState> firstLockPlacements;
   moveSearch(gameState, firstPiece, firstLockPlacements);
-
-  for (auto firstPlacement : firstLockPlacements) {
+  for (auto it = begin(firstLockPlacements); it != end(firstLockPlacements); ++it) {
+    SimState firstPlacement = *it;
     GameState afterFirstMove = advanceGameState(gameState, firstPlacement, DEBUG_CONTEXT);
     float firstMoveReward = getLineClearFactor(afterFirstMove.lines - gameState.lines, DEBUG_WEIGHTS);
 

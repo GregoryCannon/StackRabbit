@@ -31,9 +31,11 @@ void maybePrint(const char *format, ...) {
 }
 
 const FastEvalWeights DEBUG_WEIGHTS = {
-    /* avgHeightCoef= */ -1,
-    /* burnCoef= */ -10,
-    0,
+    /* avgHeightCoef= */ -5,
+    /* avgHeightExponent= */ 2,
+    /* burnCoef= */ -1,
+    /* coveredWellCoef= */ -5,
+    /* col9Coef= */ -3,
     /* deathCoef= */ -10000,
     0,
     /* holeCoef= */ -40,
@@ -42,6 +44,7 @@ const FastEvalWeights DEBUG_WEIGHTS = {
     /* surfaceCoef= */ 1};
 const EvalContext DEBUG_CONTEXT = {
     /* inputFrameTimeline= */ 1 << 4,
+    /* maxSafeCol9Height= */ 7,
     /* scareHeight= */ 5,
     /* wellColumn= */ 9,
     /* countWellHoles= */ false};

@@ -45,8 +45,10 @@ struct LockLocation {
  */
 struct FastEvalWeights {
   float avgHeightCoef;
+  float avgHeightExponent;
   float burnCoef;
   float coveredWellCoef;
+  float col9Coef;
   float deathCoef;
   float highCol9Coef;
   float holeCoef;
@@ -61,6 +63,7 @@ struct FastEvalWeights {
  */
 struct EvalContext {
   int inputFrameTimeline;
+  float maxSafeCol9;
   float scareHeight;
   int wellColumn;
   int countWellHoles;

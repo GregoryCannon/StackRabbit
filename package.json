@@ -4,7 +4,7 @@
   "description": "an AI for playing NES Tetris",
   "main": "src/web_client/index.js",
   "scripts": {
-    "start-server": "tsc && node built/src/server/app.js",
+    "start-server": "node-gyp build && tsc && node built/src/server/app.js",
     "start": "node built/src/server/app.js",
     "make": "prettier src/*.js --write && webpack --progress --mode=production",
     "format": "prettier --write \"src/**/*.+(js|jsx|ts|json|css|md)\"",

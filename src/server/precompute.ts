@@ -11,10 +11,10 @@ import {
 
 const child_process = require("child_process");
 
-const NUM_THREADS = 6;
+const NUM_THREADS = 7;
 const THREAD_ASSIGNMENT = {
   O: 0,
-  I: 0,
+  I: 6,
   S: 1,
   Z: 2,
   L: 3,
