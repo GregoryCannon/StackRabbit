@@ -26,9 +26,9 @@ TIMELINE_30_HZ = "X.";
 SHOULD_ADJUST = true
 REACTION_TIME_FRAMES = 21
 INPUT_TIMELINE = TIMELINE_12_HZ;
-SHOULD_RECORD_GAMES = false
+SHOULD_RECORD_GAMES = true
 MOVIE_PATH = "C:\\Users\\Greg\\Desktop\\VODs\\" -- Where to store the fm2 VODS (absolute path)
-if IS_MAC then MOVIE_PATH = "~/Documents/AI_VODs/" end
+if IS_MAC then MOVIE_PATH = "/Users/greg/Documents/AiVods/" end
 
 function resetGameScopedVariables()
   isFirstPiece = true;
@@ -60,6 +60,16 @@ end
 -- Translate internal Piece IDs to actual piece types (T: 2 J: 7 Z: 9 O: 10 S: 11 L: 15 I: 18)
 orientToPiece = {[0]="none", [2]="T", [7]="J", [8]="Z", [10]="O", [11]="S", [14]="L", [18]="I"}
 orientToNum = {[0]="none", [2]=1, [7]=2, [8]=3, [10]=4, [11]=5, [14]=6, [18]=7}
+
+function startRecording()
+  if(SHOULD_RECORD_GAMES) then
+    local dateStr = os.date("%m-%d %H %M")
+    print(dateStr)
+    movieName = "StackRabbit" .. dateStr
+    print(movieName)
+    movie.record(MOVIE_PATH .. movieName .. ".fm2", 1)
+  end
+end
 
  -- This is where the board memory is accessed. Unfortunately lua is dumb so this table is 1 indexed (but stuff kept in memory is still 0 indexed :/)
 function getBoard()
@@ -299,29 +309,6 @@ function executeInputs()
   end
 end
 
---[[------------------------------------ 
-------- Performance Monitoring  -------- 
-------------------------------------]]--
-
--- -- Monitors the number of frames run per real clock second
--- function getMs()
---   return socket.gettime()*1000
--- end
-
--- framesElapsed = 0
--- secsElapsed = 0
--- startTime = getMs()
-
--- function trackAndLogFps()
---   framesElapsed = framesElapsed + 1
---   local msElapsed = getMs() - startTime
---   if msElapsed > (secsElapsed + 1) * 1000 then
---     secsElapsed = secsElapsed + 1
---     if secsElapsed % 30 == 0 then
---       print("Average FPS:" .. framesElapsed / secsElapsed)
---     end
---   end
--- end
 
 --[[------------------------------------ 
 ------------ Game Events  -------------- 
@@ -454,13 +441,7 @@ function eachFrame()
 
   --Game starts
   if(metaGameStateLastFrame == 3 and metaGameState == 4) then
-    if(SHOULD_RECORD_GAMES) then
-      local dateStr = os.date("%m-%d %H %M")
-      print(dateStr)
-      movieName = "StackRabbit" .. dateStr
-      print(movieName)
-      movie.record(MOVIE_PATH .. movieName .. ".fm2", 1, "gregcannon")
-    end
+    startRecording()
   end
 
   --Game ends, clean up data
@@ -478,8 +459,6 @@ function eachFrame()
   if(metaGameState == 4) then
     runGameFrame()
   end
-
-  -- trackAndLogFps()
 end
 
 emu.registerafter(eachFrame)
