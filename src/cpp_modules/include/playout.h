@@ -11,6 +11,6 @@ SimState pickLockPlacement(GameState gameState,
                            FastEvalWeights evalWeights,
                            OUT std::vector<SimState> &lockPlacements);
 
-float playSequence(GameState gameState, int pieceSequence[10]);
+float playSequence(GameState gameState, EvalContext evalContext, FastEvalWeights weights, int pieceSequence[10]);
 
 #endif

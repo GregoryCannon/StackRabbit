@@ -82,7 +82,7 @@ int exploreHorizontally(int board[20],
     int isInputFrame = shouldPerformInputsThisFrame(simState.frameIndex, inputFrameTimeline);
     // int isInputFrame = !(simState.frameIndex & 3);
     int isGravityFrame =
-        simState.frameIndex % gravity == gravity - 1; // Returns true every Nth frame, where N = gravity
+      simState.frameIndex % gravity == gravity - 1;   // Returns true every Nth frame, where N = gravity
     // Event trackers to handle the ordering of a few edge cases (explained more below)
     int foundNewPlacementThisFrame = false;
     int didLockThisFrame = false;
@@ -91,7 +91,7 @@ int exploreHorizontally(int board[20],
       // Try shifting
       if (simState.x != INITIAL_X + maxShifts) {
         if (collision(
-                board, simState.piece, simState.x + shiftIncrement, simState.y, simState.rotationIndex)) {
+              board, simState.piece, simState.x + shiftIncrement, simState.y, simState.rotationIndex)) {
           // printf("Shift collision at x=%d\n", simState.x - INITIAL_X);
           return rangeCurrent;
         }
@@ -127,14 +127,14 @@ int exploreHorizontally(int board[20],
     simState.frameIndex++;
 
     /*
-     This setup is done this way such that the simStates represent the state going into the next input,
-     (i.e. looking for tucks). This means that the y position and frame index need to be updated before
-      we register the state as a legal placement.
-      Edge cases:
-      - If the piece locked on this frame, it's still a legal placement. The y value doesn't increment,
+       This setup is done this way such that the simStates represent the state going into the next input,
+       (i.e. looking for tucks). This means that the y position and frame index need to be updated before
+       we register the state as a legal placement.
+       Edge cases:
+       - If the piece locked on this frame, it's still a legal placement. The y value doesn't increment,
         so that its position represents its real resting spot on the board. No tucks will be possible anyway,
-     so it's a moot point that the y value is different than usual.
-    */
+       so it's a moot point that the y value is different than usual.
+     */
     if (foundNewPlacementThisFrame) {
       // printf("Found legal placement: %d %d %d, frame=%d\n",
       //        simState.rotationIndex,
@@ -168,7 +168,7 @@ void explorePlacementsNearSpawn(int board[20],
   for (int xOffset = rangeStart; xOffset <= rangeEnd; xOffset++) {
     // Check if the placement is legal.
     exploreHorizontally(
-        board, simState, xOffset, xOffset, rotationIndex, inputFrameTimeline, gravity, legalPlacements);
+      board, simState, xOffset, xOffset, rotationIndex, inputFrameTimeline, gravity, legalPlacements);
   }
 }
 
@@ -198,7 +198,7 @@ void getLockPlacementsFast(vector<SimState> &legalPlacements,
   }
 }
 
-int moveSearch(GameState gameState, Piece piece, OUT std::vector<SimState> &lockPlacements) {
+int moveSearch(GameState gameState, Piece piece, char const *inputFrameTimeline, OUT std::vector<SimState> &lockPlacements) {
   vector<SimState> legalMidairPlacements;
 
   for (int rotIndex = 0; rotIndex < 4; rotIndex++) {
@@ -221,10 +221,10 @@ int moveSearch(GameState gameState, Piece piece, OUT std::vector<SimState> &lock
     }
 
     // Search for placements as far as possible to both sides
-    exploreHorizontally(gameState.board, simState, -1, -99, rotIndex, "X...", gravity, legalMidairPlacements);
-    exploreHorizontally(gameState.board, simState, 1, 99, rotIndex, "X...", gravity, legalMidairPlacements);
+    exploreHorizontally(gameState.board, simState, -1, -99, rotIndex, inputFrameTimeline, gravity, legalMidairPlacements);
+    exploreHorizontally(gameState.board, simState, 1, 99, rotIndex, inputFrameTimeline, gravity, legalMidairPlacements);
     // Then double check for some we missed near spawn
-    explorePlacementsNearSpawn(gameState.board, simState, rotIndex, "X...", gravity, legalMidairPlacements);
+    explorePlacementsNearSpawn(gameState.board, simState, rotIndex, inputFrameTimeline, gravity, legalMidairPlacements);
   }
 
   // Let the pieces fall until they lock

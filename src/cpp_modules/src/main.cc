@@ -15,7 +15,7 @@
 #include "move_search.cc"
 #include "playout.cc"
 #include "high_level_search.cc"
-// #include "data/ranksOutput.cc"
+// #include "../data/ranksOutput.cc"
 
 #define USE_RANDOM_SEQUENCE false
 
@@ -35,7 +35,7 @@ int testPlayout(GameState startingGameState, int numRepetitions){
       }
     }
 
-    result = static_cast<int>(playSequence(startingGameState, sequence));
+    result = static_cast<int>(playSequence(startingGameState, DEBUG_CONTEXT, MAIN_WEIGHTS, sequence));
   }
   return result;
 }
@@ -44,7 +44,7 @@ int testDepth2Search(GameState startingGameState, int numRepetitions){
   int result = 0;
   for (int i = 0; i < numRepetitions; i++) {
     list<Depth2Possibility> possibilityList;
-    result = searchDepth2(startingGameState, PIECE_S, PIECE_L, 10, possibilityList);
+    result = searchDepth2(startingGameState, PIECE_S, PIECE_L, 10, DEBUG_CONTEXT, MAIN_WEIGHTS, possibilityList);
 
     // Print results
     if (LOGGING_ENABLED) {
@@ -70,20 +70,23 @@ int testDepth2Search(GameState startingGameState, int numRepetitions){
 
 
 std::string mainProcess(char const *inputStr) {
+  // // Print ranks
+  // for (int i = 0; i < 20; i++) {
+  //    printf("ranks %d\n", surfaceRanksRaw[i]);
+  // }
+
   maybePrint("Input string %s\n", inputStr);
 
+  // Init empty data structures
   GameState startingGameState = {
-    // /* board= */ {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1022, 1022, 1022},
     /* board= */ {},
     /* surfaceArray= */ {},
     /* adjustedNumHole= */ 0,
-    /* lines= */ 0};
-  Piece curPiece = PIECE_T;
-  Piece nextPiece = PIECE_S;
-
-  encodeBoard(inputStr, startingGameState.board);
-  getSurfaceArray(startingGameState.board, startingGameState.surfaceArray);
-  startingGameState.adjustedNumHoles += updateSurfaceAndHolesAfterLineClears(startingGameState.surfaceArray, startingGameState.board, DEBUG_CONTEXT);
+    /* lines= */ 0,
+    /* level= */ 0
+  };
+  Piece curPiece;
+  Piece nextPiece;
 
   // Loop through the other args
   std::string s = std::string(inputStr + 201); // 201 = the length of the board string + 1 for the delimiter
@@ -95,27 +98,30 @@ std::string mainProcess(char const *inputStr) {
     maybePrint("ARG %d: %d\n", i, arg);
     switch (i) {
     case 0:
+      startingGameState.level = arg;
+    case 1:
       startingGameState.lines = arg;
       break;
-    case 1:
+    case 2:
       curPiece = PIECE_LIST[arg];
       break;
-    case 2:
+    case 3:
       nextPiece = PIECE_LIST[arg];
       break;
     default:
       break;
     }
-  
+
     start = (int) end + (int) delim.length();
     end = s.find(delim, start);
   }
 
-  std::string lookupMapEncoded = getLockValueLookupEncoded(startingGameState, curPiece, nextPiece, /* keepTopN= */ 20);
-  return lookupMapEncoded;
+  // Fill in the data structures
+  encodeBoard(inputStr, startingGameState.board);
+  getSurfaceArray(startingGameState.board, startingGameState.surfaceArray);
+  startingGameState.adjustedNumHoles += updateSurfaceAndHolesAfterLineClears(startingGameState.surfaceArray, startingGameState.board, DEBUG_CONTEXT);
 
-  // Print ranks
-  // for (int i = 0; i < 20; i++) {
-  //    printf("ranks %d\n", surfaceRanksRaw[i]);
-  // }
+
+  std::string lookupMapEncoded = getLockValueLookupEncoded(startingGameState, curPiece, nextPiece, /* keepTopN= */ 20, DEBUG_CONTEXT, MAIN_WEIGHTS);
+  return lookupMapEncoded;
 }

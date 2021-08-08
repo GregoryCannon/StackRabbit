@@ -19,6 +19,9 @@
 
 // Useful bit-rows
 #define FULL_ROW 1023 // = 1111111111
+#define NEED_TO_CLEAR_BIT 2048 // = 10|0000000000, marks when a row needs to be cleared
+#define MARK_NEEDS_CLEAR(row) ((row) | NEED_TO_CLEAR_BIT)
+#define NEEDS_CLEAR(row) ((row) & NEED_TO_CLEAR_BIT)
 
 void maybePrint(const char *format, ...) {
   if (!LOGGING_ENABLED){
@@ -29,24 +32,5 @@ void maybePrint(const char *format, ...) {
   vprintf(format, args);
   va_end(args);
 }
-
-const FastEvalWeights DEBUG_WEIGHTS = {
-    /* avgHeightCoef= */ -5,
-    /* avgHeightExponent= */ 2,
-    /* burnCoef= */ -1,
-    /* coveredWellCoef= */ -5,
-    /* col9Coef= */ -3,
-    /* deathCoef= */ -10000,
-    0,
-    /* holeCoef= */ -40,
-    /* tetrisCoef= */ 40,
-    0,
-    /* surfaceCoef= */ 1};
-const EvalContext DEBUG_CONTEXT = {
-    /* inputFrameTimeline= */ 1 << 4,
-    /* maxSafeCol9Height= */ 7,
-    /* scareHeight= */ 5,
-    /* wellColumn= */ 9,
-    /* countWellHoles= */ false};
 
 #endif

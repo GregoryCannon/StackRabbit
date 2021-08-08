@@ -1,13 +1,10 @@
 #include "../include/eval.h"
 #include "../include/move_result.h"
 #include "../include/utils.h"
-
+#include "../include/ranks_output.h"
 #include <math.h>
 #include <vector>
-//#include "data/ranksOutput.cc"
 using namespace std;
-
-const int USE_RANKS = 0;
 
 /**
  * A crude way to evaluate a surface for when I'm debugging and don't want to load the surfaces every time I
@@ -21,27 +18,38 @@ float calculateFlatness(int surfaceArray[10], int wellColumn) {
     }
     int diff = surfaceArray[i + 1] - surfaceArray[i];
     if (diff != 0) {
-      score -= pow(abs(diff), 2.5);
+      score -= pow(abs(diff), 1.5);
+    }
+    // Line dependency
+    if (diff >= 3 && (i == 0 || surfaceArray[i-1] + surfaceArray[i] >= 3)){
+      score -= 20;
     }
   }
   return score;
 }
 
 /** Gets the value of a surface. */
-float rateSurface(int surfaceArray[10], int wellColumn) {
+float rateSurface(int surfaceArray[10], int wellColumn, FastEvalWeights weights) {
+  if (USE_RANKS) {
+    // Convert the surface array into the custom base-9 encoding
+    int index = 0;
+    int excessGap = 0;
+    for (int i = 0; i < 8; i++) {
+      int diff = surfaceArray[i + 1] - surfaceArray[i];
+      int absDiff = abs(diff);
+      if (absDiff > 4) {
+        excessGap += absDiff - 4;
+        diff = diff > 0 ? 4 : -4;
+      }
+      index *= 9;
+      index += diff + 4;
+    }
+    // return 1.0; // So it compiles without the ranks
+    return surfaceRanksRaw[index] * 0.1 + (excessGap * weights.extremeGapCoef);
+  }
+
   // Backup option in case ranks aren't loaded
-  if (!USE_RANKS) {
-    return calculateFlatness(surfaceArray, wellColumn);
-  }
-  // Convert the surface array into the custom base-9 encoding
-  int index = 0;
-  for (int i = 0; i < 8; i++) {
-    int diff = surfaceArray[i + 1] - surfaceArray[i];
-    index *= 9;
-    index += diff + 3;
-  }
-  return 1.0; // So it compiles without the ranks
-  // return surfaceRanksRaw[index] * 0.1;
+  return calculateFlatness(surfaceArray, wellColumn);
 }
 
 float getAverageHeightFactor(int surfaceArray[10], int wellColumn, int scareHeight, FastEvalWeights weights) {
@@ -53,13 +61,13 @@ float getAverageHeightFactor(int surfaceArray[10], int wellColumn, int scareHeig
     }
     totalHeight += surfaceArray[i] * weight;
   }
-  
+
   int scaledPenalty = scareHeight < 3 ? totalHeight : totalHeight / max(3, scareHeight);
-  return weights.avgHeightCoef * pow(scaledPenalty, weights.avgHeightExponent);
+  return weights.avgHeightCoef * scaledPenalty * scaledPenalty * scaledPenalty;
 }
 
 float getCol9Factor(int col9Height, float maxSafeCol9Height){
-  if (col9Height <= maxSafeCol9Height){
+  if (col9Height <= maxSafeCol9Height) {
     return 0;
   }
   float diff = maxSafeCol9Height - col9Height;
@@ -98,21 +106,35 @@ float getLineClearFactor(int numLinesCleared, FastEvalWeights weights){
   return numLinesCleared == 4 ? weights.tetrisCoef : weights.burnCoef * numLinesCleared;
 }
 
+int isTetrisReady(int board[20], int col10Height){
+  if (col10Height > 16){
+    return 0;
+  }
+  // Check that the four rows where a right well tetris would happen are all full except col 10
+  for (int r = 0; r <= 4; r++){
+    if (board[19 - col10Height - r] != 1022){
+      return false;
+    }
+  }
+  return true;
+}
+
 float fastEval(GameState gameState,
                GameState newState,
                SimState lockPlacement,
                EvalContext evalContext,
                FastEvalWeights weights) {
   // Calculate all the factors
-  float surfaceFactor = weights.surfaceCoef * rateSurface(newState.surfaceArray, evalContext.wellColumn);
+  float surfaceFactor = weights.surfaceCoef * rateSurface(newState.surfaceArray, evalContext.wellColumn, weights);
   float avgHeightFactor = getAverageHeightFactor(newState.surfaceArray, evalContext.wellColumn, evalContext.scareHeight, weights);
   float lineClearFactor = getLineClearFactor(newState.lines - gameState.lines, weights);
   float holeFactor = weights.holeCoef * newState.adjustedNumHoles;
   float coveredWellFactor = getCoveredWellFactor(newState.board, evalContext.wellColumn, evalContext.scareHeight, weights);
   float guaranteedBurnsFactor = getGuaranteedBurnsFactor(newState.board, evalContext.wellColumn, weights);
   float highCol9Factor = weights.col9Coef * getCol9Factor(newState.surfaceArray[8], evalContext.maxSafeCol9);
+  float tetrisReadyFactor = isTetrisReady(newState.board, newState.surfaceArray[9]) ? weights.tetrisReadyCoef : 0;
 
-  float total = surfaceFactor + avgHeightFactor + lineClearFactor + holeFactor + guaranteedBurnsFactor + coveredWellFactor + highCol9Factor;
+  float total = surfaceFactor + avgHeightFactor + lineClearFactor + holeFactor + guaranteedBurnsFactor + coveredWellFactor + highCol9Factor + tetrisReadyFactor;
 
   // Logging
   if (LOGGING_ENABLED) {
@@ -126,7 +148,7 @@ float fastEval(GameState gameState,
     }
     maybePrint("%d\n", newState.surfaceArray[9]);
     maybePrint(
-      "Surface %01f, AvgHeight %01f, LineClear %01f, Hole %01f, GuaranteedBurns %01f, CoveredWell %01f, HighCol9 %01f\t Total: %01f\n",
+      "Surface %01f, AvgHeight %01f, LineClear %01f, Hole %01f, GuaranteedBurns %01f, CoveredWell %01f, HighCol9 %01f, TetrisReady %01f\t Total: %01f\n",
       surfaceFactor,
       avgHeightFactor,
       lineClearFactor,
@@ -134,6 +156,7 @@ float fastEval(GameState gameState,
       guaranteedBurnsFactor,
       coveredWellFactor,
       highCol9Factor,
+      tetrisReadyFactor,
       total);
   }
 

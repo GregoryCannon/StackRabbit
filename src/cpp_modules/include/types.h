@@ -19,6 +19,7 @@ struct GameState {
   int surfaceArray[10];
   int adjustedNumHoles; // A count of how many holes there are, with adjustments for the height of holes.
   int lines;
+  int level;
 };
 
 /**
@@ -40,6 +41,11 @@ struct LockLocation {
   int rotationIndex;
 };
 
+enum AiMode {
+  STANDARD,
+  DIG
+};
+
 /**
  * The relative weights of all the eval factors.
  */
@@ -50,10 +56,10 @@ struct FastEvalWeights {
   float coveredWellCoef;
   float col9Coef;
   float deathCoef;
-  float highCol9Coef;
+  float extremeGapCoef;
   float holeCoef;
   float tetrisCoef;
-  float spireHeightCoef;
+  float tetrisReadyCoef;
   float surfaceCoef;
 };
 
@@ -62,11 +68,12 @@ struct FastEvalWeights {
  * e.g. how fast the agent can tap
  */
 struct EvalContext {
-  int inputFrameTimeline;
+  char const * inputFrameTimeline;
   float maxSafeCol9;
   float scareHeight;
   int wellColumn;
   int countWellHoles;
+  int aiMode;
 };
 
 struct FastEvalResult {

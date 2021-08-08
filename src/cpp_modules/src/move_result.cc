@@ -95,7 +95,7 @@ int getNewBoardAndLinesCleared(int board[20], SimState lockPlacement, OUT int ne
 
 /** Gets the game state after completing a given move */
 GameState advanceGameState(GameState gameState, SimState lockPlacement, EvalContext evalContext) {
-  GameState newState = {{}, {}, gameState.adjustedNumHoles, gameState.lines};
+  GameState newState = {{}, {}, gameState.adjustedNumHoles, gameState.lines, gameState.level};
 
   int numLinesCleared = getNewBoardAndLinesCleared(gameState.board, lockPlacement, newState.board);
   newState.lines += numLinesCleared;
