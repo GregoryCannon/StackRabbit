@@ -25,14 +25,95 @@
 #define MARK_NEEDS_CLEAR(row) ((row) | NEED_TO_CLEAR_BIT)
 #define NEEDS_CLEAR(row) ((row) & NEED_TO_CLEAR_BIT)
 
+/* ---------- LOGGING ----------- */
+
 void maybePrint(const char *format, ...) {
-  if (!LOGGING_ENABLED){
+  if (!LOGGING_ENABLED) {
     return;
   }
   va_list args;
   va_start(args, format);
   vprintf(format, args);
   va_end(args);
+}
+
+void printBoard(int board[20]) {
+  printf("----- Board start -----\n");
+  for (int i = 0; i < 20; i++) {
+    char line[] = "..........";
+    int thisRow = board[i];
+    for (int j = 0; j < 10; j++) {
+      line[9 - j] = (thisRow & 0x1) ? 'X' : '.';
+      thisRow = thisRow >> 1;
+    }
+    printf("%s\n", line);
+  }
+}
+
+void printSurface(int surfaceArray[10]) {
+  for (int i = 0; i < 9; i++) {
+    printf("%d ", surfaceArray[i]);
+  }
+  printf("%d\n", surfaceArray[9]);
+}
+
+
+/* --------- BOARD ENCODINGS -------- */
+
+void encodeBoard(char const *boardStr, int outBoard[20]) {
+  for (int i = 0; i < 20; i++) {
+    int acc = 0;
+    for (int j = 0; j < 10; j++) {
+      char c = boardStr[i * 10 + j];
+      acc *= 2;
+      if (c == '1') {
+        acc += 1;
+      }
+    }
+    outBoard[i] = acc;
+  }
+}
+
+void getSurfaceArray(int board[20], int outSurface[10]) {
+  for (int col = 0; col < 10; col++) {
+    int colMask = 1 << (9 - col);
+    int row = 0;
+    while (!(board[row] & colMask) && row < 20) {
+      row++;
+    }
+    outSurface[col] = 20 - row;
+  }
+}
+
+/* ----------- MISC GAMEPLAY HELPERS ----------- */
+
+AiMode getAiMode(GameState gameState) {
+  if (gameState.level >= 29) {
+    return LINEOUT;
+  }
+  if (gameState.adjustedNumHoles > 0) {
+    return DIG;
+  }
+  return STANDARD;
+}
+
+int getLevelAfterLineClears(int level, int lines, int numLinesCleared) {
+  // If it hasn't reached transition, it can't go up in level
+  if (level == 18 && lines < 126) {
+    return 18;
+  }
+  if (level == 19 && lines < 136) {
+    return 19;
+  }
+  if (level == 29 && lines < 196) {
+    return 29;
+  }
+
+  // Otherwise it goes up every time you cross a multiple of 10
+  if ((lines % 10) + numLinesCleared >= 10) {
+    return level + 1;
+  }
+  return level;
 }
 
 #endif

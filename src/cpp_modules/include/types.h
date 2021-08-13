@@ -43,7 +43,8 @@ struct LockLocation {
 
 enum AiMode {
   STANDARD,
-  DIG
+  DIG,
+  LINEOUT
 };
 
 /**

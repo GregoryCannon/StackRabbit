@@ -104,6 +104,7 @@ GameState advanceGameState(GameState gameState, SimState lockPlacement, EvalCont
 
   int numLinesCleared = getNewBoardAndLinesCleared(gameState.board, lockPlacement, newState.board);
   newState.lines += numLinesCleared;
+  newState.level = getLevelAfterLineClears(gameState.level, gameState.lines, numLinesCleared);
 
   int numNewHoles =
     getNewSurfaceAndNumNewHoles(gameState.surfaceArray, lockPlacement, evalContext, newState.surfaceArray);
