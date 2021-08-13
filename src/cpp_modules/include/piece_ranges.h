@@ -35,6 +35,7 @@ xtable getRangeXTable() {
   return table;
 }
 
-xtable X_BOUNDS_COLLISION_TABLE = getRangeXTable();
+const xtable X_BOUNDS_COLLISION_TABLE = getRangeXTable();
+
 
 #endif

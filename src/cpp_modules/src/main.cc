@@ -7,6 +7,7 @@
 
 #include "../include/piece_ranges.h"
 #include "../include/tetrominoes.h"
+#include "../include/params.h"
 // I have to include the C++ files here due to a complication of node-gyp. Consider this the equivalent
 // of listing all the C++ sources in the makefile (Node-gyp seems to only work with 1 source rn).
 #include "board_methods.cc"
@@ -117,11 +118,14 @@ std::string mainProcess(char const *inputStr) {
   }
 
   // Fill in the data structures
+  EvalContext context = DEBUG_CONTEXT;
   encodeBoard(inputStr, startingGameState.board);
   getSurfaceArray(startingGameState.board, startingGameState.surfaceArray);
   startingGameState.adjustedNumHoles += updateSurfaceAndHolesAfterLineClears(startingGameState.surfaceArray, startingGameState.board, DEBUG_CONTEXT);
+  context.aiMode = startingGameState.adjustedNumHoles > 0 ? DIG : STANDARD;
 
-
-  std::string lookupMapEncoded = getLockValueLookupEncoded(startingGameState, curPiece, nextPiece, /* keepTopN= */ 20, DEBUG_CONTEXT, MAIN_WEIGHTS);
+  // printBoard(startingGameState.board);
+  
+  std::string lookupMapEncoded = getLockValueLookupEncoded(startingGameState, curPiece, nextPiece, DEPTH_2_PRUNING_BREADTH, context, getWeights(context.aiMode));
   return lookupMapEncoded;
 }

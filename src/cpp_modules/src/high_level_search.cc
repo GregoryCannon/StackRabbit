@@ -7,6 +7,16 @@ using namespace std;
 #define UNEXPLORED_PENALTY -500   // A penalty for placements that weren't explored with playouts (could be worse than the eval indicates)
 #define MAP_OFFSET 20000          // An offset to make any placement better than the default 0 in the map
 
+int bestMoveRankingCount[DEPTH_2_PRUNING_BREADTH] = {}; // 12 long since we look at the top 12 moves
+
+/** Concatenates the position of a piece into a single string. */
+std::string encodeLockPosition(LockLocation lockLocation){
+  char buffer[10];
+  sprintf(buffer, "%d|%d|%d", lockLocation.rotationIndex, lockLocation.x, lockLocation.y);
+  return string(buffer);
+}
+
+/** Calculates the valuation of every possible terminal position for a given piece on a given board, and stores it in a map. */
 std::string getLockValueLookupEncoded(GameState gameState, Piece firstPiece, Piece secondPiece, int keepTopN, EvalContext evalContext, FastEvalWeights weights){
   unordered_map<string, float> lockValueMap;
 
@@ -14,18 +24,35 @@ std::string getLockValueLookupEncoded(GameState gameState, Piece firstPiece, Pie
   list<Depth2Possibility> possibilityList;
   searchDepth2(gameState, firstPiece, secondPiece, keepTopN, evalContext, weights, possibilityList);
 
+  // Perform playouts on the promising possibilities
   int i = 0;
+  float bestSeen = weights.deathCoef - 1;
+  int bestIndex = -1;
   for (Depth2Possibility const& possibility : possibilityList) {
-    char buffer[10];
-    sprintf(buffer, "%d|%d|%d", possibility.firstPlacement.rotationIndex, possibility.firstPlacement.x, possibility.firstPlacement.y);
-    string lockPosEncoded = string(buffer);
-    float adjustedScore = possibility.evalScore + (i > keepTopN ? UNEXPLORED_PENALTY : 0) + MAP_OFFSET;
+    string lockPosEncoded = encodeLockPosition(possibility.firstPlacement);
 
-    if (adjustedScore > lockValueMap[lockPosEncoded]) {
-      lockValueMap[lockPosEncoded] = adjustedScore;
+    float overallScore = MAP_OFFSET + (i < keepTopN
+      ? possibility.immediateReward + getPlayoutScore(possibility.resultingState, 56, evalContext, weights)
+      : possibility.evalScore + UNEXPLORED_PENALTY);
+    // Track the best move seen and where it ranked in the initial sorted list
+    // if (overallScore > bestSeen){
+    //   bestSeen = overallScore;
+    //   bestIndex = i;
+    // }
+
+    if (overallScore > lockValueMap[lockPosEncoded]) {
+      lockValueMap[lockPosEncoded] = overallScore;
     }
     i++;
   }
+  
+  // Track where the overall best move ranked in the list by initial eval
+  // bestMoveRankingCount[bestIndex] += 1;
+  // for (int i = 0; i < DEPTH_2_PRUNING_BREADTH; i++){
+  //   printf("%d:%d, ", i+1, bestMoveRankingCount[i]);
+  // }
+  // printf("\n");
+
   // Encode lookup to JSON
   std::string mapEncoded = std::string("{");
   for( const auto& n : lockValueMap ) {
@@ -33,7 +60,9 @@ std::string getLockValueLookupEncoded(GameState gameState, Piece firstPiece, Pie
     sprintf(buf, "\"%s\":%f,", n.first.c_str(), n.second - MAP_OFFSET);
     mapEncoded.append(buf);
   }
-  mapEncoded.pop_back(); // Remove the last comma
+  if (lockValueMap.size() > 0){
+    mapEncoded.pop_back(); // Remove the last comma
+  }
   mapEncoded.append("}");
   return mapEncoded;
 }
@@ -60,12 +89,14 @@ int searchDepth2(GameState gameState, Piece firstPiece, Piece secondPiece, int k
     for (auto secondPlacement : secondLockPlacements) {
       GameState resultingState = advanceGameState(afterFirstMove, secondPlacement, evalContext);
       float evalScore = firstMoveReward + fastEval(afterFirstMove, resultingState, secondPlacement, evalContext, weights);
+      float secondMoveReward = getLineClearFactor(resultingState.lines - afterFirstMove.lines, weights);
 
       Depth2Possibility newPossibility = {
         { firstPlacement.x, firstPlacement.y, firstPlacement.rotationIndex },
         { secondPlacement.x, secondPlacement.y, secondPlacement.rotationIndex },
         resultingState,
-        evalScore
+        evalScore,
+        firstMoveReward + secondMoveReward
       };
 
       if (size < keepTopN || evalScore > cutoffPossibility->evalScore) {
@@ -110,7 +141,7 @@ int searchDepth2(GameState gameState, Piece firstPiece, Piece secondPiece, int k
 }
 
 
-void evaluatePossibilitiesWithPlayouts(int timeoutMs){
-  auto millisec_since_epoch = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-  
-}
+// void evaluatePossibilitiesWithPlayouts(int timeoutMs){
+//   auto millisec_since_epoch = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+//
+// }

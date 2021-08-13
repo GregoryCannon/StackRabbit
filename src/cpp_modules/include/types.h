@@ -52,6 +52,7 @@ enum AiMode {
 struct FastEvalWeights {
   float avgHeightCoef;
   float avgHeightExponent;
+  float builtOutLeftCoef;
   float burnCoef;
   float coveredWellCoef;
   float col9Coef;
@@ -68,12 +69,13 @@ struct FastEvalWeights {
  * e.g. how fast the agent can tap
  */
 struct EvalContext {
+  AiMode aiMode;
+  int countWellHoles;
   char const * inputFrameTimeline;
+  float maxDirtyTetrisHeight;
   float maxSafeCol9;
   float scareHeight;
   int wellColumn;
-  int countWellHoles;
-  int aiMode;
 };
 
 struct FastEvalResult {
@@ -86,6 +88,7 @@ struct Depth2Possibility {
   LockLocation secondPlacement;
   GameState resultingState;
   float evalScore;
+  float immediateReward;
 };
 
 #endif

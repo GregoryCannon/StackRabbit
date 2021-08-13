@@ -7,6 +7,8 @@
 #define LOGGING_ENABLED 0
 #define PLAYOUT_LOGGING_ENABLED 0
 
+#define DEPTH_2_PRUNING_BREADTH 12
+
 // No-op used to mark output parameters
 #define OUT
 
