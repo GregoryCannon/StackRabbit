@@ -26,8 +26,8 @@ std::string getLockValueLookupEncoded(GameState gameState, Piece firstPiece, Pie
 
   // Perform playouts on the promising possibilities
   int i = 0;
-  float bestSeen = weights.deathCoef - 1;
-  int bestIndex = -1;
+  // float bestSeen = weights.deathCoef - 1;
+  // int bestIndex = -1;
   for (Depth2Possibility const& possibility : possibilityList) {
     string lockPosEncoded = encodeLockPosition(possibility.firstPlacement);
 
@@ -103,13 +103,11 @@ int searchDepth2(GameState gameState, Piece firstPiece, Piece secondPiece, int k
         // Insert into the list in its correct sorted place
         for (auto it = possibilityList.begin(); true; it++) {
           if (it == possibilityList.end()) {
-            // printf("Adding to end\n");
             possibilityList.push_back(newPossibility);
             size++;
             break;
           }
           if (evalScore > it->evalScore) {
-            // printf("Inserting\n");
             possibilityList.insert(it, newPossibility);
             size++;
             break;
@@ -122,18 +120,15 @@ int searchDepth2(GameState gameState, Piece firstPiece, Piece secondPiece, int k
           auto ptr = possibilityList.begin();
           advance(ptr, keepTopN - 1);
           cutoffPossibility = ptr;
-          // printf("INITIAL CUTOFF: %f\n", cutoffPossibility->evalScore);
         }
         if (size > keepTopN) {
           // Use the predecessor of the one that just got pushed out
           cutoffPossibility = prev(cutoffPossibility);
-          // printf("NEW CUTOFF: %f\n", cutoffPossibility->evalScore);
         }
 
       } else {
         // Add it at the end of the list (sorting not important)
         possibilityList.push_back(newPossibility);
-        // maybe("Not top 10, but adding\n");
       }
     }
   }

@@ -71,6 +71,11 @@ int getNewBoardAndLinesCleared(int board[20], SimState lockPlacement, OUT int ne
   // Check the piece rows, bottom to top
   int *pieceRows = lockPlacement.piece.rowsByRotation[lockPlacement.rotationIndex];
   for (int i = 3; i >= 0; i--) {
+    // Don't add any minos off the board
+    if (lockPlacement.y + i < 0) {
+      break;
+    }
+
     if (pieceRows[i] == 0) {
       newBoard[lockPlacement.y + i + numLinesCleared] = board[lockPlacement.y + i];
       continue;
@@ -101,10 +106,10 @@ GameState advanceGameState(GameState gameState, SimState lockPlacement, EvalCont
   newState.lines += numLinesCleared;
 
   int numNewHoles =
-      getNewSurfaceAndNumNewHoles(gameState.surfaceArray, lockPlacement, evalContext, newState.surfaceArray);
+    getNewSurfaceAndNumNewHoles(gameState.surfaceArray, lockPlacement, evalContext, newState.surfaceArray);
   if (numLinesCleared > 0) {
     newState.adjustedNumHoles =
-        updateSurfaceAndHolesAfterLineClears(newState.surfaceArray, newState.board, evalContext);
+      updateSurfaceAndHolesAfterLineClears(newState.surfaceArray, newState.board, evalContext);
   } else {
     newState.adjustedNumHoles += numNewHoles;
   }

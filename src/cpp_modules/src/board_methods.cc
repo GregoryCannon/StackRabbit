@@ -9,7 +9,6 @@ void encodeBoard(char const *boardStr, int outBoard[20]) {
     int acc = 0;
     for (int j = 0; j < 10; j++) {
       char c = boardStr[i * 10 + j];
-      // printf("%c", c);
       acc *= 2;
       if (c == '1') {
         acc += 1;
