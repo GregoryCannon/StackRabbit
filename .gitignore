@@ -1,6 +1,7 @@
 # Manually added
 raw_data/
 *.txt
+*.csv
 *.exe
 src/cpp_modules/data/
 src/cpp_modules/unused/
