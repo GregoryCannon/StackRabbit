@@ -52,7 +52,6 @@ enum AiMode {
  */
 struct FastEvalWeights {
   float avgHeightCoef;
-  float avgHeightExponent;
   float builtOutLeftCoef;
   float burnCoef;
   float coveredWellCoef;
@@ -76,7 +75,7 @@ struct EvalContext {
   float maxDirtyTetrisHeight;
   float maxSafeCol9;
   float scareHeight;
-  int wellColumn;
+  int wellColumn; // Equals -1 if lining out
 };
 
 struct FastEvalResult {

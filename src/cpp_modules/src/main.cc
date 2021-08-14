@@ -8,6 +8,7 @@
 #include "../include/piece_ranges.h"
 #include "../include/tetrominoes.h"
 #include "../include/params.h"
+#include "../include/eval_context.h"
 // I have to include the C++ files here due to a complication of node-gyp. Consider this the equivalent
 // of listing all the C++ sources in the makefile (Node-gyp seems to only work with 1 source rn).
 #include "eval.cc"
@@ -35,7 +36,7 @@ int testPlayout(GameState startingGameState, int numRepetitions){
       }
     }
 
-    result = static_cast<int>(playSequence(startingGameState, DEBUG_CONTEXT, MAIN_WEIGHTS, sequence));
+    result = static_cast<int>(playSequence(startingGameState, sequence));
   }
   return result;
 }
@@ -115,16 +116,16 @@ std::string mainProcess(char const *inputStr) {
     start = (int) end + (int) delim.length();
     end = s.find(delim, start);
   }
-
+  int wellColumn = isLineout(startingGameState) ? -1 : 9;
   // Fill in the data structures
-  EvalContext context = DEBUG_CONTEXT;
   encodeBoard(inputStr, startingGameState.board);
   getSurfaceArray(startingGameState.board, startingGameState.surfaceArray);
-  startingGameState.adjustedNumHoles += updateSurfaceAndHolesAfterLineClears(startingGameState.surfaceArray, startingGameState.board, DEBUG_CONTEXT);
-  context.aiMode = getAiMode(startingGameState);
+  startingGameState.adjustedNumHoles += updateSurfaceAndHolesAfterLineClears(startingGameState.surfaceArray, startingGameState.board, wellColumn);
+
+  EvalContext context = getEvalContext(startingGameState);
 
   // printBoard(startingGameState.board);
-  
+
   std::string lookupMapEncoded = getLockValueLookupEncoded(startingGameState, curPiece, nextPiece, DEPTH_2_PRUNING_BREADTH, context, getWeights(context.aiMode));
   return lookupMapEncoded;
 }

@@ -37,7 +37,7 @@ int getNewSurfaceAndNumNewHoles(int surfaceArray[10],
  * don't apply).
  * @returns the new hole count
  */
-int updateSurfaceAndHolesAfterLineClears(int surfaceArray[10], int board[20], EvalContext evalContext) {
+int updateSurfaceAndHolesAfterLineClears(int surfaceArray[10], int board[20], int excludeHolesColumn) {
   int numHoles = 0;
   for (int c = 0; c < 10; c++) {
     int mask = 1 << (9 - c);
@@ -49,7 +49,7 @@ int updateSurfaceAndHolesAfterLineClears(int surfaceArray[10], int board[20], Ev
     surfaceArray[c] = 20 - r;
     while (r < 20) {
       // Add new holes to the overall count, unless they're in the well
-      if (!(board[r] & mask) && (evalContext.countWellHoles || c != evalContext.wellColumn)) {
+      if (!(board[r] & mask) && c != excludeHolesColumn) {
         numHoles++;
       }
       r++;
@@ -110,7 +110,7 @@ GameState advanceGameState(GameState gameState, SimState lockPlacement, EvalCont
     getNewSurfaceAndNumNewHoles(gameState.surfaceArray, lockPlacement, evalContext, newState.surfaceArray);
   if (numLinesCleared > 0) {
     newState.adjustedNumHoles =
-      updateSurfaceAndHolesAfterLineClears(newState.surfaceArray, newState.board, evalContext);
+      updateSurfaceAndHolesAfterLineClears(newState.surfaceArray, newState.board, evalContext.countWellHoles ? -1 : evalContext.wellColumn);
   } else {
     newState.adjustedNumHoles += numNewHoles;
   }

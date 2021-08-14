@@ -3,7 +3,6 @@
 
 const FastEvalWeights MAIN_WEIGHTS = {
   /* avgHeightCoef= */ -5,
-  /* avgHeightExponent= */ 2,
   /* builtOutLeftCoef= */ 1.5,
   /* burnCoef= */ -8,
   /* coveredWellCoef= */ -5,
@@ -18,11 +17,24 @@ const FastEvalWeights MAIN_WEIGHTS = {
 
 const FastEvalWeights DIG_WEIGHTS = {
   MAIN_WEIGHTS.avgHeightCoef,
-  MAIN_WEIGHTS.avgHeightExponent,
   MAIN_WEIGHTS.builtOutLeftCoef,
   /* burnCoef= */ -1,
   /* coveredWellCoef= */ -1.25,
   /* col9Coef= */ -1,
+  MAIN_WEIGHTS.deathCoef,
+  MAIN_WEIGHTS.extremeGapCoef,
+  MAIN_WEIGHTS.holeCoef,
+  MAIN_WEIGHTS.tetrisCoef,
+  MAIN_WEIGHTS.tetrisReadyCoef,
+  MAIN_WEIGHTS.surfaceCoef
+};
+
+const FastEvalWeights LINEOUT_WEIGHTS = {
+  MAIN_WEIGHTS.avgHeightCoef,
+  /* builtOutLeftCoef= */ 6,
+  /* burnCoef= */ 0,
+  /* coveredWellCoef= */ 0,
+  /* col9Coef= */ 0,
   MAIN_WEIGHTS.deathCoef,
   MAIN_WEIGHTS.extremeGapCoef,
   MAIN_WEIGHTS.holeCoef,

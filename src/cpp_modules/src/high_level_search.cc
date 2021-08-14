@@ -32,7 +32,7 @@ std::string getLockValueLookupEncoded(GameState gameState, Piece firstPiece, Pie
     string lockPosEncoded = encodeLockPosition(possibility.firstPlacement);
 
     float overallScore = MAP_OFFSET + (i < keepTopN
-      ? possibility.immediateReward + getPlayoutScore(possibility.resultingState, 56, evalContext, weights)
+      ? possibility.immediateReward + getPlayoutScore(possibility.resultingState, 56)
       : possibility.evalScore + UNEXPLORED_PENALTY);
     // Track the best move seen and where it ranked in the initial sorted list
     // if (overallScore > bestSeen){

@@ -87,16 +87,6 @@ void getSurfaceArray(int board[20], int outSurface[10]) {
 
 /* ----------- MISC GAMEPLAY HELPERS ----------- */
 
-AiMode getAiMode(GameState gameState) {
-  if (gameState.level >= 29) {
-    return LINEOUT;
-  }
-  if (gameState.adjustedNumHoles > 0) {
-    return DIG;
-  }
-  return STANDARD;
-}
-
 int getLevelAfterLineClears(int level, int lines, int numLinesCleared) {
   // If it hasn't reached transition, it can't go up in level
   if (level == 18 && lines < 126) {
