@@ -1,0 +1,1 @@
+web: tsc && node built/src/server/app.js
