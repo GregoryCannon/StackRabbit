@@ -6,7 +6,6 @@
   "scripts": {
     "start-server": "node-gyp build && tsc && node built/src/server/app.js",
     "start": "node built/src/server/app.js",
-    "make": "prettier src/*.js --write && webpack --progress --mode=production",
     "format": "prettier --write \"src/**/*.+(js|jsx|ts|json|css|md)\"",
     "cb": "node-gyp build",
     "cr": "node-gyp build && node built/src/server/cmodules.js"
