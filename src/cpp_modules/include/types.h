@@ -15,12 +15,28 @@ struct Piece {
  * A representation of the overall state of the game, like a freeze frame before each piece spawns.
  */
 struct GameState {
-  int board[20];  // Each int represent a row, where the last 10 bits of the int represent the cells.
+  int board[20];  // See board encoding details below
   int surfaceArray[10];
   int adjustedNumHoles; // A count of how many holes there are, with adjustments for the height of holes.
   int lines;
   int level;
 };
+
+/* Board encoding:
+  Each row is a 32-bit integer, with the encoding as follows:
+
+  c 0 tttttttttt hhhhhhhhhh bbbbbbbbbb
+
+  b = one cell in the row (whether it's filled)
+  h = whether each cell is a hole
+  t = whether each cell is a tuck setup
+  c = whether the row is guaranteed to be burned
+ */
+
+// (For movesearch) A bit sequence that encodes which columns can be reached by a piece in each orientation.
+// encoded as (rotationIndex, x) -> rotationIndex * 10 + (x + 2)
+//   e.g. To check if (3, 2) is reachable, look at bit 34
+typedef long long int AvailableTuckCols;
 
 /**
  * The internal state of a move search simulation

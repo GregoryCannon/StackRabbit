@@ -21,9 +21,10 @@
 
 // Useful bit-rows
 #define FULL_ROW 1023 // = 1111111111
-#define NEED_TO_CLEAR_BIT 2048 // = 10|0000000000, marks when a row needs to be cleared
-#define MARK_NEEDS_CLEAR(row) ((row) | NEED_TO_CLEAR_BIT)
-#define NEEDS_CLEAR(row) ((row) & NEED_TO_CLEAR_BIT)
+#define NEED_TO_CLEAR_BIT (1 << 31) // = 1000...0000000000, marks when a row needs to be cleared
+#define TUCK_COL_BIT(r, x) ((r) * 10 + (x) + 2) // Encoding of a rotation/column pair, output ranges from 0-39
+#define TUCK_SETUP_BIT(x) (1 << (29 - x)) // See the comment in types.h for an explanation of this encoding
+#define ALL_TUCK_SETUP_BITS (1023 << 20)
 
 /* ---------- LOGGING ----------- */
 

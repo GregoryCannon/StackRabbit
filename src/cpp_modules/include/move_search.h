@@ -5,6 +5,6 @@
 #include "utils.h"
 #include <vector>
 
-int moveSearch(GameState gameState, Piece piece, char const *inputFrameTimeline, OUT std::vector<SimState> &lockPlacements);
+int moveSearch(GameState gameState, Piece piece, char const *inputFrameTimeline, OUT std::vector<SimState> &lockPlacements, OUT AvailableTuckCols *availableTuckCols);
 
 #endif
