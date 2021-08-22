@@ -4,7 +4,7 @@
 const FastEvalWeights MAIN_WEIGHTS = {
   /* avgHeightCoef= */ -5,
   /* builtOutLeftCoef= */ 1.5,
-  /* burnCoef= */ -8,
+  /* burnCoef= */ -12,
   /* coveredWellCoef= */ -5,
   /* col9Coef= */ -3,
   /* deathCoef= */ -2000,

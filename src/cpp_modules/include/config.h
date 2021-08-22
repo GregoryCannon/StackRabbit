@@ -1,0 +1,15 @@
+#ifndef CONFIG
+#define CONFIG
+
+#define LOGGING_ENABLED 0
+#define PLAYOUT_LOGGING_ENABLED 0
+
+#define USE_RANKS false
+
+#define DEPTH_2_PRUNING_BREADTH 12
+#define TUCK_SETUP_HOLE_PROPORTION 0.9
+#define PLAYOUT_LENGTH 6
+#define SEQUENCE_LENGTH 10
+#define NUM_PLAYOUTS 140
+
+#endif

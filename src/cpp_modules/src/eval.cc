@@ -17,6 +17,11 @@ float calculateFlatness(int surfaceArray[10], int wellColumn) {
       continue;
     }
     int diff = surfaceArray[i + 1] - surfaceArray[i];
+    // Correct for double wells
+    if (i == 7 && wellColumn == 9 && diff < -2){
+      diff = -2;
+    }
+    // Punish based on the absolute value of the column differences
     if (diff != 0) {
       score -= pow(abs(diff), 1.5);
     }
@@ -30,6 +35,7 @@ float calculateFlatness(int surfaceArray[10], int wellColumn) {
 
 /** Gets the value of a surface. */
 float rateSurface(int surfaceArray[10], int wellColumn, FastEvalWeights weights) {
+  float rawScore;
   if (USE_RANKS) {
     // Convert the surface array into the custom base-9 encoding
     int index = 0;
@@ -37,7 +43,10 @@ float rateSurface(int surfaceArray[10], int wellColumn, FastEvalWeights weights)
     for (int i = 0; i < 8; i++) {
       int diff = surfaceArray[i + 1] - surfaceArray[i];
       int absDiff = abs(diff);
-      if (absDiff > 4) {
+      // Correct for double wells
+      if (i == 7 && wellColumn == 9 && absDiff > 2){
+        absDiff = 2;
+      } else if (absDiff > 4) {
         excessGap += absDiff - 4;
         diff = diff > 0 ? 4 : -4;
       }
@@ -45,11 +54,14 @@ float rateSurface(int surfaceArray[10], int wellColumn, FastEvalWeights weights)
       index += diff + 4;
     }
     // return 1.0; // So it compiles without the ranks
-    return surfaceRanksRaw[index] * 0.1 + (excessGap * weights.extremeGapCoef);
+    rawScore = surfaceRanksRaw[index] * 0.1 + (excessGap * weights.extremeGapCoef);
+  } else {
+    // Backup option in case ranks aren't loaded
+    rawScore = calculateFlatness(surfaceArray, wellColumn);
   }
 
-  // Backup option in case ranks aren't loaded
-  return calculateFlatness(surfaceArray, wellColumn);
+  return rawScore - (70 / max(3, rawScore));
+
 }
 
 float getAverageHeight(int surfaceArray[10], int wellColumn) {
@@ -79,7 +91,7 @@ float getBuiltOutLeftFactor(int surfaceArray[10], int board[20], float avgHeight
   }
   // Check for holes (don't reward building out the left over holes)
   int r = 21 - surfaceArray[0];
-  while (r < 20){
+  while (r < 20) {
     if (!(board[r] & (1 << 9))) {
       return 0;
     }
@@ -111,7 +123,7 @@ float getCoveredWellFactor(int board[20], int wellColumn, float scareHeight, Fas
   return 0;
 }
 
-float getGuaranteedBurnsFactor(int board[20], int wellColumn, FastEvalWeights weights) {
+float getGuaranteedBurnsFactor(int board[20], int wellColumn) {
   if (wellColumn == -1) {
     return 0;
   }
@@ -122,7 +134,25 @@ float getGuaranteedBurnsFactor(int board[20], int wellColumn, FastEvalWeights we
       wellCells++;
     }
   }
-  return weights.burnCoef * wellCells;
+  return wellCells;
+}
+
+float getLikelyBurnsFactor(int surfaceArray[10], int wellColumn, int maxSafeCol9) {
+  if (wellColumn != 9) {
+    return 0;
+  }
+  int col9 = surfaceArray[8];
+  int col8 = surfaceArray[7];
+  int lowestGoodColumn9 = min(maxSafeCol9, col8 - 2);
+  if (col9 >= lowestGoodColumn9) {
+    return 0;
+  }
+  // Need a burn for every 2 cells below that.
+  // E.g. 1 diff => 3 below col8 = 1 burn,
+  //      2 diff => 4 below col8 = 1 burn
+  //      3 diff => 5 below col8 = 2 burns
+  int diff = lowestGoodColumn9 - col9;
+  return ceil(diff / 2.0f) * 0.6;
 }
 
 float getLineClearFactor(int numLinesCleared, FastEvalWeights weights){
@@ -153,14 +183,15 @@ float fastEval(GameState gameState,
   float avgHeightFactor = weights.avgHeightCoef * getAverageHeightFactor(avgHeight, evalContext.scareHeight);
   float builtOutLeftFactor = weights.builtOutLeftCoef * getBuiltOutLeftFactor(newState.surfaceArray, newState.board, avgHeight, evalContext.scareHeight);
   float coveredWellFactor = weights.coveredWellCoef * getCoveredWellFactor(newState.board, evalContext.wellColumn, evalContext.scareHeight, weights);
-  float guaranteedBurnsFactor = getGuaranteedBurnsFactor(newState.board, evalContext.wellColumn, weights);
+  float guaranteedBurnsFactor = weights.burnCoef * getGuaranteedBurnsFactor(newState.board, evalContext.wellColumn);
+  float likelyBurnsFactor = weights.burnCoef * getLikelyBurnsFactor(newState.surfaceArray, evalContext.wellColumn, evalContext.maxSafeCol9);
   float highCol9Factor = weights.col9Coef * getCol9Factor(newState.surfaceArray[8], evalContext.maxSafeCol9);
   float holeFactor = weights.holeCoef * newState.adjustedNumHoles;
   float lineClearFactor = getLineClearFactor(newState.lines - gameState.lines, weights);
   float surfaceFactor = weights.surfaceCoef * rateSurface(newState.surfaceArray, evalContext.wellColumn, weights);
   float tetrisReadyFactor = isTetrisReady(newState.board, newState.surfaceArray[9]) ? weights.tetrisReadyCoef : 0;
 
-  float total = surfaceFactor + avgHeightFactor + lineClearFactor + holeFactor + guaranteedBurnsFactor + coveredWellFactor + highCol9Factor + tetrisReadyFactor + builtOutLeftFactor;
+  float total = surfaceFactor + avgHeightFactor + lineClearFactor + holeFactor + guaranteedBurnsFactor + likelyBurnsFactor + coveredWellFactor + highCol9Factor + tetrisReadyFactor + builtOutLeftFactor;
 
   // Logging
   if (LOGGING_ENABLED) {
@@ -173,13 +204,20 @@ float fastEval(GameState gameState,
       maybePrint("%d ", newState.surfaceArray[i]);
     }
     maybePrint("%d\n", newState.surfaceArray[9]);
+    for (int i = 0; i < 19; i++) {
+      maybePrint("%d ", newState.board[i] & ALL_TUCK_SETUP_BITS);
+    }
+    maybePrint("%d\n", newState.board[19] & ALL_TUCK_SETUP_BITS);
+
+    printf("Numholes %f\n", newState.adjustedNumHoles);
     maybePrint(
-      "Surface %01f, AvgHeight %01f, LineClear %01f, Hole %01f, GuaranteedBurns %01f, CoveredWell %01f, HighCol9 %01f, TetrisReady %01f, BuiltLeft %01f\t Total: %01f\n",
+      "Surface %01f, AvgHeight %01f, LineClear %01f, Hole %01f, GuaranteedBurns %01f, LikelyBurns %01f, CoveredWell %01f, HighCol9 %01f, TetrisReady %01f, BuiltLeft %01f\t Total: %01f\n",
       surfaceFactor,
       avgHeightFactor,
       lineClearFactor,
       holeFactor,
       guaranteedBurnsFactor,
+      likelyBurnsFactor,
       coveredWellFactor,
       highCol9Factor,
       tetrisReadyFactor,

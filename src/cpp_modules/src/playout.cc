@@ -26,15 +26,14 @@ SimState pickLockPlacement(GameState gameState,
 }
 
 
-float getPlayoutScore(GameState gameState, int numPlayouts){
+float getPlayoutScore(GameState gameState, int numPlayouts, int playoutLength){
   float totalScore = 0;
   for (int i = 0; i < numPlayouts; i++) {
     // Do one playout
-    const int *pieceSequence = canonicalPieceSequences + i * 10; // Index into the mega array of piece sequences;
-    float playoutScore = playSequence(gameState, pieceSequence);
+    const int *pieceSequence = canonicalPieceSequences + i * SEQUENCE_LENGTH; // Index into the mega array of piece sequences;
+    float playoutScore = playSequence(gameState, pieceSequence, playoutLength);
     totalScore += playoutScore;
   }
-  // printf("Playout set ended with totalScore %f\n", totalScore);
   return totalScore / numPlayouts;
 }
 
@@ -43,9 +42,9 @@ float getPlayoutScore(GameState gameState, int numPlayouts){
  * Plays out a starting state 10 moves into the future.
  * @returns the total value of the playout (intermediate rewards + eval of the final board)
  */
-float playSequence(GameState gameState, const int pieceSequence[10]) {
+float playSequence(GameState gameState, const int pieceSequence[SEQUENCE_LENGTH], int playoutLength) {
   float totalReward = 0;
-  for (int i = 0; i < 10; i++) {
+  for (int i = 0; i < playoutLength; i++) {
     // Figure out modes and eval context
     EvalContext evalContext = getEvalContext(gameState);
     FastEvalWeights weights = getWeights(evalContext.aiMode);
@@ -63,7 +62,7 @@ float playSequence(GameState gameState, const int pieceSequence[10]) {
     SimState bestMove = pickLockPlacement(gameState, evalContext, weights, lockPlacements);
 
     // On the last move, do a final evaluation
-    if (i == 9) {
+    if (i == playoutLength - 1) {
       GameState nextState = advanceGameState(gameState, bestMove, evalContext);
       float evalScore = fastEval(gameState, nextState, bestMove, evalContext, weights);
       if (PLAYOUT_LOGGING_ENABLED) {

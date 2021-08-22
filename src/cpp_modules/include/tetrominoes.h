@@ -204,5 +204,21 @@ std::list<TuckOriginSpot> TUCK_SPOTS_Z {
 
 std::list<TuckOriginSpot> TUCK_SPOTS_LIST[7] = {TUCK_SPOTS_I, TUCK_SPOTS_O, TUCK_SPOTS_L, TUCK_SPOTS_J, TUCK_SPOTS_T, TUCK_SPOTS_S, TUCK_SPOTS_Z};
 
+struct TuckInput {
+  char notation;
+  int xChange;
+  int rotationChange;
+};
+
+std::list<TuckInput> TUCK_INPUTS {
+  {'L', -1, 0},
+  {'R', 1, 0},
+  {'A', 0, 1},
+  {'B', 0, -1},
+  {'E', -1, 1},
+  {'I', 1, 1},
+  {'F', -1, -1},
+  {'G', 1, -1}
+};
 
 #endif
