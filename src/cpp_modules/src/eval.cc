@@ -60,7 +60,7 @@ float rateSurface(int surfaceArray[10], int wellColumn, FastEvalWeights weights)
     rawScore = calculateFlatness(surfaceArray, wellColumn);
   }
 
-  return rawScore - (70 / max(3, rawScore));
+  return rawScore - (70 / max(3.0f, rawScore));
 
 }
 
