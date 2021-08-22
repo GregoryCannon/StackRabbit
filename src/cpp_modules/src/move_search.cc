@@ -76,7 +76,7 @@ int exploreHorizontally(int board[20],
                         char const *inputFrameTimeline,
                         int gravity,
                         vector<SimState> &legalPlacements,
-                        AvailableTuckCols *availableTuckCols) {
+                        int availableTuckCols[80]) {
   int rangeCurrent = 0;
 
   // Loop through hypothetical frames
@@ -90,9 +90,6 @@ int exploreHorizontally(int board[20],
     int didLockThisFrame = false;
 
     if (isInputFrame) {
-      // Whenever an input is available, it could potentially be a tuck. Mark this rotation/column combo as available for tucks.
-      *availableTuckCols |= 1 << TUCK_COL_BIT(simState.rotationIndex, simState.x); // The weird math here is to encode the rotation + column to a single index from 0-39
-
       // Try shifting
       if (simState.x != INITIAL_X + maxShifts) {
         if (collision(
@@ -167,7 +164,7 @@ void explorePlacementsNearSpawn(int board[20],
                                 char const *inputFrameTimeline,
                                 int gravity,
                                 vector<SimState> &legalPlacements,
-                                AvailableTuckCols *availableTuckCols) {
+                                int availableTuckCols[80]) {
   int rangeStart = rotationIndex == 2 ? -1 : 0;
   int rangeEnd = rotationIndex == 2 ? 1 : 0;
 
@@ -179,13 +176,37 @@ void explorePlacementsNearSpawn(int board[20],
 }
 
 /**
+ * Calculates a lookup table for the Y value you'd be at after completing a specified number of inputs, and while being ready for the next input.
+ * This is used in the tuck search, since this would be the first Y value where you could perform a tuck after N inputs of a standard placement.
+ */
+void getYValuesByNumInputs(char const *inputFrameTimeline, int gravity, int initialY, OUT int result[6]){
+  int inputsPerformed = 0;
+  int y = initialY;
+  int frameIndex = 0;
+  while (inputsPerformed <= 5) {
+    int isInputFrame = shouldPerformInputsThisFrame(frameIndex, inputFrameTimeline);
+    int isGravityFrame =
+      frameIndex % gravity == gravity - 1;   // Returns true every Nth frame, where N = gravity
+    if (isInputFrame) {
+      result[inputsPerformed] = y;
+      inputsPerformed++;
+    }
+    if (isGravityFrame) {
+      y++;
+    }
+    frameIndex++;
+  }
+}
+
+/**
  * Optimized method to convert legal placements to lock placements.
  * (!!) Doesn't allow for tucks.
  */
 void getLockPlacementsFast(vector<SimState> &legalPlacements,
                            int board[20],
                            int surfaceArray[10],
-                           vector<SimState> &lockPlacements) {
+                           OUT int availableTuckCols[80],
+                           OUT vector<SimState> &lockPlacements) {
   for (auto simState : legalPlacements) {
     int *bottomSurface = simState.piece.bottomSurfaceByRotation[simState.rotationIndex];
     int rowsToShift = 99999;
@@ -200,15 +221,58 @@ void getLockPlacementsFast(vector<SimState> &legalPlacements,
     }
     // Shift down to its lock position
     simState.y += rowsToShift;
+    // printf("Lock placement was %d %d %d\n", simState.rotationIndex, simState.x, simState.y);
+    availableTuckCols[TUCK_COL_ENCODED(simState.rotationIndex, simState.x) + 40] = simState.y;
+    // printf("AvalTuckCols[%d] = %d\n", TUCK_COL_ENCODED(simState.rotationIndex, simState.x) + 40, simState.y);
     lockPlacements.push_back(simState);
   }
+}
+
+int isTuckReachable(int board[20], SimState afterTuckState, int availableTuckCols[80], int minTuckYValsByNumPrevInputs[6]){
+  // Do rotations mod 4 or mod 2, depending on the piece (rotation logic skipped for O)
+  int numOrientations = afterTuckState.piece.id == 'O' ? 1 : afterTuckState.piece.rowsByRotation[3][0] == -1 ? 2 : 4;
+  int rotationModulusMask = numOrientations == 4 ? 3 : 1;
+  for (TuckInput tuckInput : TUCK_INPUTS) {
+    maybePrint("Trying %c:\n", tuckInput.notation);
+    // Apply the tuck in reverse to get the pre-tuck state
+    int preTuckRotIndex = afterTuckState.rotationIndex;
+    int preTuckX = afterTuckState.x;
+    preTuckX -= tuckInput.xChange; // Do the input in reverse
+    if (afterTuckState.piece.id != 'O') {
+      preTuckRotIndex = (preTuckRotIndex - tuckInput.rotationChange + 4) & rotationModulusMask;
+    }
+
+    // Validate the pre-tuck state
+    int index = TUCK_COL_ENCODED(preTuckRotIndex, preTuckX);
+    int numRotsBeforeTuck = preTuckRotIndex == 3 ? 1 : preTuckRotIndex;
+    int numInputs = std::max(numRotsBeforeTuck, std::abs(preTuckX - SPAWN_X));
+    int minY = minTuckYValsByNumPrevInputs[numInputs];
+    int maxY = availableTuckCols[index + 40];
+    if (afterTuckState.y < minY || afterTuckState.y > maxY) {
+      maybePrint("Tuck not in y range. Actual=%d, Range= %d to %d (orients=%d, rot=%d, x=%d, index=%d)\n", afterTuckState.y, minY, maxY, numOrientations, preTuckRotIndex, preTuckX, index);
+      continue;
+    }
+    // Check that it doesn't collide with the board after just the shift (the order goes Shift -> Rotate -> Drop)
+    if (collision(board, afterTuckState.piece, afterTuckState.x, afterTuckState.y, preTuckRotIndex)) {
+      maybePrint("Tuck collided with board after shift\n");
+      continue;
+    }
+    // Check that it doesn't collide with the board before both the shift and the rotation
+    if (collision(board, afterTuckState.piece, preTuckX, afterTuckState.y, preTuckRotIndex)) {
+      maybePrint("Tuck collided with board before tuck. x=%d, y=%d, rot=%d\n", preTuckX, afterTuckState.y, preTuckRotIndex);
+      continue;
+    }
+    return true;
+  }
+  // No input found that made it work
+  return false;
 }
 
 /**
    Searches for tucks by 1) Finding all of the overhang cells from the board array, then 2) looping over the overhang cells and trying all the ways that the piece could possibly fill that cell.
    Each piece has a precomputed list of the possible ways it can fill a tuck cell (defined in tetrominoes.h), which drastically reduces the number of placements to try each time.
  */
-void findTucks(int board[20], Piece piece, AvailableTuckCols availableTuckCols, OUT std::vector<SimState> &lockPlacements){
+void findTucks(int board[20], Piece piece, int availableTuckCols[80], int minTuckYValsByNumPrevInputs[6], OUT std::vector<SimState> &lockPlacements){
   std::vector<SimState> tuckLockPlacements;
   std::unordered_set<int> tuckLockSpots;
   for (int overhangY = 0; overhangY < 20; overhangY++) {
@@ -218,31 +282,24 @@ void findTucks(int board[20], Piece piece, AvailableTuckCols availableTuckCols, 
     for (int overhangX = 0; overhangX < 10; overhangX++) {
       if ((board[overhangY] & TUCK_SETUP_BIT(overhangX)) > 0) {
         // Found an overhang cell! Look for tucks here
+        maybePrint("Looking for tucks at %d %d\n", overhangX, overhangY);
         for (TuckOriginSpot spot : TUCK_SPOTS_LIST[piece.index]) {
-          int newBoard[20];
-          for (int i = 0; i < 20; i++) {
-            newBoard[i] = board[i];
-          }
           int pieceX = overhangX - spot.x;
-          int pieceY = overhangY - spot.y;
+          int postTuckPieceY = overhangY - spot.y;
+          int lockPieceY = postTuckPieceY; // Can differ from postTuckPieceY if the piece falls after the tuck
+          maybePrint("Trying origin spot %d %d %d\n", spot.orientation, spot.x, spot.y);
           // The piece must fit into the board post-tuck
-          if (!collision(board, piece, pieceX, pieceY, spot.orientation)) {
-            // Found new tuck!
-
-            // Gravity it into place
-            while (!collision(board, piece, pieceX, pieceY + 1, spot.orientation)) {
-              pieceY++;
+          if (!collision(board, piece, pieceX, postTuckPieceY, spot.orientation)) {
+            maybePrint("Fits into board\n");
+            // Found a new tuck! Gravity it down if needed
+            while (!collision(board, piece, pieceX, lockPieceY + 1, spot.orientation)) {
+              lockPieceY++;
             }
 
-            for (int y = pieceY; y < pieceY + 4; y++) {
-              int shiftedPieceRow = SHIFTBY(piece.rowsByRotation[spot.orientation][y - pieceY], pieceX);
-              newBoard[y] = newBoard[y] | shiftedPieceRow;
-            }
-            printf("%c %d %d %d\n", piece.id, spot.orientation, pieceX, pieceY);
-            int lockPositionHash = pieceY * 1000 + pieceX * 10 + spot.orientation;
-            if (tuckLockSpots.find(lockPositionHash) == tuckLockSpots.end()) {
-              printBoard(newBoard);
-              lockPlacements.push_back({pieceX, pieceY, spot.orientation, -1, piece});
+            int lockPositionHash = lockPieceY * 1000 + pieceX * 10 + spot.orientation;
+            if (tuckLockSpots.find(lockPositionHash) == tuckLockSpots.end()
+                && isTuckReachable(board, {pieceX, postTuckPieceY, spot.orientation, -1, piece}, availableTuckCols, minTuckYValsByNumPrevInputs)) {
+              lockPlacements.push_back({pieceX, lockPieceY, spot.orientation, -1, piece});
               tuckLockSpots.insert(lockPositionHash);
             }
           }
@@ -260,7 +317,14 @@ void findTucks(int board[20], Piece piece, AvailableTuckCols availableTuckCols, 
 
 int moveSearch(GameState gameState, Piece piece, char const *inputFrameTimeline, OUT std::vector<SimState> &lockPlacements) {
   vector<SimState> legalMidairPlacements;
-  AvailableTuckCols availableTuckCols = 0;
+  int gravity = getGravity(gameState.level);
+
+  int availableTuckCols[80] = {};
+  for (int i = 0; i < 40; i++) {
+    availableTuckCols[i] = UNREACHED; // Mark the column/rotation combo as unreached
+  }
+  int minTuckYValsByNumPrevInputs[6] = {};
+  getYValuesByNumInputs(inputFrameTimeline, gravity, piece.initialY, minTuckYValsByNumPrevInputs);
 
   for (int rotIndex = 0; rotIndex < 4; rotIndex++) {
     if (piece.rowsByRotation[rotIndex][0] == -1) {
@@ -270,7 +334,6 @@ int moveSearch(GameState gameState, Piece piece, char const *inputFrameTimeline,
 
     // Initialize the starting state
     SimState simState = {INITIAL_X, piece.initialY, /* rotationIndex= */ 0, /* frameIndex= */ 0, piece};
-    int gravity = 3;
 
     // Check for immediate collision on spawn
     if (rotIndex == 0) {
@@ -282,23 +345,18 @@ int moveSearch(GameState gameState, Piece piece, char const *inputFrameTimeline,
     }
 
     // Search for placements as far as possible to both sides
-    exploreHorizontally(gameState.board, simState, -1, -99, rotIndex, inputFrameTimeline, gravity, legalMidairPlacements, &availableTuckCols);
-    exploreHorizontally(gameState.board, simState, 1, 99, rotIndex, inputFrameTimeline, gravity, legalMidairPlacements, &availableTuckCols);
+    exploreHorizontally(gameState.board, simState, -1, -99, rotIndex, inputFrameTimeline, gravity, legalMidairPlacements, availableTuckCols);
+    exploreHorizontally(gameState.board, simState, 1, 99, rotIndex, inputFrameTimeline, gravity, legalMidairPlacements, availableTuckCols);
     // Then double check for some we missed near spawn
-    explorePlacementsNearSpawn(gameState.board, simState, rotIndex, inputFrameTimeline, gravity, legalMidairPlacements, &availableTuckCols);
+    explorePlacementsNearSpawn(gameState.board, simState, rotIndex, inputFrameTimeline, gravity, legalMidairPlacements, availableTuckCols);
   }
 
   // Let the pieces fall until they lock
-  getLockPlacementsFast(legalMidairPlacements, gameState.board, gameState.surfaceArray, lockPlacements);
+  getLockPlacementsFast(legalMidairPlacements, gameState.board, gameState.surfaceArray, availableTuckCols, lockPlacements);
 
   // Search for tucks
-  findTucks(gameState.board, piece, availableTuckCols, lockPlacements);
+  findTucks(gameState.board, piece, availableTuckCols, minTuckYValsByNumPrevInputs, lockPlacements);
 
-  // printf("%c %llu\n", piece.id, availableTuckCols);
-  // for (int x = 0; x < 10; x++){
-  //   printf("%d", (availableTuckCols & (1 << x)) > 0);
-  // }
-  // printf("\n");
   return (int) lockPlacements.size();
 }
 

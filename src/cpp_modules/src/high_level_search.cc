@@ -7,8 +7,6 @@ using namespace std;
 #define UNEXPLORED_PENALTY -500   // A penalty for placements that weren't explored with playouts (could be worse than the eval indicates)
 #define MAP_OFFSET 20000          // An offset to make any placement better than the default 0 in the map
 
-int bestMoveRankingCount[DEPTH_2_PRUNING_BREADTH] = {}; // 12 long since we look at the top 12 moves
-
 /** Concatenates the position of a piece into a single string. */
 std::string encodeLockPosition(LockLocation lockLocation){
   char buffer[10];
@@ -26,32 +24,16 @@ std::string getLockValueLookupEncoded(GameState gameState, Piece firstPiece, Pie
 
   // Perform playouts on the promising possibilities
   int i = 0;
-  // float bestSeen = weights.deathCoef - 1;
-  // int bestIndex = -1;
   for (Depth2Possibility const& possibility : possibilityList) {
     string lockPosEncoded = encodeLockPosition(possibility.firstPlacement);
-
     float overallScore = MAP_OFFSET + (i < keepTopN
-      ? possibility.immediateReward + getPlayoutScore(possibility.resultingState, 56)
+      ? possibility.immediateReward + getPlayoutScore(possibility.resultingState, LOGGING_ENABLED ? 0 : NUM_PLAYOUTS, PLAYOUT_LENGTH)
       : possibility.evalScore + UNEXPLORED_PENALTY);
-    // Track the best move seen and where it ranked in the initial sorted list
-    // if (overallScore > bestSeen){
-    //   bestSeen = overallScore;
-    //   bestIndex = i;
-    // }
-
     if (overallScore > lockValueMap[lockPosEncoded]) {
       lockValueMap[lockPosEncoded] = overallScore;
     }
     i++;
   }
-  
-  // Track where the overall best move ranked in the list by initial eval
-  // bestMoveRankingCount[bestIndex] += 1;
-  // for (int i = 0; i < DEPTH_2_PRUNING_BREADTH; i++){
-  //   printf("%d:%d, ", i+1, bestMoveRankingCount[i]);
-  // }
-  // printf("\n");
 
   // Encode lookup to JSON
   std::string mapEncoded = std::string("{");
@@ -80,6 +62,10 @@ int searchDepth2(GameState gameState, Piece firstPiece, Piece secondPiece, int k
   for (auto it = begin(firstLockPlacements); it != end(firstLockPlacements); ++it) {
     SimState firstPlacement = *it;
     GameState afterFirstMove = advanceGameState(gameState, firstPlacement, evalContext);
+    for (int i = 0; i < 19; i++) {
+      maybePrint("%d ", afterFirstMove.board[i] & ALL_TUCK_SETUP_BITS);
+    }
+    maybePrint("%d end of post first move\n", afterFirstMove.board[19] & ALL_TUCK_SETUP_BITS);
     float firstMoveReward = getLineClearFactor(afterFirstMove.lines - gameState.lines, weights);
 
     // Get the placements of the second piece

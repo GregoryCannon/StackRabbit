@@ -20,62 +20,7 @@
 
 #define USE_RANDOM_SEQUENCE false
 
-int testPlayout(GameState startingGameState, int numRepetitions){
-  if (USE_RANDOM_SEQUENCE) {
-    srand(59902);
-    // srand(time(NULL));
-  }
-
-  int result = 0;
-  for (int i = 0; i < 0; i++) {
-    int sequence[10] = {0, 1, 2, 3, 4, 5, 6, 0, 2, 5}; // A balanced sample of the pieces, performance-wise
-    if (USE_RANDOM_SEQUENCE) {
-      // Overwrite with random sequence
-      for (int j = 0; j < 10; j++) {
-        sequence[j] = rand() % 7;
-      }
-    }
-
-    result = static_cast<int>(playSequence(startingGameState, sequence));
-  }
-  return result;
-}
-
-int testDepth2Search(GameState startingGameState, int numRepetitions){
-  int result = 0;
-  for (int i = 0; i < numRepetitions; i++) {
-    list<Depth2Possibility> possibilityList;
-    result = searchDepth2(startingGameState, PIECE_S, PIECE_L, 10, DEBUG_CONTEXT, MAIN_WEIGHTS, possibilityList);
-
-    // Print results
-    if (LOGGING_ENABLED) {
-      maybePrint("List has %d members\n", (int) possibilityList.size());
-      int numPrinted = 0;
-      for (auto const& p : possibilityList) {
-        if (numPrinted > 10) {
-          break;
-        }
-        maybePrint("%d) %d,%d  %d,%d  has value %f\n",
-                   numPrinted + 1,
-                   p.firstPlacement.rotationIndex,
-                   p.firstPlacement.x - SPAWN_X,
-                   p.secondPlacement.rotationIndex,
-                   p.secondPlacement.x - SPAWN_X,
-                   p.evalScore);
-        numPrinted++;
-      }
-    }
-  }
-  return result;
-}
-
-
 std::string mainProcess(char const *inputStr) {
-  // // Print ranks
-  // for (int i = 0; i < 20; i++) {
-  //    printf("ranks %d\n", surfaceRanksRaw[i]);
-  // }
-
   maybePrint("Input string %s\n", inputStr);
 
   // Init empty data structures
@@ -120,11 +65,12 @@ std::string mainProcess(char const *inputStr) {
   // Fill in the data structures
   encodeBoard(inputStr, startingGameState.board);
   getSurfaceArray(startingGameState.board, startingGameState.surfaceArray);
-  startingGameState.adjustedNumHoles += updateSurfaceAndHolesAfterLineClears(startingGameState.surfaceArray, startingGameState.board, wellColumn);
-
+  startingGameState.adjustedNumHoles = updateSurfaceAndHolesAfterLineClears(startingGameState.surfaceArray, startingGameState.board, wellColumn);
   EvalContext context = getEvalContext(startingGameState);
 
-  // printBoard(startingGameState.board);
+  if (LOGGING_ENABLED){
+    printBoard(startingGameState.board);
+  }
 
   std::string lookupMapEncoded = getLockValueLookupEncoded(startingGameState, curPiece, nextPiece, DEPTH_2_PRUNING_BREADTH, context, getWeights(context.aiMode));
   return lookupMapEncoded;

@@ -17,7 +17,7 @@ struct Piece {
 struct GameState {
   int board[20];  // See board encoding details below
   int surfaceArray[10];
-  int adjustedNumHoles; // A count of how many holes there are, with adjustments for the height of holes.
+  float adjustedNumHoles; // A count of how many holes there are, with adjustments for the height of holes.
   int lines;
   int level;
 };
@@ -32,11 +32,6 @@ struct GameState {
   t = whether each cell is a tuck setup
   c = whether the row is guaranteed to be burned
  */
-
-// (For movesearch) A bit sequence that encodes which columns can be reached by a piece in each orientation.
-// encoded as (rotationIndex, x) -> rotationIndex * 10 + (x + 2)
-//   e.g. To check if (3, 2) is reachable, look at bit 34
-typedef long long int AvailableTuckCols;
 
 /**
  * The internal state of a move search simulation

@@ -5,7 +5,7 @@ import * as express from "express";
 const IS_DEPLOY = false;
 const TETRIS_TRAINER_URL = "https://gregorycannon.github.io";
 
-const port = IS_DEPLOY ? 8080 : 3000;
+const port = process.env.PORT || 3000;
 const ALLOW_MULTITHREAD = !IS_DEPLOY;
 
 function initExpressServer(requestHandler) {

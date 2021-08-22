@@ -1,14 +1,32 @@
 #include "../include/move_result.h"
+#include <stdexcept>
 
-int getNewSurfaceAndNumNewHoles(int surfaceArray[10],
-                                SimState lockPlacement,
-                                EvalContext evalContext,
-                                OUT int newSurface[10]) {
+
+float getAdjustedHoleRating(int board[20], int r, int c){
+  // Check if it's a tuck setup
+  if (
+    (c >= 2 && ((board[r] >> (9-c)) & 7) == 0) ||   // left side tuck (2 cells of open space)
+    (c <= 7 && ((board[r] >> (7-c)) & 7) == 0)      // right side tuck (2 cells of open space)
+    ) {
+    // printf("MARKING TUCK SETUP %d %d\n", c, board[r] >> 20);
+    board[r] |= TUCK_SETUP_BIT(c); // Mark this cell as an overhang cell
+    // printf("After mark: %d\n", board[r] >> 20);
+    return TUCK_SETUP_HOLE_PROPORTION;
+  }
+  return 1;
+}
+
+
+float getNewSurfaceAndNumNewHoles(int surfaceArray[10],
+                                  int board[20],
+                                  SimState lockPlacement,
+                                  EvalContext evalContext,
+                                  OUT int newSurface[10]) {
   for (int i = 0; i < 10; i++) {
     newSurface[i] = surfaceArray[i];
   }
   // Check for new holes by comparing the bottom surface of the piece to the surface of the stack
-  int numNewHoles = 0;
+  float numNewHoles = 0;
   int *bottomSurface = lockPlacement.piece.bottomSurfaceByRotation[lockPlacement.rotationIndex];
   for (int i = 0; i < 4; i++) {
     if (bottomSurface[i] == -1) {
@@ -18,9 +36,12 @@ int getNewSurfaceAndNumNewHoles(int surfaceArray[10],
     if (!evalContext.countWellHoles && lockPlacement.x + i == evalContext.wellColumn) {
       continue;
     }
-    // Add a hole for each cell of difference between the bottom of the piece and the stack
-    int diff = (20 - bottomSurface[i] - lockPlacement.y) - surfaceArray[lockPlacement.x + i];
-    numNewHoles += diff;
+
+    // Loop through the cells between the bottom of the piece and the ground
+    int c = lockPlacement.x + i;
+    for (int r = (lockPlacement.y + bottomSurface[i]); r < 20 - surfaceArray[c]; r++) {
+      numNewHoles += getAdjustedHoleRating(board, r, c);
+    }
   }
   // Calculate the new overall surface by superimposing the piece's top surface on the existing surface
   int *topSurface = lockPlacement.piece.topSurfaceByRotation[lockPlacement.rotationIndex];
@@ -37,8 +58,12 @@ int getNewSurfaceAndNumNewHoles(int surfaceArray[10],
  * don't apply).
  * @returns the new hole count
  */
-int updateSurfaceAndHolesAfterLineClears(int surfaceArray[10], int board[20], int excludeHolesColumn) {
-  int numHoles = 0;
+float updateSurfaceAndHolesAfterLineClears(int surfaceArray[10], int board[20], int excludeHolesColumn) {
+  // Reset hole and tuck setup bits
+  for (int i = 0; i < 20; i++) {
+    board[i] &= ~ALL_HOLE_RELATED_BITS;
+  }
+  float numHoles = 0;
   for (int c = 0; c < 10; c++) {
     int mask = 1 << (9 - c);
     int r = 20 - surfaceArray[c];
@@ -50,7 +75,7 @@ int updateSurfaceAndHolesAfterLineClears(int surfaceArray[10], int board[20], in
     while (r < 20) {
       // Add new holes to the overall count, unless they're in the well
       if (!(board[r] & mask) && c != excludeHolesColumn) {
-        numHoles++;
+        numHoles += getAdjustedHoleRating(board, r, c);
       }
       r++;
     }
@@ -73,14 +98,16 @@ int getNewBoardAndLinesCleared(int board[20], SimState lockPlacement, OUT int ne
   for (int i = 3; i >= 0; i--) {
     // Don't add any minos off the board
     if (lockPlacement.y + i < 0) {
-      break;
+      continue;
     }
 
     if (pieceRows[i] == 0) {
       newBoard[lockPlacement.y + i + numLinesCleared] = board[lockPlacement.y + i];
       continue;
     }
-    int newRow = board[lockPlacement.y + i] | (SHIFTBY(pieceRows[i], lockPlacement.x));
+    int newRow = (board[lockPlacement.y + i]
+                  | SHIFTBY(pieceRows[i], lockPlacement.x))      // Add the piece to the board
+                 & ~(SHIFTBY(pieceRows[i], lockPlacement.x - 20)); // Clear out those cells from tuck setups
     if (newRow == FULL_ROW) {
       numLinesCleared++;
       continue;
@@ -98,22 +125,54 @@ int getNewBoardAndLinesCleared(int board[20], SimState lockPlacement, OUT int ne
   return numLinesCleared;
 }
 
+
+float adjustHoleCountAndBoardAfterTuck(int board[20], SimState lockPlacement){
+  int tuckCellsFilled = 0;
+  int *pieceRows = lockPlacement.piece.rowsByRotation[lockPlacement.rotationIndex];
+  for (int i = 3; i >= 0; i--) {
+    // Don't add any minos off the board
+    if (lockPlacement.y + i < 0) {
+      continue;;
+    }
+
+    if (pieceRows[i] == 0) {
+      continue;
+    }
+    // Count the number of tuck cells filled in this row of the piece
+    int intersection = board[lockPlacement.y + i] & SHIFTBY(pieceRows[i], lockPlacement.x - 20);
+    while ((intersection & ALL_TUCK_SETUP_BITS) > 0) {
+      if (intersection & (1 << 20)) {
+        tuckCellsFilled++;
+      }
+      intersection = intersection >> 1;
+    }
+  }
+  return -1 * TUCK_SETUP_HOLE_PROPORTION * tuckCellsFilled;
+}
+
+
 /** Gets the game state after completing a given move */
 GameState advanceGameState(GameState gameState, SimState lockPlacement, EvalContext evalContext) {
   GameState newState = {{}, {}, gameState.adjustedNumHoles, gameState.lines, gameState.level};
-
+  float numNewHoles = 0;
+  // Post-process after tucks
+  // This has to happen before getNewBoardAndLinesCleared, which updates the tuck cell bits
+  if (lockPlacement.frameIndex == -1) {        // -1 frame index is an artifact of tucks
+    numNewHoles += adjustHoleCountAndBoardAfterTuck(gameState.board, lockPlacement);
+  }
   int numLinesCleared = getNewBoardAndLinesCleared(gameState.board, lockPlacement, newState.board);
-  newState.lines += numLinesCleared;
-  newState.level = getLevelAfterLineClears(gameState.level, gameState.lines, numLinesCleared);
-
-  int numNewHoles =
-    getNewSurfaceAndNumNewHoles(gameState.surfaceArray, lockPlacement, evalContext, newState.surfaceArray);
+  numNewHoles +=
+    getNewSurfaceAndNumNewHoles(gameState.surfaceArray, newState.board, lockPlacement, evalContext, newState.surfaceArray);
+  // Post-process after line clears
   if (numLinesCleared > 0) {
     newState.adjustedNumHoles =
       updateSurfaceAndHolesAfterLineClears(newState.surfaceArray, newState.board, evalContext.countWellHoles ? -1 : evalContext.wellColumn);
   } else {
     newState.adjustedNumHoles += numNewHoles;
   }
+
+  newState.lines += numLinesCleared;
+  newState.level = getLevelAfterLineClears(gameState.level, gameState.lines, numLinesCleared);
 
   return newState;
 }
