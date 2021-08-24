@@ -19,7 +19,7 @@ const FastEvalWeights DIG_WEIGHTS = {
   MAIN_WEIGHTS.avgHeightCoef,
   MAIN_WEIGHTS.builtOutLeftCoef,
   /* burnCoef= */ -1,
-  /* coveredWellCoef= */ -1.25,
+  /* coveredWellCoef= */ -2.5,
   /* col9Coef= */ -1,
   MAIN_WEIGHTS.deathCoef,
   MAIN_WEIGHTS.extremeGapCoef,
@@ -29,10 +29,38 @@ const FastEvalWeights DIG_WEIGHTS = {
   MAIN_WEIGHTS.surfaceCoef
 };
 
+const FastEvalWeights NEAR_KILLSCREEN_WEIGHTS = {
+  MAIN_WEIGHTS.avgHeightCoef,
+  MAIN_WEIGHTS.builtOutLeftCoef,
+  MAIN_WEIGHTS.burnCoef,
+  MAIN_WEIGHTS.coveredWellCoef,
+  MAIN_WEIGHTS.col9Coef,
+  MAIN_WEIGHTS.deathCoef,
+  MAIN_WEIGHTS.extremeGapCoef,
+  MAIN_WEIGHTS.holeCoef,
+  /* tetrisCoef= */ 500,
+  MAIN_WEIGHTS.tetrisReadyCoef,
+  MAIN_WEIGHTS.surfaceCoef
+};
+
+const FastEvalWeights DIRTY_NEAR_KILLSCREEN_WEIGHTS = {
+  MAIN_WEIGHTS.avgHeightCoef,
+  MAIN_WEIGHTS.builtOutLeftCoef,
+  /* burnCoef= */ 20,  // Incentivize getting the last few line clears in
+  MAIN_WEIGHTS.coveredWellCoef,
+  MAIN_WEIGHTS.col9Coef,
+  MAIN_WEIGHTS.deathCoef,
+  MAIN_WEIGHTS.extremeGapCoef,
+  MAIN_WEIGHTS.holeCoef,
+  /* tetrisCoef= */ 500,
+  MAIN_WEIGHTS.tetrisReadyCoef,
+  MAIN_WEIGHTS.surfaceCoef
+};
+
 const FastEvalWeights LINEOUT_WEIGHTS = {
   MAIN_WEIGHTS.avgHeightCoef,
   /* builtOutLeftCoef= */ 6,
-  /* burnCoef= */ 0,
+  /* burnCoef= */ 2,  // Reward line clears
   /* coveredWellCoef= */ 0,
   /* col9Coef= */ 0,
   MAIN_WEIGHTS.deathCoef,
@@ -44,10 +72,18 @@ const FastEvalWeights LINEOUT_WEIGHTS = {
 };
 
 FastEvalWeights getWeights(AiMode mode){
-  if (mode == DIG) {
-    return DIG_WEIGHTS;
+  switch (mode) {
+    case DIG:
+      return DIG_WEIGHTS;
+    case NEAR_KILLSCREEN:
+      return NEAR_KILLSCREEN_WEIGHTS;
+    case DIRTY_NEAR_KILLSCREEN:
+      return DIRTY_NEAR_KILLSCREEN_WEIGHTS;
+    case LINEOUT:
+      return LINEOUT_WEIGHTS;
+    case STANDARD:
+      return MAIN_WEIGHTS;
   }
-  return MAIN_WEIGHTS;
 }
 
 const EvalContext DEBUG_CONTEXT = {

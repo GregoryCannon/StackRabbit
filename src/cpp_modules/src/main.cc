@@ -33,6 +33,7 @@ std::string mainProcess(char const *inputStr) {
   };
   Piece curPiece;
   Piece nextPiece;
+  std::string inputFrameTimeline;
 
   // Loop through the other args
   std::string s = std::string(inputStr + 201); // 201 = the length of the board string + 1 for the delimiter
@@ -40,20 +41,23 @@ std::string mainProcess(char const *inputStr) {
   auto start = 0U;
   auto end = s.find(delim);
   for (int i = 0; end != std::string::npos; i++) {
-    int arg = atoi(s.substr(start, end - start).c_str());
-    maybePrint("ARG %d: %d\n", i, arg);
+    std::string arg = s.substr(start, end - start);
+    int argAsInt = atoi(arg.c_str());
+    maybePrint("ARG %d: %d\n", i, argAsInt);
     switch (i) {
     case 0:
-      startingGameState.level = arg;
+      startingGameState.level = argAsInt;
     case 1:
-      startingGameState.lines = arg;
+      startingGameState.lines = argAsInt;
       break;
     case 2:
-      curPiece = PIECE_LIST[arg];
+      curPiece = PIECE_LIST[argAsInt];
       break;
     case 3:
-      nextPiece = PIECE_LIST[arg];
+      nextPiece = PIECE_LIST[argAsInt];
       break;
+    case 4:
+      inputFrameTimeline = arg;
     default:
       break;
     }
@@ -66,10 +70,28 @@ std::string mainProcess(char const *inputStr) {
   encodeBoard(inputStr, startingGameState.board);
   getSurfaceArray(startingGameState.board, startingGameState.surfaceArray);
   startingGameState.adjustedNumHoles = updateSurfaceAndHolesAfterLineClears(startingGameState.surfaceArray, startingGameState.board, wellColumn);
-  EvalContext context = getEvalContext(startingGameState);
+  EvalContext context = getEvalContext(startingGameState, inputFrameTimeline.c_str());
 
-  if (LOGGING_ENABLED){
+  if (LOGGING_ENABLED) {
     printBoard(startingGameState.board);
+
+    maybePrint("Tuck setups:\n");
+    for (int i = 0; i < 19; i++) {
+      maybePrint("%d ", (startingGameState.board[i] & ALL_TUCK_SETUP_BITS) >> 20);
+    }
+    maybePrint("%d\n", (startingGameState.board[19] & ALL_TUCK_SETUP_BITS) >> 20);
+    maybePrint("Holes:\n");
+    for (int i = 0; i < 19; i++) {
+      maybePrint("%d ", (startingGameState.board[i] & ALL_HOLE_BITS) >> 10);
+    }
+    maybePrint("%d\n", (startingGameState.board[19] & ALL_HOLE_BITS) >> 10);
+    maybePrint("Hole weights:\n");
+    for (int i = 0; i < 19; i++) {
+      maybePrint("%d ", (startingGameState.board[i] & NEED_TO_CLEAR_BIT) > 0);
+    }
+    maybePrint("%d\n", (startingGameState.board[19] & NEED_TO_CLEAR_BIT) > 0);
+
+    maybePrint("END OF INITIAL BOARD STATE\n");
   }
 
   std::string lookupMapEncoded = getLockValueLookupEncoded(startingGameState, curPiece, nextPiece, DEPTH_2_PRUNING_BREADTH, context, getWeights(context.aiMode));

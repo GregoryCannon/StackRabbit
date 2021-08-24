@@ -26,27 +26,15 @@ SimState pickLockPlacement(GameState gameState,
 }
 
 
-float getPlayoutScore(GameState gameState, int numPlayouts, int playoutLength){
-  float totalScore = 0;
-  for (int i = 0; i < numPlayouts; i++) {
-    // Do one playout
-    const int *pieceSequence = canonicalPieceSequences + i * SEQUENCE_LENGTH; // Index into the mega array of piece sequences;
-    float playoutScore = playSequence(gameState, pieceSequence, playoutLength);
-    totalScore += playoutScore;
-  }
-  return totalScore / numPlayouts;
-}
-
-
 /**
  * Plays out a starting state 10 moves into the future.
  * @returns the total value of the playout (intermediate rewards + eval of the final board)
  */
-float playSequence(GameState gameState, const int pieceSequence[SEQUENCE_LENGTH], int playoutLength) {
+float playSequence(GameState gameState, char const *inputFrameTimeline, const int pieceSequence[SEQUENCE_LENGTH], int playoutLength) {
   float totalReward = 0;
   for (int i = 0; i < playoutLength; i++) {
     // Figure out modes and eval context
-    EvalContext evalContext = getEvalContext(gameState);
+    EvalContext evalContext = getEvalContext(gameState, inputFrameTimeline);
     FastEvalWeights weights = getWeights(evalContext.aiMode);
 
     // Get the lock placements
@@ -86,4 +74,16 @@ float playSequence(GameState gameState, const int pieceSequence[SEQUENCE_LENGTH]
     }
   }
   return -1; // Doesn't reach here, always returns from i == 9 case
+}
+
+
+float getPlayoutScore(GameState gameState, char const *inputFrameTimeline, int numPlayouts, int playoutLength){
+  float totalScore = 0;
+  for (int i = 0; i < numPlayouts; i++) {
+    // Do one playout
+    const int *pieceSequence = canonicalPieceSequences + i * SEQUENCE_LENGTH; // Index into the mega array of piece sequences;
+    float playoutScore = playSequence(gameState, inputFrameTimeline, pieceSequence, playoutLength);
+    totalScore += playoutScore;
+  }
+  return totalScore / numPlayouts;
 }

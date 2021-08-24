@@ -11,8 +11,6 @@ SimState pickLockPlacement(GameState gameState,
                            FastEvalWeights evalWeights,
                            OUT std::vector<SimState> &lockPlacements);
 
-float getPlayoutScore(GameState gameState, int numPlayouts, int playoutLength);
-
-float playSequence(GameState gameState, const int pieceSequence[SEQUENCE_LENGTH], int playoutLength);
+float getPlayoutScore(GameState gameState, char const *inputFrameTimeline, int numPlayouts, int playoutLength);
 
 #endif

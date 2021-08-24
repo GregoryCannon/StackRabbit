@@ -27,7 +27,7 @@ std::string getLockValueLookupEncoded(GameState gameState, Piece firstPiece, Pie
   for (Depth2Possibility const& possibility : possibilityList) {
     string lockPosEncoded = encodeLockPosition(possibility.firstPlacement);
     float overallScore = MAP_OFFSET + (i < keepTopN
-      ? possibility.immediateReward + getPlayoutScore(possibility.resultingState, LOGGING_ENABLED ? 0 : NUM_PLAYOUTS, PLAYOUT_LENGTH)
+      ? possibility.immediateReward + getPlayoutScore(possibility.resultingState, evalContext.inputFrameTimeline, LOGGING_ENABLED ? 0 : NUM_PLAYOUTS, PLAYOUT_LENGTH)
       : possibility.evalScore + UNEXPLORED_PENALTY);
     if (overallScore > lockValueMap[lockPosEncoded]) {
       lockValueMap[lockPosEncoded] = overallScore;
@@ -42,7 +42,7 @@ std::string getLockValueLookupEncoded(GameState gameState, Piece firstPiece, Pie
     sprintf(buf, "\"%s\":%f,", n.first.c_str(), n.second - MAP_OFFSET);
     mapEncoded.append(buf);
   }
-  if (lockValueMap.size() > 0){
+  if (lockValueMap.size() > 0) {
     mapEncoded.pop_back(); // Remove the last comma
   }
   mapEncoded.append("}");

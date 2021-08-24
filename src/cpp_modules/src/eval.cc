@@ -35,7 +35,6 @@ float calculateFlatness(int surfaceArray[10], int wellColumn) {
 
 /** Gets the value of a surface. */
 float rateSurface(int surfaceArray[10], int wellColumn, FastEvalWeights weights) {
-  float rawScore;
   if (USE_RANKS) {
     // Convert the surface array into the custom base-9 encoding
     int index = 0;
@@ -53,15 +52,12 @@ float rateSurface(int surfaceArray[10], int wellColumn, FastEvalWeights weights)
       index *= 9;
       index += diff + 4;
     }
-    // return 1.0; // So it compiles without the ranks
-    rawScore = surfaceRanksRaw[index] * 0.1 + (excessGap * weights.extremeGapCoef);
-  } else {
-    // Backup option in case ranks aren't loaded
-    rawScore = calculateFlatness(surfaceArray, wellColumn);
+    // Make lower ranks more punishing
+    float rawScore = surfaceRanksRaw[index] * 0.1 + (excessGap * weights.extremeGapCoef);
+    return rawScore - (70 / max(3.0f, rawScore));
   }
-
-  return rawScore - (70 / max(3.0f, rawScore));
-
+  // If the ranks aren't loaded, use the flatness score
+  return calculateFlatness(surfaceArray, wellColumn);
 }
 
 float getAverageHeight(int surfaceArray[10], int wellColumn) {
@@ -124,17 +120,18 @@ float getCoveredWellFactor(int board[20], int wellColumn, float scareHeight, Fas
 }
 
 float getGuaranteedBurnsFactor(int board[20], int wellColumn) {
+  // Neither of these measures make sense in lineout mode, so don't calculate this factor
   if (wellColumn == -1) {
     return 0;
   }
-  int mask = (1 << (9 - wellColumn));
-  int wellCells = 0;
+  int wellMask = (1 << (9 - wellColumn));
+  int guaranteedBurns = 0;
   for (int r = 0; r < 20; r++) {
-    if (board[r] & mask) {
-      wellCells++;
+    if ((board[r] & wellMask) || (board[r] & NEED_TO_CLEAR_BIT)) {
+      guaranteedBurns++;
     }
   }
-  return wellCells;
+  return guaranteedBurns;
 }
 
 float getLikelyBurnsFactor(int surfaceArray[10], int wellColumn, int maxSafeCol9) {
@@ -200,14 +197,21 @@ float fastEval(GameState gameState,
                lockPlacement.x - SPAWN_X,
                lockPlacement.y);
     printBoard(newState.board);
-    for (int i = 0; i < 9; i++) {
-      maybePrint("%d ", newState.surfaceArray[i]);
-    }
-    maybePrint("%d\n", newState.surfaceArray[9]);
+    maybePrint("Tuck setups:\n");
     for (int i = 0; i < 19; i++) {
-      maybePrint("%d ", newState.board[i] & ALL_TUCK_SETUP_BITS);
+      maybePrint("%d ", (newState.board[i] & ALL_TUCK_SETUP_BITS) >> 20);
     }
-    maybePrint("%d\n", newState.board[19] & ALL_TUCK_SETUP_BITS);
+    maybePrint("%d\n", (newState.board[19] & ALL_TUCK_SETUP_BITS) >> 20);
+    maybePrint("Holes:\n");
+    for (int i = 0; i < 19; i++) {
+      maybePrint("%d ", (newState.board[i] & ALL_HOLE_BITS) >> 10);
+    }
+    maybePrint("%d\n", (newState.board[19] & ALL_HOLE_BITS) >> 10);
+    maybePrint("Hole weights:\n");
+    for (int i = 0; i < 19; i++) {
+      maybePrint("%d ", (newState.board[i] & NEED_TO_CLEAR_BIT) > 0);
+    }
+    maybePrint("%d\n", (newState.board[19] & NEED_TO_CLEAR_BIT) > 0);
 
     printf("Numholes %f\n", newState.adjustedNumHoles);
     maybePrint(

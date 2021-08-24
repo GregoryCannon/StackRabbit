@@ -17,10 +17,12 @@
 
 // Useful bit-rows
 #define FULL_ROW 1023 // = 1111111111
-#define NEED_TO_CLEAR_BIT (1 << 31) // = 1000...0000000000, marks when a row needs to be cleared
+#define NEED_TO_CLEAR_BIT (1 << 30) // = 01000...0000000000, marks when a row needs to be cleared
 #define TUCK_SETUP_BIT(x) (1 << (29 - x)) // See the comment in types.h for an explanation of this encoding
+#define HOLE_BIT(x) (1 << (19 - x)) // See the comment in types.h for an explanation of this encoding
 #define ALL_TUCK_SETUP_BITS (1023 << 20)
-#define ALL_HOLE_RELATED_BITS (1048575 << 10) // The union of hole bits and tuck bits
+#define ALL_HOLE_BITS (1023 << 10)
+#define ALL_AUXILIARY_BITS (~1023) // The union of hole bits and tuck bits
 
 // Other encodings
 #define TUCK_COL_ENCODED(r, x) ((r) * 10 + (x) + 2) // Encoding of a rotation/column pair, as a number 0-39

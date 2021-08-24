@@ -55,7 +55,9 @@ struct LockLocation {
 enum AiMode {
   STANDARD,
   DIG,
-  LINEOUT
+  LINEOUT,
+  NEAR_KILLSCREEN,
+  DIRTY_NEAR_KILLSCREEN
 };
 
 /**

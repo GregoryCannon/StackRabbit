@@ -270,7 +270,6 @@ export class PreComputeManager {
         break;
 
       case "result":
-        // Save the partial result
         this.results[message.piece] = message.result;
         this.pendingResults--;
         // If all results are in, compile them and send back to parent
