@@ -70,7 +70,7 @@ std::string mainProcess(char const *inputStr) {
   encodeBoard(inputStr, startingGameState.board);
   getSurfaceArray(startingGameState.board, startingGameState.surfaceArray);
   startingGameState.adjustedNumHoles = updateSurfaceAndHolesAfterLineClears(startingGameState.surfaceArray, startingGameState.board, wellColumn);
-  EvalContext context = getEvalContext(startingGameState, inputFrameTimeline.c_str());
+  const EvalContext context = getEvalContext(startingGameState, inputFrameTimeline.c_str());
 
   if (LOGGING_ENABLED) {
     printBoard(startingGameState.board);
@@ -94,6 +94,6 @@ std::string mainProcess(char const *inputStr) {
     maybePrint("END OF INITIAL BOARD STATE\n");
   }
 
-  std::string lookupMapEncoded = getLockValueLookupEncoded(startingGameState, curPiece, nextPiece, DEPTH_2_PRUNING_BREADTH, context, getWeights(context.aiMode));
+  std::string lookupMapEncoded = getLockValueLookupEncoded(startingGameState, curPiece, nextPiece, DEPTH_2_PRUNING_BREADTH, &context);
   return lookupMapEncoded;
 }

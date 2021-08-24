@@ -118,4 +118,14 @@ int getGravity(int level){
   return 1;
 }
 
+/**
+ * Given a string such as X.... that represents a loop of which frames are allowed for inputs,
+ * determines if a given frame index is an input frame
+ */
+int shouldPerformInputsThisFrame(int frameIndex, char const *inputFrameTimeline) {
+  int len = (int) strlen(inputFrameTimeline);
+  int index = frameIndex % len;
+  return inputFrameTimeline[index] == 'X';
+}
+
 #endif

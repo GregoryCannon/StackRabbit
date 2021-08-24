@@ -7,8 +7,7 @@
 #include <list>
 
 SimState pickLockPlacement(GameState gameState,
-                           EvalContext evalContext,
-                           FastEvalWeights evalWeights,
+                           EvalContext const *evalContext,
                            OUT std::vector<SimState> &lockPlacements);
 
 float getPlayoutScore(GameState gameState, char const *inputFrameTimeline, int numPlayouts, int playoutLength);

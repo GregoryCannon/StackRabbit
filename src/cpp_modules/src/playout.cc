@@ -8,14 +8,13 @@ using namespace std;
 
 /** Selects the highest value lock placement using the fast eval function. */
 SimState pickLockPlacement(GameState gameState,
-                           EvalContext evalContext,
-                           FastEvalWeights evalWeights,
+                           EvalContext const *evalContext,
                            OUT vector<SimState> &lockPlacements) {
-  float bestSoFar = evalWeights.deathCoef;
+  float bestSoFar = evalContext->weights.deathCoef;
   SimState bestPlacement = {};
   for (auto lockPlacement : lockPlacements) {
     GameState newState = advanceGameState(gameState, lockPlacement, evalContext);
-    float evalScore = fastEval(gameState, newState, lockPlacement, evalContext, evalWeights);
+    float evalScore = fastEval(gameState, newState, lockPlacement, evalContext);
     if (evalScore > bestSoFar) {
       bestSoFar = evalScore;
       bestPlacement = lockPlacement;
@@ -34,25 +33,26 @@ float playSequence(GameState gameState, char const *inputFrameTimeline, const in
   float totalReward = 0;
   for (int i = 0; i < playoutLength; i++) {
     // Figure out modes and eval context
-    EvalContext evalContext = getEvalContext(gameState, inputFrameTimeline);
-    FastEvalWeights weights = getWeights(evalContext.aiMode);
+    const EvalContext evalContextRaw = getEvalContext(gameState, inputFrameTimeline);
+    const EvalContext *evalContext = &evalContextRaw;
+    FastEvalWeights weights = getWeights(evalContext->aiMode);
 
     // Get the lock placements
     std::vector<SimState> lockPlacements;
     Piece piece = PIECE_LIST[pieceSequence[i]];
-    moveSearch(gameState, piece, evalContext.inputFrameTimeline, lockPlacements);
+    moveSearch(gameState, piece, evalContext->inputFrameTimeline, lockPlacements);
 
     if (lockPlacements.size() == 0) {
       return weights.deathCoef;
     }
 
     // Pick the best placement
-    SimState bestMove = pickLockPlacement(gameState, evalContext, weights, lockPlacements);
+    SimState bestMove = pickLockPlacement(gameState, evalContext, lockPlacements);
 
     // On the last move, do a final evaluation
     if (i == playoutLength - 1) {
       GameState nextState = advanceGameState(gameState, bestMove, evalContext);
-      float evalScore = fastEval(gameState, nextState, bestMove, evalContext, weights);
+      float evalScore = fastEval(gameState, nextState, bestMove, evalContext);
       if (PLAYOUT_LOGGING_ENABLED) {
         gameState = nextState;
         printBoard(gameState.board);
@@ -66,7 +66,7 @@ float playSequence(GameState gameState, char const *inputFrameTimeline, const in
     // Otherwise, update the state to keep playing
     int oldLines = gameState.lines;
     gameState = advanceGameState(gameState, bestMove, evalContext);
-    FastEvalWeights rewardWeights = evalContext.aiMode == DIG ? getWeights(STANDARD) : weights; // When the AI is digging, still deduct from the overall value of the sequence at standard levels
+    FastEvalWeights rewardWeights = evalContext->aiMode == DIG ? getWeights(STANDARD) : weights; // When the AI is digging, still deduct from the overall value of the sequence at standard levels
     totalReward += getLineClearFactor(gameState.lines - oldLines, rewardWeights);
     if (PLAYOUT_LOGGING_ENABLED) {
       printBoard(gameState.board);

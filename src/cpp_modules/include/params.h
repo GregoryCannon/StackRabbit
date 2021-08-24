@@ -89,6 +89,7 @@ FastEvalWeights getWeights(AiMode mode){
 const EvalContext DEBUG_CONTEXT = {
   /* aiMode= */ STANDARD,
   /* countWellHoles= */ false,
+  /* evalWeights= */ MAIN_WEIGHTS,
   /* inputFrameTimeline= */ "X....",
   /* maxDirtyTetrisHeight= */ 1,
   /* maxSafeCol9Height= */ 6,

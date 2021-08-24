@@ -7,7 +7,7 @@
 float getNewSurfaceAndNumNewHoles(int surfaceArray[10],
                                   int board[20],
                                   SimState lockPlacement,
-                                  EvalContext evalContext,
+                                  EvalContext const *evalContext,
                                   OUT int newSurface[10]);
 
 /**
@@ -22,6 +22,6 @@ float updateSurfaceAndHolesAfterLineClears(int surfaceArray[10], int board[20], 
  */
 int getNewBoardAndLinesCleared(int board[20], SimState lockPlacement, OUT int newBoard[20]);
 
-GameState advanceGameState(GameState gameState, SimState lockPlacement, EvalContext evalContext);
+GameState advanceGameState(GameState gameState, SimState lockPlacement, EvalContext const *evalContext);
 
 #endif

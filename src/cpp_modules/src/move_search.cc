@@ -1,5 +1,6 @@
 #include "../include/move_search.h"
 #include "../include/piece_ranges.h"
+#include "../include/global_context.h"
 
 #include <algorithm>
 #include <cmath>
@@ -10,16 +11,6 @@
 using namespace std;
 
 #define INITIAL_X 3
-
-/**
- * Given a string such as X.... that represents a loop of which frames are allowed for inputs,
- * determines if a given frame index is an input frame
- */
-int shouldPerformInputsThisFrame(int frameIndex, char const *inputFrameTimeline) {
-  int len = (int) strlen(inputFrameTimeline);
-  int index = frameIndex % len;
-  return inputFrameTimeline[index] == 'X';
-}
 
 /**
  * Checks for collisions with the board and the edges of the screen
@@ -175,28 +166,6 @@ void explorePlacementsNearSpawn(int board[20],
   }
 }
 
-/**
- * Calculates a lookup table for the Y value you'd be at after completing a specified number of inputs, and while being ready for the next input.
- * This is used in the tuck search, since this would be the first Y value where you could perform a tuck after N inputs of a standard placement.
- */
-void getYValuesByNumInputs(char const *inputFrameTimeline, int gravity, int initialY, OUT int result[6]){
-  int inputsPerformed = 0;
-  int y = initialY;
-  int frameIndex = 0;
-  while (inputsPerformed <= 5) {
-    int isInputFrame = shouldPerformInputsThisFrame(frameIndex, inputFrameTimeline);
-    int isGravityFrame =
-      frameIndex % gravity == gravity - 1;   // Returns true every Nth frame, where N = gravity
-    if (isInputFrame) {
-      result[inputsPerformed] = y;
-      inputsPerformed++;
-    }
-    if (isGravityFrame) {
-      y++;
-    }
-    frameIndex++;
-  }
-}
 
 /**
  * Optimized method to convert legal placements to lock placements.

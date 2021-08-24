@@ -23,7 +23,7 @@ float getAdjustedHoleRating(int board[20], int r, int c){
 float getNewSurfaceAndNumNewHoles(int surfaceArray[10],
                                   int board[20],
                                   SimState lockPlacement,
-                                  EvalContext evalContext,
+                                  EvalContext const *evalContext,
                                   OUT int newSurface[10]) {
   for (int i = 0; i < 10; i++) {
     newSurface[i] = surfaceArray[i];
@@ -45,7 +45,7 @@ float getNewSurfaceAndNumNewHoles(int surfaceArray[10],
       continue;
     }
     // Maybe skip well holes
-    if (!evalContext.countWellHoles && lockPlacement.x + i == evalContext.wellColumn) {
+    if (!evalContext->countWellHoles && lockPlacement.x + i == evalContext->wellColumn) {
       continue;
     }
 
@@ -184,7 +184,7 @@ float adjustHoleCountAndBoardAfterTuck(int board[20], SimState lockPlacement){
 
 
 /** Gets the game state after completing a given move */
-GameState advanceGameState(GameState gameState, SimState lockPlacement, EvalContext evalContext) {
+GameState advanceGameState(GameState gameState, SimState lockPlacement, EvalContext const *evalContext) {
   GameState newState = {{}, {}, gameState.adjustedNumHoles, gameState.lines, gameState.level};
   float numNewHoles = 0;
   // Post-process after tucks
@@ -198,7 +198,7 @@ GameState advanceGameState(GameState gameState, SimState lockPlacement, EvalCont
   // Post-process after line clears
   if (numLinesCleared > 0) {
     newState.adjustedNumHoles =
-      updateSurfaceAndHolesAfterLineClears(newState.surfaceArray, newState.board, evalContext.countWellHoles ? -1 : evalContext.wellColumn);
+      updateSurfaceAndHolesAfterLineClears(newState.surfaceArray, newState.board, evalContext->countWellHoles ? -1 : evalContext->wellColumn);
   } else {
     newState.adjustedNumHoles += numNewHoles;
   }

@@ -34,7 +34,8 @@ float calculateFlatness(int surfaceArray[10], int wellColumn) {
 }
 
 /** Gets the value of a surface. */
-float rateSurface(int surfaceArray[10], int wellColumn, FastEvalWeights weights) {
+float rateSurface(int surfaceArray[10], EvalContext const *evalContext) {
+  int wellColumn = evalContext->wellColumn;
   if (USE_RANKS) {
     // Convert the surface array into the custom base-9 encoding
     int index = 0;
@@ -53,7 +54,7 @@ float rateSurface(int surfaceArray[10], int wellColumn, FastEvalWeights weights)
       index += diff + 4;
     }
     // Make lower ranks more punishing
-    float rawScore = surfaceRanksRaw[index] * 0.1 + (excessGap * weights.extremeGapCoef);
+    float rawScore = surfaceRanksRaw[index] * 0.1 + (excessGap * evalContext->weights.extremeGapCoef);
     return rawScore - (70 / max(3.0f, rawScore));
   }
   // If the ranks aren't loaded, use the flatness score
@@ -105,7 +106,7 @@ float getCol9Factor(int col9Height, float maxSafeCol9Height){
   return diff * diff;
 }
 
-float getCoveredWellFactor(int board[20], int wellColumn, float scareHeight, FastEvalWeights weights) {
+float getCoveredWellFactor(int board[20], int wellColumn, float scareHeight) {
   if (wellColumn == -1) {
     return 0;
   }
@@ -172,20 +173,20 @@ int isTetrisReady(int board[20], int col10Height){
 float fastEval(GameState gameState,
                GameState newState,
                SimState lockPlacement,
-               EvalContext evalContext,
-               FastEvalWeights weights) {
+               EvalContext const *evalContext) {
+  FastEvalWeights weights = evalContext->weights;
   // Preliminary helper work
-  float avgHeight = getAverageHeight(newState.surfaceArray, evalContext.wellColumn);
+  float avgHeight = getAverageHeight(newState.surfaceArray, evalContext->wellColumn);
   // Calculate all the factors
-  float avgHeightFactor = weights.avgHeightCoef * getAverageHeightFactor(avgHeight, evalContext.scareHeight);
-  float builtOutLeftFactor = weights.builtOutLeftCoef * getBuiltOutLeftFactor(newState.surfaceArray, newState.board, avgHeight, evalContext.scareHeight);
-  float coveredWellFactor = weights.coveredWellCoef * getCoveredWellFactor(newState.board, evalContext.wellColumn, evalContext.scareHeight, weights);
-  float guaranteedBurnsFactor = weights.burnCoef * getGuaranteedBurnsFactor(newState.board, evalContext.wellColumn);
-  float likelyBurnsFactor = weights.burnCoef * getLikelyBurnsFactor(newState.surfaceArray, evalContext.wellColumn, evalContext.maxSafeCol9);
-  float highCol9Factor = weights.col9Coef * getCol9Factor(newState.surfaceArray[8], evalContext.maxSafeCol9);
+  float avgHeightFactor = weights.avgHeightCoef * getAverageHeightFactor(avgHeight, evalContext->scareHeight);
+  float builtOutLeftFactor = weights.builtOutLeftCoef * getBuiltOutLeftFactor(newState.surfaceArray, newState.board, avgHeight, evalContext->scareHeight);
+  float coveredWellFactor = weights.coveredWellCoef * getCoveredWellFactor(newState.board, evalContext->wellColumn, evalContext->scareHeight);
+  float guaranteedBurnsFactor = weights.burnCoef * getGuaranteedBurnsFactor(newState.board, evalContext->wellColumn);
+  float likelyBurnsFactor = weights.burnCoef * getLikelyBurnsFactor(newState.surfaceArray, evalContext->wellColumn, evalContext->maxSafeCol9);
+  float highCol9Factor = weights.col9Coef * getCol9Factor(newState.surfaceArray[8], evalContext->maxSafeCol9);
   float holeFactor = weights.holeCoef * newState.adjustedNumHoles;
   float lineClearFactor = getLineClearFactor(newState.lines - gameState.lines, weights);
-  float surfaceFactor = weights.surfaceCoef * rateSurface(newState.surfaceArray, evalContext.wellColumn, weights);
+  float surfaceFactor = weights.surfaceCoef * rateSurface(newState.surfaceArray, evalContext);
   float tetrisReadyFactor = isTetrisReady(newState.board, newState.surfaceArray[9]) ? weights.tetrisReadyCoef : 0;
 
   float total = surfaceFactor + avgHeightFactor + lineClearFactor + holeFactor + guaranteedBurnsFactor + likelyBurnsFactor + coveredWellFactor + highCol9Factor + tetrisReadyFactor + builtOutLeftFactor;

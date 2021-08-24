@@ -6,6 +6,6 @@
 
 float getLineClearFactor(int numLinesCleared, FastEvalWeights weights);
 
-float fastEval(GameState gameState, GameState newState, SimState lockPlacement, EvalContext evalContext, FastEvalWeights weights);
+float fastEval(GameState gameState, GameState newState, SimState lockPlacement, const EvalContext *evalContext);
 
 #endif

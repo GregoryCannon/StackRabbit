@@ -15,19 +15,19 @@ std::string encodeLockPosition(LockLocation lockLocation){
 }
 
 /** Calculates the valuation of every possible terminal position for a given piece on a given board, and stores it in a map. */
-std::string getLockValueLookupEncoded(GameState gameState, Piece firstPiece, Piece secondPiece, int keepTopN, EvalContext evalContext, FastEvalWeights weights){
+std::string getLockValueLookupEncoded(GameState gameState, Piece firstPiece, Piece secondPiece, int keepTopN, EvalContext const *evalContext){
   unordered_map<string, float> lockValueMap;
 
   // Get the list of evaluated possibilities
   list<Depth2Possibility> possibilityList;
-  searchDepth2(gameState, firstPiece, secondPiece, keepTopN, evalContext, weights, possibilityList);
+  searchDepth2(gameState, firstPiece, secondPiece, keepTopN, evalContext, possibilityList);
 
   // Perform playouts on the promising possibilities
   int i = 0;
   for (Depth2Possibility const& possibility : possibilityList) {
     string lockPosEncoded = encodeLockPosition(possibility.firstPlacement);
     float overallScore = MAP_OFFSET + (i < keepTopN
-      ? possibility.immediateReward + getPlayoutScore(possibility.resultingState, evalContext.inputFrameTimeline, LOGGING_ENABLED ? 0 : NUM_PLAYOUTS, PLAYOUT_LENGTH)
+      ? possibility.immediateReward + getPlayoutScore(possibility.resultingState, evalContext->inputFrameTimeline, LOGGING_ENABLED ? 0 : NUM_PLAYOUTS, PLAYOUT_LENGTH)
       : possibility.evalScore + UNEXPLORED_PENALTY);
     if (overallScore > lockValueMap[lockPosEncoded]) {
       lockValueMap[lockPosEncoded] = overallScore;
@@ -52,13 +52,13 @@ std::string getLockValueLookupEncoded(GameState gameState, Piece firstPiece, Pie
 
 
 /** Searches 2-ply from a starting state, and performs a fast eval on each of the resulting states. Maintains a sorted list of the top N possibilities, and adds all the rest onto the end in no specified order. */
-int searchDepth2(GameState gameState, Piece firstPiece, Piece secondPiece, int keepTopN, EvalContext evalContext, FastEvalWeights weights, OUT list<Depth2Possibility> &possibilityList){
+int searchDepth2(GameState gameState, Piece firstPiece, Piece secondPiece, int keepTopN, EvalContext const *evalContext, OUT list<Depth2Possibility> &possibilityList){
   auto cutoffPossibility = possibilityList.begin(); // The node on the "cutoff" between being in the top N placements and not
   int size = 0; // Tracking manually is cheaper than doing the O(n) operation each iteration
 
   // Get the placements of the first piece
   vector<SimState> firstLockPlacements;
-  moveSearch(gameState, firstPiece, evalContext.inputFrameTimeline, firstLockPlacements);
+  moveSearch(gameState, firstPiece, evalContext->inputFrameTimeline, firstLockPlacements);
   for (auto it = begin(firstLockPlacements); it != end(firstLockPlacements); ++it) {
     SimState firstPlacement = *it;
     GameState afterFirstMove = advanceGameState(gameState, firstPlacement, evalContext);
@@ -66,16 +66,16 @@ int searchDepth2(GameState gameState, Piece firstPiece, Piece secondPiece, int k
       maybePrint("%d ", afterFirstMove.board[i] & ALL_TUCK_SETUP_BITS);
     }
     maybePrint("%d end of post first move\n", afterFirstMove.board[19] & ALL_TUCK_SETUP_BITS);
-    float firstMoveReward = getLineClearFactor(afterFirstMove.lines - gameState.lines, weights);
+    float firstMoveReward = getLineClearFactor(afterFirstMove.lines - gameState.lines, evalContext->weights);
 
     // Get the placements of the second piece
     vector<SimState> secondLockPlacements;
-    moveSearch(afterFirstMove, secondPiece, evalContext.inputFrameTimeline, secondLockPlacements);
+    moveSearch(afterFirstMove, secondPiece, evalContext->inputFrameTimeline, secondLockPlacements);
 
     for (auto secondPlacement : secondLockPlacements) {
       GameState resultingState = advanceGameState(afterFirstMove, secondPlacement, evalContext);
-      float evalScore = firstMoveReward + fastEval(afterFirstMove, resultingState, secondPlacement, evalContext, weights);
-      float secondMoveReward = getLineClearFactor(resultingState.lines - afterFirstMove.lines, weights);
+      float evalScore = firstMoveReward + fastEval(afterFirstMove, resultingState, secondPlacement, evalContext);
+      float secondMoveReward = getLineClearFactor(resultingState.lines - afterFirstMove.lines, evalContext->weights);
 
       Depth2Possibility newPossibility = {
         { firstPlacement.x, firstPlacement.y, firstPlacement.rotationIndex },

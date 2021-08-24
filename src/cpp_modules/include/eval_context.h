@@ -34,12 +34,13 @@ AiMode getAiMode(GameState gameState) {
   return STANDARD;
 }
 
-EvalContext getEvalContext(GameState gameState, char const *inputFrameTimeline){
+const EvalContext getEvalContext(GameState gameState, char const *inputFrameTimeline){
   EvalContext context = DEBUG_CONTEXT;
 
   // Set the mode
   context.aiMode = getAiMode(gameState);
   context.inputFrameTimeline = inputFrameTimeline;
+  context.weights = getWeights(context.aiMode);
 
   // Set the scare heights
   if (context.aiMode == LINEOUT) {

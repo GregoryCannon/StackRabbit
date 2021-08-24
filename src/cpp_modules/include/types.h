@@ -79,22 +79,18 @@ struct FastEvalWeights {
 
 /**
  * Any meta-information that might affect how things are evaluated.
- * e.g. how fast the agent can tap
  */
 struct EvalContext {
   AiMode aiMode;
   int countWellHoles;
-  char const * inputFrameTimeline;
+  FastEvalWeights weights;
+  char const *inputFrameTimeline;
   float maxDirtyTetrisHeight;
   float maxSafeCol9;
   float scareHeight;
   int wellColumn; // Equals -1 if lining out
 };
 
-struct FastEvalResult {
-  float evalScore;
-  GameState resultingState;
-};
 
 struct Depth2Possibility {
   LockLocation firstPlacement;
