@@ -70,30 +70,20 @@ std::string mainProcess(char const *inputStr) {
   encodeBoard(inputStr, startingGameState.board);
   getSurfaceArray(startingGameState.board, startingGameState.surfaceArray);
   startingGameState.adjustedNumHoles = updateSurfaceAndHolesAfterLineClears(startingGameState.surfaceArray, startingGameState.board, wellColumn);
-  const EvalContext context = getEvalContext(startingGameState, inputFrameTimeline.c_str());
+  
+  // Calculate global context for the 3 possible gravity values
+  const PieceRangeContext pieceRangeContextLookup[3] = {
+    getPieceRangeContext(inputFrameTimeline.c_str(), 1),
+    getPieceRangeContext(inputFrameTimeline.c_str(), 2),
+    getPieceRangeContext(inputFrameTimeline.c_str(), 3),
+  };
+  const EvalContext context = getEvalContext(startingGameState, pieceRangeContextLookup);
 
   if (LOGGING_ENABLED) {
     printBoard(startingGameState.board);
-
-    maybePrint("Tuck setups:\n");
-    for (int i = 0; i < 19; i++) {
-      maybePrint("%d ", (startingGameState.board[i] & ALL_TUCK_SETUP_BITS) >> 20);
-    }
-    maybePrint("%d\n", (startingGameState.board[19] & ALL_TUCK_SETUP_BITS) >> 20);
-    maybePrint("Holes:\n");
-    for (int i = 0; i < 19; i++) {
-      maybePrint("%d ", (startingGameState.board[i] & ALL_HOLE_BITS) >> 10);
-    }
-    maybePrint("%d\n", (startingGameState.board[19] & ALL_HOLE_BITS) >> 10);
-    maybePrint("Hole weights:\n");
-    for (int i = 0; i < 19; i++) {
-      maybePrint("%d ", (startingGameState.board[i] & NEED_TO_CLEAR_BIT) > 0);
-    }
-    maybePrint("%d\n", (startingGameState.board[19] & NEED_TO_CLEAR_BIT) > 0);
-
-    maybePrint("END OF INITIAL BOARD STATE\n");
+    printBoardBits(startingGameState.board);
   }
 
-  std::string lookupMapEncoded = getLockValueLookupEncoded(startingGameState, curPiece, nextPiece, DEPTH_2_PRUNING_BREADTH, &context);
+  std::string lookupMapEncoded = getLockValueLookupEncoded(startingGameState, curPiece, nextPiece, DEPTH_2_PRUNING_BREADTH, &context, pieceRangeContextLookup);
   return lookupMapEncoded;
 }

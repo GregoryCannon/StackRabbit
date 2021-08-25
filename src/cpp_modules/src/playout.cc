@@ -8,7 +8,7 @@ using namespace std;
 
 /** Selects the highest value lock placement using the fast eval function. */
 SimState pickLockPlacement(GameState gameState,
-                           EvalContext const *evalContext,
+                           const EvalContext *evalContext,
                            OUT vector<SimState> &lockPlacements) {
   float bestSoFar = evalContext->weights.deathCoef;
   SimState bestPlacement = {};
@@ -29,18 +29,18 @@ SimState pickLockPlacement(GameState gameState,
  * Plays out a starting state 10 moves into the future.
  * @returns the total value of the playout (intermediate rewards + eval of the final board)
  */
-float playSequence(GameState gameState, char const *inputFrameTimeline, const int pieceSequence[SEQUENCE_LENGTH], int playoutLength) {
+float playSequence(GameState gameState, const PieceRangeContext pieceRangeContextLookup[3], const int pieceSequence[SEQUENCE_LENGTH], int playoutLength) {
   float totalReward = 0;
   for (int i = 0; i < playoutLength; i++) {
     // Figure out modes and eval context
-    const EvalContext evalContextRaw = getEvalContext(gameState, inputFrameTimeline);
+    const EvalContext evalContextRaw = getEvalContext(gameState, pieceRangeContextLookup);
     const EvalContext *evalContext = &evalContextRaw;
     FastEvalWeights weights = getWeights(evalContext->aiMode);
 
     // Get the lock placements
     std::vector<SimState> lockPlacements;
     Piece piece = PIECE_LIST[pieceSequence[i]];
-    moveSearch(gameState, piece, evalContext->inputFrameTimeline, lockPlacements);
+    moveSearch(gameState, piece, evalContext->pieceRangeContext.inputFrameTimeline, lockPlacements);
 
     if (lockPlacements.size() == 0) {
       return weights.deathCoef;
@@ -77,12 +77,12 @@ float playSequence(GameState gameState, char const *inputFrameTimeline, const in
 }
 
 
-float getPlayoutScore(GameState gameState, char const *inputFrameTimeline, int numPlayouts, int playoutLength){
+float getPlayoutScore(GameState gameState, const PieceRangeContext pieceRangeContextLookup[3], int numPlayouts, int playoutLength){
   float totalScore = 0;
   for (int i = 0; i < numPlayouts; i++) {
     // Do one playout
     const int *pieceSequence = canonicalPieceSequences + i * SEQUENCE_LENGTH; // Index into the mega array of piece sequences;
-    float playoutScore = playSequence(gameState, inputFrameTimeline, pieceSequence, playoutLength);
+    float playoutScore = playSequence(gameState, pieceRangeContextLookup, pieceSequence, playoutLength);
     totalScore += playoutScore;
   }
   return totalScore / numPlayouts;

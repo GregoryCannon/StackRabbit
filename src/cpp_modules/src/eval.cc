@@ -34,7 +34,7 @@ float calculateFlatness(int surfaceArray[10], int wellColumn) {
 }
 
 /** Gets the value of a surface. */
-float rateSurface(int surfaceArray[10], EvalContext const *evalContext) {
+float rateSurface(int surfaceArray[10], const EvalContext *evalContext) {
   int wellColumn = evalContext->wellColumn;
   if (USE_RANKS) {
     // Convert the surface array into the custom base-9 encoding
@@ -173,7 +173,7 @@ int isTetrisReady(int board[20], int col10Height){
 float fastEval(GameState gameState,
                GameState newState,
                SimState lockPlacement,
-               EvalContext const *evalContext) {
+               const EvalContext *evalContext) {
   FastEvalWeights weights = evalContext->weights;
   // Preliminary helper work
   float avgHeight = getAverageHeight(newState.surfaceArray, evalContext->wellColumn);

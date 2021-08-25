@@ -15,7 +15,7 @@ std::string encodeLockPosition(LockLocation lockLocation){
 }
 
 /** Calculates the valuation of every possible terminal position for a given piece on a given board, and stores it in a map. */
-std::string getLockValueLookupEncoded(GameState gameState, Piece firstPiece, Piece secondPiece, int keepTopN, EvalContext const *evalContext){
+std::string getLockValueLookupEncoded(GameState gameState, Piece firstPiece, Piece secondPiece, int keepTopN, const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3]){
   unordered_map<string, float> lockValueMap;
 
   // Get the list of evaluated possibilities
@@ -27,7 +27,7 @@ std::string getLockValueLookupEncoded(GameState gameState, Piece firstPiece, Pie
   for (Depth2Possibility const& possibility : possibilityList) {
     string lockPosEncoded = encodeLockPosition(possibility.firstPlacement);
     float overallScore = MAP_OFFSET + (i < keepTopN
-      ? possibility.immediateReward + getPlayoutScore(possibility.resultingState, evalContext->inputFrameTimeline, LOGGING_ENABLED ? 0 : NUM_PLAYOUTS, PLAYOUT_LENGTH)
+      ? possibility.immediateReward + getPlayoutScore(possibility.resultingState, pieceRangeContextLookup, LOGGING_ENABLED ? 0 : NUM_PLAYOUTS, PLAYOUT_LENGTH)
       : possibility.evalScore + UNEXPLORED_PENALTY);
     if (overallScore > lockValueMap[lockPosEncoded]) {
       lockValueMap[lockPosEncoded] = overallScore;
@@ -52,13 +52,13 @@ std::string getLockValueLookupEncoded(GameState gameState, Piece firstPiece, Pie
 
 
 /** Searches 2-ply from a starting state, and performs a fast eval on each of the resulting states. Maintains a sorted list of the top N possibilities, and adds all the rest onto the end in no specified order. */
-int searchDepth2(GameState gameState, Piece firstPiece, Piece secondPiece, int keepTopN, EvalContext const *evalContext, OUT list<Depth2Possibility> &possibilityList){
+int searchDepth2(GameState gameState, Piece firstPiece, Piece secondPiece, int keepTopN, const EvalContext *evalContext, OUT list<Depth2Possibility> &possibilityList){
   auto cutoffPossibility = possibilityList.begin(); // The node on the "cutoff" between being in the top N placements and not
   int size = 0; // Tracking manually is cheaper than doing the O(n) operation each iteration
 
   // Get the placements of the first piece
   vector<SimState> firstLockPlacements;
-  moveSearch(gameState, firstPiece, evalContext->inputFrameTimeline, firstLockPlacements);
+  moveSearch(gameState, firstPiece, evalContext->pieceRangeContext.inputFrameTimeline, firstLockPlacements);
   for (auto it = begin(firstLockPlacements); it != end(firstLockPlacements); ++it) {
     SimState firstPlacement = *it;
     GameState afterFirstMove = advanceGameState(gameState, firstPlacement, evalContext);
@@ -70,7 +70,7 @@ int searchDepth2(GameState gameState, Piece firstPiece, Piece secondPiece, int k
 
     // Get the placements of the second piece
     vector<SimState> secondLockPlacements;
-    moveSearch(afterFirstMove, secondPiece, evalContext->inputFrameTimeline, secondLockPlacements);
+    moveSearch(afterFirstMove, secondPiece, evalContext->pieceRangeContext.inputFrameTimeline, secondLockPlacements);
 
     for (auto secondPlacement : secondLockPlacements) {
       GameState resultingState = advanceGameState(afterFirstMove, secondPlacement, evalContext);

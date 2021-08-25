@@ -78,19 +78,33 @@ struct FastEvalWeights {
 };
 
 /**
- * Any meta-information that might affect how things are evaluated.
+ * Precomputed meta-information related to tapping speed and piece reachability.
+ * Considered "global" because the tapping speed does not change within the lifetime of one query to the C++ module
+ * (whereas the eval context can change based on the AiMode).
+ */
+struct PieceRangeContext {
+  char const *inputFrameTimeline;
+  int yValueOfEachShift[7];
+  int max4TapHeight;
+  int max5TapHeight;
+  int maxAccessibleLeft5Surface[10];
+  int maxAccessibleRightSurface[10];
+};
+
+/**
+ * A collection of meta-information that dictates how boards are evaluated.
+ * Notably excludes any context that depends primarily on the tapping speed and level (which would be included in the global context)
  */
 struct EvalContext {
   AiMode aiMode;
-  int countWellHoles;
   FastEvalWeights weights;
-  char const *inputFrameTimeline;
+  PieceRangeContext pieceRangeContext;
+  int countWellHoles;
   float maxDirtyTetrisHeight;
   float maxSafeCol9;
   float scareHeight;
   int wellColumn; // Equals -1 if lining out
 };
-
 
 struct Depth2Possibility {
   LockLocation firstPlacement;

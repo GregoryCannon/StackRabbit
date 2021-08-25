@@ -60,6 +60,26 @@ void printSurface(int surfaceArray[10]) {
   printf("%d\n", surfaceArray[9]);
 }
 
+void printBoardBits(int board[20]){
+  maybePrint("Tuck setups:\n");
+  for (int i = 0; i < 19; i++) {
+    maybePrint("%d ", (board[i] & ALL_TUCK_SETUP_BITS) >> 20);
+  }
+  maybePrint("%d\n", (board[19] & ALL_TUCK_SETUP_BITS) >> 20);
+  maybePrint("Holes:\n");
+  for (int i = 0; i < 19; i++) {
+    maybePrint("%d ", (board[i] & ALL_HOLE_BITS) >> 10);
+  }
+  maybePrint("%d\n", (board[19] & ALL_HOLE_BITS) >> 10);
+  maybePrint("Hole weights:\n");
+  for (int i = 0; i < 19; i++) {
+    maybePrint("%d ", (board[i] & NEED_TO_CLEAR_BIT) > 0);
+  }
+  maybePrint("%d\n", (board[19] & NEED_TO_CLEAR_BIT) > 0);
+
+  maybePrint("END OF INITIAL BOARD STATE\n");
+}
+
 
 /* --------- BOARD ENCODINGS -------- */
 

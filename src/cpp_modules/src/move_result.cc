@@ -23,7 +23,7 @@ float getAdjustedHoleRating(int board[20], int r, int c){
 float getNewSurfaceAndNumNewHoles(int surfaceArray[10],
                                   int board[20],
                                   SimState lockPlacement,
-                                  EvalContext const *evalContext,
+                                  const EvalContext *evalContext,
                                   OUT int newSurface[10]) {
   for (int i = 0; i < 10; i++) {
     newSurface[i] = surfaceArray[i];
@@ -184,7 +184,7 @@ float adjustHoleCountAndBoardAfterTuck(int board[20], SimState lockPlacement){
 
 
 /** Gets the game state after completing a given move */
-GameState advanceGameState(GameState gameState, SimState lockPlacement, EvalContext const *evalContext) {
+GameState advanceGameState(GameState gameState, SimState lockPlacement, const EvalContext *evalContext) {
   GameState newState = {{}, {}, gameState.adjustedNumHoles, gameState.lines, gameState.level};
   float numNewHoles = 0;
   // Post-process after tucks
