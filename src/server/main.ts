@@ -243,7 +243,7 @@ function searchHypothetically(
   possibilityChains.sort((a, b) => b.expectedValue - a.expectedValue);
 
   // Maybe log info about the EV results
-  if (shouldLog) {
+  if (true) {
     logExpectedValueResults(
       possibilityChains,
       hypotheticalSearchDepth,
@@ -493,11 +493,10 @@ export function logExpectedValueResults(
         2
       )}, Original Value: ${result.totalValue.toFixed(2)}`
     );
-    const lines = result.innerPossibility ? result.innerPossibility.hypotheticalLines : result.hypotheticalLines;
-    for (const [
-      i,
-      hypotheticalBestMove,
-    ] of lines.entries()) {
+    const lines = result.innerPossibility
+      ? result.innerPossibility.hypotheticalLines
+      : result.hypotheticalLines;
+    for (const [i, hypotheticalBestMove] of lines.entries()) {
       if (i < 4 || i >= lines.length - 4) {
         console.log(
           `If ${
