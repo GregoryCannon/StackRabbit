@@ -66,7 +66,7 @@ int searchDepth2(GameState gameState, Piece firstPiece, Piece secondPiece, int k
       maybePrint("%d ", afterFirstMove.board[i] & ALL_TUCK_SETUP_BITS);
     }
     maybePrint("%d end of post first move\n", afterFirstMove.board[19] & ALL_TUCK_SETUP_BITS);
-    float firstMoveReward = getLineClearFactor(afterFirstMove.lines - gameState.lines, evalContext->weights);
+    float firstMoveReward = getLineClearFactor(afterFirstMove.lines - gameState.lines, evalContext->weights, evalContext->shouldRewardLineClears);
 
     // Get the placements of the second piece
     vector<SimState> secondLockPlacements;
@@ -75,7 +75,7 @@ int searchDepth2(GameState gameState, Piece firstPiece, Piece secondPiece, int k
     for (auto secondPlacement : secondLockPlacements) {
       GameState resultingState = advanceGameState(afterFirstMove, secondPlacement, evalContext);
       float evalScore = firstMoveReward + fastEval(afterFirstMove, resultingState, secondPlacement, evalContext);
-      float secondMoveReward = getLineClearFactor(resultingState.lines - afterFirstMove.lines, evalContext->weights);
+      float secondMoveReward = getLineClearFactor(resultingState.lines - afterFirstMove.lines, evalContext->weights, evalContext->shouldRewardLineClears);
 
       Depth2Possibility newPossibility = {
         { firstPlacement.x, firstPlacement.y, firstPlacement.rotationIndex },

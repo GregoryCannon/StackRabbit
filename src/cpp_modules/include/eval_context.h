@@ -1,4 +1,5 @@
 #include "types.h"
+#include <math.h>
 
 const EvalContext DEBUG_CONTEXT = {
   /* aiMode= */ STANDARD,
@@ -8,6 +9,7 @@ const EvalContext DEBUG_CONTEXT = {
   /* maxDirtyTetrisHeight= */ 1,
   /* maxSafeCol9Height= */ 6,
   /* scareHeight= */ 5,
+  /* shouldRewardLineClears= */ false,
   /* wellColumn= */ 9,
 };
 
@@ -29,6 +31,14 @@ int hasHoleBlockingTetrisReady(int board[20], int col10Height){
   return false;
 }
 
+/** Gets the number of holes that are holes and not tuck setups*/
+int getNumTrueHoles(float adjustedNumHoles){
+  while (std::abs(adjustedNumHoles - round(adjustedNumHoles)) > __FLT_EPSILON__){
+    adjustedNumHoles -= TUCK_SETUP_HOLE_PROPORTION;
+  }
+  return (int) adjustedNumHoles;
+}
+
 AiMode getAiMode(GameState gameState, int max5TapHeight) {
   if (max5TapHeight < 4) {
     return LINEOUT;
@@ -39,8 +49,7 @@ AiMode getAiMode(GameState gameState, int max5TapHeight) {
     }
     return NEAR_KILLSCREEN;
   }
-  // TODO: Don't count tuck setups here
-  if (gameState.adjustedNumHoles >= 1) {
+  if (getNumTrueHoles(gameState.adjustedNumHoles) >= 1) {
     return DIG;
   }
   return STANDARD;
@@ -53,11 +62,12 @@ const EvalContext getEvalContext(GameState gameState, const PieceRangeContext pi
   context.pieceRangeContext = pieceRangeContextLookup[getGravity(gameState.level) - 1];
   
   // Set the mode
-  context.aiMode = getAiMode(gameState, context.pieceRangeContext.max5TapHeight);
+  AiMode aiMode = getAiMode(gameState, context.pieceRangeContext.max5TapHeight);
+  context.aiMode = aiMode;
   context.weights = getWeights(context.aiMode);
   
   // Set the scare heights
-  if (context.aiMode == LINEOUT) {
+  if (aiMode == LINEOUT) {
     context.scareHeight = 0;
     context.maxSafeCol9 = -1;
   } else {
@@ -66,7 +76,7 @@ const EvalContext getEvalContext(GameState gameState, const PieceRangeContext pi
   }
 
   // Set the well column
-  if (context.aiMode == LINEOUT) {
+  if (aiMode == LINEOUT) {
     context.wellColumn = -1;
   } else {
     context.wellColumn = 9;
@@ -75,6 +85,7 @@ const EvalContext getEvalContext(GameState gameState, const PieceRangeContext pi
   // Misc other properties
   context.maxDirtyTetrisHeight = 0;
   context.countWellHoles = context.aiMode == DIG;
+  context.shouldRewardLineClears = (aiMode == LINEOUT || aiMode == DIRTY_NEAR_KILLSCREEN);
   
   return context;
 }

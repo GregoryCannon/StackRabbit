@@ -60,6 +60,14 @@ void printSurface(int surfaceArray[10]) {
   printf("%d\n", surfaceArray[9]);
 }
 
+void printArray(int *array, int range, char const *description){
+  printf("%s:  ", description);
+  for (int i = 0; i < range; i++){
+    printf("%02d ", array[i]);
+  }
+  printf("\n");
+}
+
 void printBoardBits(int board[20]){
   maybePrint("Tuck setups:\n");
   for (int i = 0; i < 19; i++) {

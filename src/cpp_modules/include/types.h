@@ -72,9 +72,12 @@ struct FastEvalWeights {
   float deathCoef;
   float extremeGapCoef;
   float holeCoef;
+  float inaccessibleLeftCoef;
+  float inaccessibleRightCoef;
   float tetrisCoef;
   float tetrisReadyCoef;
   float surfaceCoef;
+  float surfaceLeftCoef;
 };
 
 /**
@@ -103,6 +106,7 @@ struct EvalContext {
   float maxDirtyTetrisHeight;
   float maxSafeCol9;
   float scareHeight;
+  int shouldRewardLineClears;
   int wellColumn; // Equals -1 if lining out
 };
 

@@ -24,6 +24,7 @@ float getNewSurfaceAndNumNewHoles(int surfaceArray[10],
                                   int board[20],
                                   SimState lockPlacement,
                                   const EvalContext *evalContext,
+                                  int isTuck,
                                   OUT int newSurface[10]) {
   for (int i = 0; i < 10; i++) {
     newSurface[i] = surfaceArray[i];
@@ -34,6 +35,13 @@ float getNewSurfaceAndNumNewHoles(int surfaceArray[10],
   for (int i = 0; i < 4; i++) {
     if (topSurface[i] != -1) {
       newSurface[lockPlacement.x + i] = 20 - topSurface[i] - lockPlacement.y;
+    }
+  }
+  
+  // Adjust for the fact that tucks can place a piece UNDER the existing surface
+  if (isTuck){
+    for (int i = 0; i < 10; i++){
+      newSurface[i] = std::max(surfaceArray[i], newSurface[i]);
     }
   }
 
@@ -100,6 +108,7 @@ float updateSurfaceAndHolesAfterLineClears(int surfaceArray[10], int board[20], 
       // Add new holes to the overall count, unless they're in the well
       if (!(board[r] & mask) && c != excludeHolesColumn) {
         float rating = getAdjustedHoleRating(board, r, c);
+        // Check that it's a hole (1.0) and not a tuck setup (eg. 0.9)
         if (rating > TUCK_SETUP_HOLE_PROPORTION + __FLT_EPSILON__) {
           lowestHoleInCol = r;
         }
@@ -162,7 +171,7 @@ float adjustHoleCountAndBoardAfterTuck(int board[20], SimState lockPlacement){
   int tuckCellsFilled = 0;
   int *pieceRows = lockPlacement.piece.rowsByRotation[lockPlacement.rotationIndex];
   for (int i = 3; i >= 0; i--) {
-    // Don't add any minos off the board
+    // Don't add any minos that are off the board
     if (lockPlacement.y + i < 0) {
       continue;;
     }
@@ -187,14 +196,15 @@ float adjustHoleCountAndBoardAfterTuck(int board[20], SimState lockPlacement){
 GameState advanceGameState(GameState gameState, SimState lockPlacement, const EvalContext *evalContext) {
   GameState newState = {{}, {}, gameState.adjustedNumHoles, gameState.lines, gameState.level};
   float numNewHoles = 0;
+  int isTuck = lockPlacement.frameIndex == -1; // -1 frame index is an artifact of tucks
   // Post-process after tucks
   // This has to happen before getNewBoardAndLinesCleared, which updates the tuck cell bits
-  if (lockPlacement.frameIndex == -1) {        // -1 frame index is an artifact of tucks
+  if (isTuck) {
     numNewHoles += adjustHoleCountAndBoardAfterTuck(gameState.board, lockPlacement);
   }
   int numLinesCleared = getNewBoardAndLinesCleared(gameState.board, lockPlacement, newState.board);
   numNewHoles +=
-    getNewSurfaceAndNumNewHoles(gameState.surfaceArray, newState.board, lockPlacement, evalContext, newState.surfaceArray);
+    getNewSurfaceAndNumNewHoles(gameState.surfaceArray, newState.board, lockPlacement, evalContext, isTuck, OUT newState.surfaceArray);
   // Post-process after line clears
   if (numLinesCleared > 0) {
     newState.adjustedNumHoles =

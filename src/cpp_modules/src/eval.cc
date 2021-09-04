@@ -18,7 +18,7 @@ float calculateFlatness(int surfaceArray[10], int wellColumn) {
     }
     int diff = surfaceArray[i + 1] - surfaceArray[i];
     // Correct for double wells
-    if (i == 7 && wellColumn == 9 && diff < -2){
+    if (i == 7 && wellColumn == 9 && diff < -2) {
       diff = -2;
     }
     // Punish based on the absolute value of the column differences
@@ -44,7 +44,7 @@ float rateSurface(int surfaceArray[10], const EvalContext *evalContext) {
       int diff = surfaceArray[i + 1] - surfaceArray[i];
       int absDiff = abs(diff);
       // Correct for double wells
-      if (i == 7 && wellColumn == 9 && absDiff > 2){
+      if (i == 7 && wellColumn == 9 && absDiff > 2) {
         absDiff = 2;
       } else if (absDiff > 4) {
         excessGap += absDiff - 4;
@@ -96,6 +96,19 @@ float getBuiltOutLeftFactor(int surfaceArray[10], int board[20], float avgHeight
   }
   // Reward built out left
   return heightRatio * heightDiff;
+}
+
+float getLeftSurfaceFactor(int board[20], int surfaceArray[10], int max5TapHeight){
+  max5TapHeight = max(0, max5TapHeight);
+  for (int r = 20 - surfaceArray[0]; r < 20; r++) {
+    if (board[r] & HOLE_BIT(0)) {
+      return -3;
+    }
+  }
+  if (surfaceArray[1] > max5TapHeight && surfaceArray[1] > surfaceArray[0]) {
+    return surfaceArray[0] - surfaceArray[1];
+  }
+  return 0;
 }
 
 float getCol9Factor(int col9Height, float maxSafeCol9Height){
@@ -153,8 +166,30 @@ float getLikelyBurnsFactor(int surfaceArray[10], int wellColumn, int maxSafeCol9
   return ceil(diff / 2.0f) * 0.6;
 }
 
-float getLineClearFactor(int numLinesCleared, FastEvalWeights weights){
-  return numLinesCleared == 4 ? weights.tetrisCoef : weights.burnCoef * numLinesCleared;
+/**
+ * Assesses whether the surface allows for 5 taps.
+ * @returns the multiple of the accessible left penalty that should be applied. That is, 0 if 5 taps are possible, or a float around 1.0 or higher (depending on how many lines would need to clear for the left to be accessible).
+ */
+float getInaccessibleLeftFactor(int surfaceArray[10], int const maxAccessibleLeftSurface[10]){
+  // Check if the agent even needs to get a piece left first.
+  // If the left is built out higher than the max 5 tap height and also higher than col 9, then it's chilling.
+  if (surfaceArray[0] > maxAccessibleLeftSurface[0] && surfaceArray[0] > surfaceArray[8]){
+    return 0;
+  }
+  
+  int highestAbove = 0;
+  for (int i = 0; i < 10; i++) {
+    if (surfaceArray[i] > maxAccessibleLeftSurface[i]) {
+      highestAbove = std::max(highestAbove, surfaceArray[i] - maxAccessibleLeftSurface[i]);
+    }
+  }
+  return highestAbove == 0 ? 0 : 1.0 + 0.5 * highestAbove;
+}
+
+float getLineClearFactor(int numLinesCleared, FastEvalWeights weights, int shouldRewardLineClears){
+  return numLinesCleared == 4
+    ? weights.tetrisCoef
+    : weights.burnCoef * numLinesCleared * (shouldRewardLineClears ? -0.25 : 1);
 }
 
 int isTetrisReady(int board[20], int col10Height){
@@ -177,6 +212,7 @@ float fastEval(GameState gameState,
   FastEvalWeights weights = evalContext->weights;
   // Preliminary helper work
   float avgHeight = getAverageHeight(newState.surfaceArray, evalContext->wellColumn);
+  int isKillscreenLineout = gameState.level >= 29 && evalContext->aiMode == LINEOUT;
   // Calculate all the factors
   float avgHeightFactor = weights.avgHeightCoef * getAverageHeightFactor(avgHeight, evalContext->scareHeight);
   float builtOutLeftFactor = weights.builtOutLeftCoef * getBuiltOutLeftFactor(newState.surfaceArray, newState.board, avgHeight, evalContext->scareHeight);
@@ -185,11 +221,18 @@ float fastEval(GameState gameState,
   float likelyBurnsFactor = weights.burnCoef * getLikelyBurnsFactor(newState.surfaceArray, evalContext->wellColumn, evalContext->maxSafeCol9);
   float highCol9Factor = weights.col9Coef * getCol9Factor(newState.surfaceArray[8], evalContext->maxSafeCol9);
   float holeFactor = weights.holeCoef * newState.adjustedNumHoles;
-  float lineClearFactor = getLineClearFactor(newState.lines - gameState.lines, weights);
+  float inaccessibleLeftFactor = isKillscreenLineout
+              ? 0
+              : (weights.inaccessibleLeftCoef * getInaccessibleLeftFactor(newState.surfaceArray, evalContext->pieceRangeContext.maxAccessibleLeft5Surface));
+  float lineClearFactor = getLineClearFactor(newState.lines - gameState.lines, weights, evalContext->shouldRewardLineClears);
   float surfaceFactor = weights.surfaceCoef * rateSurface(newState.surfaceArray, evalContext);
+  float surfaceLeftFactor =
+    (isKillscreenLineout)
+      ? weights.surfaceLeftCoef * getLeftSurfaceFactor(newState.board, newState.surfaceArray, evalContext->pieceRangeContext.max5TapHeight)
+      : 0;
   float tetrisReadyFactor = isTetrisReady(newState.board, newState.surfaceArray[9]) ? weights.tetrisReadyCoef : 0;
 
-  float total = surfaceFactor + avgHeightFactor + lineClearFactor + holeFactor + guaranteedBurnsFactor + likelyBurnsFactor + coveredWellFactor + highCol9Factor + tetrisReadyFactor + builtOutLeftFactor;
+  float total = surfaceFactor + surfaceLeftFactor + avgHeightFactor + lineClearFactor + holeFactor + guaranteedBurnsFactor + likelyBurnsFactor + inaccessibleLeftFactor + coveredWellFactor + highCol9Factor + tetrisReadyFactor + builtOutLeftFactor;
 
   // Logging
   if (LOGGING_ENABLED) {
@@ -198,6 +241,7 @@ float fastEval(GameState gameState,
                lockPlacement.x - SPAWN_X,
                lockPlacement.y);
     printBoard(newState.board);
+    printSurface(newState.surfaceArray);
     maybePrint("Tuck setups:\n");
     for (int i = 0; i < 19; i++) {
       maybePrint("%d ", (newState.board[i] & ALL_TUCK_SETUP_BITS) >> 20);
@@ -216,13 +260,15 @@ float fastEval(GameState gameState,
 
     printf("Numholes %f\n", newState.adjustedNumHoles);
     maybePrint(
-      "Surface %01f, AvgHeight %01f, LineClear %01f, Hole %01f, GuaranteedBurns %01f, LikelyBurns %01f, CoveredWell %01f, HighCol9 %01f, TetrisReady %01f, BuiltLeft %01f\t Total: %01f\n",
+      "Surface %01f, LeftSurface %01f, AvgHeight %01f, LineClear %01f, Hole %01f, GuaranteedBurns %01f, LikelyBurns %01f, InaccLeft %01f, CoveredWell %01f, HighCol9 %01f, TetrisReady %01f, BuiltLeft %01f\t Total: %01f\n",
       surfaceFactor,
+      surfaceLeftFactor,
       avgHeightFactor,
       lineClearFactor,
       holeFactor,
       guaranteedBurnsFactor,
       likelyBurnsFactor,
+      inaccessibleLeftFactor,
       coveredWellFactor,
       highCol9Factor,
       tetrisReadyFactor,

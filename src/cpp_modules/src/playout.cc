@@ -67,7 +67,7 @@ float playSequence(GameState gameState, const PieceRangeContext pieceRangeContex
     int oldLines = gameState.lines;
     gameState = advanceGameState(gameState, bestMove, evalContext);
     FastEvalWeights rewardWeights = evalContext->aiMode == DIG ? getWeights(STANDARD) : weights; // When the AI is digging, still deduct from the overall value of the sequence at standard levels
-    totalReward += getLineClearFactor(gameState.lines - oldLines, rewardWeights);
+    totalReward += getLineClearFactor(gameState.lines - oldLines, rewardWeights, evalContext->shouldRewardLineClears);
     if (PLAYOUT_LOGGING_ENABLED) {
       printBoard(gameState.board);
       printf("Best placement: %c %d, %d\n\n", bestMove.piece.id, bestMove.rotationIndex, bestMove.x - SPAWN_X);

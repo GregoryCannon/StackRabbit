@@ -8,6 +8,7 @@ float getNewSurfaceAndNumNewHoles(int surfaceArray[10],
                                   int board[20],
                                   SimState lockPlacement,
                                   const EvalContext *evalContext,
+                                  int isTuck,
                                   OUT int newSurface[10]);
 
 /**
