@@ -381,6 +381,7 @@ export class PreComputeManager {
               adjPossibility.lockPositionEncoded
             )
           ) {
+            continue; // TEMPORARY FIX TO STOP CRASHING
             console.log({
               ...phantomPlacement.initialPlacement,
               boardAfter: null,
