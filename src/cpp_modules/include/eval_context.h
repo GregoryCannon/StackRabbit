@@ -33,7 +33,7 @@ int hasHoleBlockingTetrisReady(int board[20], int col10Height){
 
 /** Gets the number of holes that are holes and not tuck setups*/
 int getNumTrueHoles(float adjustedNumHoles){
-  while (std::abs(adjustedNumHoles - round(adjustedNumHoles)) > __FLT_EPSILON__){
+  while (std::abs(adjustedNumHoles - round(adjustedNumHoles)) > __FLT_EPSILON__) {
     adjustedNumHoles -= TUCK_SETUP_HOLE_PROPORTION;
   }
   return (int) adjustedNumHoles;
@@ -43,8 +43,8 @@ AiMode getAiMode(GameState gameState, int max5TapHeight) {
   if (max5TapHeight < 4) {
     return LINEOUT;
   }
-  if (gameState.lines > 220 && gameState.level < 29){
-    if (hasHoleBlockingTetrisReady(gameState.board, gameState.surfaceArray[9])){
+  if (gameState.lines > 220 && gameState.level < 29) {
+    if (hasHoleBlockingTetrisReady(gameState.board, gameState.surfaceArray[9])) {
       return DIRTY_NEAR_KILLSCREEN;
     }
     return NEAR_KILLSCREEN;
@@ -52,20 +52,24 @@ AiMode getAiMode(GameState gameState, int max5TapHeight) {
   if (getNumTrueHoles(gameState.adjustedNumHoles) >= 1) {
     return DIG;
   }
+  // Optionally play very safe on killscreen
+  if (gameState.level >= 29) {
+    return SAFE;
+  }
   return STANDARD;
 }
 
 const EvalContext getEvalContext(GameState gameState, const PieceRangeContext pieceRangeContextLookup[]){
   EvalContext context = {};
-  
+
   // Copy the piece range context from the global lookup
   context.pieceRangeContext = pieceRangeContextLookup[getGravity(gameState.level) - 1];
-  
+
   // Set the mode
   AiMode aiMode = getAiMode(gameState, context.pieceRangeContext.max5TapHeight);
   context.aiMode = aiMode;
   context.weights = getWeights(context.aiMode);
-  
+
   // Set the scare heights
   if (aiMode == LINEOUT) {
     context.scareHeight = 0;
@@ -81,11 +85,11 @@ const EvalContext getEvalContext(GameState gameState, const PieceRangeContext pi
   } else {
     context.wellColumn = 9;
   }
-  
+
   // Misc other properties
   context.maxDirtyTetrisHeight = 0;
   context.countWellHoles = context.aiMode == DIG;
   context.shouldRewardLineClears = (aiMode == LINEOUT || aiMode == DIRTY_NEAR_KILLSCREEN);
-  
+
   return context;
 }

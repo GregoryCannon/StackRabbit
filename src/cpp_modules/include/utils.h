@@ -62,7 +62,7 @@ void printSurface(int surfaceArray[10]) {
 
 void printArray(int *array, int range, char const *description){
   printf("%s:  ", description);
-  for (int i = 0; i < range; i++){
+  for (int i = 0; i < range; i++) {
     printf("%02d ", array[i]);
   }
   printf("\n");

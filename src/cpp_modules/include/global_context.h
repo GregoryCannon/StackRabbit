@@ -34,6 +34,7 @@ const PieceRangeContext getPieceRangeContext(char const *inputFrameTimeline, int
   // Calculate inaccessible left 5-tap surface
   for (int i = 0; i < 10; i++){
     context.maxAccessibleLeft5Surface[i] = 20;
+    context.maxAccessibleRightSurface[i] = 20;
   }
   int *bottomSurface = PIECE_T.bottomSurfaceByRotation[3];
 
@@ -46,12 +47,27 @@ const PieceRangeContext getPieceRangeContext(char const *inputFrameTimeline, int
       int xBeforeShift = SPAWN_X - tapIndex;
       int shiftY = context.yValueOfEachShift[tapIndex + 1];
       // printf("tap=%d, i=%d, xAfter=%d, yBefore=%d\n", tapIndex, i, xBeforeShift, shiftY);
-      context.maxAccessibleLeft5Surface[xBeforeShift + i] = 20 - bottomSurface[i] - shiftY;
+      context.maxAccessibleLeft5Surface[xBeforeShift + i] = 19 - bottomSurface[i] - shiftY - PIECE_T.initialY;
     }
   }
   context.maxAccessibleLeft5Surface[0] = context.maxAccessibleLeft5Surface[1]; // The 5th shift is the last, so it just needs to resolve before/after (which is at the same Y value)
   
-  // printArray(context.maxAccessibleLeft5Surface, 10, "MAX 5 LEFT SURFACE");
+  bottomSurface = PIECE_I.bottomSurfaceByRotation[1];
+  for (int tapIndex = 0; tapIndex < 4; tapIndex++){
+    // Superimpose the piece's top surface on the inaccessible surface
+    for (int i = 0; i < 4; i++) {
+      if (bottomSurface[i] == -1){
+        continue;
+      }
+      int xBeforeShift = SPAWN_X + tapIndex;
+      int shiftY = context.yValueOfEachShift[tapIndex + 1];
+      // printf("tap=%d, i=%d, xAfter=%d, yBefore=%d\n", tapIndex, i, xBeforeShift, shiftY);
+      context.maxAccessibleRightSurface[xBeforeShift + i] = 19 - bottomSurface[i] - shiftY - PIECE_I.initialY;
+    }
+  }
+  context.maxAccessibleRightSurface[9] = context.maxAccessibleRightSurface[8]; // The 5th shift is the last, so it just needs to resolve before/after (which is at the same Y value)
+  
+  // printArray(context.maxAccessibleRightSurface, 10, "MAX RIGHT SURFACE");
   
   return context;
 }

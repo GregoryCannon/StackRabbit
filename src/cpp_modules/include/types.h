@@ -23,19 +23,19 @@ struct GameState {
 };
 
 /* Board encoding:
-  Each row is a 32-bit integer, with the encoding as follows:
+   Each row is a 32-bit integer, with the encoding as follows:
 
-  c 0 tttttttttt hhhhhhhhhh bbbbbbbbbb
+   c 0 tttttttttt hhhhhhhhhh bbbbbbbbbb
 
-  b = one cell in the row (whether it's filled)
-  h = whether each cell is a hole
-  t = whether each cell is a tuck setup
-  c = whether the row is guaranteed to be burned
+   b = one cell in the row (whether it's filled)
+   h = whether each cell is a hole
+   t = whether each cell is a tuck setup
+   c = whether the row is guaranteed to be burned
  */
 
 /**
  * The internal state of a move search simulation
- * (looping through pretend frames and seeing how the piece can move). 
+ * (looping through pretend frames and seeing how the piece can move).
  */
 struct SimState {
   int x;
@@ -54,6 +54,7 @@ struct LockLocation {
 
 enum AiMode {
   STANDARD,
+  SAFE,
   DIG,
   LINEOUT,
   NEAR_KILLSCREEN,

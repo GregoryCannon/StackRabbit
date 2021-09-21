@@ -18,6 +18,23 @@ const FastEvalWeights MAIN_WEIGHTS = {
   /* surfaceLeft= */ 0,
 };
 
+const FastEvalWeights SAFE_WEIGHTS = {
+  MAIN_WEIGHTS.avgHeightCoef,
+  MAIN_WEIGHTS.builtOutLeftCoef,
+  /* burnCoef= */ -4,
+  MAIN_WEIGHTS.coveredWellCoef,
+  MAIN_WEIGHTS.col9Coef,
+  MAIN_WEIGHTS.deathCoef,
+  MAIN_WEIGHTS.extremeGapCoef,
+  MAIN_WEIGHTS.holeCoef,
+  MAIN_WEIGHTS.inaccessibleLeftCoef,
+  MAIN_WEIGHTS.inaccessibleRightCoef,
+  MAIN_WEIGHTS.tetrisCoef,
+  MAIN_WEIGHTS.tetrisReadyCoef,
+  MAIN_WEIGHTS.surfaceCoef,
+  MAIN_WEIGHTS.surfaceLeftCoef
+};
+
 const FastEvalWeights DIG_WEIGHTS = {
   MAIN_WEIGHTS.avgHeightCoef,
   MAIN_WEIGHTS.builtOutLeftCoef,
@@ -71,7 +88,7 @@ const FastEvalWeights DIRTY_NEAR_KILLSCREEN_WEIGHTS = {
 
 const FastEvalWeights LINEOUT_WEIGHTS = {
   MAIN_WEIGHTS.avgHeightCoef,
-  /* builtOutLeftCoef= */ 10,
+  /* builtOutLeftCoef= */ 15,
   MAIN_WEIGHTS.burnCoef,
   /* coveredWellCoef= */ 0,
   /* col9Coef= */ 0,
@@ -96,6 +113,8 @@ FastEvalWeights getWeights(AiMode mode){
       return DIRTY_NEAR_KILLSCREEN_WEIGHTS;
     case LINEOUT:
       return LINEOUT_WEIGHTS;
+    case SAFE:
+      return SAFE_WEIGHTS;
     case STANDARD:
       return MAIN_WEIGHTS;
   }

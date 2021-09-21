@@ -170,17 +170,35 @@ float getLikelyBurnsFactor(int surfaceArray[10], int wellColumn, int maxSafeCol9
  * Assesses whether the surface allows for 5 taps.
  * @returns the multiple of the accessible left penalty that should be applied. That is, 0 if 5 taps are possible, or a float around 1.0 or higher (depending on how many lines would need to clear for the left to be accessible).
  */
-float getInaccessibleLeftFactor(int surfaceArray[10], int const maxAccessibleLeftSurface[10]){
+float getInaccessibleLeftFactor(int surfaceArray[10], int const maxAccessibleLeftSurface[10], int wellColumn){
   // Check if the agent even needs to get a piece left first.
   // If the left is built out higher than the max 5 tap height and also higher than col 9, then it's chilling.
-  if (surfaceArray[0] > maxAccessibleLeftSurface[0] && surfaceArray[0] > surfaceArray[8]){
+  int needs5Tap = wellColumn == 9 ? surfaceArray[0] < surfaceArray[8] : surfaceArray[0] < surfaceArray[1];
+  if (surfaceArray[0] > maxAccessibleLeftSurface[0] && !needs5Tap){
     return 0;
   }
   
   int highestAbove = 0;
-  for (int i = 0; i < 10; i++) {
+  for (int i = 0; i < 7; i++) {  // col 7 is the furthest right a 5 tap piece is on the board when tapped left
     if (surfaceArray[i] > maxAccessibleLeftSurface[i]) {
       highestAbove = std::max(highestAbove, surfaceArray[i] - maxAccessibleLeftSurface[i]);
+    }
+  }
+  return highestAbove == 0 ? 0 : 1.0 + 0.5 * highestAbove;
+}
+
+float getInaccessibleRightFactor(int surfaceArray[10], int const maxAccessibleRightSurface[10]){
+  // Check if the agent even needs to get a piece left first.
+  // If the left is built out higher than the max 5 tap height and also higher than col 9, then it's chilling.
+  int needsRightTap = surfaceArray[9] < surfaceArray[8];
+  if (surfaceArray[0] > maxAccessibleRightSurface[0] && !needsRightTap){
+    return 0;
+  }
+  
+  int highestAbove = 0;
+  for (int i = 5; i < 10; i++) {  // col 7 is the furthest right a 5 tap piece is on the board when tapped left
+    if (surfaceArray[i] > maxAccessibleRightSurface[i]) {
+      highestAbove = std::max(highestAbove, surfaceArray[i] - maxAccessibleRightSurface[i]);
     }
   }
   return highestAbove == 0 ? 0 : 1.0 + 0.5 * highestAbove;
@@ -223,7 +241,10 @@ float fastEval(GameState gameState,
   float holeFactor = weights.holeCoef * newState.adjustedNumHoles;
   float inaccessibleLeftFactor = isKillscreenLineout
               ? 0
-              : (weights.inaccessibleLeftCoef * getInaccessibleLeftFactor(newState.surfaceArray, evalContext->pieceRangeContext.maxAccessibleLeft5Surface));
+              : (weights.inaccessibleLeftCoef * getInaccessibleLeftFactor(newState.surfaceArray, evalContext->pieceRangeContext.maxAccessibleLeft5Surface, evalContext->wellColumn));
+  float inaccessibleRightFactor = isKillscreenLineout
+              ? 0
+              : (weights.inaccessibleRightCoef * getInaccessibleRightFactor(newState.surfaceArray, evalContext->pieceRangeContext.maxAccessibleRightSurface));
   float lineClearFactor = getLineClearFactor(newState.lines - gameState.lines, weights, evalContext->shouldRewardLineClears);
   float surfaceFactor = weights.surfaceCoef * rateSurface(newState.surfaceArray, evalContext);
   float surfaceLeftFactor =
@@ -232,7 +253,7 @@ float fastEval(GameState gameState,
       : 0;
   float tetrisReadyFactor = isTetrisReady(newState.board, newState.surfaceArray[9]) ? weights.tetrisReadyCoef : 0;
 
-  float total = surfaceFactor + surfaceLeftFactor + avgHeightFactor + lineClearFactor + holeFactor + guaranteedBurnsFactor + likelyBurnsFactor + inaccessibleLeftFactor + coveredWellFactor + highCol9Factor + tetrisReadyFactor + builtOutLeftFactor;
+  float total = surfaceFactor + surfaceLeftFactor + avgHeightFactor + lineClearFactor + holeFactor + guaranteedBurnsFactor + likelyBurnsFactor + inaccessibleLeftFactor + inaccessibleRightFactor + coveredWellFactor + highCol9Factor + tetrisReadyFactor + builtOutLeftFactor;
 
   // Logging
   if (LOGGING_ENABLED) {
