@@ -117,6 +117,9 @@ FastEvalWeights getWeights(AiMode mode){
       return SAFE_WEIGHTS;
     case STANDARD:
       return MAIN_WEIGHTS;
+    default:
+      printf("Unknown AI Mode");
+      return {};
   }
 }
 

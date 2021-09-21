@@ -87,3 +87,12 @@ std::string mainProcess(char const *inputStr) {
   std::string lookupMapEncoded = getLockValueLookupEncoded(startingGameState, curPiece, nextPiece, DEPTH_2_PRUNING_BREADTH, &context, pieceRangeContextLookup);
   return lookupMapEncoded;
 }
+
+int main(){
+  printf("Starting...\n");
+  std::string result = mainProcess("0000000000000000000000000000000000000000000000000000000000000000001110000000111000000011110000"
+              "0111110000011110000011111100011101110011101110001111111000111111100111111110011111111001111111"
+              "101111111110|18|2|5|0|X...|");
+  printf("%s\n", result.c_str());
+  printf("Done!\n");
+}

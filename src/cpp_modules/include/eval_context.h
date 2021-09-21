@@ -33,7 +33,7 @@ int hasHoleBlockingTetrisReady(int board[20], int col10Height){
 
 /** Gets the number of holes that are holes and not tuck setups*/
 int getNumTrueHoles(float adjustedNumHoles){
-  while (std::abs(adjustedNumHoles - round(adjustedNumHoles)) > __FLT_EPSILON__) {
+  while (std::abs(adjustedNumHoles - round(adjustedNumHoles)) > FLOAT_EPSILON) {
     adjustedNumHoles -= TUCK_SETUP_HOLE_PROPORTION;
   }
   return (int) adjustedNumHoles;

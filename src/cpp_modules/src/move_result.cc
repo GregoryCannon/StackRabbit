@@ -109,7 +109,7 @@ float updateSurfaceAndHolesAfterLineClears(int surfaceArray[10], int board[20], 
       if (!(board[r] & mask) && c != excludeHolesColumn) {
         float rating = getAdjustedHoleRating(board, r, c);
         // Check that it's a hole (1.0) and not a tuck setup (eg. 0.9)
-        if (rating > TUCK_SETUP_HOLE_PROPORTION + __FLT_EPSILON__) {
+        if (rating > TUCK_SETUP_HOLE_PROPORTION + FLOAT_EPSILON) {
           lowestHoleInCol = r;
         }
         numHoles += rating;

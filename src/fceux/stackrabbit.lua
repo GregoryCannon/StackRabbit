@@ -1,4 +1,4 @@
-IS_MAC = true
+IS_MAC = false
 
 local os = require("os")
 if (IS_MAC) then
@@ -25,7 +25,7 @@ TIMELINE_30_HZ = "X.";
 -- Config constants
 SHOULD_ADJUST = true
 REACTION_TIME_FRAMES = 21
-INPUT_TIMELINE = TIMELINE_12_HZ;
+INPUT_TIMELINE = TIMELINE_20_HZ;
 SHOULD_RECORD_GAMES = true
 MOVIE_PATH = "C:\\Users\\Greg\\Desktop\\VODs\\" -- Where to store the fm2 VODS (absolute path)
 if IS_MAC then MOVIE_PATH = "/Users/greg/Documents/AiVods/" end

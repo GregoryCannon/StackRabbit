@@ -1,6 +1,10 @@
 #ifndef TYPES
 #define TYPES
 
+#define FLOAT_EPSILON 0.000001
+#undef max
+#undef min
+
 struct Piece {
   char id;
   int index;
