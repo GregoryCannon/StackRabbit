@@ -13,11 +13,6 @@ const EvalContext DEBUG_CONTEXT = {
   /* wellColumn= */ 9,
 };
 
-int isLineout(GameState gameState){
-  return false;
-  // return gameState.level >= 29;
-}
-
 int hasHoleBlockingTetrisReady(int board[20], int col10Height){
   if (col10Height > 16) {
     return 0;
@@ -39,11 +34,11 @@ int getNumTrueHoles(float adjustedNumHoles){
   return (int) adjustedNumHoles;
 }
 
-AiMode getAiMode(GameState gameState, int max5TapHeight) {
-  if (max5TapHeight < 4) {
+AiMode getAiMode(GameState gameState, int currentMax5TapHeight, int max5TapHeight29) {
+  if (currentMax5TapHeight < 4) {
     return LINEOUT;
   }
-  if (gameState.lines > 220 && gameState.level < 29) {
+  if (max5TapHeight29 < 4 && gameState.lines > 220 && gameState.level < 29) {
     if (hasHoleBlockingTetrisReady(gameState.board, gameState.surfaceArray[9])) {
       return DIRTY_NEAR_KILLSCREEN;
     }
@@ -52,10 +47,10 @@ AiMode getAiMode(GameState gameState, int max5TapHeight) {
   if (getNumTrueHoles(gameState.adjustedNumHoles) >= 1) {
     return DIG;
   }
-  // Optionally play very safe on killscreen
-  if (gameState.level >= 29) {
-    return SAFE;
-  }
+  // // Optionally play very safe on killscreen
+  // if (gameState.level >= 29) {
+  //   return SAFE;
+  // }
   return STANDARD;
 }
 
@@ -66,7 +61,7 @@ const EvalContext getEvalContext(GameState gameState, const PieceRangeContext pi
   context.pieceRangeContext = pieceRangeContextLookup[getGravity(gameState.level) - 1];
 
   // Set the mode
-  AiMode aiMode = getAiMode(gameState, context.pieceRangeContext.max5TapHeight);
+  AiMode aiMode = getAiMode(gameState, context.pieceRangeContext.max5TapHeight, pieceRangeContextLookup[0].max5TapHeight);
   context.aiMode = aiMode;
   context.weights = getWeights(context.aiMode);
 
@@ -77,6 +72,9 @@ const EvalContext getEvalContext(GameState gameState, const PieceRangeContext pi
   } else {
     context.scareHeight = context.pieceRangeContext.max5TapHeight - 3;
     context.maxSafeCol9 = context.pieceRangeContext.max4TapHeight - 5;
+
+    context.scareHeight = context.scareHeight * 0.7 + 6 * 0.3;
+    context.maxSafeCol9 = context.maxSafeCol9 * 0.7 + 8 * 0.3;
   }
 
   // Set the well column

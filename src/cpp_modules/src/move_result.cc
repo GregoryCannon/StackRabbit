@@ -1,8 +1,11 @@
 #include "../include/move_result.h"
 #include <stdexcept>
 
-
-float getAdjustedHoleRating(int board[20], int r, int c){
+/**
+ * Rates a hole from 0 to 1 based on how bad it is.
+ * --Side effect-- marks the hole or tuck setup in the board data structure
+ */
+float analyzeHole(int board[20], int r, int c){
   // Check if it's a tuck setup
   if (
     (c >= 2 && ((board[r] >> (9-c)) & 7) == 0) ||   // left side tuck (2 cells of open space)
@@ -59,20 +62,17 @@ float getNewSurfaceAndNumNewHoles(int surfaceArray[10],
 
     // Loop through the cells between the bottom of the piece and the ground
     int c = lockPlacement.x + i;
-    int highestCellInCol = 20 - surfaceArray[c];
+    const int highestCellInCol = 20 - surfaceArray[c];
     int lowestHoleInCol = -1;
     for (int r = (lockPlacement.y + bottomSurface[i]); r < highestCellInCol; r++) {
-      float rating = getAdjustedHoleRating(board, r, c);
-      if (rating != TUCK_SETUP_HOLE_PROPORTION) {
+      float rating = analyzeHole(board, r, c);
+      if (std::abs(rating - TUCK_SETUP_HOLE_PROPORTION) < FLOAT_EPSILON) {
         lowestHoleInCol = r;
       }
       numNewHoles += rating;
     }
-    if (board[highestCellInCol] & NEED_TO_CLEAR_BIT) {
-      lowestHoleInCol = highestCellInCol - 1;
-    }
     // Mark rows as needing to be cleared
-    maybePrint("lowestHoleInCol %d %d, surf %d\n", c, lowestHoleInCol - 1, 20 - newSurface[c]);
+    maybePrint("marking needToClear (column %d): start row = %d, surface = %d\n", c, lowestHoleInCol - 1, 20 - newSurface[c]);
     for (int r = lowestHoleInCol - 1; r >= 20 - newSurface[c]; r--) {
       if (!(board[r] & HOLE_BIT(c))) {
         board[r] |= NEED_TO_CLEAR_BIT;
@@ -86,9 +86,10 @@ float getNewSurfaceAndNumNewHoles(int surfaceArray[10],
 /**
  * Manually finds the surface heights and holes after lines have been cleared (since usual prediction tricks
  * don't apply).
+ * @param excludeHolesColumn - a prespecified column to ignore holes in (usually the well). A value of -1 disables this behavior.
  * @returns the new hole count
  */
-float updateSurfaceAndHolesAfterLineClears(int surfaceArray[10], int board[20], int excludeHolesColumn) {
+float updateSurfaceAndHoles(int surfaceArray[10], int board[20], int excludeHolesColumn) {
   // Reset hole and tuck setup bits
   for (int i = 0; i < 20; i++) {
     board[i] &= ~ALL_AUXILIARY_BITS;
@@ -107,7 +108,7 @@ float updateSurfaceAndHolesAfterLineClears(int surfaceArray[10], int board[20], 
     while (r < 20) {
       // Add new holes to the overall count, unless they're in the well
       if (!(board[r] & mask) && c != excludeHolesColumn) {
-        float rating = getAdjustedHoleRating(board, r, c);
+        float rating = analyzeHole(board, r, c);
         // Check that it's a hole (1.0) and not a tuck setup (eg. 0.9)
         if (rating > TUCK_SETUP_HOLE_PROPORTION + FLOAT_EPSILON) {
           lowestHoleInCol = r;
@@ -208,7 +209,7 @@ GameState advanceGameState(GameState gameState, SimState lockPlacement, const Ev
   // Post-process after line clears
   if (numLinesCleared > 0) {
     newState.adjustedNumHoles =
-      updateSurfaceAndHolesAfterLineClears(newState.surfaceArray, newState.board, evalContext->countWellHoles ? -1 : evalContext->wellColumn);
+      updateSurfaceAndHoles(newState.surfaceArray, newState.board, evalContext->countWellHoles ? -1 : evalContext->wellColumn);
   } else {
     newState.adjustedNumHoles += numNewHoles;
   }

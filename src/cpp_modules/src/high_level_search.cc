@@ -27,9 +27,12 @@ std::string getLockValueLookupEncoded(GameState gameState, Piece firstPiece, Pie
   for (Depth2Possibility const& possibility : possibilityList) {
     string lockPosEncoded = encodeLockPosition(possibility.firstPlacement);
     float overallScore = MAP_OFFSET + (i < keepTopN
-      ? possibility.immediateReward + getPlayoutScore(possibility.resultingState, pieceRangeContextLookup, LOGGING_ENABLED ? 0 : NUM_PLAYOUTS, PLAYOUT_LENGTH)
-      : possibility.evalScore + UNEXPLORED_PENALTY);
+      ? possibility.immediateReward + getPlayoutScore(possibility.resultingState, pieceRangeContextLookup, secondPiece.index)
+      : possibility.immediateReward + possibility.evalScore + UNEXPLORED_PENALTY);
     if (overallScore > lockValueMap[lockPosEncoded]) {
+      if (PLAYOUT_LOGGING_ENABLED) {
+        printf("Adding to map: %s %f (%f + %f)\n", lockPosEncoded.c_str(), overallScore - MAP_OFFSET, possibility.immediateReward, overallScore - possibility.immediateReward - MAP_OFFSET);
+      }
       lockValueMap[lockPosEncoded] = overallScore;
     }
     i++;

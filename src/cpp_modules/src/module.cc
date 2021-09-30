@@ -12,7 +12,7 @@ NAN_METHOD(Length) {
   }
   char const * inputStr = *Nan::Utf8String(inputStrNan);
 
-  std::string result = mainProcess(inputStr);
+  std::string result = mainProcess(inputStr, /* isDebug= */ false);
 
   info.GetReturnValue().Set(Nan::New<String>(result.c_str()).ToLocalChecked());
 }

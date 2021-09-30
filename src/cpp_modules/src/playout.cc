@@ -77,13 +77,30 @@ float playSequence(GameState gameState, const PieceRangeContext pieceRangeContex
 }
 
 
-float getPlayoutScore(GameState gameState, const PieceRangeContext pieceRangeContextLookup[3], int numPlayouts, int playoutLength){
-  float totalScore = 0;
-  for (int i = 0; i < numPlayouts; i++) {
-    // Do one playout
-    const int *pieceSequence = canonicalPieceSequences + i * SEQUENCE_LENGTH; // Index into the mega array of piece sequences;
-    float playoutScore = playSequence(gameState, pieceRangeContextLookup, pieceSequence, playoutLength);
-    totalScore += playoutScore;
+float getPlayoutScore(GameState gameState, const PieceRangeContext pieceRangeContextLookup[3], int offsetIndex){
+  if (LOGGING_ENABLED) {
+    return 0;
   }
-  return totalScore / numPlayouts;
+
+  int totalPlayouts = NUM_PLAYOUTS_LONG + NUM_PLAYOUTS_SHORT;
+  int offset = offsetIndex * (totalPlayouts / 7 + 1); // Index into the sequences in batches, with batch size equal to the total number of playouts
+
+  float longPlayoutScore = 0;
+  for (int i = 0; i < NUM_PLAYOUTS_LONG; i++) {
+    // Do one playout
+    const int *pieceSequence = canonicalPieceSequences + (offset + i) * SEQUENCE_LENGTH; // Index into the mega array of piece sequences;
+    float playoutScore = playSequence(gameState, pieceRangeContextLookup, pieceSequence, PLAYOUT_LENGTH_LONG);
+    longPlayoutScore += playoutScore;
+  }
+
+  float shortPlayoutScore = 0;
+  for (int i = 0; i < NUM_PLAYOUTS_SHORT; i++) {
+    // Do one playout
+    const int *pieceSequence = canonicalPieceSequences + (offset + i) * SEQUENCE_LENGTH; // Index into the mega array of piece sequences;
+    float playoutScore = playSequence(gameState, pieceRangeContextLookup, pieceSequence, PLAYOUT_LENGTH_SHORT);
+    shortPlayoutScore += playoutScore;
+  }
+
+  return (NUM_PLAYOUTS_SHORT == 0 ? 0 : (shortPlayoutScore / NUM_PLAYOUTS_SHORT)) +
+         (NUM_PLAYOUTS_LONG == 0 ? 0 : (longPlayoutScore / NUM_PLAYOUTS_LONG));
 }

@@ -126,8 +126,9 @@ float getCoveredWellFactor(int board[20], int wellColumn, float scareHeight) {
   int mask = (1 << (9 - wellColumn));
   for (int r = 0; r < 20; r++) {
     if (board[r] & mask) {
+      int difficultyMultiplier = (board[r] & (ALL_HOLE_BITS | ALL_TUCK_SETUP_BITS)) > 0 ? 10 : 1;
       float heightRatio = (20.0f - r) / max(3.0f, scareHeight);
-      return heightRatio * heightRatio * heightRatio;
+      return heightRatio * heightRatio * heightRatio * difficultyMultiplier;
     }
   }
   return 0;
