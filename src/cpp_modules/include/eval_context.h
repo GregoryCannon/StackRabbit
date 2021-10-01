@@ -70,8 +70,8 @@ const EvalContext getEvalContext(GameState gameState, const PieceRangeContext pi
     context.scareHeight = 0;
     context.maxSafeCol9 = -1;
   } else {
-    context.scareHeight = context.pieceRangeContext.max5TapHeight - 3;
-    context.maxSafeCol9 = context.pieceRangeContext.max4TapHeight - 5;
+    context.scareHeight = context.pieceRangeContext.max5TapHeight - (PLAY_SAFE ? 4.5 : 3);
+    context.maxSafeCol9 = context.pieceRangeContext.max4TapHeight - (PLAY_SAFE ? 7 : 5);
 
     context.scareHeight = context.scareHeight * 0.7 + 6 * 0.3;
     context.maxSafeCol9 = context.maxSafeCol9 * 0.7 + 8 * 0.3;
@@ -86,7 +86,8 @@ const EvalContext getEvalContext(GameState gameState, const PieceRangeContext pi
 
   // Misc other properties
   context.maxDirtyTetrisHeight = 0;
-  context.countWellHoles = context.aiMode == DIG;
+  // context.countWellHoles = context.aiMode == DIG;
+  context.countWellHoles = false;
   context.shouldRewardLineClears = (aiMode == LINEOUT || aiMode == DIRTY_NEAR_KILLSCREEN);
 
   return context;

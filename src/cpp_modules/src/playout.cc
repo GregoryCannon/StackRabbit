@@ -92,7 +92,8 @@ float getPlayoutScore(GameState gameState, const PieceRangeContext pieceRangeCon
     float playoutScore = playSequence(gameState, pieceRangeContextLookup, pieceSequence, PLAYOUT_LENGTH_LONG);
     longPlayoutScore += playoutScore;
   }
-
+  // printf("(A) longPlayoutScore %f \n", longPlayoutScore);
+  
   float shortPlayoutScore = 0;
   for (int i = 0; i < NUM_PLAYOUTS_SHORT; i++) {
     // Do one playout
@@ -100,7 +101,9 @@ float getPlayoutScore(GameState gameState, const PieceRangeContext pieceRangeCon
     float playoutScore = playSequence(gameState, pieceRangeContextLookup, pieceSequence, PLAYOUT_LENGTH_SHORT);
     shortPlayoutScore += playoutScore;
   }
+  // printf("    shortPlayoutScore %f \n", shortPlayoutScore);
 
+  
   return (NUM_PLAYOUTS_SHORT == 0 ? 0 : (shortPlayoutScore / NUM_PLAYOUTS_SHORT)) +
          (NUM_PLAYOUTS_LONG == 0 ? 0 : (longPlayoutScore / NUM_PLAYOUTS_LONG));
 }

@@ -142,7 +142,7 @@ float getGuaranteedBurnsFactor(int board[20], int wellColumn) {
   int wellMask = (1 << (9 - wellColumn));
   int guaranteedBurns = 0;
   for (int r = 0; r < 20; r++) {
-    if ((board[r] & wellMask) || (board[r] & NEED_TO_CLEAR_BIT)) {
+    if ((board[r] & wellMask) || (board[r] & HOLE_WEIGHT_BIT)) {
       guaranteedBurns++;
     }
   }
@@ -175,10 +175,10 @@ float getInaccessibleLeftFactor(int surfaceArray[10], int const maxAccessibleLef
   // Check if the agent even needs to get a piece left first.
   // If the left is built out higher than the max 5 tap height and also higher than col 9, then it's chilling.
   int needs5Tap = wellColumn == 9 ? surfaceArray[0] < surfaceArray[8] : surfaceArray[0] < surfaceArray[1];
-  if (surfaceArray[0] > maxAccessibleLeftSurface[0] && !needs5Tap){
+  if (surfaceArray[0] > maxAccessibleLeftSurface[0] && !needs5Tap) {
     return 0;
   }
-  
+
   int highestAbove = 0;
   for (int i = 0; i < 7; i++) {  // col 7 is the furthest right a 5 tap piece is on the board when tapped left
     if (surfaceArray[i] > maxAccessibleLeftSurface[i]) {
@@ -192,10 +192,10 @@ float getInaccessibleRightFactor(int surfaceArray[10], int const maxAccessibleRi
   // Check if the agent even needs to get a piece left first.
   // If the left is built out higher than the max 5 tap height and also higher than col 9, then it's chilling.
   int needsRightTap = surfaceArray[9] < surfaceArray[8];
-  if (surfaceArray[0] > maxAccessibleRightSurface[0] && !needsRightTap){
+  if (surfaceArray[0] > maxAccessibleRightSurface[0] && !needsRightTap) {
     return 0;
   }
-  
+
   int highestAbove = 0;
   for (int i = 5; i < 10; i++) {  // col 7 is the furthest right a 5 tap piece is on the board when tapped left
     if (surfaceArray[i] > maxAccessibleRightSurface[i]) {
@@ -216,8 +216,8 @@ int isTetrisReady(int board[20], int col10Height){
     return 0;
   }
   // Check that the four rows where a right well tetris would happen are all full except col 10
-  for (int r = 0; r <= 4; r++) {
-    if (board[19 - col10Height - r] != 1022) {
+  for (int r = 0; r < 4; r++) {
+    if ((board[19 - col10Height - r] & FULL_ROW) != 1022) {
       return false;
     }
   }
@@ -252,7 +252,10 @@ float fastEval(GameState gameState,
     (isKillscreenLineout)
       ? weights.surfaceLeftCoef * getLeftSurfaceFactor(newState.board, newState.surfaceArray, evalContext->pieceRangeContext.max5TapHeight)
       : 0;
-  float tetrisReadyFactor = isTetrisReady(newState.board, newState.surfaceArray[9]) ? weights.tetrisReadyCoef : 0;
+  float tetrisReadyFactor =
+    (evalContext->wellColumn >= 0 && isTetrisReady(newState.board, newState.surfaceArray[evalContext->wellColumn]))
+      ? weights.tetrisReadyCoef
+      : 0;
 
   float total = surfaceFactor + surfaceLeftFactor + avgHeightFactor + lineClearFactor + holeFactor + guaranteedBurnsFactor + likelyBurnsFactor + inaccessibleLeftFactor + inaccessibleRightFactor + coveredWellFactor + highCol9Factor + tetrisReadyFactor + builtOutLeftFactor;
 
@@ -276,9 +279,9 @@ float fastEval(GameState gameState,
     maybePrint("%d\n", (newState.board[19] & ALL_HOLE_BITS) >> 10);
     maybePrint("Hole weights:\n");
     for (int i = 0; i < 19; i++) {
-      maybePrint("%d ", (newState.board[i] & NEED_TO_CLEAR_BIT) > 0);
+      maybePrint("%d ", (newState.board[i] & HOLE_WEIGHT_BIT) > 0);
     }
-    maybePrint("%d\n", (newState.board[19] & NEED_TO_CLEAR_BIT) > 0);
+    maybePrint("%d\n", (newState.board[19] & HOLE_WEIGHT_BIT) > 0);
 
     printf("Numholes %f\n", newState.adjustedNumHoles);
     maybePrint(

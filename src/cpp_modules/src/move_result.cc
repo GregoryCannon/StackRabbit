@@ -63,19 +63,23 @@ float getNewSurfaceAndNumNewHoles(int surfaceArray[10],
     // Loop through the cells between the bottom of the piece and the ground
     int c = lockPlacement.x + i;
     const int highestCellInCol = 20 - surfaceArray[c];
-    int lowestHoleInCol = -1;
+    int holeWeightStartRow = -1; // Indicates that all rows above this row are weight on a hole
     for (int r = (lockPlacement.y + bottomSurface[i]); r < highestCellInCol; r++) {
       float rating = analyzeHole(board, r, c);
       if (std::abs(rating - TUCK_SETUP_HOLE_PROPORTION) < FLOAT_EPSILON) {
-        lowestHoleInCol = r;
+        holeWeightStartRow = r - 1;
       }
       numNewHoles += rating;
     }
+    // If placing a piece on top of a row that's already weighing on a hole, then the new piece is adding weight to that
+    if (board[highestCellInCol] & HOLE_WEIGHT_BIT) {
+      holeWeightStartRow = highestCellInCol - 1;
+    }
     // Mark rows as needing to be cleared
-    maybePrint("marking needToClear (column %d): start row = %d, surface = %d\n", c, lowestHoleInCol - 1, 20 - newSurface[c]);
-    for (int r = lowestHoleInCol - 1; r >= 20 - newSurface[c]; r--) {
+    maybePrint("marking needToClear (column %d): start row = %d, surface = %d\n", c, holeWeightStartRow, 20 - newSurface[c]);
+    for (int r = holeWeightStartRow; r >= 20 - newSurface[c]; r--) {
       if (!(board[r] & HOLE_BIT(c))) {
-        board[r] |= NEED_TO_CLEAR_BIT;
+        board[r] |= HOLE_WEIGHT_BIT;
       }
     }
   }
@@ -119,7 +123,7 @@ float updateSurfaceAndHoles(int surfaceArray[10], int board[20], int excludeHole
     }
     // Mark rows as needing to be cleared
     for (int r = lowestHoleInCol - 1; r >= 20 - surfaceArray[c]; r--) {
-      board[r] |= NEED_TO_CLEAR_BIT;
+      board[r] |= HOLE_WEIGHT_BIT;
     }
   }
   return numHoles;

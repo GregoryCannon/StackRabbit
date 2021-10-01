@@ -2,15 +2,15 @@
 #define PARAMS
 
 const FastEvalWeights MAIN_WEIGHTS = {
-  /* avgHeightCoef= */ -8,
-  /* builtOutLeftCoef= */ 1.5,
-  /* burnCoef= */ -8,
+  /* avgHeightCoef= */ PLAY_SAFE ? -10 : -5,
+  /* builtOutLeftCoef= */ PLAY_SAFE ? 3 : 1.5,
+  /* burnCoef= */ PLAY_SAFE ? -6 : -10,
   /* coveredWellCoef= */ -5,
-  /* col9Coef= */ -3,
+  /* col9Coef= */ -2,
   /* deathCoef= */ -2000,
-  /* extremeGapCoef= */ -2,
-  /* holeCoef= */ -60,
-  /* inaccessibleLeftCoef= */ -50,
+  /* extremeGapCoef= */ -3,
+  /* holeCoef= */ -50,
+  /* inaccessibleLeftCoef= */ -100,
   /* inaccessibleRightCoef= */ -200,
   /* tetrisCoef= */ 40,
   /* tetrisReadyCoef= */ 6,

@@ -17,7 +17,7 @@
 
 // Useful bit-rows
 #define FULL_ROW 1023 // = 1111111111
-#define NEED_TO_CLEAR_BIT (1 << 30) // = 01000...0000000000, marks when a row needs to be cleared
+#define HOLE_WEIGHT_BIT (1 << 30) // = 01000...0000000000, marks when a row needs to be cleared
 #define TUCK_SETUP_BIT(x) (1 << (29 - x)) // See the comment in types.h for an explanation of this encoding
 #define HOLE_BIT(x) (1 << (19 - x)) // See the comment in types.h for an explanation of this encoding
 #define ALL_TUCK_SETUP_BITS (1023 << 20)
@@ -81,9 +81,9 @@ void printBoardBits(int board[20]){
   maybePrint("%d\n", (board[19] & ALL_HOLE_BITS) >> 10);
   maybePrint("Hole weights:\n");
   for (int i = 0; i < 19; i++) {
-    maybePrint("%d ", (board[i] & NEED_TO_CLEAR_BIT) > 0);
+    maybePrint("%d ", (board[i] & HOLE_WEIGHT_BIT) > 0);
   }
-  maybePrint("%d\n", (board[19] & NEED_TO_CLEAR_BIT) > 0);
+  maybePrint("%d\n", (board[19] & HOLE_WEIGHT_BIT) > 0);
 
   maybePrint("END OF INITIAL BOARD STATE\n");
 }
