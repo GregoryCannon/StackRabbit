@@ -6,7 +6,7 @@
 
 #define USE_RANKS 0
 
-#define PLAY_SAFE 1
+#define PLAY_SAFE 0
 
 #define DEPTH_2_PRUNING_BREADTH 12
 #define TUCK_SETUP_HOLE_PROPORTION 0.81f
