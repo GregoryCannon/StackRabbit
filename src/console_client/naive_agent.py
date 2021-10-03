@@ -8,11 +8,11 @@ from threading import Thread
 import requests
 
 # -------------- Config Vars --------------
-STARTING_LEVEL = 19
+STARTING_LEVEL = 18
+STARTING_LINES = 0
 FIRST_PIECE_PLACEMENT = "..........As......."
 INPUT_TIMELINE = "........X.X.X.X.X.X.X.X.X.X.X.X.X"
 DELAY_FRAMES = 8
-MAX_INPUTS = 15
 
 # ---------- Stateful Vars ---------------
 framesToSend = None
@@ -21,9 +21,9 @@ frameQueue = []
 currentPiece = None
 nextPiece = None
 level = STARTING_LEVEL
-lines = 0
+lines = 220
 boardLastFrame = None
-framesSinceLastPlacement = None
+framesSinceStartOfPrecompute = None
 
 placementLookup = {
   "T": "A.A",
@@ -38,37 +38,37 @@ resultStateLookup = {
   'T': {
     'board': "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000000111000",
     'level': STARTING_LEVEL,
-    'lines': 0
+    'lines': STARTING_LINES
   },
   'I': {
     'board': "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001111000000",
     'level': STARTING_LEVEL,
-    'lines': 0
+    'lines': STARTING_LINES
   },
   'S': {
     'board': "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000110000000110",
     'level': STARTING_LEVEL,
-    'lines': 0
+    'lines': STARTING_LINES
   },
   'Z': {
     'board': "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000000110000000010",
     'level': STARTING_LEVEL,
-    'lines': 0
+    'lines': STARTING_LINES
   },
   'O': {
     'board': "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000011000000001100000000",
     'level': STARTING_LEVEL,
-    'lines': 0
+    'lines': STARTING_LINES
   },
   'L': {
     'board':"00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000000010000000001100000000",
     'level': STARTING_LEVEL,
-    'lines': 0
+    'lines': STARTING_LINES
   },
   'J': {
     'board': "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010000000001110000000",
     'level': STARTING_LEVEL,
-    'lines': 0
+    'lines': STARTING_LINES
   },
 }
 waitingOnAsync = False
@@ -86,7 +86,7 @@ def sendFrames(frames):
 def socketThread():
   global framesToSend
   # HOST = '127.0.0.1'  # The server's hostname or IP address
-  HOST = '192.168.1.5'
+  HOST = '192.168.1.1'
   PORT = 6000        # The port used by the server
 
   with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -99,7 +99,6 @@ def socketThread():
           # Send the frames to the raspberry pi
           frames = framesToSend
           framesToSend = None
-          stt = time.time()
           s.send(frames.encode("utf-8"))
 
           # Check that the raspberry pi ack's the frames
@@ -112,30 +111,19 @@ def socketThread():
 
 
 def hasNewlySpawnedPiece(newBoard):
-  # Only possible if it's been a while since the last placement
-  framesToWaitSinceLastNewPiece = 12 
-  if piecesPlaced == 0 and level < 28:
-    framesToWaitSinceLastNewPiece = 12
-  elif piecesPlaced == 0:
-    framesToWaitSinceLastNewPiece = 20
-  elif level >= 29:
-    framesToWaitSinceLastNewPiece = 8
-  else:
-    framesToWaitSinceLastNewPiece = 8
-  if framesSinceLastPlacement < framesToWaitSinceLastNewPiece:
-    print("Not ready")
-    return False
-
   if piecesPlaced == 0:
     print("Automatically new for first piece")
     return True
 
   # If any cells have changed at the top of the board, we have a new piece
+  oldTotal = 0
+  newTotal = 0
   for row in range(4):
     for col in range(3,7):
-      if newBoard[row][col] != boardLastFrame[row][col]:
-        return True
-  return False
+      oldTotal += boardLastFrame[row][col]
+      newTotal += newBoard[row][col]
+  # print("New piece spawned? " + str(newTotal > oldTotal) + ". Cells in spawn zone: now= " + str(newTotal) + ", before= " + str(oldTotal))
+  return newTotal > oldTotal
 
 
 ''' 
@@ -146,7 +134,7 @@ def hasNewlySpawnedPiece(newBoard):
 
 
 def onFrameCallback(newBoard, newNextPieceId):
-  global currentPiece, nextPiece, framesSinceLastPlacement, piecesPlaced, boardLastFrame
+  global currentPiece, nextPiece, framesSinceStartOfPrecompute, piecesPlaced, boardLastFrame
 
   # for row in range(10):
   #     rowStr = ""
@@ -156,7 +144,7 @@ def onFrameCallback(newBoard, newNextPieceId):
 
   # Detect if a new piece has spawned
   newPieceFound = hasNewlySpawnedPiece(newBoard)
-  print("onFrame", currentPiece, nextPiece, newNextPieceId, framesSinceLastPlacement, "newpiece:", newPieceFound, "placed", piecesPlaced)
+  # print("onFrame", currentPiece, nextPiece, newNextPieceId, framesSinceStartOfPrecompute, "newpiece:", newPieceFound, "placed", piecesPlaced)
 
   if newPieceFound and not waitingOnAsync:
     print("NEW NEXT PIECE", newNextPieceId)
@@ -186,16 +174,16 @@ def onFrameCallback(newBoard, newNextPieceId):
     
     # Precompute a placement for the next piece
     requestPrecompute(stateAfter)
-    framesSinceLastPlacement = 0
+    framesSinceStartOfPrecompute = 0
     piecesPlaced += 1
   
-  elif framesSinceLastPlacement > (15 if level < 29 else 7) and waitingOnAsync:
+  elif framesSinceStartOfPrecompute > 10 and waitingOnAsync:
     # Check for the async result
     fetchPrecomputeResult()
 
   # Update state for next frame
   boardLastFrame = newBoard
-  framesSinceLastPlacement += 1
+  framesSinceStartOfPrecompute += 1
   pass
 
 '''
@@ -253,7 +241,7 @@ def fetchPrecomputeResult():
   for i in range(1,8):
     piece, rest = responseLines[i].split(":")
     numbers, inputs, resultBoard, resultLevel, resultLines = rest.split("|", 5)
-    inputSequence = inputs.split("*", 1)[0][DELAY_FRAMES:DELAY_FRAMES + MAX_INPUTS]
+    inputSequence = inputs.split("*", 1)[0][DELAY_FRAMES:]
     placementLookup[piece] = inputSequence
     resultStateLookup[piece] = {
       'board': resultBoard,
@@ -301,14 +289,14 @@ def requestPrecompute(stateAfter):
     
 
 def start():
-  global piecesPlaced, frameQueue, currentPiece, nextPiece, level, lines, boardLastFrame, framesSinceLastPlacement
+  global piecesPlaced, frameQueue, currentPiece, nextPiece, level, lines, boardLastFrame, framesSinceStartOfPrecompute
   piecesPlaced = 0
   frameQueue = []
   currentPiece = None
   nextPiece = None
   level = STARTING_LEVEL
   boardLastFrame = None
-  framesSinceLastPlacement = 0
+  framesSinceStartOfPrecompute = 0
 
   # Start the capture and the socket thread
   socketWorker = Thread(target=socketThread)

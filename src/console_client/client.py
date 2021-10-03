@@ -1,8 +1,8 @@
 import socket
 import time
 
-HOST = '127.0.0.1'  # The server's hostname or IP address
-# HOST = '192.168.1.5'
+# HOST = '127.0.0.1'  # The server's hostname or IP address
+HOST = '192.168.1.1'
 PORT = 6000        # The port used by the server
 
 inputSequences = ["F...L...L...L...", "..............", "A...A.................", "B......................L"]

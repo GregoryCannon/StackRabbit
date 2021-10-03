@@ -111,7 +111,6 @@ def parseBoard(frame):
 
 
 def processFrame(frame):
-    startTime = time.time()
     board = parseBoard(frame)
     nextBox = parseNextBox(frame)
 
