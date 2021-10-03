@@ -38,7 +38,7 @@ AiMode getAiMode(GameState gameState, int currentMax5TapHeight, int max5TapHeigh
   if (currentMax5TapHeight < 4) {
     return LINEOUT;
   }
-  if (max5TapHeight29 < 4 && gameState.lines > 220 && gameState.level < 29) {
+  if (max5TapHeight29 < 2 && gameState.lines > 220 && gameState.level < 29) {
     if (hasHoleBlockingTetrisReady(gameState.board, gameState.surfaceArray[9])) {
       return DIRTY_NEAR_KILLSCREEN;
     }

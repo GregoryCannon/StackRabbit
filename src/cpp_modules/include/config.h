@@ -5,6 +5,7 @@
 #define PLAYOUT_LOGGING_ENABLED 0
 
 #define USE_RANKS 0
+#define CAN_TUCK 1
 
 #define PLAY_SAFE 0
 
