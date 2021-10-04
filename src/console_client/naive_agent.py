@@ -1,16 +1,38 @@
 import threading
 
 from numpy import False_
+import numpy
 import video_capture
 import socket
 import time
 from threading import Thread
 import requests
 
+
+'''
+Overview:
+This agent is fed game frames from the capture card, delayed by 7-8 frames.
+
+It OCRs the first piece from the top of the board, and from then only looks at the 
+next box and tracks the board state internally.
+
+The standard event flow goes as follows:
+
+(agent already has planned placements for the upcoming piece)
+1) Wait until new piece detected at the top of the board
+      (in realtime, piece has fallen 8 frames)
+  a. Check the new piece in the next box
+  b. Request precompute for the next placement
+2) Wait 10 frames
+      (in realtime, piece is either still faling, or in entry delay for next piece)
+  a. Save the precompute result from the server 
+'''
+
+
 # -------------- Config Vars --------------
-STARTING_LEVEL = 18
+STARTING_LEVEL = 29
 STARTING_LINES = 0
-FIRST_PIECE_PLACEMENT = "..........As......."
+FIRST_PIECE_PLACEMENT = "................As."
 INPUT_TIMELINE = "........X.X.X.X.X.X.X.X.X.X.X.X.X"
 DELAY_FRAMES = 8
 
@@ -20,57 +42,12 @@ piecesPlaced = 0
 frameQueue = []
 currentPiece = None
 nextPiece = None
-level = STARTING_LEVEL
-lines = 220
+level = None
+lines = None
 boardLastFrame = None
 framesSinceStartOfPrecompute = None
-
-placementLookup = {
-  "T": "A.A",
-  "I": "L.L.L",
-  "S": "R.R.R",
-  "Z": "I.R.R",
-  "O": "L.L.L.L",
-  "L": "F.L.L.L.L",
-  "J": "E.E.L.L",
-}
-resultStateLookup = {
-  'T': {
-    'board': "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000000111000",
-    'level': STARTING_LEVEL,
-    'lines': STARTING_LINES
-  },
-  'I': {
-    'board': "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001111000000",
-    'level': STARTING_LEVEL,
-    'lines': STARTING_LINES
-  },
-  'S': {
-    'board': "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000110000000110",
-    'level': STARTING_LEVEL,
-    'lines': STARTING_LINES
-  },
-  'Z': {
-    'board': "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000000110000000010",
-    'level': STARTING_LEVEL,
-    'lines': STARTING_LINES
-  },
-  'O': {
-    'board': "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000011000000001100000000",
-    'level': STARTING_LEVEL,
-    'lines': STARTING_LINES
-  },
-  'L': {
-    'board':"00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000000010000000001100000000",
-    'level': STARTING_LEVEL,
-    'lines': STARTING_LINES
-  },
-  'J': {
-    'board': "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010000000001110000000",
-    'level': STARTING_LEVEL,
-    'lines': STARTING_LINES
-  },
-}
+placementLookup = {}
+resultStateLookup = {}
 waitingOnAsync = False
 
 EMPTY_BOARD = []
@@ -111,11 +88,11 @@ def socketThread():
 
 
 def hasNewlySpawnedPiece(newBoard):
+  # For the very first piece, just wait till it spawns in the top row
   if piecesPlaced == 0:
-    print("Automatically new for first piece")
-    return True
+    return numpy.sum(newBoard[0]) > 0
 
-  # If any cells have changed at the top of the board, we have a new piece
+  # If there are more cells in the spawn area than before, there's a new piece
   oldTotal = 0
   newTotal = 0
   for row in range(4):
@@ -144,29 +121,22 @@ def onFrameCallback(newBoard, newNextPieceId):
 
   # Detect if a new piece has spawned
   newPieceFound = hasNewlySpawnedPiece(newBoard)
-  # print("onFrame", currentPiece, nextPiece, newNextPieceId, framesSinceStartOfPrecompute, "newpiece:", newPieceFound, "placed", piecesPlaced)
 
   if newPieceFound and not waitingOnAsync:
     print("NEW NEXT PIECE", newNextPieceId)
 
-    # Update current and next pieces
+    # Update current and next pieces, and look up the placement to do
     if piecesPlaced > 0:
       print("Setting current piece from", currentPiece, "to", nextPiece)
       currentPiece = nextPiece
       nextPiece = newNextPieceId
+      placement = placementLookup[nextPiece]
+      stateAfter = resultStateLookup[nextPiece]
     else:
       # Very first piece
       currentPiece = video_capture.identifyStartingPiece(newBoard)
       nextPiece = newNextPieceId
-      print("FOUND CURRENT PIECE:", currentPiece)
-
-    # Look up the placement for the current piece
-    if piecesPlaced < 1:
-      placement = placementLookup[currentPiece]
-      stateAfter = resultStateLookup[currentPiece]
-    else:
-      placement = placementLookup[nextPiece]
-      stateAfter = resultStateLookup[nextPiece]
+      [placement, stateAfter] = requestStartingPlacement(currentPiece, nextPiece)      
     
     print("Performing:", placement)
     debugLogResultBoard(stateAfter["board"])
@@ -174,8 +144,6 @@ def onFrameCallback(newBoard, newNextPieceId):
     
     # Precompute a placement for the next piece
     requestPrecompute(stateAfter)
-    framesSinceStartOfPrecompute = 0
-    piecesPlaced += 1
   
   elif framesSinceStartOfPrecompute > 10 and waitingOnAsync:
     # Check for the async result
@@ -251,7 +219,7 @@ def fetchPrecomputeResult():
     print("Placement for piece", piece, inputSequence)
 
 def requestPrecompute(stateAfter):
-  global placementLookup, waitingOnAsync
+  global placementLookup, waitingOnAsync, framesSinceStartOfPrecompute, piecesPlaced
   if nextPiece == None:
     raise Exception("No next piece")
   placementLookup = None
@@ -266,7 +234,32 @@ def requestPrecompute(stateAfter):
   response = requests.get(requestStr)
   print("Initial ack:", response.text)
   waitingOnAsync = True
+  framesSinceStartOfPrecompute = 0
+  piecesPlaced += 1
 
+
+def requestStartingPlacement(currentPiece, nextPiece):
+  global piecesPlaced, placement, stateAfter
+  if nextPiece == None:
+    raise Exception("No next piece")
+  requestStr = "http://127.0.0.1:3000/sync-nnb/{boardSerialized}/{currentPiece}/null/{level}/{lines}/0/0/0/0/0/{INPUT_TIMELINE}/true".format(
+    boardSerialized = "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+    currentPiece = currentPiece,
+    level = STARTING_LEVEL,
+    lines = STARTING_LINES,
+    INPUT_TIMELINE = INPUT_TIMELINE
+  )
+  print("Requesting first piece")
+  response = requests.get(requestStr)
+  numbers, inputs, resultBoard, resultLevel, resultLines = response.text.split("|", 5)
+  inputSequence = inputs.split("*", 1)[0][DELAY_FRAMES:]
+
+  piecesPlaced += 1
+  return [inputSequence, {
+    'board': resultBoard,
+    'level': resultLevel,
+    'lines': resultLines
+  }]
 
 # def startTestCapture(onFrameCallback):
 #   testPieces = ['T', 'L', 'I', 'O', 'J', 'S', 'Z', 'T', 'L', 'I', 'O', 'J', 'S', 'Z', 'T', 'L', 'I', 'O', 'J', 'S', 'Z']
@@ -295,6 +288,7 @@ def start():
   currentPiece = None
   nextPiece = None
   level = STARTING_LEVEL
+  lines = STARTING_LINES
   boardLastFrame = None
   framesSinceStartOfPrecompute = 0
 
