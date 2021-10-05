@@ -1,8 +1,8 @@
 #ifndef HIGH_LEVEL_SEARCH
 #define HIGH_LEVEL_SEARCH
 
-#include "types.h"
-#include "utils.h"
+#include "types.hpp"
+#include "utils.hpp"
 #include <list>
 #include <algorithm>
 

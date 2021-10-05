@@ -2,7 +2,7 @@
 #define EVAL
 
 #include <vector>
-#include "types.h"
+#include "types.hpp"
 
 float getLineClearFactor(int numLinesCleared, FastEvalWeights weights, int shouldRewardLineClears);
 

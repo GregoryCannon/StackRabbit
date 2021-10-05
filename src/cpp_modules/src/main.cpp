@@ -5,18 +5,20 @@
 #include <time.h>       /* time */
 #include <string.h>
 
-#include "../include/piece_ranges.h"
-#include "../include/tetrominoes.h"
-#include "../include/params.h"
-#include "../include/eval_context.h"
+#include "piece_ranges.hpp"
+#include "../data/tetrominoes.hpp"
+#include "params.hpp"
+#include "eval_context.hpp"
 // I have to include the C++ files here due to a complication of node-gyp. Consider this the equivalent
 // of listing all the C++ sources in the makefile (Node-gyp seems to only work with 1 source rn).
-#include "eval.cc"
-#include "move_result.cc"
-#include "move_search.cc"
-#include "playout.cc"
-#include "high_level_search.cc"
-// #include "../data/ranksOutput.cc"
+#include "eval.cpp"
+#include "eval_context.cpp"
+#include "move_result.cpp"
+#include "move_search.cpp"
+#include "piece_ranges.cpp"
+#include "playout.cpp"
+#include "high_level_search.cpp"
+// #include "../data/ranksOutput.cpp"
 
 #define USE_RANDOM_SEQUENCE false
 

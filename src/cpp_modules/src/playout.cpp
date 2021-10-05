@@ -1,8 +1,8 @@
-#include "../include/playout.h"
-#include "../include/eval.h"
-#include "../include/utils.h"
-#include "../include/params.h"
-#include "../data/canonical_sequences.h"
+#include "playout.hpp"
+#include "eval.hpp"
+#include "utils.hpp"
+#include "params.hpp"
+#include "../data/canonical_sequences.hpp"
 
 using namespace std;
 

@@ -1,6 +1,5 @@
-#include "../include/move_search.h"
-#include "../include/global_context.h"
-#include "../include/piece_ranges.h"
+#include "move_search.hpp"
+#include "piece_ranges.hpp"
 
 #include <algorithm>
 #include <cmath>

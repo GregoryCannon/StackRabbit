@@ -1,4 +1,4 @@
-#include "utils.h"
+#include "piece_ranges.hpp"
 
 /**
  * Calculates a lookup table for the Y value you'd be at while doing shift number N.

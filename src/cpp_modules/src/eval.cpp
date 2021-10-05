@@ -1,7 +1,7 @@
-#include "../include/eval.h"
-#include "../include/move_result.h"
-#include "../include/utils.h"
-#include "../include/ranks_output.h"
+#include "eval.hpp"
+#include "move_result.hpp"
+#include "utils.hpp"
+#include "../data/ranks_output.hpp"
 #include <math.h>
 #include <vector>
 using namespace std;

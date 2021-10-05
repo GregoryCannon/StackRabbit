@@ -3,7 +3,7 @@
 
 #include <stdarg.h>
 #include <stdio.h>
-#include "./config.h"
+#include "./config.hpp"
 
 // No-op used to mark output parameters
 #define OUT

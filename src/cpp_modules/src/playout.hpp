@@ -1,8 +1,8 @@
 #ifndef PLAYOUT
 #define PLAYOUT
 
-#include "types.h"
-#include "utils.h"
+#include "types.hpp"
+#include "utils.hpp"
 #include <vector>
 #include <list>
 

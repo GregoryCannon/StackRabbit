@@ -1,7 +1,7 @@
-#include "../include/high_level_search.h"
+#include "high_level_search.hpp"
 #include <string>
 #include <unordered_map>
-#include "../include/params.h"
+#include "params.hpp"
 using namespace std;
 
 #define UNEXPLORED_PENALTY -500   // A penalty for placements that weren't explored with playouts (could be worse than the eval indicates)

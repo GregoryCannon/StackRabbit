@@ -1,8 +1,8 @@
 #ifndef MOVE_RESULT
 #define MOVE_RESULT
 
-#include "types.h"
-#include "utils.h"
+#include "types.hpp"
+#include "utils.hpp"
 
 float getNewSurfaceAndNumNewHoles(int surfaceArray[10],
                                   int board[20],

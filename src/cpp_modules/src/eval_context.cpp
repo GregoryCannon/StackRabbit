@@ -1,4 +1,4 @@
-#include "types.h"
+#include "eval_context.hpp"
 #include <math.h>
 
 const EvalContext DEBUG_CONTEXT = {
@@ -92,3 +92,4 @@ const EvalContext getEvalContext(GameState gameState, const PieceRangeContext pi
 
   return context;
 }
+

@@ -1,5 +1,5 @@
 #include <nan.h>
-#include "main.cc"
+#include "main.cpp"
 
 using namespace v8;
 
