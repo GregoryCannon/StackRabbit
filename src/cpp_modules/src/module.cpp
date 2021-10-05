@@ -3,7 +3,7 @@
 
 using namespace v8;
 
-NAN_METHOD(Length) {
+NAN_METHOD(Precompute) {
   // Parse string arg
   Nan::MaybeLocal<String> maybeStr = Nan::To<String>(info[0]);
   v8::Local<String> inputStrNan;
@@ -18,8 +18,8 @@ NAN_METHOD(Length) {
 }
 
 NAN_MODULE_INIT(Init) {
-  Nan::Set(target, Nan::New("length").ToLocalChecked(),
-           Nan::GetFunction(Nan::New<FunctionTemplate>(Length)).ToLocalChecked());
+  Nan::Set(target, Nan::New("precompute").ToLocalChecked(),
+           Nan::GetFunction(Nan::New<FunctionTemplate>(Precompute)).ToLocalChecked());
 }
 
 NODE_MODULE(myaddon, Init)

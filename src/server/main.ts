@@ -243,7 +243,7 @@ function searchHypothetically(
   possibilityChains.sort((a, b) => b.expectedValue - a.expectedValue);
 
   // Maybe log info about the EV results
-  if (true) {
+  if (false) {
     logExpectedValueResults(
       possibilityChains,
       hypotheticalSearchDepth,

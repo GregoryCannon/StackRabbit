@@ -37,7 +37,7 @@ function performComputationFinesseCpp(args: WorkerDataArgs): Object {
   const encodedInputString = `${boardStr}|${args.newSearchState.level}|${args.newSearchState.lines}|${curPieceIndex}|${nextPieceIndex}|${args.inputFrameTimeline}|`;
 
   const lockPositionValueLookup = JSON.parse(
-    cModule.length(encodedInputString)
+    cModule.precompute(encodedInputString)
   );
   console.timeEnd(args.piece);
   return lockPositionValueLookup;
