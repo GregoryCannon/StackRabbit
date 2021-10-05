@@ -2,11 +2,11 @@
  * Based on hellofunc.c (C) 2011 by Steve Litt
  *
  * Command to compile on OSX:
- * 		gcc rabbithttp.c -Wall -shared -fPIC -o rabbithttp.so -I/usr/local/include/lua5.1 -llua5.1 -lcurl
- * 
+ *    gcc rabbithttp.c -Wall -shared -fPIC -o rabbithttp.so -I/usr/local/include/lua5.1 -llua5.1 -lcurl
+ *
  * Note the word "rabbithttp" matches the string after the underscore in
  * function luaopen_rabbithttp(). This is a must.
- * 
+ *
  * The -shared arg lets it compile to .so format.
  * The -fPIC is for certain situations and harmless in others.
  * On your computer, the -I and -l args will probably be different.
@@ -45,8 +45,8 @@ void init_string(struct string *s) {
   s->ptr[0] = '\0';
 }
 
-/** 
- * Helper function to append data to the end of our custom string implementation 
+/**
+ * Helper function to append data to the end of our custom string implementation
  */
 size_t writefunc(void *ptr, size_t size, size_t nmemb, struct string *s)
 {
@@ -63,13 +63,13 @@ size_t writefunc(void *ptr, size_t size, size_t nmemb, struct string *s)
   return size*nmemb;
 }
 
-/** 
- * Makes an HTTP GET request to the provided URL, and returns the response as a string. 
+/**
+ * Makes an HTTP GET request to the provided URL, and returns the response as a string.
  */
 static int ihttpfetch(lua_State *L){              /* Internal name of func */
-	const char *requestUrl = lua_tostring(L, -1);
+  const char *requestUrl = lua_tostring(L, -1);
 
-	CURL *curl;
+  CURL *curl;
   CURLcode res;
   curl = curl_easy_init();
   if(curl) {
@@ -79,28 +79,28 @@ static int ihttpfetch(lua_State *L){              /* Internal name of func */
     curl_easy_setopt(curl, CURLOPT_URL, requestUrl);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writefunc);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &s);
-    
+
     res = curl_easy_perform(curl);
-		lua_pushstring(L, s.ptr);
+    lua_pushstring(L, s.ptr);
     free(s.ptr);
 
     /* always cleanup */
     curl_easy_cleanup(curl);
   } else {
-		lua_pushstring(L, "an error occurred");
-	}
+    lua_pushstring(L, "an error occurred");
+  }
 
-	return 1;                              /* One return value */
+  return 1;                              /* One return value */
 }
 
-/** 
- * Much simpler function that shows the minimal implementation of a C function for Lua consumption 
+/**
+ * Much simpler function that shows the minimal implementation of a C function for Lua consumption
  */
 static int icube(lua_State *L){                /* Internal name of func */
-	float rtrn = lua_tonumber(L, -1);      /* Get the single number arg */
-	printf("Top of cube(), number=%f\n",rtrn);
-	lua_pushnumber(L,rtrn*rtrn*rtrn);      /* Push the return */
-	return 1;                              /* One return value */
+  float rtrn = lua_tonumber(L, -1);      /* Get the single number arg */
+  printf("Top of cube(), number=%f\n",rtrn);
+  lua_pushnumber(L,rtrn*rtrn*rtrn);      /* Push the return */
+  return 1;                              /* One return value */
 }
 
 
@@ -116,13 +116,13 @@ static int icube(lua_State *L){                /* Internal name of func */
  * This function should contain lua_register() commands for
  * each function you want available from Lua.
  *
-*/
+ */
 int luaopen_rabbithttp(lua_State *L){
-	lua_register(
-			L,               /* Lua state variable */
-			"httpFetch",        /* func name as known in Lua */
-			ihttpfetch          /* func name in this file */
-			);  
-	lua_register(L,"cube",icube);
-	return 0;
+  lua_register(
+    L,                 /* Lua state variable */
+    "httpFetch",          /* func name as known in Lua */
+    ihttpfetch            /* func name in this file */
+    );
+  lua_register(L,"cube",icube);
+  return 0;
 }
