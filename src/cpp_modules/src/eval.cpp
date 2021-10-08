@@ -27,7 +27,7 @@ float calculateFlatness(int surfaceArray[10], int wellColumn) {
     }
     // Line dependency
     if (diff >= 3 && (i == 0 || surfaceArray[i-1] + surfaceArray[i] >= 3)) {
-      score -= 20;
+      score -= 25;
     }
   }
   return score;

@@ -47,10 +47,10 @@ AiMode getAiMode(GameState gameState, int currentMax5TapHeight, int max5TapHeigh
   if (getNumTrueHoles(gameState.adjustedNumHoles) >= 1) {
     return DIG;
   }
-  // // Optionally play very safe on killscreen
-  // if (gameState.level >= 29) {
-  //   return SAFE;
-  // }
+  // Optionally play very safe on killscreen
+  if (PLAY_SAFE_ON_KILLSCREEN && gameState.level >= 29) {
+    return SAFE;
+  }
   return STANDARD;
 }
 
@@ -70,8 +70,9 @@ const EvalContext getEvalContext(GameState gameState, const PieceRangeContext pi
     context.scareHeight = 0;
     context.maxSafeCol9 = -1;
   } else {
-    context.scareHeight = context.pieceRangeContext.max5TapHeight - (PLAY_SAFE ? 4.5 : 3);
-    context.maxSafeCol9 = context.pieceRangeContext.max4TapHeight - (PLAY_SAFE ? 7 : 5);
+    int lowerScareHeight = (PLAY_SAFE_PRE_KILLSCREEN && gameState.level < 29);
+    context.scareHeight = context.pieceRangeContext.max5TapHeight - (lowerScareHeight ? 4.5 : 3);
+    context.maxSafeCol9 = context.pieceRangeContext.max4TapHeight - (lowerScareHeight ? 7 : 5);
 
     context.scareHeight = context.scareHeight * 0.7 + 6 * 0.3;
     context.maxSafeCol9 = context.maxSafeCol9 * 0.7 + 8 * 0.3;
