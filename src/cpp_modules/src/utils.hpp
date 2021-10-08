@@ -53,6 +53,22 @@ void printBoard(int board[20]) {
   }
 }
 
+void printBoardWithPiece(int board[20], Piece piece, int x, int y, int rot){
+  printf("----- Board & piece start -----\n");
+  for (int i = 0; i < 20; i++) {
+    char line[] = "..........";
+    int thisRow = board[i];
+    if (i >= y && i < y+4) {
+      thisRow |= SHIFTBY(piece.rowsByRotation[rot][i - y], x);
+    }
+    for (int j = 0; j < 10; j++) {
+      line[9 - j] = (thisRow & 0x1) ? 'X' : '.';
+      thisRow = thisRow >> 1;
+    }
+    printf("%s\n", line);
+  }
+}
+
 void printSurface(int surfaceArray[10]) {
   for (int i = 0; i < 9; i++) {
     printf("%d ", surfaceArray[i]);
