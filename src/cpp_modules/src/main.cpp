@@ -18,7 +18,7 @@
 #include "piece_ranges.cpp"
 #include "playout.cpp"
 #include "high_level_search.cpp"
-// #include "../data/ranksOutput.cpp"
+// #include "../data/ranks_output.cpp"
 
 #define USE_RANDOM_SEQUENCE false
 

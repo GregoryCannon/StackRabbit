@@ -1,6 +1,6 @@
 import { getBestMove, getSearchStateAfter, getSortedMoveList } from "./main";
 import { getPossibleMoves } from "./move_search";
-import { IS_DROUGHT_MODE } from "./params";
+import { IS_DROUGHT_MODE, SHOULD_PUSHDOWN } from "./params";
 import { getPieceProbability } from "./piece_rng";
 import {
   formatPossibility,
@@ -446,7 +446,10 @@ export class PreComputeManager {
 }
 
 function formatPrecomputeResult(results, defaultPlacement) {
-  const defaultFormatted = formatPossibility(defaultPlacement);
+  const defaultFormatted = formatPossibility(
+    defaultPlacement,
+    /* pushDown= */ SHOULD_PUSHDOWN
+  );
   let resultString = `Default:${
     defaultPlacement ? formatPossibility(defaultPlacement) : "N/A"
   }`;
@@ -459,7 +462,10 @@ function formatPrecomputeResult(results, defaultPlacement) {
       resultString += `\n${piece}:No legal moves`;
     } else {
       // Otherwise, add the real result
-      resultString += `\n${piece}:${formatPossibility(results[piece])}`;
+      resultString += `\n${piece}:${formatPossibility(
+        results[piece],
+        /* pushDown= */ SHOULD_PUSHDOWN
+      )}`;
     }
   }
   return resultString;

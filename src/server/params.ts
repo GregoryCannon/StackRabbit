@@ -25,6 +25,7 @@ export const LINE_CAP = NO_LIMIT;
 export const IS_PAL = false;
 export const WELL_COLUMN = 9; // 0-indexed
 export const CAN_TUCK = true;
+export const SHOULD_PUSHDOWN = false;
 
 // Calculated automatically
 export const IS_NON_RIGHT_WELL = WELL_COLUMN !== 9;

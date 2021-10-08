@@ -85,7 +85,27 @@ export function GetGravityPAL(level) {
   }
 }
 
-export function formatPossibility(possibility: PossibilityChain) {
+export function pushDown(inputString: string) {
+  //I....R....R....R......................*****^^^^^^^^^^^^^^^^^*****
+  let preLock = inputString.split("*")[0];
+  let fallenFrames = 0;
+  for (let i = preLock.length - 1; i > 0; i--) {
+    if (preLock.charAt(i) !== ".") {
+      break;
+    }
+    fallenFrames += 1;
+  }
+  preLock = preLock.substring(0, preLock.length - fallenFrames);
+  for (let i = 0; i < Math.ceil(0.666 * fallenFrames) + 2; i++) {
+    preLock += "D";
+  }
+  return preLock;
+}
+
+export function formatPossibility(
+  possibility: PossibilityChain,
+  shouldPushDown = false
+) {
   if (possibility == null) {
     return "No legal moves";
   }
@@ -94,7 +114,9 @@ export function formatPossibility(possibility: PossibilityChain) {
     "," +
     possibility.placement[1] +
     "|" +
-    (possibility.inputSequence || "none") +
+    (shouldPushDown && possibility.searchStateAfterMove.level == 18
+      ? pushDown(possibility.inputSequence)
+      : possibility.inputSequence || "none") +
     "|" +
     possibility.boardAfter.map((row) => row.join("")).join("") +
     "|" +
