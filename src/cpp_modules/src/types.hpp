@@ -46,6 +46,7 @@ struct SimState {
   int y;
   int rotationIndex;
   int frameIndex;
+  int arrIndex;
   Piece piece;
 };
 

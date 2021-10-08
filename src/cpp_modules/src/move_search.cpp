@@ -61,7 +61,7 @@ int rotateTowardsGoal(int curRotation, int goalRotation) {
 int exploreHorizontally(int board[20],
                         SimState simState,
                         int shiftIncrement,
-                        int maxShifts,
+                        int maxOrMinX,
                         int goalRotationIndex,
                         char const *inputFrameTimeline,
                         int gravity,
@@ -70,20 +70,19 @@ int exploreHorizontally(int board[20],
   int rangeCurrent = 0;
 
   // Loop through hypothetical frames
-  while (simState.x != INITIAL_X + maxShifts || simState.rotationIndex != goalRotationIndex) {
+  while (simState.x != maxOrMinX || simState.rotationIndex != goalRotationIndex) {
     int isInputFrame = shouldPerformInputsThisFrame(simState.frameIndex, inputFrameTimeline);
-    // int isInputFrame = !(simState.frameIndex & 3);
     int isGravityFrame =
-        simState.frameIndex % gravity == gravity - 1; // Returns true every Nth frame, where N = gravity
+      simState.frameIndex % gravity == gravity - 1;   // Returns true every Nth frame, where N = gravity
     // Event trackers to handle the ordering of a few edge cases (explained more below)
     int foundNewPlacementThisFrame = false;
     int didLockThisFrame = false;
 
     if (isInputFrame) {
       // Try shifting
-      if (simState.x != INITIAL_X + maxShifts) {
+      if (simState.x != maxOrMinX) {
         if (collision(
-                board, simState.piece, simState.x + shiftIncrement, simState.y, simState.rotationIndex)) {
+              board, simState.piece, simState.x + shiftIncrement, simState.y, simState.rotationIndex)) {
           // printf("Shift collision at x=%d\n", simState.x - INITIAL_X);
           return rangeCurrent;
         }
@@ -150,21 +149,21 @@ int exploreHorizontally(int board[20],
  */
 void explorePlacementsNearSpawn(int board[20],
                                 SimState simState,
-                                int rotationIndex,
+                                int goalRotationIndex,
                                 char const *inputFrameTimeline,
                                 int gravity,
                                 vector<SimState> &legalPlacements,
                                 int availableTuckCols[40]) {
-  int rangeStart = rotationIndex == 2 ? -1 : 0;
-  int rangeEnd = rotationIndex == 2 ? 1 : 0;
+  int rangeStart = goalRotationIndex == 2 ? -1 : 0;
+  int rangeEnd = goalRotationIndex == 2 ? 1 : 0;
 
   for (int xOffset = rangeStart; xOffset <= rangeEnd; xOffset++) {
     // Check if the placement is legal.
     exploreHorizontally(board,
                         simState,
                         xOffset,
-                        xOffset,
-                        rotationIndex,
+                        simState.x + xOffset,
+                        goalRotationIndex,
                         inputFrameTimeline,
                         gravity,
                         legalPlacements,
@@ -296,10 +295,10 @@ void findTucks(int board[20],
             int lockPositionHash = lockPieceY * 1000 + pieceX * 10 + spot.orientation;
             if (tuckLockSpots.find(lockPositionHash) == tuckLockSpots.end() &&
                 isTuckReachable(board,
-                                {pieceX, postTuckPieceY, spot.orientation, -1, piece},
+                                {pieceX, postTuckPieceY, spot.orientation, -1, -1, piece},
                                 availableTuckCols,
                                 minTuckYValsByNumPrevInputs)) {
-              lockPlacements.push_back({pieceX, lockPieceY, spot.orientation, -1, piece});
+              lockPlacements.push_back({pieceX, lockPieceY, spot.orientation, -1, -1, piece});
               tuckLockSpots.insert(lockPositionHash);
             }
           }
@@ -313,58 +312,61 @@ void findTucks(int board[20],
   }
 }
 
-int moveSearch(GameState gameState,
-               Piece piece,
-               char const *inputFrameTimeline,
-               OUT std::vector<SimState> &lockPlacements) {
+/**
+ * Main move search implementation.
+ * Wrapped in two parent functions depending on whether the move search is from standard spawn or from a midair adjustment spot.
+ */
+int moveSearchInternal(GameState gameState,
+                       SimState spawnState,
+                       Piece piece,
+                       char const *inputFrameTimeline,
+                       OUT std::vector<SimState> &lockPlacements) {
   vector<SimState> legalMidairPlacements;
   int gravity = getGravity(gameState.level);
 
+  // Encodes which rotation/column pairs are reachable, and stores the lowest Y value reached in that pair
   int availableTuckCols[40] = {};
   int minTuckYValsByNumPrevInputs[7] = {};
   computeYValueOfEachShift(inputFrameTimeline, gravity, piece.initialY, minTuckYValsByNumPrevInputs);
 
-  for (int rotIndex = 0; rotIndex < 4; rotIndex++) {
-    if (piece.rowsByRotation[rotIndex][0] == -1) {
+  for (int goalRotIndex = 0; goalRotIndex < 4; goalRotIndex++) {
+    if (piece.rowsByRotation[goalRotIndex][0] == -1) {
       // Rotation doesn't exist on this piece
       continue;
     }
 
-    // Initialize the starting state
-    SimState simState = {INITIAL_X, piece.initialY, /* rotationIndex= */ 0, /* frameIndex= */ 0, piece};
-
     // Check for immediate collision on spawn
-    if (rotIndex == 0) {
-      if (collision(gameState.board, piece, simState.x, simState.y, simState.rotationIndex)) {
+    if (goalRotIndex == 0) {
+      if (collision(gameState.board, piece, spawnState.x, spawnState.y, spawnState.rotationIndex)) {
         return 0;
       }
       // Otherwise the starting state is a legal placement
-      legalMidairPlacements.push_back(simState);
+      legalMidairPlacements.push_back(spawnState);
     }
 
     // Search for placements as far as possible to both sides
     exploreHorizontally(gameState.board,
-                        simState,
+                        spawnState,
                         -1,
                         -99,
-                        rotIndex,
+                        goalRotIndex,
                         inputFrameTimeline,
                         gravity,
                         legalMidairPlacements,
                         availableTuckCols);
     exploreHorizontally(gameState.board,
-                        simState,
+                        spawnState,
                         1,
                         99,
-                        rotIndex,
+                        goalRotIndex,
                         inputFrameTimeline,
                         gravity,
                         legalMidairPlacements,
                         availableTuckCols);
     // Then double check for some we missed near spawn
     explorePlacementsNearSpawn(gameState.board,
-                               simState,
-                               rotIndex,
+                               spawnState,
+                               goalRotIndex,
                                inputFrameTimeline,
                                gravity,
                                legalMidairPlacements,
@@ -373,7 +375,7 @@ int moveSearch(GameState gameState,
 
   // Let the pieces fall until they lock
   getLockPlacementsFast(
-      legalMidairPlacements, gameState.board, gameState.surfaceArray, availableTuckCols, lockPlacements);
+    legalMidairPlacements, gameState.board, gameState.surfaceArray, availableTuckCols, lockPlacements);
 
   // Search for tucks
   if (CAN_TUCK) {
@@ -381,6 +383,27 @@ int moveSearch(GameState gameState,
   }
 
   return (int)lockPlacements.size();
+}
+
+int moveSearch(GameState gameState,
+               Piece piece,
+               char const *inputFrameTimeline,
+               OUT std::vector<SimState> &lockPlacements) {
+  SimState spawnState = {INITIAL_X, piece.initialY, /* rotationIndex= */ 0, /* frameIndex= */ 0, /* arrIndex= */ 0, piece};
+  return moveSearchInternal(gameState, spawnState, piece, inputFrameTimeline, lockPlacements);
+}
+
+int adjustmentSearch(GameState gameState,
+                     Piece piece,
+                     char const *inputFrameTimeline,
+                     int existingXOffset,
+                     int existingYOffset,
+                     int existingRotation,
+                     int framesAlreadyElapsed,
+                     int arrWasReset,
+                     OUT std::vector<SimState> &lockPlacements){
+  SimState startState = {INITIAL_X + existingXOffset, piece.initialY + existingYOffset, /* rotationIndex= */ 0, /* frameIndex= */ 0, /* arrIndex= */ arrWasReset ? 0 : framesAlreadyElapsed, piece};
+  return moveSearchInternal(gameState, startState, piece, inputFrameTimeline, lockPlacements);
 }
 
 /* ----------- TUCKS AND SPINS ----------- */
@@ -407,4 +430,27 @@ void testTuckSpots() {
       printBoard(newBoard);
     }
   }
+}
+
+void testAdjustmentSearch(){
+  GameState gameState = {
+    {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1016, 1016, 1020, 1022},
+    /* surfaceArray= */ {},
+    /* adjustedNumHoles= */ 0,
+    /* lines= */ 0,
+    /* level= */ 18
+  };
+  getSurfaceArray(gameState.board, gameState.surfaceArray);
+  printBoard(gameState.board);
+
+  std::vector<SimState> lockPlacements;
+  printf("size %d\n", (int) lockPlacements.size());
+  // int count = moveSearch(gameState, PIECE_O, "X...", lockPlacements);
+  int adjCount = adjustmentSearch(gameState, PIECE_T, "X...", /* xoffset=*/ 3, /* yOffset=*/ 10, /* rotation= */ 0, /* framesElapsed= */ 20, /* arrReset=*/ true, lockPlacements);
+  for (auto state : lockPlacements){
+    printf("Found %d %d %d\n", state.x, state.y, state.rotationIndex);
+    printBoardWithPiece(gameState.board, PIECE_T, state.x, state.y, state.rotationIndex);
+  }
+
+  printf("Num moves: %d\n", adjCount);
 }
