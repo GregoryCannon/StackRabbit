@@ -80,7 +80,8 @@ float getAverageHeightFactor(int avgHeight, float scareHeight) {
 
 float getBuiltOutLeftFactor(int surfaceArray[10], int board[20], float avgHeight, float scareHeight) {
   float heightRatio = avgHeight / max(3.0f, scareHeight);
-  float heightDiff = surfaceArray[0] - avgHeight;
+  float heightDiff = 0.5 * (surfaceArray[0] - avgHeight) + 0.5 * (surfaceArray[0] - surfaceArray[1]);
+  
   // Handle low left cases first
   if (heightDiff < 0) {
     float softenedHeightRatio = 0.5f * (heightRatio + 1); // Average it with 1 to make it less extreme (faster than sqrt operation)
@@ -172,11 +173,12 @@ float getLikelyBurnsFactor(int surfaceArray[10], int wellColumn, int maxSafeCol9
  * @returns the multiple of the accessible left penalty that should be applied. That is, 0 if 5 taps are possible, or a float around 1.0 or higher (depending on how many lines would need to clear for the left to be accessible).
  */
 float getInaccessibleLeftFactor(int surfaceArray[10], int const maxAccessibleLeftSurface[10], int wellColumn){
+  float severity = 1.0f;
   // Check if the agent even needs to get a piece left first.
   // If the left is built out higher than the max 5 tap height and also higher than col 9, then it's chilling.
   int needs5Tap = wellColumn == 9 ? surfaceArray[0] < surfaceArray[8] : surfaceArray[0] < surfaceArray[1];
   if (surfaceArray[0] > maxAccessibleLeftSurface[0] && !needs5Tap) {
-    return 0;
+    severity = 0.2f;
   }
 
   int highestAbove = 0;
@@ -185,7 +187,7 @@ float getInaccessibleLeftFactor(int surfaceArray[10], int const maxAccessibleLef
       highestAbove = std::max(highestAbove, surfaceArray[i] - maxAccessibleLeftSurface[i]);
     }
   }
-  return highestAbove == 0 ? 0 : 1.0 + 0.5 * highestAbove;
+  return highestAbove == 0 ? 0 : (1.0 + 0.2 * highestAbove * highestAbove) * severity;
 }
 
 float getInaccessibleRightFactor(int surfaceArray[10], int const maxAccessibleRightSurface[10]){
@@ -202,13 +204,66 @@ float getInaccessibleRightFactor(int surfaceArray[10], int const maxAccessibleRi
       highestAbove = std::max(highestAbove, surfaceArray[i] - maxAccessibleRightSurface[i]);
     }
   }
-  return highestAbove == 0 ? 0 : 1.0 + 0.5 * highestAbove;
+  return highestAbove == 0 ? 0 : 1.0 + 0.2 * highestAbove * highestAbove;
 }
 
 float getLineClearFactor(int numLinesCleared, FastEvalWeights weights, int shouldRewardLineClears){
   return numLinesCleared == 4
     ? weights.tetrisCoef
     : weights.burnCoef * numLinesCleared * (shouldRewardLineClears ? -0.25 : 1);
+}
+
+/** Calculate how hard it will be to fill in the middle of the board enough to burn. */
+float getUnableToBurnFactor(int board[20], int surfaceArray[10], float scareHeight){
+  float totalPenalty = 0;
+  int col9Height = surfaceArray[8];
+
+  // If col 10 is also filled, having col 9 filled isn't bad
+  if (col9Height <= surfaceArray[9]) {
+    while (board[20 - col9Height] & 1) {
+      col9Height--;
+    }
+  }
+  if (col9Height <= 0){
+    return 0;
+  }
+
+  // Check for columns in the middle of the board lower than col 9
+  for (int c = 0; c < 8; c++) {
+    if (surfaceArray[c] < col9Height) {
+      // Check for a line dependency in that column
+      int thisCol = surfaceArray[c];
+      int prevCol = c == 0 ? 99 : surfaceArray[c - 1];
+      int nextCol = c == 9 ? 99 : surfaceArray[c + 1];
+      if (prevCol - thisCol >= 3 && nextCol - thisCol >= 3) {
+        totalPenalty += 100;
+        break;
+      }
+
+      // Otherwise penalize for unfilled cells, scales with d^2 as the distance from col 9 increases
+      int diff = col9Height - surfaceArray[c];
+      totalPenalty += diff * diff;
+    }
+  }
+
+  int col9Row = 20 - col9Height;
+  // Check for holes in the must-use-to-burn zone
+  for (int r = max(0, col9Row - 1); r <= col9Row; r++) {
+    if (board[r] & ALL_HOLE_BITS) {
+      totalPenalty += 50;
+    }
+  }
+  // Check for holes in the maybe-used-to-burn zone
+  for (int r = max(0, col9Row - 2); r <= min(19, col9Row + 2); r++) {
+    if (board[r] & ALL_HOLE_BITS) {
+      totalPenalty += 50;
+    }
+  }
+
+  float scareRatio = (float) col9Height / scareHeight;
+  float heightMultiplier = scareRatio * scareRatio * scareRatio;
+
+  return totalPenalty * heightMultiplier;
 }
 
 int isTetrisReady(int board[20], int col10Height){
@@ -256,8 +311,9 @@ float fastEval(GameState gameState,
     (evalContext->wellColumn >= 0 && isTetrisReady(newState.board, newState.surfaceArray[evalContext->wellColumn]))
       ? weights.tetrisReadyCoef
       : 0;
+  float unableToBurnFactor = weights.unableToBurnCoef * getUnableToBurnFactor(newState.board, newState.surfaceArray, evalContext->scareHeight);
 
-  float total = surfaceFactor + surfaceLeftFactor + avgHeightFactor + lineClearFactor + holeFactor + guaranteedBurnsFactor + likelyBurnsFactor + inaccessibleLeftFactor + inaccessibleRightFactor + coveredWellFactor + highCol9Factor + tetrisReadyFactor + builtOutLeftFactor;
+  float total = surfaceFactor + surfaceLeftFactor + avgHeightFactor + lineClearFactor + holeFactor + guaranteedBurnsFactor + likelyBurnsFactor + inaccessibleLeftFactor + inaccessibleRightFactor + coveredWellFactor + highCol9Factor + tetrisReadyFactor + builtOutLeftFactor + unableToBurnFactor;
 
   // Logging
   if (LOGGING_ENABLED) {
@@ -285,7 +341,7 @@ float fastEval(GameState gameState,
 
     printf("Numholes %f\n", newState.adjustedNumHoles);
     maybePrint(
-      "Surface %01f, LeftSurface %01f, AvgHeight %01f, LineClear %01f, Hole %01f, GuaranteedBurns %01f, LikelyBurns %01f, InaccLeft %01f, CoveredWell %01f, HighCol9 %01f, TetrisReady %01f, BuiltLeft %01f\t Total: %01f\n",
+      "Surface %01f, LeftSurface %01f, AvgHeight %01f, LineClear %01f, Hole %01f, GuaranteedBurns %01f, LikelyBurns %01f, InaccLeft %01f, CoveredWell %01f, HighCol9 %01f, TetrisReady %01f, BuiltLeft %01f, UnableToBrn %01f,\t Total: %01f\n",
       surfaceFactor,
       surfaceLeftFactor,
       avgHeightFactor,
@@ -298,6 +354,7 @@ float fastEval(GameState gameState,
       highCol9Factor,
       tetrisReadyFactor,
       builtOutLeftFactor,
+      unableToBurnFactor,
       total);
   }
 

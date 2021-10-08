@@ -2,26 +2,27 @@
 #define PARAMS
 
 const FastEvalWeights MAIN_WEIGHTS = {
-  /* avgHeightCoef= */ PLAY_SAFE ? -10 : -5,
-  /* builtOutLeftCoef= */ PLAY_SAFE ? 3 : 1.5,
-  /* burnCoef= */ PLAY_SAFE ? -6 : -10,
+  /* avgHeightCoef= */ PLAY_SAFE_PRE_KILLSCREEN ? -10 : -5,
+  /* builtOutLeftCoef= */ 2,
+  /* burnCoef= */ PLAY_SAFE_PRE_KILLSCREEN ? -6 : -12,
   /* coveredWellCoef= */ -5,
   /* col9Coef= */ -2,
   /* deathCoef= */ -2000,
   /* extremeGapCoef= */ -3,
-  /* holeCoef= */ -50,
+  /* holeCoef= */ -40,
   /* inaccessibleLeftCoef= */ -100,
   /* inaccessibleRightCoef= */ -200,
   /* tetrisCoef= */ 40,
   /* tetrisReadyCoef= */ 6,
   /* surfaceCoef= */ 1,
   /* surfaceLeft= */ 0,
+  /* unableToBurnCoef= */ -0.5
 };
 
 const FastEvalWeights SAFE_WEIGHTS = {
   MAIN_WEIGHTS.avgHeightCoef,
   MAIN_WEIGHTS.builtOutLeftCoef,
-  /* burnCoef= */ -4,
+  /* burnCoef= */ -5,
   MAIN_WEIGHTS.coveredWellCoef,
   MAIN_WEIGHTS.col9Coef,
   MAIN_WEIGHTS.deathCoef,
@@ -32,7 +33,8 @@ const FastEvalWeights SAFE_WEIGHTS = {
   MAIN_WEIGHTS.tetrisCoef,
   MAIN_WEIGHTS.tetrisReadyCoef,
   MAIN_WEIGHTS.surfaceCoef,
-  MAIN_WEIGHTS.surfaceLeftCoef
+  MAIN_WEIGHTS.surfaceLeftCoef,
+  MAIN_WEIGHTS.unableToBurnCoef
 };
 
 const FastEvalWeights DIG_WEIGHTS = {
@@ -43,13 +45,14 @@ const FastEvalWeights DIG_WEIGHTS = {
   /* col9Coef= */ -1,
   MAIN_WEIGHTS.deathCoef,
   MAIN_WEIGHTS.extremeGapCoef,
-  MAIN_WEIGHTS.holeCoef,
+  /* holeCoef= */ -60,
   MAIN_WEIGHTS.inaccessibleLeftCoef,
   MAIN_WEIGHTS.inaccessibleRightCoef,
   MAIN_WEIGHTS.tetrisCoef,
   MAIN_WEIGHTS.tetrisReadyCoef,
   MAIN_WEIGHTS.surfaceCoef,
-  MAIN_WEIGHTS.surfaceLeftCoef
+  MAIN_WEIGHTS.surfaceLeftCoef,
+  MAIN_WEIGHTS.unableToBurnCoef
 };
 
 const FastEvalWeights NEAR_KILLSCREEN_WEIGHTS = {
@@ -66,7 +69,8 @@ const FastEvalWeights NEAR_KILLSCREEN_WEIGHTS = {
   /* tetrisCoef= */ 500,
   MAIN_WEIGHTS.tetrisReadyCoef,
   MAIN_WEIGHTS.surfaceCoef,
-  MAIN_WEIGHTS.surfaceLeftCoef
+  MAIN_WEIGHTS.surfaceLeftCoef,
+  MAIN_WEIGHTS.unableToBurnCoef
 };
 
 const FastEvalWeights DIRTY_NEAR_KILLSCREEN_WEIGHTS = {
@@ -83,7 +87,8 @@ const FastEvalWeights DIRTY_NEAR_KILLSCREEN_WEIGHTS = {
   /* tetrisCoef= */ 500,
   MAIN_WEIGHTS.tetrisReadyCoef,
   MAIN_WEIGHTS.surfaceCoef,
-  MAIN_WEIGHTS.surfaceLeftCoef
+  MAIN_WEIGHTS.surfaceLeftCoef,
+  MAIN_WEIGHTS.unableToBurnCoef
 };
 
 const FastEvalWeights LINEOUT_WEIGHTS = {
@@ -101,6 +106,7 @@ const FastEvalWeights LINEOUT_WEIGHTS = {
   MAIN_WEIGHTS.tetrisReadyCoef,
   MAIN_WEIGHTS.surfaceCoef,
   /* surfaceLeft= */ 40,
+  MAIN_WEIGHTS.unableToBurnCoef
 };
 
 FastEvalWeights getWeights(AiMode mode){

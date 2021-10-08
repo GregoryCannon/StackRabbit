@@ -84,6 +84,7 @@ struct FastEvalWeights {
   float tetrisReadyCoef;
   float surfaceCoef;
   float surfaceLeftCoef;
+  float unableToBurnCoef;
 };
 
 /**
