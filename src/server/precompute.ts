@@ -322,10 +322,10 @@ export class PreComputeManager {
           )
         )
       ) {
-        console.log(
-          "NO ADJUSTMENTS, already did tuck",
-          phantomPlacement.initialPlacement.inputSequence
-        );
+        // console.log(
+        //   "NO ADJUSTMENTS, already did tuck",
+        //   phantomPlacement.initialPlacement.inputSequence
+        // );
         phantomPlacement.possibleAdjustmentsLookup = [];
         continue;
       }
@@ -348,11 +348,11 @@ export class PreComputeManager {
       phantomPlacement.possibleAdjustmentsLookup = possibleAdjs;
     }
     console.timeEnd("Get adjustment moves");
-    console.log("DONE PRECOMPILE ADJ");
+    // console.log("DONE PRECOMPILE ADJ");
   }
 
   _compileResponseFinesse() {
-    console.log("STARTING COLLAPSE");
+    // console.log("STARTING COLLAPSE");
     console.time("COLLAPSE");
     let overallResponse: string = formatPrecomputeResult(
       {},

@@ -2,7 +2,7 @@ import { PIECE_LOOKUP } from "../../docs/tetrominoes";
 import { getBoardAndLinesClearedAfterPlacement } from "./board_helper";
 import { engineLookup } from "./engine_lookup";
 import { rateSurface } from "./evaluator";
-import { LINE_CAP, SHOULD_LOG } from "./params";
+import { DISABLE_LOGGING, LINE_CAP, SHOULD_LOG } from "./params";
 import { PreComputeManager } from "./precompute";
 import {
   formatPossibility,
@@ -19,12 +19,16 @@ export class RequestHandler {
   asyncCallInProgress: boolean;
   asyncResult: string;
   partialResult: any;
+  partialResultsUsed: number;
+  computationsFinished: number;
 
   constructor(precomputeManager) {
     this.preComputeManager = precomputeManager;
     this.asyncCallInProgress = false;
     this.asyncResult = null;
     this.partialResult = null;
+    this.partialResultsUsed = 0;
+    this.computationsFinished = 0;
 
     this.routeRequest = this.routeRequest.bind(this);
     this._wrapAsync = this._wrapAsync.bind(this);
@@ -39,10 +43,17 @@ export class RequestHandler {
         return ["pong", 200];
 
       case "async-result":
+        console.log("FAILED:", this.partialResultsUsed);
         // If a previous async request has now completed, send that.
         if (this.asyncResult !== null) {
           return [this.asyncResult, 200];
         } else if (this.partialResult !== null) {
+          for (let i = 0; i < 10; i++) {
+            console.log(
+              "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"
+            );
+          }
+          this.partialResultsUsed += 1;
           return [this.partialResult, 200];
         } else if (this.asyncCallInProgress) {
           return ["Still calculating", 504]; // Gateway timeout
@@ -117,20 +128,20 @@ export class RequestHandler {
     existingRotation = parseInt(existingRotation) || 0;
     canFirstFrameShift = canFirstFrameShift.toLowerCase() === "true";
 
-    console.log({
-      boardStr,
-      currentPieceId,
-      nextPieceId,
-      level,
-      lines,
-      existingXOffset,
-      existingYOffset,
-      existingRotation,
-      reactionTime,
-      framesAlreadyElapsed,
-      inputFrameTimeline,
-      canFirstFrameShift,
-    });
+    // console.log({
+    //   boardStr,
+    //   currentPieceId,
+    //   nextPieceId,
+    //   level,
+    //   lines,
+    //   existingXOffset,
+    //   existingYOffset,
+    //   existingRotation,
+    //   reactionTime,
+    //   framesAlreadyElapsed,
+    //   inputFrameTimeline,
+    //   canFirstFrameShift,
+    // });
 
     // Validate inputs
     currentPieceId = currentPieceId.toUpperCase();
@@ -176,14 +187,16 @@ export class RequestHandler {
     // Decode the board
     const board = parseBoard(boardStr);
 
-    logBoard(
-      getBoardAndLinesClearedAfterPlacement(
-        board,
-        PIECE_LOOKUP[currentPieceId][0][existingRotation],
-        existingXOffset + 3,
-        existingYOffset + (currentPieceId === "I" ? -2 : -1)
-      )[0]
-    );
+    if (!DISABLE_LOGGING) {
+      logBoard(
+        getBoardAndLinesClearedAfterPlacement(
+          board,
+          PIECE_LOOKUP[currentPieceId][0][existingRotation],
+          existingXOffset + 3,
+          existingYOffset + (currentPieceId === "I" ? -2 : -1)
+        )[0]
+      );
+    }
 
     // Manually top out if past line cap
     if (lines >= LINE_CAP) {
