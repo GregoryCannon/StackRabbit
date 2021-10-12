@@ -3,6 +3,7 @@
 
 #include <stdarg.h>
 #include <stdio.h>
+#include <random>
 #include "./config.hpp"
 
 // No-op used to mark output parameters
@@ -170,6 +171,14 @@ int shouldPerformInputsThisFrame(int frameIndex, char const *inputFrameTimeline)
   int len = (int) strlen(inputFrameTimeline);
   int index = frameIndex % len;
   return inputFrameTimeline[index] == 'X';
+}
+
+template<typename T>
+T qualityRandom(T range_from, T range_to) {
+  std::random_device rand_dev;
+  std::mt19937 generator(rand_dev());
+  std::uniform_int_distribution<T>    distr(range_from, range_to - 1);
+  return distr(generator);
 }
 
 #endif

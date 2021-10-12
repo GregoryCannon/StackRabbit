@@ -1,18 +1,75 @@
 #include "types.hpp"
 
-void simulateGame(){
+const int SCORE_REWARDS[] = {
+  0,
+  40,
+  100,
+  300,
+  1200
+};
+
+int simulateGame(char const *inputFrameTimeline, int startingLevel, int maxLines){
   // Init empty data structures
-  GameState startingGameState = {
+  GameState gameState = {
     /* board= */ {},
     /* surfaceArray= */ {},
     /* adjustedNumHole= */ 0,
     /* lines= */ 0,
-    /* level= */ 0
+    /* level= */ startingLevel
   };
+  getSurfaceArray(gameState.board, gameState.surfaceArray);
   Piece curPiece;
-  Piece nextPiece;
+  Piece nextPiece = PIECE_LIST[qualityRandom(0,7)];
+
+  // Calculate global context for the 3 possible gravity values
+  const PieceRangeContext pieceRangeContextLookup[3] = {
+    getPieceRangeContext(inputFrameTimeline, 1),
+    getPieceRangeContext(inputFrameTimeline, 2),
+    getPieceRangeContext(inputFrameTimeline, 3),
+  };
+  int score = 0;
+
+  while (true) {
+    // Get pieces
+    curPiece = nextPiece;
+    nextPiece = getRandomPiece(curPiece);
+    
+    // Figure out modes and eval context
+    const EvalContext evalContextRaw = getEvalContext(gameState, pieceRangeContextLookup);
+    const EvalContext *evalContext = &evalContextRaw;
+    FastEvalWeights weights = getWeights(evalContext->aiMode);
+
+    // Get the lock placements
+    std::vector<SimState> lockPlacements;
+    moveSearch(gameState, curPiece, evalContext->pieceRangeContext.inputFrameTimeline, lockPlacements);
+
+    if (lockPlacements.size() == 0) {
+      break;
+    }
+
+    // Pick the best placement
+    SimState bestMove = pickLockPlacement(gameState, evalContext, lockPlacements);
+
+    // Otherwise, update the state to keep playing
+    int oldLines = gameState.lines;
+    gameState = advanceGameState(gameState, bestMove, evalContext);
+    score += SCORE_REWARDS[gameState.lines - oldLines] * gameState.level;
+    
+    if (PLAYOUT_LOGGING_ENABLED) {
+      printBoard(gameState.board);
+      printf("Best placement: %c %d, %d\n\n", bestMove.piece.id, bestMove.rotationIndex, bestMove.x - SPAWN_X);
+      printf("Score: %d, Lines: %d, Level: %d\n", score, gameState.lines, gameState.level);
+    }
+    
+    if (maxLines > 0 && gameState.lines > maxLines){
+      break;
+    }
+  }
+  return score;
 }
 
-void simulateGames(int numGames, int startingLevel, char const *inputFrameTimeline, int reactionTime){
-
+void simulateGames(int numGames, char const *inputFrameTimeline, int startingLevel, int maxLines, int reactionTime, OUT std::vector<int> scores){
+  for (int i = 0; i < numGames; i++){
+    scores.push_back(simulateGame(inputFrameTimeline, startingLevel, maxLines));
+  }
 }
