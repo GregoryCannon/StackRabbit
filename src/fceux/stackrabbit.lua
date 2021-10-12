@@ -1,4 +1,5 @@
-IS_MAC = false
+IS_MAC = true
+USE_PUSHDOWN = true
 
 local os = require("os")
 if (IS_MAC) then
@@ -288,6 +289,7 @@ function executeInputs()
     local thisFrameStr = getInputForFrame(arrFrameIndex);
     -- print(arrFrameIndex .. "  " .. thisFrameStr)
     
+    inputsThisFrame.down = (thisFrameStr == "D")
     inputsThisFrame.A = (thisFrameStr == "A" or thisFrameStr == "E" or thisFrameStr == "I")
     inputsThisFrame.B = (thisFrameStr == "B" or thisFrameStr == "F" or thisFrameStr == "G")
     inputsThisFrame.left = (thisFrameStr == "L" or thisFrameStr == "E" or thisFrameStr == "F")
@@ -408,7 +410,7 @@ function runGameFrame()
   -- Do stuff right when the piece locks.
   elseif gamePhase >= 2 and gamePhase <= 8 then
     if gamePhaseLastFrame == 1 then
-      if not isFirstPiece and not gameOver and getInputForFrame(arrFrameIndex + 1) ~= "*" then
+      if not USE_PUSHDOWN and not isFirstPiece and not gameOver and getInputForFrame(arrFrameIndex + 1) ~= "*" then
         print(inputSequence)
         error("Server mistimed lock delay")
       end
