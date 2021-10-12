@@ -281,7 +281,7 @@ int isTetrisReady(int board[20], int col10Height){
 
 float fastEval(GameState gameState,
                GameState newState,
-               SimState lockPlacement,
+               LockPlacement lockPlacement,
                const EvalContext *evalContext) {
   FastEvalWeights weights = evalContext->weights;
   // Preliminary helper work
@@ -314,6 +314,7 @@ float fastEval(GameState gameState,
   float unableToBurnFactor = weights.unableToBurnCoef * getUnableToBurnFactor(newState.board, newState.surfaceArray, evalContext->scareHeight);
 
   float total = surfaceFactor + surfaceLeftFactor + avgHeightFactor + lineClearFactor + holeFactor + guaranteedBurnsFactor + likelyBurnsFactor + inaccessibleLeftFactor + inaccessibleRightFactor + coveredWellFactor + highCol9Factor + tetrisReadyFactor + builtOutLeftFactor + unableToBurnFactor;
+  total = max(weights.deathCoef, total); // Can't be worse than death
 
   // Logging
   if (LOGGING_ENABLED) {

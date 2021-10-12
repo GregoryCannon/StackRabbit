@@ -6,7 +6,7 @@
 
 float getNewSurfaceAndNumNewHoles(int surfaceArray[10],
                                   int board[20],
-                                  SimState lockPlacement,
+                                  LockPlacement lockPlacement,
                                   const EvalContext *evalContext,
                                   int isTuck,
                                   OUT int newSurface[10]);
@@ -21,8 +21,8 @@ float updateSurfaceAndHoles(int surfaceArray[10], int board[20], int excludeHole
  * Calculates the resulting board after placing a piece in a specified spot.
  * @returns the number of lines cleared
  */
-int getNewBoardAndLinesCleared(int board[20], SimState lockPlacement, OUT int newBoard[20]);
+int getNewBoardAndLinesCleared(int board[20], LockPlacement lockPlacement, OUT int newBoard[20]);
 
-GameState advanceGameState(GameState gameState, SimState lockPlacement, const EvalContext *evalContext);
+GameState advanceGameState(GameState gameState, LockPlacement lockPlacement, const EvalContext *evalContext);
 
 #endif

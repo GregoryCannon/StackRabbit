@@ -6,9 +6,9 @@
 #include <vector>
 #include <list>
 
-SimState pickLockPlacement(GameState gameState,
+LockPlacement pickLockPlacement(GameState gameState,
                            const EvalContext *evalContext,
-                           OUT std::vector<SimState> &lockPlacements);
+                           OUT std::vector<LockPlacement> &lockPlacements);
 
 float getPlayoutScore(GameState gameState, const PieceRangeContext pieceRangeContextLookup[3], int offsetIndex);
 

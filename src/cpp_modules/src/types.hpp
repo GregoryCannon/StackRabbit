@@ -47,7 +47,17 @@ struct SimState {
   int rotationIndex;
   int frameIndex;
   int arrIndex;
-  Piece piece;
+  const Piece *piece;
+};
+
+/** Minimal representation of an entire placement, such that the input sequence is deterministic from the data here. */
+struct LockPlacement {
+  int x;
+  int y;
+  int rotationIndex;
+  int tuckFrame;
+  char tuckInput;
+  const Piece *piece;
 };
 
 /** Minimal representation of a lock location. */

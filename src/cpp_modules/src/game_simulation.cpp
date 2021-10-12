@@ -40,15 +40,15 @@ int simulateGame(char const *inputFrameTimeline, int startingLevel, int maxLines
     FastEvalWeights weights = getWeights(evalContext->aiMode);
 
     // Get the lock placements
-    std::vector<SimState> lockPlacements;
-    moveSearch(gameState, curPiece, evalContext->pieceRangeContext.inputFrameTimeline, lockPlacements);
+    std::vector<LockPlacement> lockPlacements;
+    moveSearch(gameState, &curPiece, evalContext->pieceRangeContext.inputFrameTimeline, lockPlacements);
 
     if (lockPlacements.size() == 0) {
       break;
     }
 
     // Pick the best placement
-    SimState bestMove = pickLockPlacement(gameState, evalContext, lockPlacements);
+    LockPlacement bestMove = pickLockPlacement(gameState, evalContext, lockPlacements);
 
     // Otherwise, update the state to keep playing
     int oldLines = gameState.lines;
@@ -57,7 +57,7 @@ int simulateGame(char const *inputFrameTimeline, int startingLevel, int maxLines
     
     if (PLAYOUT_LOGGING_ENABLED) {
       printBoard(gameState.board);
-      printf("Best placement: %c %d, %d\n\n", bestMove.piece.id, bestMove.rotationIndex, bestMove.x - SPAWN_X);
+      printf("Best placement: %c %d, %d\n\n", bestMove.piece->id, bestMove.rotationIndex, bestMove.x - SPAWN_X);
       printf("Score: %d, Lines: %d, Level: %d\n", score, gameState.lines, gameState.level);
     }
     

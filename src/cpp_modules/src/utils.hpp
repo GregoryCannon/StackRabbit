@@ -29,6 +29,9 @@
 #define TUCK_COL_ENCODED(r, x) ((r) * 10 + (x) + 2) // Encoding of a rotation/column pair, as a number 0-39
 #define UNREACHED 99
 
+// Converts a SimState to a LockPlacement (assuming no tuck)
+#define TO_LOCK_PLACEMENT(s) ({(s).x, (s).y, (s).rotationIndex, -1, '.'})
+
 /* ---------- LOGGING ----------- */
 
 void maybePrint(const char *format, ...) {

@@ -25,7 +25,7 @@ float analyzeHole(int board[20], int r, int c){
 
 float getNewSurfaceAndNumNewHoles(int surfaceArray[10],
                                   int board[20],
-                                  SimState lockPlacement,
+                                  LockPlacement lockPlacement,
                                   const EvalContext *evalContext,
                                   int isTuck,
                                   OUT int newSurface[10]) {
@@ -34,7 +34,7 @@ float getNewSurfaceAndNumNewHoles(int surfaceArray[10],
   }
 
   // Calculate the new overall surface by superimposing the piece's top surface on the existing surface
-  int *topSurface = lockPlacement.piece.topSurfaceByRotation[lockPlacement.rotationIndex];
+  int const *topSurface = lockPlacement.piece->topSurfaceByRotation[lockPlacement.rotationIndex];
   for (int i = 0; i < 4; i++) {
     if (topSurface[i] != -1) {
       newSurface[lockPlacement.x + i] = 20 - topSurface[i] - lockPlacement.y;
@@ -50,7 +50,7 @@ float getNewSurfaceAndNumNewHoles(int surfaceArray[10],
 
   // Check for new holes by comparing the bottom surface of the piece to the surface of the stack
   float numNewHoles = 0;
-  int *bottomSurface = lockPlacement.piece.bottomSurfaceByRotation[lockPlacement.rotationIndex];
+  int const *bottomSurface = lockPlacement.piece->bottomSurfaceByRotation[lockPlacement.rotationIndex];
   for (int i = 0; i < 4; i++) {
     if (bottomSurface[i] == -1) {
       continue;
@@ -133,14 +133,14 @@ float updateSurfaceAndHoles(int surfaceArray[10], int board[20], int excludeHole
  * Calculates the resulting board after placing a piece in a specified spot.
  * @returns the number of lines cleared
  */
-int getNewBoardAndLinesCleared(int board[20], SimState lockPlacement, OUT int newBoard[20]) {
+int getNewBoardAndLinesCleared(int board[20], LockPlacement lockPlacement, OUT int newBoard[20]) {
   int numLinesCleared = 0;
   // The rows below the piece are always the same
   for (int r = lockPlacement.y + 4; r < 20; r++) {
     newBoard[r] = board[r];
   }
   // Check the piece rows, bottom to top
-  int *pieceRows = lockPlacement.piece.rowsByRotation[lockPlacement.rotationIndex];
+  int const *pieceRows = lockPlacement.piece->rowsByRotation[lockPlacement.rotationIndex];
   for (int i = 3; i >= 0; i--) {
     // Don't add any minos off the board
     if (lockPlacement.y + i < 0) {
@@ -172,9 +172,9 @@ int getNewBoardAndLinesCleared(int board[20], SimState lockPlacement, OUT int ne
 }
 
 
-float adjustHoleCountAndBoardAfterTuck(int board[20], SimState lockPlacement){
+float adjustHoleCountAndBoardAfterTuck(int board[20], LockPlacement lockPlacement){
   int tuckCellsFilled = 0;
-  int *pieceRows = lockPlacement.piece.rowsByRotation[lockPlacement.rotationIndex];
+  int const *pieceRows = lockPlacement.piece->rowsByRotation[lockPlacement.rotationIndex];
   for (int i = 3; i >= 0; i--) {
     // Don't add any minos that are off the board
     if (lockPlacement.y + i < 0) {
@@ -198,10 +198,10 @@ float adjustHoleCountAndBoardAfterTuck(int board[20], SimState lockPlacement){
 
 
 /** Gets the game state after completing a given move */
-GameState advanceGameState(GameState gameState, SimState lockPlacement, const EvalContext *evalContext) {
+GameState advanceGameState(GameState gameState, LockPlacement lockPlacement, const EvalContext *evalContext) {
   GameState newState = {{}, {}, gameState.adjustedNumHoles, gameState.lines, gameState.level};
   float numNewHoles = 0;
-  int isTuck = lockPlacement.frameIndex == -1; // -1 frame index is an artifact of tucks
+  int isTuck = lockPlacement.tuckFrame == -1;
   // Post-process after tucks
   // This has to happen before getNewBoardAndLinesCleared, which updates the tuck cell bits
   if (isTuck) {

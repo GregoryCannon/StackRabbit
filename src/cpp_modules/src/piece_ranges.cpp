@@ -36,7 +36,7 @@ const PieceRangeContext getPieceRangeContext(char const *inputFrameTimeline, int
     context.maxAccessibleLeft5Surface[i] = 20;
     context.maxAccessibleRightSurface[i] = 20;
   }
-  int *bottomSurface = PIECE_T.bottomSurfaceByRotation[3];
+  int const *bottomSurface = PIECE_T.bottomSurfaceByRotation[3];
 
   for (int tapIndex = 0; tapIndex < 5; tapIndex++){
     // Superimpose the piece's top surface on the inaccessible surface

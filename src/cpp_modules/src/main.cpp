@@ -93,7 +93,7 @@ std::string mainProcess(char const *inputStr, int isDebug) {
     playSequence(startingGameState, pieceRangeContextLookup, debugSequence, /* playoutLength= */ 1);
     return "Debug playout complete.";
   }
-  std::string lookupMapEncoded = getLockValueLookupEncoded(startingGameState, curPiece, nextPiece, DEPTH_2_PRUNING_BREADTH, &context, pieceRangeContextLookup);
+  std::string lookupMapEncoded = getLockValueLookupEncoded(startingGameState, &curPiece, &nextPiece, DEPTH_2_PRUNING_BREADTH, &context, pieceRangeContextLookup);
   return lookupMapEncoded;
 }
 

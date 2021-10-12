@@ -7,11 +7,11 @@
 using namespace std;
 
 /** Selects the highest value lock placement using the fast eval function. */
-SimState pickLockPlacement(GameState gameState,
+LockPlacement pickLockPlacement(GameState gameState,
                            const EvalContext *evalContext,
-                           OUT vector<SimState> &lockPlacements) {
-  float bestSoFar = evalContext->weights.deathCoef;
-  SimState bestPlacement = {};
+                           OUT vector<LockPlacement> &lockPlacements) {
+  float bestSoFar = evalContext->weights.deathCoef - 1;
+  LockPlacement bestPlacement = {};
   for (auto lockPlacement : lockPlacements) {
     GameState newState = advanceGameState(gameState, lockPlacement, evalContext);
     float evalScore = fastEval(gameState, newState, lockPlacement, evalContext);
@@ -38,16 +38,16 @@ float playSequence(GameState gameState, const PieceRangeContext pieceRangeContex
     FastEvalWeights weights = getWeights(evalContext->aiMode);
 
     // Get the lock placements
-    std::vector<SimState> lockPlacements;
+    std::vector<LockPlacement> lockPlacements;
     Piece piece = PIECE_LIST[pieceSequence[i]];
-    moveSearch(gameState, piece, evalContext->pieceRangeContext.inputFrameTimeline, lockPlacements);
+    moveSearch(gameState, &piece, evalContext->pieceRangeContext.inputFrameTimeline, lockPlacements);
 
     if (lockPlacements.size() == 0) {
       return weights.deathCoef;
     }
 
     // Pick the best placement
-    SimState bestMove = pickLockPlacement(gameState, evalContext, lockPlacements);
+    LockPlacement bestMove = pickLockPlacement(gameState, evalContext, lockPlacements);
 
     // On the last move, do a final evaluation
     if (i == playoutLength - 1) {
@@ -56,7 +56,7 @@ float playSequence(GameState gameState, const PieceRangeContext pieceRangeContex
       if (PLAYOUT_LOGGING_ENABLED) {
         gameState = nextState;
         printBoard(gameState.board);
-        printf("Best placement: %c %d, %d\n\n", bestMove.piece.id, bestMove.rotationIndex, bestMove.x - SPAWN_X);
+        printf("Best placement: %c %d, %d\n\n", bestMove.piece->id, bestMove.rotationIndex, bestMove.x - SPAWN_X);
         printf("Cumulative reward: %01f\n", totalReward);
         printf("Final eval score: %01f\n", evalScore);
       }
@@ -70,7 +70,7 @@ float playSequence(GameState gameState, const PieceRangeContext pieceRangeContex
     totalReward += getLineClearFactor(gameState.lines - oldLines, rewardWeights, evalContext->shouldRewardLineClears);
     if (PLAYOUT_LOGGING_ENABLED) {
       printBoard(gameState.board);
-      printf("Best placement: %c %d, %d\n\n", bestMove.piece.id, bestMove.rotationIndex, bestMove.x - SPAWN_X);
+      printf("Best placement: %c %d, %d\n\n", bestMove.piece->id, bestMove.rotationIndex, bestMove.x - SPAWN_X);
     }
   }
   return -1; // Doesn't reach here, always returns from i == 9 case
