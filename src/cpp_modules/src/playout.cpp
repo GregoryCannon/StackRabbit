@@ -82,8 +82,7 @@ float getPlayoutScore(GameState gameState, const PieceRangeContext pieceRangeCon
     return 0;
   }
 
-  int totalPlayouts = NUM_PLAYOUTS_LONG + NUM_PLAYOUTS_SHORT;
-  int offset = offsetIndex * (totalPlayouts / 7 + 1); // Index into the sequences in batches, with batch size equal to the total number of playouts
+  int offset = offsetIndex * 1000; // Index into the sequences in batches, with batch size equal to the total number of playouts
 
   float longPlayoutScore = 0;
   for (int i = 0; i < NUM_PLAYOUTS_LONG; i++) {
@@ -93,7 +92,7 @@ float getPlayoutScore(GameState gameState, const PieceRangeContext pieceRangeCon
     longPlayoutScore += playoutScore;
   }
   // printf("(A) longPlayoutScore %f \n", longPlayoutScore);
-  
+
   float shortPlayoutScore = 0;
   for (int i = 0; i < NUM_PLAYOUTS_SHORT; i++) {
     // Do one playout
@@ -103,7 +102,37 @@ float getPlayoutScore(GameState gameState, const PieceRangeContext pieceRangeCon
   }
   // printf("    shortPlayoutScore %f \n", shortPlayoutScore);
 
-  
+
   return (NUM_PLAYOUTS_SHORT == 0 ? 0 : (shortPlayoutScore / NUM_PLAYOUTS_SHORT)) +
          (NUM_PLAYOUTS_LONG == 0 ? 0 : (longPlayoutScore / NUM_PLAYOUTS_LONG));
 }
+
+
+
+
+/*
+ Unused code block for time-based playouts
+
+#include <iostream>
+using namespace std::chrono;
+
+
+int numPlayoutsShort = 0;
+high_resolution_clock::time_point t1 = high_resolution_clock::now();
+for (int i = 0; i < 1000; i++) {
+  // Do one playout
+  const int *pieceSequence = canonicalPieceSequences + (offset + i) * SEQUENCE_LENGTH;  // Index into the mega array of piece sequences;
+  float playoutScore = playSequence(gameState, pieceRangeContextLookup, pieceSequence, PLAYOUT_LENGTH_SHORT);
+  shortPlayoutScore += playoutScore;
+  numPlayoutsShort += 1;
+
+  // Check the elapsed time
+  high_resolution_clock::time_point t2 = high_resolution_clock::now();
+  duration<double, std::milli> time_span = t2 - t1;
+
+  if (time_span.count() > PLAYOUT_TIME_LIMIT_MS) {
+    break;
+  }
+}
+// printf("    num playouts %d \n", numPlayoutsShort);
+*/
