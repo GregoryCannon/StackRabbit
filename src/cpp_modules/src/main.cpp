@@ -20,8 +20,6 @@
 #include "high_level_search.cpp"
 // #include "../data/ranks_output.cpp"
 
-#define USE_RANDOM_SEQUENCE false
-
 std::string mainProcess(char const *inputStr, int isDebug) {
   maybePrint("Input string %s\n", inputStr);
 

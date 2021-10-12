@@ -17,16 +17,21 @@ std::string encodeLockPosition(LockLocation lockLocation){
 /** Calculates the valuation of every possible terminal position for a given piece on a given board, and stores it in a map. */
 std::string getLockValueLookupEncoded(GameState gameState, Piece firstPiece, Piece secondPiece, int keepTopN, const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3]){
   unordered_map<string, float> lockValueMap;
+  unordered_map<string, int> lockValueRepeatMap;
+  int numSorted = keepTopN * 2;
 
   // Get the list of evaluated possibilities
   list<Depth2Possibility> possibilityList;
-  searchDepth2(gameState, firstPiece, secondPiece, keepTopN, evalContext, possibilityList);
+  searchDepth2(gameState, firstPiece, secondPiece, numSorted, evalContext, possibilityList);
 
   // Perform playouts on the promising possibilities
   int i = 0;
+  int numPlayedOut = 0;
   for (Depth2Possibility const& possibility : possibilityList) {
     string lockPosEncoded = encodeLockPosition(possibility.firstPlacement);
-    float overallScore = MAP_OFFSET + (i < keepTopN
+    // Cap the number of times a lock position can be repeated (despite differing second placements)
+    int shouldPlayout = i < numSorted && numPlayedOut < keepTopN && lockValueRepeatMap[lockPosEncoded] < 3;
+    float overallScore = MAP_OFFSET + (shouldPlayout
       ? possibility.immediateReward + getPlayoutScore(possibility.resultingState, pieceRangeContextLookup, secondPiece.index)
       : possibility.immediateReward + possibility.evalScore + UNEXPLORED_PENALTY);
     if (overallScore > lockValueMap[lockPosEncoded]) {
@@ -34,8 +39,12 @@ std::string getLockValueLookupEncoded(GameState gameState, Piece firstPiece, Pie
         printf("Adding to map: %s %f (%f + %f)\n", lockPosEncoded.c_str(), overallScore - MAP_OFFSET, possibility.immediateReward, overallScore - possibility.immediateReward - MAP_OFFSET);
       }
       lockValueMap[lockPosEncoded] = overallScore;
+      lockValueRepeatMap[lockPosEncoded] += 1;
     }
     i++;
+    if (shouldPlayout) {
+      numPlayedOut++;
+    }
   }
 
   // Encode lookup to JSON
