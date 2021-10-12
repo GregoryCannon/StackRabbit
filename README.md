@@ -11,5 +11,5 @@ Due to the logistics of playing NES Tetris, there are two different clients for 
 
 Then there are two components of the backend:
 
-- `server` contains the primary server, written in Node.js. It handles the request parsing, and the delegation to worker threads. It also contains lots of AI code (that's slowly becoming deprecated), since the initial implmentation was entirely in JS (oops).
-- `cpp_modules` contains modules that perform the core AI computation at literally 100x the speed of the original JS implementation. I'm still working on expanding the modules' functionality and integrating them into main AI flow.
+- `server` contains the primary server, written in Node.js. It handles the request parsing, and the delegation to worker threads. It also contains lots of deprecated AI code, since the initial implmentation was entirely in JS (oops).
+- `cpp_modules` contains modules that perform the core AI computation at literally 100x the speed of the original JS implementation. The main flow involves a Node server thread sending a game state to the C++ module, which returns the value of each possible move as an encoded JSON map.
