@@ -37,7 +37,6 @@ int simulateGame(char const *inputFrameTimeline, int startingLevel, int maxLines
     // Figure out modes and eval context
     const EvalContext evalContextRaw = getEvalContext(gameState, pieceRangeContextLookup);
     const EvalContext *evalContext = &evalContextRaw;
-    FastEvalWeights weights = getWeights(evalContext->aiMode);
 
     // Get the lock placements
     std::vector<LockPlacement> lockPlacements;

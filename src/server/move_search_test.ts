@@ -265,6 +265,102 @@ function speedTest(x) {
 // for (let i = 0; i < 20; i++) {
 //   speedTest(4);
 // }
-tapRangeTest();
-lastMinuteRotationsTest();
-legalMovesTest();
+// tapRangeTest();
+// lastMinuteRotationsTest();
+// legalMovesTest();
+const testCases = [
+  [-5, 10, 3, 41],
+  [-2, 5, 0, 23],
+  [-1, 1, 2, 6],
+  [0, 10, 0, 43],
+  [0, 15, 3, 63],
+  [0, 9, 2, 39],
+  [2, 1, 1, 7],
+  [-3, 4, 2, 16],
+  [0, 9, 2, 39],
+  [-2, 12, 1, 51],
+  [-3, 6, 1, 26],
+  [-5, 6, 0, 24],
+  [1, 12, 3, 48],
+  [-3, 11, 2, 46],
+  [-2, 17, 3, 68],
+  [0, 2, 2, 10],
+  [-3, 4, 3, 18],
+  [3, 14, 1, 58],
+  [-4, 12, 0, 50],
+  [0, 8, 1, 33],
+  [-5, 11, 0, 45],
+  [-4, 16, 3, 67],
+  [3, 8, 2, 35],
+  [-1, 6, 2, 25],
+  [3, 15, 0, 63],
+  [0, 10, 0, 42],
+  [3, 12, 0, 50],
+  [-2, 10, 3, 42],
+  [0, 17, 2, 68],
+  [-4, 14, 3, 57],
+  [-4, 3, 0, 12],
+  [2, 3, 0, 12],
+  [-1, 13, 1, 53],
+  [1, 17, 3, 70],
+  [0, 12, 1, 48],
+  [-3, 17, 2, 70],
+  [-4, 1, 2, 4],
+  [-1, 13, 0, 55],
+  [-1, 4, 2, 18],
+  [0, 3, 3, 12],
+  [0, 0, 0, 0],
+  [1, 4, 2, 16],
+  [-4, 1, 1, 6],
+  [2, 8, 3, 33],
+  [0, 7, 3, 29],
+  [-4, 1, 1, 5],
+  [3, 5, 3, 23],
+  [-2, 8, 0, 33],
+  [0, 2, 1, 11],
+  [-2, 3, 3, 13],
+];
+
+function testSingleCase(testCase) {
+  const [xOffset, yOffset, rotation, framesElapsed] = testCase;
+  return getPossibleMoves(
+    getTestBoardWithHeight(3),
+    "T",
+    18,
+    xOffset,
+    yOffset,
+    framesElapsed,
+    "X...",
+    rotation,
+    false,
+    false
+  );
+}
+
+function testNumLegalAdjustments() {
+  let moveCounts = [];
+  for (const testcase of testCases) {
+    const possibilities = testSingleCase(testcase);
+    moveCounts.push(possibilities.length);
+    console.log(possibilities.length);
+  }
+  console.log(moveCounts);
+}
+
+function generateTestCases() {
+  let testCases = [];
+  for (let i = 0; i < 50; i++) {
+    let xOffset = Math.floor(Math.random() * 9) - 5;
+    let yOffset = Math.floor(Math.random() * 18);
+    let rotation = Math.floor(Math.random() * 4);
+    let framesElapsed = yOffset * 4 + Math.floor(Math.random() * 4);
+    testCases.push([xOffset, yOffset, rotation, framesElapsed]);
+  }
+  console.log(testCases);
+}
+
+// generateTestCases();
+testNumLegalAdjustments();
+// for (const poss of testSingleCase([-5, 10, 3, 41])) {
+//   console.log(poss.placement);
+// }

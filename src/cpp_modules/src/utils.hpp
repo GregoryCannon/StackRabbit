@@ -32,10 +32,22 @@
 // Converts a SimState to a LockPlacement (assuming no tuck)
 #define TO_LOCK_PLACEMENT(s) ({(s).x, (s).y, (s).rotationIndex, -1, '.'})
 
+#define MOD_4(x) ((x) & 3)
+
 /* ---------- LOGGING ----------- */
 
 void maybePrint(const char *format, ...) {
   if (!LOGGING_ENABLED) {
+    return;
+  }
+  va_list args;
+  va_start(args, format);
+  vprintf(format, args);
+  va_end(args);
+}
+
+void debugPrint(const char *format, ...) {
+  if (!MOVE_SEARCH_DEBUG_LOGGING) {
     return;
   }
   va_list args;
