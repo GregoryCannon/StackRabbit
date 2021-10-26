@@ -7,6 +7,7 @@
 #include <string.h>
 #include <unordered_set>
 #include <vector>
+#include "utils.hpp"
 using namespace std;
 
 #define INITIAL_X 3
@@ -52,7 +53,7 @@ int rotateTowardsGoal(int curRotation, int goalRotation) {
     return goalRotation;
   }
   // Otherwise, it does a right rotation whether or not that gets to the goal
-  return curRotation + 1;
+  return MOD_4(curRotation + 1);
 }
 
 /**
@@ -69,6 +70,7 @@ int exploreHorizontally(int board[20],
                         vector<SimState> &legalPlacements,
                         int availableTuckCols[40]) {
   int rangeCurrent = 0;
+  debugPrint("Exploring horizontally, inc=%d maxmin=%d goalRot=%d\n", shiftIncrement, maxOrMinX, goalRotationIndex);
 
   // Loop through hypothetical frames
   while (simState.x != maxOrMinX || simState.rotationIndex != goalRotationIndex) {
@@ -84,7 +86,7 @@ int exploreHorizontally(int board[20],
       if (simState.x != maxOrMinX) {
         if (collision(
               board, simState.piece, simState.x + shiftIncrement, simState.y, simState.rotationIndex)) {
-          // printf("Shift collision at x=%d\n", simState.x - INITIAL_X);
+          debugPrint("Shift collision at xOff=%d\n", simState.x - INITIAL_X);
           return rangeCurrent;
         }
         simState.x += shiftIncrement;
@@ -94,13 +96,17 @@ int exploreHorizontally(int board[20],
       if (simState.rotationIndex != goalRotationIndex) {
         int rotationAfter = rotateTowardsGoal(simState.rotationIndex, goalRotationIndex);
         if (collision(board, simState.piece, simState.x, simState.y, rotationAfter)) {
-          // printf("Rotation collision at x=%d\n", simState.x - INITIAL_X);
+          if (MOVE_SEARCH_DEBUG_LOGGING){
+            printf("Rotation collision at x=%d, rot=%d\n", simState.x - INITIAL_X, rotationAfter);
+            // printBoardWithPiece(board, *(simState.piece), simState.x, simState.y, rotationAfter);
+          }
           return rangeCurrent;
         }
         simState.rotationIndex = rotationAfter;
       }
 
       // If both succeeded, extend the range
+      debugPrint("Extending range, current xOff= %d\n", simState.x - INITIAL_X);
       rangeCurrent = simState.x;
       // ...and register a new legal placement if we were in the goal rotation
       if (simState.rotationIndex == goalRotationIndex) {
@@ -128,11 +134,13 @@ int exploreHorizontally(int board[20],
        so it's a moot point that the y value is different than usual.
      */
     if (foundNewPlacementThisFrame) {
-      // printf("Found legal placement: %d %d %d, frame=%d\n",
-      //        simState.rotationIndex,
-      //        simState.x - INITIAL_X,
-      //        simState.y,
-      //        simState.frameIndex);
+      if (MOVE_SEARCH_DEBUG_LOGGING){
+        printf("Found legal placement: rot=%d xOff=%d y=%d, frame=%d\n",
+               simState.rotationIndex,
+               simState.x - INITIAL_X,
+               simState.y,
+               simState.frameIndex);
+      }
       legalPlacements.push_back(simState);
     }
     if (didLockThisFrame) {
@@ -155,8 +163,11 @@ void explorePlacementsNearSpawn(int board[20],
                                 int gravity,
                                 vector<SimState> &legalPlacements,
                                 int availableTuckCols[40]) {
-  int rangeStart = goalRotationIndex == 2 ? -1 : 0;
-  int rangeEnd = goalRotationIndex == 2 ? 1 : 0;
+  int rotationDifference = abs(goalRotationIndex - simState.rotationIndex);
+  /* The goal placement is in the blind spot of the main algorithm if there are more rotations than shifts.
+   Therefore, for double rotations, the X could be anywhere from -1 to 1. For single rotations, they would always be in place. */
+  int rangeStart = rotationDifference == 2 ? -1 : 0;
+  int rangeEnd = rotationDifference == 2 ? 1 : 0;
 
   for (int xOffset = rangeStart; xOffset <= rangeEnd; xOffset++) {
     // Check if the placement is legal.
@@ -331,12 +342,17 @@ int moveSearchInternal(GameState gameState,
   for (int goalRotIndex = 0; goalRotIndex < 4; goalRotIndex++) {
     if (piece->rowsByRotation[goalRotIndex][0] == -1) {
       // Rotation doesn't exist on this piece
+      debugPrint("Rotation doesn't exist\n");
       continue;
     }
 
     // Check for immediate collision on spawn
     if (goalRotIndex == 0) {
       if (collision(gameState.board, piece, spawnState.x, spawnState.y, spawnState.rotationIndex)) {
+        if (MOVE_SEARCH_DEBUG_LOGGING) {
+          printf("Immediate collision\n");
+          printBoardWithPiece(gameState.board, PIECE_T, spawnState.x, spawnState.y, spawnState.rotationIndex);
+        }
         return 0;
       }
       // Otherwise the starting state is a legal placement
@@ -401,11 +417,11 @@ int adjustmentSearch(GameState gameState,
                      int framesAlreadyElapsed,
                      int arrWasReset,
                      OUT std::vector<LockPlacement> &lockPlacements){
-  SimState startState = {INITIAL_X + existingXOffset, piece->initialY + existingYOffset, /* rotationIndex= */ 0, /* frameIndex= */ 0, /* arrIndex= */ arrWasReset ? 0 : framesAlreadyElapsed, piece};
+  SimState startState = {INITIAL_X + existingXOffset, piece->initialY + existingYOffset, existingRotation, framesAlreadyElapsed, /* arrIndex= */ arrWasReset ? 0 : framesAlreadyElapsed, piece};
   return moveSearchInternal(gameState, startState, piece, inputFrameTimeline, lockPlacements);
 }
 
-/* ----------- TUCKS AND SPINS ----------- */
+/* ----------- TESTS ----------- */
 
 void testTuckSpots() {
   int testBoard[] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1016, 1008, 1020, 1022};
@@ -425,31 +441,74 @@ void testTuckSpots() {
         int shiftedPieceRow = SHIFTBY(PIECE_J.rowsByRotation[spot.orientation][y - pieceY], pieceX);
         newBoard[y] = newBoard[y] | shiftedPieceRow;
       }
-      printf("%d %d %d\n", spot.orientation, pieceX, pieceY);
-      printBoard(newBoard);
+      if (MOVE_SEARCH_DEBUG_LOGGING) {
+        printf("%d %d %d\n", spot.orientation, pieceX, pieceY);
+        printBoard(newBoard);
+      }
     }
   }
 }
 
-void testAdjustmentSearch(){
+/** A generated set of test cases for use in fuzz testing against the original Node.js movesearch. */
+int testCases[50][4] = {
+  { -5, 10, 3, 41 }, { -2, 5, 0, 23 },  { -1, 1, 2, 6 },
+  { 0, 10, 0, 43 },  { 0, 15, 3, 63 },  { 0, 9, 2, 39 },
+  { 2, 1, 1, 7 },    { -3, 4, 2, 16 },  { 0, 9, 2, 39 },
+  { -2, 12, 1, 51 }, { -3, 6, 1, 26 },  { -5, 6, 0, 24 },
+  { 1, 12, 3, 48 },  { -3, 11, 2, 46 }, { -2, 17, 3, 68 },
+  { 0, 2, 2, 10 },   { -3, 4, 3, 18 },  { 3, 14, 1, 58 },
+  { -4, 12, 0, 50 }, { 0, 8, 1, 33 },   { -5, 11, 0, 45 },
+  { -4, 16, 3, 67 }, { 3, 8, 2, 35 },   { -1, 6, 2, 25 },
+  { 3, 15, 0, 63 },  { 0, 10, 0, 42 },  { 3, 12, 0, 50 },
+  { -2, 10, 3, 42 }, { 0, 17, 2, 68 },  { -4, 14, 3, 57 },
+  { -4, 3, 0, 12 },  { 2, 3, 0, 12 },   { -1, 13, 1, 53 },
+  { 1, 17, 3, 70 },  { 0, 12, 1, 48 },  { -3, 17, 2, 70 },
+  { -4, 1, 2, 4 },   { -1, 13, 0, 55 }, { -1, 4, 2, 18 },
+  { 0, 3, 3, 12 },   { 0, 0, 0, 0 },    { 1, 4, 2, 16 },
+  { -4, 1, 1, 6 },   { 2, 8, 3, 33 },   { 0, 7, 3, 29 },
+  { -4, 1, 1, 5 },   { 3, 5, 3, 23 },   { -2, 8, 0, 33 },
+  { 0, 2, 1, 11 },   { -2, 3, 3, 13 }
+};
+
+
+int testAdjustmentSearch(int testCase[4]){
+  int xOffset = testCase[0];
+  int yOffset = testCase[1];
+  int rotation = testCase[2];
+  int framesElapsed = testCase[3];
+  int arrReset = false;
+
   GameState gameState = {
-    {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1016, 1016, 1020, 1022},
+    {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1022, 1022, 1022},
     /* surfaceArray= */ {},
     /* adjustedNumHoles= */ 0,
     /* lines= */ 0,
     /* level= */ 18
   };
   getSurfaceArray(gameState.board, gameState.surfaceArray);
-  printBoard(gameState.board);
-
-  std::vector<LockPlacement> lockPlacements;
-  printf("size %d\n", (int) lockPlacements.size());
-  // int count = moveSearch(gameState, PIECE_O, "X...", lockPlacements);
-  int adjCount = adjustmentSearch(gameState, &PIECE_T, "X...", /* xoffset=*/ 3, /* yOffset=*/ 10, /* rotation= */ 0, /* framesElapsed= */ 20, /* arrReset=*/ true, lockPlacements);
-  for (auto state : lockPlacements) {
-    printf("Found %d %d %d\n", state.x, state.y, state.rotationIndex);
-    printBoardWithPiece(gameState.board, PIECE_T, state.x, state.y, state.rotationIndex);
+  if (MOVE_SEARCH_DEBUG_LOGGING){
+    printBoardWithPiece(gameState.board, PIECE_T, SPAWN_X + xOffset, PIECE_T.initialY + yOffset, rotation);
   }
 
-  printf("Num moves: %d\n", adjCount);
+  std::vector<LockPlacement> lockPlacements;
+  int adjCount = adjustmentSearch(gameState, &PIECE_T, "X...", xOffset, yOffset, rotation, framesElapsed, arrReset, lockPlacements);
+  if (MOVE_SEARCH_DEBUG_LOGGING) {
+    for (auto state : lockPlacements) {
+      if (MOVE_SEARCH_DEBUG_LOGGING) {
+        printf("Found %d %d %d\n", state.x, state.y, state.rotationIndex);
+      }
+      printBoardWithPiece(gameState.board, PIECE_T, state.x, state.y, state.rotationIndex);
+    }
+  }
+
+  return adjCount;
+}
+
+void testAdjustments(){
+  for (int i = 0; i < 50; i++){
+    printf("\n%d %d %d %d\n", testCases[i][0], testCases[i][1], testCases[i][2], testCases[i][3]);
+    printf("%d\n", testAdjustmentSearch(testCases[i]));
+  }
+  // int singleTestCase[4] = {2, 8, 3, 33};
+  // printf("\n\n\n%d\n", testAdjustmentSearch(singleTestCase));
 }
