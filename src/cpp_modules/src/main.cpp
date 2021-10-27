@@ -21,7 +21,7 @@
 #include "piece_rng.cpp"
 // #include "../data/ranks_output.cpp"
 
-std::string mainProcess(char const *inputStr, int isDebug) {
+std::string mainProcess(char const *inputStr, RequestType requestType) {
   maybePrint("Input string %s\n", inputStr);
 
   // Init empty data structures
@@ -88,13 +88,24 @@ std::string mainProcess(char const *inputStr, int isDebug) {
     printBoardBits(startingGameState.board);
   }
 
-  if (isDebug) {
+  // Take the specified action on the input based on the request type
+  switch (requestType) {
+  case GET_LOCK_VALUE_LOOKUP: {
+    return getLockValueLookupEncoded(startingGameState, &curPiece, &nextPiece, DEPTH_2_PRUNING_BREADTH, &context, pieceRangeContextLookup);
+  }
+
+  case PLAY_MOVE_NO_NEXT_BOX: {
     int debugSequence[SEQUENCE_LENGTH] = {curPiece.index};
     playSequence(startingGameState, pieceRangeContextLookup, debugSequence, /* playoutLength= */ 1);
     return "Debug playout complete.";
+    // LockPlacement bestMove = playOneMove(startingGameState, pieceRangeContextLookup, curPiece, /* nextPiece */ NULL, /* playoutLength= */ 0);
+    // return "";
   }
-  std::string lookupMapEncoded = getLockValueLookupEncoded(startingGameState, &curPiece, &nextPiece, DEPTH_2_PRUNING_BREADTH, &context, pieceRangeContextLookup);
-  return lookupMapEncoded;
+
+  default: {
+    return "Unknown request";
+  }
+  }
 }
 
 // int main(){
