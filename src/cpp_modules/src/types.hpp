@@ -5,6 +5,12 @@
 #undef max
 #undef min
 
+enum RequestType {
+  GET_LOCK_VALUE_LOOKUP,
+  PLAY_MOVE_NO_NEXT_BOX,
+  CHOOSE_MOVE_FROM_LOCK_VALUES
+};
+
 struct Piece {
   char id;
   int index;
@@ -127,9 +133,9 @@ struct EvalContext {
   int wellColumn; // Equals -1 if lining out
 };
 
-struct Depth2Possibility {
+struct Possibility {
   LockLocation firstPlacement;
-  LockLocation secondPlacement;
+  LockLocation secondPlacement; // Can be null if it's actually depth 1
   GameState resultingState;
   float evalScore;
   float immediateReward;

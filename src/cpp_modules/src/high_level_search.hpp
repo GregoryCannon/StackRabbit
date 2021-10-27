@@ -6,7 +6,7 @@
 #include <list>
 #include <algorithm>
 
-int searchDepth2(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int keepTopN, const EvalContext *evalContext, OUT list<Depth2Possibility> &possibilityList);
+LockLocation playOneMove(GameState gameState, Piece *curPiece, Piece *nextPiece, const EvalContext *context, const PieceRangeContext pieceRangeContextLookup[3], int playoutLength);
 
 std::string getLockValueLookupEncoded(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int keepTopN, const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3]);
 
