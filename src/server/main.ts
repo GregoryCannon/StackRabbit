@@ -2,6 +2,7 @@ const evaluator = require("./evaluator");
 const aiModeManager = require("./ai_mode_manager");
 const boardHelper = require("./board_helper");
 const { SEARCH_BREADTH, modifyParamsForAiMode } = require("./params");
+import { evaluateBoard } from "./evaluator";
 import { getPossibleMoves } from "./move_search";
 import { EVALUATION_BREADTH, IS_DROUGHT_MODE, LINE_CAP } from "./params";
 import { getPieceProbability, getSequenceProbability } from "./piece_rng";
@@ -87,6 +88,28 @@ export function getSortedMoveList(
     );
     return [bestHypothetical, prunedConcrete];
   }
+}
+
+export function getBoardEvaluation(
+  searchState: SearchState,
+  initialAiParams: InitialAiParams,
+  paramMods: ParamMods,
+  inputFrameTimeline: string
+): number {
+  const [aiParams, aiMode] = preProcessAiParams(
+    initialAiParams,
+    searchState,
+    inputFrameTimeline,
+    paramMods
+  );
+  const [score, explanation] = evaluateBoard(
+    searchState.board,
+    searchState.level,
+    searchState.lines,
+    aiMode,
+    aiParams
+  );
+  return score as number;
 }
 
 export function preProcessAiParams(

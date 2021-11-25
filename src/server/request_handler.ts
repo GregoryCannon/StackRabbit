@@ -86,6 +86,9 @@ export class RequestHandler {
       case "sync-nnb":
         return [this.handleRequestSyncNoNextBox(requestArgs), 200];
 
+      case "eval":
+        return [this.handleRequestEvalNoNextBox(requestArgs), 200];
+
       case "precompute":
         return this._wrapAsync(() => this.handlePrecomputeRequest(requestArgs));
 
@@ -263,6 +266,26 @@ export class RequestHandler {
       return "No legal moves";
     }
     return formatPossibility(bestMove);
+  }
+
+  /**
+   * Synchronously evaluate a board, with no next box and no search.
+   * @returns {string} the API response
+   */
+  handleRequestEvalNoNextBox(requestArgs) {
+    console.time("EvalNoNextBox");
+    let [searchState, inputFrameTimeline] = this._parseArguments(requestArgs);
+
+    // Get the best move
+    const score = mainApp.getBoardEvaluation(
+      searchState,
+      params.getParams(),
+      params.getParamMods(),
+      inputFrameTimeline
+    );
+
+    console.timeEnd("EvalNoNextBox");
+    return score.toFixed(2) + "";
   }
 
   /**
