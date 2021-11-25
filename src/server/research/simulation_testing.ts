@@ -2,6 +2,7 @@ import * as child_process from "child_process";
 import { calculateTapHeight } from "../board_helper";
 import { parseBoard } from "../utils";
 import { processKillscreenResults } from "./killscreen_training";
+const fs = require("fs");
 
 // Specifies to the worker thread what type of simulation needs to be done
 const TestType = Object.freeze({
@@ -28,7 +29,7 @@ export const OPENER_TEST_BOARD = parseBoard(
   "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000011100000011110"
 );
 
-export const TRAINING_TIME_MINS = 2;
+export const TRAINING_TIME_MINS = 15;
 const NUM_THREADS = 8;
 
 /* ------------------------------
@@ -98,6 +99,7 @@ function digFitnessFunction(threadResults: Array<Array<SimulatedGameResult>>) {
 function defaultFitnessFunction(
   threadResults: Array<Array<SimulatedGameResult>>
 ) {
+  fs.appendFileSync("docs/scoreOutput.txt", "\n\n\n---------------------\n");
   let totalScore = 0;
   let totalLines = 0;
   let totalEarlyTopouts = 0;
@@ -110,6 +112,7 @@ function defaultFitnessFunction(
         totalEarlyTopouts++;
       }
       console.log(score);
+      fs.appendFileSync("docs/scoreOutput.txt", score + "\n");
     }
     numGames += result.length;
   }

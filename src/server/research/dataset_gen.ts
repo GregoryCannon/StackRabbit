@@ -7,24 +7,33 @@ const lookupStr = fs.readFileSync(
   "utf8"
 );
 
+/**
+ * Generates a set of piece sequences that follow the NES RNG patterns.
+ *
+ * The sequences are grouped into batches of 1000 depending on the last known piece.
+ * The first 1000 assume no knowledge of the previous piece, then after that each batch
+ * of 1000 assumes a different last-known-piece (in the order IOLJTSZ).
+ *
+ * e.g. sequences 3000 - 3999 all assume the last known piece was an L
+ */
 function generateCanonicalPieceSequences() {
-  const filename = "docs/canonical_sequences.cc";
+  const filename = "docs/canonical_sequences.txt";
+  // fs.open(filename, "w");
   fs.truncateSync(filename, 0);
 
-  // This is outputted as a C++ file, so do some setup before starting the data
-  fs.appendFileSync(filename, "const int canonicalPieceSequences[] = {\n");
-
-  for (let i = 0; i < 1000; i++) {
+  for (let i = 0; i < 8000; i++) {
     let sequence = [];
-    let lastKnownPiece = PIECE_LIST[i % 7][2] as PieceId;
-    sequence.push(i % 7); // First piece loops around the possible 7 pieces
-    for (let j = 0; j < 9; j++) {
+    let lastKnownPiece =
+      i < 1000
+        ? (PIECE_LIST[i % 7][2] as PieceId)
+        : (PIECE_LIST[Math.floor(i / 1000) - 1][2] as PieceId);
+    // sequence.push(i % 7); // First piece loops around the possible 7 pieces
+    for (let j = 0; j < 20; j++) {
       lastKnownPiece = getRandomPiece(lastKnownPiece, /* isDrought= */ false);
       sequence.push(PIECE_LIST.findIndex((x) => x[2] == lastKnownPiece));
     }
     fs.appendFileSync(filename, "\t" + sequence.join(", ") + ",\n");
   }
-  fs.appendFileSync(filename, "};\n");
 }
 
 function generateRanksDataset() {
