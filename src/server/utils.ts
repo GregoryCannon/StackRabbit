@@ -479,6 +479,17 @@ export function mergeSortedArrays(arr1, arr2, compareFunc) {
   return merged;
 }
 
+export function boardEquals(a, b) {
+  for (let r = 0; r < NUM_ROW; r++) {
+    for (let c = 0; c < NUM_COLUMN; c++) {
+      if (a[r][c] !== b[r][c]) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
 export function cloneBoard(board) {
   const newBoard = [];
   for (let row = 0; row < NUM_ROW; row++) {

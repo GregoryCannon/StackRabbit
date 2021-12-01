@@ -5,6 +5,7 @@ import { rateSurface } from "./evaluator";
 import { DISABLE_LOGGING, LINE_CAP, SHOULD_LOG } from "./params";
 import { PreComputeManager } from "./precompute";
 import {
+  boardEquals,
   formatPossibility,
   getSurfaceArrayAndHoles,
   logBoard,
@@ -89,6 +90,12 @@ export class RequestHandler {
       case "eval":
         return [this.handleRequestEvalNoNextBox(requestArgs), 200];
 
+      case "rate-move-nnb":
+        return [this.handleRequestRateMoveNoNextBox(requestArgs), 200];
+
+      case "rate-move-nb":
+        return [this.handleRequestRateMoveWithNextBox(requestArgs), 200];
+
       case "precompute":
         return this._wrapAsync(() => this.handlePrecomputeRequest(requestArgs));
 
@@ -105,11 +112,14 @@ export class RequestHandler {
    * Parses and validates the inputs
    * @returns {Object} an object with all the parsed arguments
    */
-  _parseArguments(requestArgs): [SearchState, string] {
+  _parseArguments(
+    requestArgs,
+    twoBoards = false
+  ): [SearchState, string, Board] {
     // Parse and validate inputs
-    let [
-      requestType,
+    let requestType,
       boardStr,
+      secondBoardStr,
       currentPieceId,
       nextPieceId,
       level,
@@ -120,8 +130,42 @@ export class RequestHandler {
       framesAlreadyElapsed,
       reactionTime,
       inputFrameTimeline,
-      canFirstFrameShift,
-    ] = requestArgs;
+      canFirstFrameShift;
+    if (twoBoards) {
+      [
+        requestType,
+        boardStr,
+        secondBoardStr,
+        currentPieceId,
+        nextPieceId,
+        level,
+        lines,
+        existingXOffset,
+        existingYOffset,
+        existingRotation,
+        framesAlreadyElapsed,
+        reactionTime,
+        inputFrameTimeline,
+        canFirstFrameShift,
+      ] = requestArgs;
+    } else {
+      [
+        requestType,
+        boardStr,
+        currentPieceId,
+        nextPieceId,
+        level,
+        lines,
+        existingXOffset,
+        existingYOffset,
+        existingRotation,
+        framesAlreadyElapsed,
+        reactionTime,
+        inputFrameTimeline,
+        canFirstFrameShift,
+      ] = requestArgs;
+    }
+
     level = parseInt(level);
     lines = parseInt(lines);
     existingXOffset = parseInt(existingXOffset) || 0;
@@ -189,6 +233,7 @@ export class RequestHandler {
 
     // Decode the board
     const board = parseBoard(boardStr);
+    const secondBoard = secondBoardStr ? parseBoard(secondBoardStr) : [];
 
     if (!DISABLE_LOGGING) {
       logBoard(
@@ -221,6 +266,7 @@ export class RequestHandler {
         canFirstFrameShift,
       },
       inputFrameTimeline,
+      secondBoard,
     ];
   }
 
@@ -286,6 +332,129 @@ export class RequestHandler {
 
     console.timeEnd("EvalNoNextBox");
     return score.toFixed(2) + "";
+  }
+
+  /**
+   * Synchronously rate a move compared to the best move, with no next box.
+   * @returns {string} the API response
+   */
+  handleRequestRateMoveNoNextBox(requestArgs) {
+    console.time("RateMoveNoNextBox");
+    let [searchState, inputFrameTimeline, secondBoard] = this._parseArguments(
+      requestArgs,
+      /* twoBoards= */ true
+    );
+
+    // Get the best non-adjustment move
+    let _, bestMoves: Array<PossibilityChain>;
+    [bestMoves, _] = mainApp.getSortedMoveList(
+      searchState,
+      SHOULD_LOG,
+      params.getParams(),
+      params.getParamMods(),
+      inputFrameTimeline,
+      /* searchDepth= */ 1,
+      /* hypotheticalSearchDepth= */ 0
+    );
+    if (!bestMoves) {
+      return "No legal moves";
+    }
+
+    // Find the value of the second board passed in
+    let playerScore = null;
+    for (const move of bestMoves) {
+      if (boardEquals(move.boardAfter, secondBoard)) {
+        playerScore = move.totalValue;
+      }
+    }
+    let playerScoreFormatted =
+      playerScore == null ? "Unknown score" : playerScore.toFixed(2);
+
+    console.timeEnd("RateMoveNoNextBox");
+    return JSON.stringify({
+      playerMoveNoAdjustment: playerScoreFormatted,
+      bestMoveNoAdjustment: bestMoves[0].totalValue.toFixed(2),
+    });
+  }
+
+  /**
+   * Synchronously rate a move compared to the best move, with no next box.
+   * @returns {string} the API response
+   */
+  handleRequestRateMoveWithNextBox(requestArgs) {
+    console.time("RateMoveNoNextBox");
+    let [searchState, inputFrameTimeline, secondBoard] = this._parseArguments(
+      requestArgs,
+      /* twoBoards= */ true
+    );
+
+    // Get the best non-adjustment move
+    let _, bestNnbMoves: Array<PossibilityChain>;
+    [bestNnbMoves, _] = mainApp.getSortedMoveList(
+      searchState,
+      SHOULD_LOG,
+      params.getParams(),
+      params.getParamMods(),
+      inputFrameTimeline,
+      /* searchDepth= */ 1,
+      /* hypotheticalSearchDepth= */ 0
+    );
+    if (!bestNnbMoves) {
+      return "No legal moves";
+    }
+
+    // Find the value of the second board passed in
+    let playerScoreNoAdj = null;
+    for (const move of bestNnbMoves) {
+      if (boardEquals(move.boardAfter, secondBoard)) {
+        playerScoreNoAdj = move.totalValue;
+      }
+    }
+
+    // Get the best adjustment move
+    let prunedMoves, bestMoves: Array<PossibilityChain>;
+    [bestMoves, prunedMoves] = mainApp.getSortedMoveList(
+      searchState,
+      SHOULD_LOG,
+      params.getParams(),
+      params.getParamMods(),
+      inputFrameTimeline,
+      /* searchDepth= */ 2,
+      /* hypotheticalSearchDepth= */ 0
+    );
+    if (!bestMoves) {
+      return "No legal moves";
+    }
+    const bestScoreAfterAdj = bestMoves[0].totalValue;
+
+    // Find the value of the second board passed in
+    let playerScoreAfterAdj = null;
+    let foundPlayerMove = false;
+    // If it appears in the best moves list, we know it's the best adjustment
+    for (const move of bestMoves) {
+      if (boardEquals(move.boardAfter, secondBoard)) {
+        playerScoreAfterAdj = move.totalValue;
+        foundPlayerMove = true;
+      }
+    }
+    if (!foundPlayerMove) {
+      for (const move of prunedMoves) {
+        if (boardEquals(move.boardAfter, secondBoard)) {
+          playerScoreAfterAdj = Math.max(move.totalValue, playerScoreAfterAdj);
+        }
+      }
+    }
+
+    let formatScore = (score) =>
+      score == null ? "Unknown score" : score.toFixed(2);
+
+    console.timeEnd("RateMoveNoNextBox");
+    return JSON.stringify({
+      playerMoveNoAdjustment: formatScore(playerScoreNoAdj),
+      playerMoveAfterAdjustment: formatScore(playerScoreAfterAdj),
+      bestMoveNoAdjustment: bestNnbMoves[0].totalValue,
+      bestMoveAfterAdjustment: bestScoreAfterAdj,
+    });
   }
 
   /**
