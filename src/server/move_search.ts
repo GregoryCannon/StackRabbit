@@ -269,6 +269,7 @@ export function getPossibilityFromSimState(
       (simState.rotationIndex - simParams.existingRotation + numOrientations) %
         numOrientations,
       simState.x - simParams.initialX,
+      simState.y - simParams.initialY,
     ],
     inputSequence,
     surfaceArray,

@@ -6,32 +6,92 @@ export function engineLookup(
   aiParams: AiParams,
   paramMods: ParamMods,
   inputFrameTimeline: string
-): EngineResponseJson {
+): EngineMoveListWithAdjustments {
   const baseResult = getMoveData(
     searchState,
     aiParams,
     paramMods,
     inputFrameTimeline
   );
-  return formatEngineResult(
+  return formatEngineResultStyleA(
     baseResult,
     searchState.currentPieceId,
     searchState.nextPieceId
   );
 }
 
-function formatEngineResult(
+export function engineLookupTopMovesWithNextBox(
+  searchState: SearchState,
+  aiParams: AiParams,
+  paramMods: ParamMods,
+  inputFrameTimeline: string
+) {
+  const bestNbMoves = getSortedMoveList(
+    {
+      ...searchState,
+    },
+    /* shouldLog= */ false,
+    aiParams,
+    paramMods,
+    inputFrameTimeline,
+    /* searchDepth= */ 2,
+    /* hypotheticalSearchDepth= */ 1
+  )[0];
+
+  return bestNbMoves.map((move) => [
+    getMinimallyFormattedMove(move),
+    getMinimallyFormattedMove(move.innerPossibility),
+  ]);
+}
+
+export function engineLookupTopMovesListNoNextBox(
+  searchState: SearchState,
+  aiParams: AiParams,
+  paramMods: ParamMods,
+  inputFrameTimeline: string
+) {
+  const bestNnbMoves = getSortedMoveList(
+    {
+      ...searchState,
+    },
+    /* shouldLog= */ false,
+    aiParams,
+    paramMods,
+    inputFrameTimeline,
+    /* searchDepth= */ 1,
+    /* hypotheticalSearchDepth= */ 1
+  )[0];
+  return bestNnbMoves.map(getMinimallyFormattedMove);
+}
+
+/* ---------- Move formatting ----------- */
+
+function getMinimallyFormattedMove(move: PossibilityChain) {
+  return {
+    placement: move.placement,
+    isSpecialMove: move.inputCost !== 0,
+    totalValue: move.totalValue.toFixed(2),
+  };
+}
+
+/** Formats the output of an engine calculation, in accordance with "Style A" aka. the way engine moves are shown in TetrisTrainer. */
+function formatEngineResultStyleA(
   engineResult: EngineResult,
   curPiece: PieceId,
   nextPiece: PieceId
-): EngineResponseJson {
+): EngineMoveListWithAdjustments {
   return engineResult.map((mainMove) => {
     const [possibility, adjustmentList] = mainMove;
-    if (adjustmentList.length > 0){
-      console.log("LINES", possibility.hypotheticalLines.length, adjustmentList[0].hypotheticalLines);
+    if (adjustmentList.length > 0) {
+      console.log(
+        "LINES",
+        possibility.hypotheticalLines.length,
+        adjustmentList[0].hypotheticalLines
+      );
     }
     return {
       piece: curPiece,
+      placement: possibility.placement,
       inputSequence: possibility.inputSequence,
       totalValue: possibility.totalValue,
       isSpecialMove: possibility.inputCost !== 0,
@@ -40,6 +100,7 @@ function formatEngineResult(
       hypotheticalLines: possibility.hypotheticalLines,
       adjustments: adjustmentList.map((adjPos: PossibilityChain) => ({
         piece: curPiece,
+        placement: adjPos.placement,
         inputSequence: adjPos.inputSequence,
         totalValue: adjPos.totalValue,
         evalScore: adjPos.innerPossibility.evalScore,
@@ -49,12 +110,14 @@ function formatEngineResult(
         followUp: adjPos.innerPossibility
           ? {
               piece: nextPiece,
+              placement: adjPos.innerPossibility.placement,
               inputSequence: adjPos.innerPossibility.inputSequence,
               isSpecialMove: adjPos.innerPossibility.inputCost !== 0,
               totalValue: adjPos.innerPossibility.totalValue,
             }
           : {
               piece: nextPiece,
+              placement: null,
               inputSequence: "",
               isSpecialMove: false,
               totalValue: Number.MIN_SAFE_INTEGER,

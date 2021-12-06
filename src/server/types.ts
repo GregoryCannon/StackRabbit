@@ -1,6 +1,6 @@
 type Board = Array<Array<number>>;
 
-type Placement = [number, number]; // [numRightRotations, numShifts]
+type Placement = [number, number, number]; // [numRightRotations, numShifts]
 
 type PieceArray = Array<Array<number>>;
 
@@ -34,7 +34,14 @@ type EngineResult = Array<
 
 interface FormattedMove {
   piece: PieceId;
+  placement: Placement;
   inputSequence: string;
+  isSpecialMove: boolean;
+  totalValue: number;
+}
+
+interface MinimalFormattedMove {
+  placement: Placement;
   isSpecialMove: boolean;
   totalValue: number;
 }
@@ -43,11 +50,16 @@ interface FormattedAdjustment extends FormattedMove {
   followUp: FormattedMove;
 }
 
+interface MinimalFormattedAdjustment extends MinimalFormattedMove {
+  followUp: MinimalFormattedMove;
+}
+
 interface FormattedInitialMove extends FormattedMove {
   adjustments: Array<FormattedAdjustment>;
 }
 
-type EngineResponseJson = Array<FormattedInitialMove>;
+type EngineTopMoveList = Array<FormattedMove>;
+type EngineMoveListWithAdjustments = Array<FormattedInitialMove>;
 
 /* ----------- Move Search-Related Types ------------ */
 
