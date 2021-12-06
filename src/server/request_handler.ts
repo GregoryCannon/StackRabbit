@@ -382,7 +382,7 @@ export class RequestHandler {
    * @returns {string} the API response
    */
   handleRequestRateMoveWithNextBox(requestArgs) {
-    console.time("RateMoveNoNextBox");
+    console.time("RateMoveWithNextBox");
     let [searchState, inputFrameTimeline, secondBoard] = this._parseArguments(
       requestArgs,
       /* twoBoards= */ true
@@ -428,32 +428,37 @@ export class RequestHandler {
     const bestScoreAfterAdj = bestMoves[0].totalValue;
 
     // Find the value of the second board passed in
-    let playerScoreAfterAdj = null;
+    let playerScoreAfterAdj = Number.MIN_SAFE_INTEGER;
     let foundPlayerMove = false;
     // If it appears in the best moves list, we know it's the best adjustment
     for (const move of bestMoves) {
       if (boardEquals(move.boardAfter, secondBoard)) {
         playerScoreAfterAdj = move.totalValue;
         foundPlayerMove = true;
+        break;
       }
     }
     if (!foundPlayerMove) {
       for (const move of prunedMoves) {
         if (boardEquals(move.boardAfter, secondBoard)) {
           playerScoreAfterAdj = Math.max(move.totalValue, playerScoreAfterAdj);
+          foundPlayerMove = true;
         }
       }
+    }
+    if (!foundPlayerMove) {
+      playerScoreAfterAdj = null;
     }
 
     let formatScore = (score) =>
       score == null ? "Unknown score" : score.toFixed(2);
 
-    console.timeEnd("RateMoveNoNextBox");
+    console.timeEnd("RateMoveWithNextBox");
     return JSON.stringify({
       playerMoveNoAdjustment: formatScore(playerScoreNoAdj),
       playerMoveAfterAdjustment: formatScore(playerScoreAfterAdj),
-      bestMoveNoAdjustment: bestNnbMoves[0].totalValue,
-      bestMoveAfterAdjustment: bestScoreAfterAdj,
+      bestMoveNoAdjustment: bestNnbMoves[0].totalValue.toFixed(2),
+      bestMoveAfterAdjustment: bestScoreAfterAdj.toFixed(2),
     });
   }
 
