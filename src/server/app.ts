@@ -2,7 +2,7 @@ import { PreComputeManager } from "./precompute";
 import { RequestHandler } from "./request_handler";
 import * as express from "express";
 
-const IS_DEPLOY = false;
+const IS_DEPLOY = process.env.DEPLOY;
 const TETRIS_TRAINER_URL = "https://gregorycannon.github.io";
 
 const port = process.env.PORT || 3000;
