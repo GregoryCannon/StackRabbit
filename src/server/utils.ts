@@ -386,6 +386,11 @@ export function getLevelAfterLineClears(level, lines, numLinesCleared) {
 }
 
 export function parseBoard(boardStr: string): Board {
+  if (boardStr.length !== 200) {
+    throw new Error(
+      "Invalid board, must be 200 characters in length (20 rows of 10, listed top to bottom). e.g. 00000000001000000001..."
+    );
+  }
   return boardStr
     .match(/.{1,10}/g) // Select groups of 10 characters
     .map((rowSerialized) => rowSerialized.split("").map((x) => parseInt(x)));

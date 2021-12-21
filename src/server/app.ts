@@ -26,7 +26,13 @@ function initExpressServer(requestHandler) {
     console.time("Full request");
 
     // Main processing
-    const [response, responseCode] = requestHandler.routeRequest(req);
+    let response, responseCode;
+    try {
+      [response, responseCode] = requestHandler.routeRequest(req);
+    } catch (err) {
+      responseCode = 500; // Internal Server Error
+      response = err.message;
+    }
 
     // Send response
     console.timeEnd("Full request");

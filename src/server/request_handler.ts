@@ -215,11 +215,12 @@ export class RequestHandler {
 
         case "inputFrameTimeline":
           for (const char of value) {
-            if (char !== "X" && char !== ".") {
+            if (char !== "X" && char !== "." && char !== "-") {
               throw new Error("Invalid input frame timeline: " + value);
             }
           }
-          resultInputFrameTimeline = value;
+          // Replace hyphens with dots so that timelines can optionally be represented as X--- instead of X...
+          resultInputFrameTimeline = value.replace(/-/g, ".");
           break;
 
         // These properties are pretty advanced, if you're using them you should know what you're doing
