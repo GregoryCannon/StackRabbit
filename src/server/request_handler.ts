@@ -40,8 +40,10 @@ export class RequestHandler {
   }
 
   routeRequest(req): [string, number] {
-    const requestArgs = req.url.split("/").slice(1);
-    const requestType = requestArgs[0];
+    let requestArgsFull = req.url.slice(1); // Remove initial slash
+    requestArgsFull = decodeURI(requestArgsFull); // Decode URL artifacts, e.g. %20
+    requestArgsFull = requestArgsFull.replace(/\s/g, ""); // Remove spaces
+    const [requestType, requestArgs] = requestArgsFull.split("?");
 
     switch (requestType) {
       case "ping":
@@ -128,162 +130,138 @@ export class RequestHandler {
    * Parses and validates the inputs
    * @returns {Object} an object with all the parsed arguments
    */
-  _parseArguments(
-    requestArgs,
-    twoBoards = false
-  ): [SearchState, string, Board] {
-    // Parse and validate inputs
-    let requestType,
-      boardStr,
-      secondBoardStr,
-      currentPieceId,
-      nextPieceId,
-      level,
-      lines,
-      existingXOffset,
-      existingYOffset,
-      existingRotation,
-      framesAlreadyElapsed,
-      reactionTime,
-      inputFrameTimeline,
-      canFirstFrameShift;
-    if (twoBoards) {
-      [
-        requestType,
-        boardStr,
-        secondBoardStr,
-        currentPieceId,
-        nextPieceId,
-        level,
-        lines,
-        existingXOffset,
-        existingYOffset,
-        existingRotation,
-        framesAlreadyElapsed,
-        reactionTime,
-        inputFrameTimeline,
-        canFirstFrameShift,
-      ] = requestArgs;
-    } else {
-      [
-        requestType,
-        boardStr,
-        currentPieceId,
-        nextPieceId,
-        level,
-        lines,
-        existingXOffset,
-        existingYOffset,
-        existingRotation,
-        framesAlreadyElapsed,
-        reactionTime,
-        inputFrameTimeline,
-        canFirstFrameShift,
-      ] = requestArgs;
-    }
+  _parseArguments(reqString: string): [SearchState, string, Board] {
+    // Get default values in the SearchState
+    // Anything set to 'undefined' is required to be provided in the URL args
+    const resultSearchState = {
+      board: undefined,
+      currentPieceId: undefined,
+      nextPieceId: null,
+      level: undefined,
+      lines: undefined,
+      existingXOffset: 0,
+      existingYOffset: 0,
+      existingRotation: 0,
+      reactionTime: 0,
+      framesAlreadyElapsed: 0,
+      canFirstFrameShift: false,
+    };
+    let resultInputFrameTimeline;
+    let resultSecondBoard = null;
 
-    level = parseInt(level);
-    lines = parseInt(lines);
-    existingXOffset = parseInt(existingXOffset) || 0;
-    existingYOffset = parseInt(existingYOffset) || 0;
-    framesAlreadyElapsed = parseInt(framesAlreadyElapsed) || 0;
-    reactionTime = parseInt(reactionTime) || 0;
-    existingRotation = parseInt(existingRotation) || 0;
-    canFirstFrameShift = canFirstFrameShift.toLowerCase() === "true";
+    // Query for non-default values
+    const pairs = reqString.split("&").map((x) => x.split("="));
 
-    // console.log({
-    //   boardStr,
-    //   currentPieceId,
-    //   nextPieceId,
-    //   level,
-    //   lines,
-    //   existingXOffset,
-    //   existingYOffset,
-    //   existingRotation,
-    //   reactionTime,
-    //   framesAlreadyElapsed,
-    //   inputFrameTimeline,
-    //   canFirstFrameShift,
-    // });
+    for (const [argName, value] of pairs) {
+      switch (argName) {
+        case "board":
+          resultSearchState.board = parseBoard(value);
+          break;
 
-    // Validate inputs
-    currentPieceId = currentPieceId.toUpperCase();
-    nextPieceId = nextPieceId.toUpperCase();
-    if (!["I", "O", "L", "J", "T", "S", "Z"].includes(currentPieceId)) {
-      throw new Error("Unknown current piece:" + currentPieceId);
-    }
-    if (!["I", "O", "L", "J", "T", "S", "Z", "NULL"].includes(nextPieceId)) {
-      throw new Error("Unknown next piece: '" + nextPieceId + "'");
-    }
-    if (level < 0) {
-      throw new Error("Illegal level: " + level);
-    }
-    if (lines === undefined || lines < 0) {
-      throw new Error("Illegal line count: " + lines);
-    }
-    if (existingRotation < 0 || existingRotation > 3) {
-      throw new Error("Illegal existing rotation: " + existingRotation);
-    }
-    if (level < 18 || level > 30) {
-      console.log("WARNING - Unusual level:", level);
-    }
-    if (
-      requestType !== "engine" &&
-      lines < 10 &&
-      level !== 18 &&
-      level !== 19 &&
-      level !== 29
-    ) {
-      throw new Error(
-        `Unsupported starting level: ${level}. Supported starts: 18, 19, 29`
-      );
-    }
-    for (const char of inputFrameTimeline) {
-      if (char !== "X" && char !== ".") {
-        throw new Error("Invalid input frame timeline: " + inputFrameTimeline);
+        case "secondBoard":
+          resultSecondBoard = parseBoard(value);
+          break;
+
+        case "currentPiece":
+          const curPieceId = value.toUpperCase();
+          if (!["I", "O", "L", "J", "T", "S", "Z"].includes(curPieceId)) {
+            throw new Error("Unknown current piece:" + curPieceId);
+          }
+          resultSearchState.currentPieceId = curPieceId as PieceId;
+          break;
+
+        case "nextPiece":
+          const nextPieceId = value.toUpperCase();
+          if (!["I", "O", "L", "J", "T", "S", "Z"].includes(nextPieceId)) {
+            throw new Error("Unknown next piece:" + nextPieceId);
+          }
+          resultSearchState.nextPieceId = nextPieceId as PieceId;
+          break;
+
+        case "level":
+          const level = parseInt(value);
+          if (isNaN(level) || level < 0) {
+            throw new Error("Illegal level: " + value);
+          }
+          if (level < 18) {
+            throw new Error(
+              "Currently only 18, 19, and 29 starts are supported by StackRabbit. Requested: " +
+                value
+            );
+          }
+          resultSearchState.level = level;
+          break;
+
+        case "lines":
+          const lines = parseInt(value);
+          if (isNaN(lines) || lines < 0) {
+            throw new Error("Illegal line count: " + value);
+          }
+          resultSearchState.lines = lines;
+          break;
+
+        case "reactionTime":
+          const reactionTime = parseInt(value);
+          if (isNaN(reactionTime) || reactionTime < 0) {
+            throw new Error("Illegal reaction time: " + value);
+          }
+          if (reactionTime > 60) {
+            throw new Error(
+              "Reaction time exceeds the maximum possible of 60 frames. Did you accidentally send it in millseconds?"
+            );
+          }
+          resultSearchState.reactionTime = reactionTime;
+          break;
+
+        case "inputFrameTimeline":
+          for (const char of value) {
+            if (char !== "X" && char !== ".") {
+              throw new Error("Invalid input frame timeline: " + value);
+            }
+          }
+          resultInputFrameTimeline = value;
+          break;
+
+        // These properties are pretty advanced, if you're using them you should know what you're doing
+        case "existingXOffset":
+          resultSearchState.existingXOffset = parseInt(value);
+          break;
+        case "existingYOffset":
+          resultSearchState.existingYOffset = parseInt(value);
+          break;
+        case "existingRotation":
+          resultSearchState.existingRotation = parseInt(value);
+          break;
+        case "existingFramesElapsed":
+          resultSearchState.framesAlreadyElapsed = parseInt(value);
+          break;
+        case "arrWasReset":
+          resultSearchState.canFirstFrameShift =
+            value === "true" || value === "TRUE" || value === "1";
+          break;
       }
     }
-    if (nextPieceId === "NULL") {
-      nextPieceId = null;
-    }
-
-    // Decode the board
-    const board = parseBoard(boardStr);
-    const secondBoard = secondBoardStr ? parseBoard(secondBoardStr) : [];
 
     if (!DISABLE_LOGGING) {
       logBoard(
         getBoardAndLinesClearedAfterPlacement(
-          board,
-          PIECE_LOOKUP[currentPieceId][0][existingRotation],
-          existingXOffset + 3,
-          existingYOffset + (currentPieceId === "I" ? -2 : -1)
+          resultSearchState.board,
+          PIECE_LOOKUP[resultSearchState.currentPieceId][0][
+            resultSearchState.existingRotation
+          ],
+          resultSearchState.existingXOffset + 3,
+          resultSearchState.existingYOffset +
+            (resultSearchState.currentPieceId === "I" ? -2 : -1)
         )[0]
       );
     }
 
     // Manually top out if past line cap
-    if (lines >= LINE_CAP) {
-      inputFrameTimeline = "."; // Manually top out
+    if (resultSearchState.lines >= LINE_CAP) {
+      resultInputFrameTimeline = "."; // Manually top out
     }
 
-    return [
-      {
-        board,
-        currentPieceId,
-        nextPieceId,
-        level,
-        lines,
-        existingXOffset,
-        existingYOffset,
-        existingRotation,
-        reactionTime,
-        framesAlreadyElapsed,
-        canFirstFrameShift,
-      },
-      inputFrameTimeline,
-      secondBoard,
-    ];
+    return [resultSearchState, resultInputFrameTimeline, resultSecondBoard];
   }
 
   _wrapAsync(func): [string, number] {
@@ -357,8 +335,7 @@ export class RequestHandler {
   handleRequestRateMoveNoNextBox(requestArgs, hypotheticalSearchDepth) {
     console.time("RateMoveNoNextBox");
     let [searchState, inputFrameTimeline, secondBoard] = this._parseArguments(
-      requestArgs,
-      /* twoBoards= */ true
+      requestArgs
     );
 
     // Get the best non-adjustment move
@@ -400,8 +377,7 @@ export class RequestHandler {
   handleRequestRateMoveWithNextBox(requestArgs, hypotheticalSearchDepth) {
     console.time("RateMoveWithNextBox");
     let [searchState, inputFrameTimeline, secondBoard] = this._parseArguments(
-      requestArgs,
-      /* twoBoards= */ true
+      requestArgs
     );
 
     // Get the best non-adjustment move
@@ -546,19 +522,15 @@ export class RequestHandler {
     );
   }
 
-  handleRankLookup(requestArgs: Array<string>) {
-    const [boardStr] = requestArgs;
-    // Decode the board
-    const board = boardStr
-      .match(/.{1,10}/g) // Select groups of 10 characters
-      .map((rowSerialized) => rowSerialized.split("").map((x) => parseInt(x)));
-    logBoard(board);
-    const surfaceArray = getSurfaceArrayAndHoles(board)[0];
+  handleRankLookup(requestArgs) {
+    let [searchState] = this._parseArguments(requestArgs);
+    logBoard(searchState.board);
+    const surfaceArray = getSurfaceArrayAndHoles(searchState.board)[0];
     console.log(surfaceArray);
     return rateSurface(surfaceArray);
   }
 
-  handleEngineLookup(requestArgs: Array<string>) {
+  handleEngineLookup(requestArgs) {
     let [searchState, inputFrameTimeline] = this._parseArguments(requestArgs);
 
     return JSON.stringify(
@@ -571,7 +543,7 @@ export class RequestHandler {
     );
   }
 
-  handleEngineLookupTopMovesNoNextBox(requestArgs: Array<string>) {
+  handleEngineLookupTopMovesNoNextBox(requestArgs) {
     let [searchState, inputFrameTimeline] = this._parseArguments(requestArgs);
 
     return JSON.stringify(
@@ -584,7 +556,7 @@ export class RequestHandler {
     );
   }
 
-  handleEngineLookupTopMovesWithNextBox(requestArgs: Array<string>) {
+  handleEngineLookupTopMovesWithNextBox(requestArgs) {
     let [searchState, inputFrameTimeline] = this._parseArguments(requestArgs);
 
     return JSON.stringify(
