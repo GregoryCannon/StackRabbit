@@ -101,10 +101,16 @@ export class RequestHandler {
         return [this.handleRequestEvalNoNextBox(requestArgs), 200];
 
       case "rate-move-nnb":
-        return [this.handleRequestRateMoveNoNextBox(requestArgs), 200];
+        return [this.handleRequestRateMoveNoNextBox(requestArgs, 0), 200];
+
+      case "rate-move-nnb-3":
+        return [this.handleRequestRateMoveNoNextBox(requestArgs, 1), 200];
 
       case "rate-move-nb":
-        return [this.handleRequestRateMoveWithNextBox(requestArgs), 200];
+        return [this.handleRequestRateMoveWithNextBox(requestArgs, 0), 200];
+
+      case "rate-move-nb-3":
+        return [this.handleRequestRateMoveWithNextBox(requestArgs, 1), 200];
 
       case "precompute":
         return this._wrapAsync(() => this.handlePrecomputeRequest(requestArgs));
@@ -348,7 +354,7 @@ export class RequestHandler {
    * Synchronously rate a move compared to the best move, with no next box.
    * @returns {string} the API response
    */
-  handleRequestRateMoveNoNextBox(requestArgs) {
+  handleRequestRateMoveNoNextBox(requestArgs, hypotheticalSearchDepth) {
     console.time("RateMoveNoNextBox");
     let [searchState, inputFrameTimeline, secondBoard] = this._parseArguments(
       requestArgs,
@@ -356,34 +362,34 @@ export class RequestHandler {
     );
 
     // Get the best non-adjustment move
-    let _, bestMoves: Array<PossibilityChain>;
-    [bestMoves, _] = mainApp.getSortedMoveList(
+    let prunedNnbMoves, bestNnbMoves: Array<PossibilityChain>;
+    [bestNnbMoves, prunedNnbMoves] = mainApp.getSortedMoveList(
       searchState,
       SHOULD_LOG,
       params.getParams(),
       params.getParamMods(),
       inputFrameTimeline,
       /* searchDepth= */ 1,
-      /* hypotheticalSearchDepth= */ 0
+      /* hypotheticalSearchDepth= */ hypotheticalSearchDepth
     );
-    if (!bestMoves) {
+    if (!bestNnbMoves) {
       return "No legal moves";
     }
 
     // Find the value of the second board passed in
-    let playerScore = null;
-    for (const move of bestMoves) {
-      if (boardEquals(move.boardAfter, secondBoard)) {
-        playerScore = move.totalValue;
-      }
-    }
+    let playerScore = this.lookupMoveValue(
+      secondBoard,
+      bestNnbMoves,
+      prunedNnbMoves
+    );
+
     let playerScoreFormatted =
       playerScore == null ? "Unknown score" : playerScore.toFixed(2);
 
     console.timeEnd("RateMoveNoNextBox");
     return JSON.stringify({
       playerMoveNoAdjustment: playerScoreFormatted,
-      bestMoveNoAdjustment: bestMoves[0].totalValue.toFixed(2),
+      bestMoveNoAdjustment: bestNnbMoves[0].totalValue.toFixed(2),
     });
   }
 
@@ -391,7 +397,7 @@ export class RequestHandler {
    * Synchronously rate a move compared to the best move, with no next box.
    * @returns {string} the API response
    */
-  handleRequestRateMoveWithNextBox(requestArgs) {
+  handleRequestRateMoveWithNextBox(requestArgs, hypotheticalSearchDepth) {
     console.time("RateMoveWithNextBox");
     let [searchState, inputFrameTimeline, secondBoard] = this._parseArguments(
       requestArgs,
@@ -399,66 +405,49 @@ export class RequestHandler {
     );
 
     // Get the best non-adjustment move
-    let _, bestNnbMoves: Array<PossibilityChain>;
-    [bestNnbMoves, _] = mainApp.getSortedMoveList(
+    let prunedNnbMoves, bestNnbMoves: Array<PossibilityChain>;
+    [bestNnbMoves, prunedNnbMoves] = mainApp.getSortedMoveList(
       searchState,
       SHOULD_LOG,
       params.getParams(),
       params.getParamMods(),
       inputFrameTimeline,
       /* searchDepth= */ 1,
-      /* hypotheticalSearchDepth= */ 0
+      /* hypotheticalSearchDepth= */ hypotheticalSearchDepth
     );
     if (!bestNnbMoves) {
       return "No legal moves";
     }
 
     // Find the value of the second board passed in
-    let playerScoreNoAdj = null;
-    for (const move of bestNnbMoves) {
-      if (boardEquals(move.boardAfter, secondBoard)) {
-        playerScoreNoAdj = move.totalValue;
-      }
-    }
+    let playerScoreNoAdj = this.lookupMoveValue(
+      secondBoard,
+      bestNnbMoves,
+      prunedNnbMoves
+    );
 
     // Get the best adjustment move
-    let prunedMoves, bestMoves: Array<PossibilityChain>;
-    [bestMoves, prunedMoves] = mainApp.getSortedMoveList(
+    let prunedNbMoves, bestNbMoves: Array<PossibilityChain>;
+    [bestNbMoves, prunedNbMoves] = mainApp.getSortedMoveList(
       searchState,
       SHOULD_LOG,
       params.getParams(),
       params.getParamMods(),
       inputFrameTimeline,
       /* searchDepth= */ 2,
-      /* hypotheticalSearchDepth= */ 0
+      /* hypotheticalSearchDepth= */ hypotheticalSearchDepth
     );
-    if (!bestMoves) {
+    if (!bestNbMoves) {
       return "No legal moves";
     }
-    const bestScoreAfterAdj = bestMoves[0].totalValue;
+    const bestScoreAfterAdj = bestNbMoves[0].totalValue;
 
     // Find the value of the second board passed in
-    let playerScoreAfterAdj = Number.MIN_SAFE_INTEGER;
-    let foundPlayerMove = false;
-    // If it appears in the best moves list, we know it's the best adjustment
-    for (const move of bestMoves) {
-      if (boardEquals(move.boardAfter, secondBoard)) {
-        playerScoreAfterAdj = move.totalValue;
-        foundPlayerMove = true;
-        break;
-      }
-    }
-    if (!foundPlayerMove) {
-      for (const move of prunedMoves) {
-        if (boardEquals(move.boardAfter, secondBoard)) {
-          playerScoreAfterAdj = Math.max(move.totalValue, playerScoreAfterAdj);
-          foundPlayerMove = true;
-        }
-      }
-    }
-    if (!foundPlayerMove) {
-      playerScoreAfterAdj = null;
-    }
+    let playerScoreAfterAdj = this.lookupMoveValue(
+      secondBoard,
+      bestNbMoves,
+      prunedNbMoves
+    );
 
     let formatScore = (score) =>
       score == null ? "Unknown score" : score.toFixed(2);
@@ -470,6 +459,41 @@ export class RequestHandler {
       bestMoveNoAdjustment: bestNnbMoves[0].totalValue.toFixed(2),
       bestMoveAfterAdjustment: bestScoreAfterAdj.toFixed(2),
     });
+  }
+
+  /** Gets the value of a move using two lists of possible options.
+   * @param targetBoard - the board of the player's actual move
+   * @param bestMoves - a list of the top N moves sorted best to worst
+   * @param prunedMoves - all moves rank N+1 or higher, in no particular order
+   */
+  lookupMoveValue(
+    targetBoard: Board,
+    bestMoves: Array<PossibilityChain>,
+    prunedMoves: Array<PossibilityChain>
+  ) {
+    let foundPlayerMove = false;
+    // If it appears in the best moves list, we know we're done
+    for (const move of bestMoves) {
+      if (boardEquals(move.boardAfter, targetBoard)) {
+        return move.totalValue;
+      }
+    }
+    // If we haven't found it so far, look through the whole list of pruned moves
+    if (!foundPlayerMove) {
+      let moveValue = Number.MIN_SAFE_INTEGER;
+      for (const move of prunedMoves) {
+        if (boardEquals(move.boardAfter, targetBoard)) {
+          // We do a max() and keep looping because we don't know if it will reappear later with better eval
+          moveValue = Math.max(move.totalValue, moveValue);
+          foundPlayerMove = true;
+        }
+      }
+      if (foundPlayerMove) {
+        return moveValue;
+      }
+    }
+    // If it doesn't appear, return null so the callers know to format the response differently
+    return null;
   }
 
   /**
