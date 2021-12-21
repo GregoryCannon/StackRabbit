@@ -66,11 +66,14 @@ export function engineLookupTopMovesListNoNextBox(
 
 /* ---------- Move formatting ----------- */
 
-function getMinimallyFormattedMove(move: PossibilityChain) {
+function getMinimallyFormattedMove(
+  move: PossibilityChain
+): MinimalFormattedMove {
   return {
     placement: move.placement,
     isSpecialMove: move.inputCost !== 0,
     totalValue: move.totalValue.toFixed(2),
+    hypotheticalLines: move.hypotheticalLines,
   };
 }
 

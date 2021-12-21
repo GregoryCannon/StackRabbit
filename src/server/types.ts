@@ -43,7 +43,8 @@ interface FormattedMove {
 interface MinimalFormattedMove {
   placement: Placement;
   isSpecialMove: boolean;
-  totalValue: number;
+  totalValue: string; // String so that it can be rounded to fixed decimal places
+  hypotheticalLines?: Array<HypotheticalLine>;
 }
 
 interface FormattedAdjustment extends FormattedMove {
