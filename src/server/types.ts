@@ -23,6 +23,23 @@ interface SimParams {
   canFirstFrameShift: boolean;
 }
 
+interface UrlArguments {
+  board: Board;
+  secondBoard?: Board;
+  currentPiece?: PieceId;
+  nextPiece?: PieceId;
+  level?: number;
+  lines?: number;
+  reactionTime?: number;
+  inputFrameTimeline?: string;
+  lookaheadDepth?: number;
+  arrWasReset?: boolean;
+  existingXOffset?: number;
+  existingYOffset?: number;
+  existingRotation?: number;
+  existingFramesElapsed?: number;
+}
+
 /* ----------- Engine Lookup Data Structures ----------- */
 
 type EngineResult = Array<

@@ -20,7 +20,29 @@ export function engineLookup(
   );
 }
 
-export function engineLookupTopMovesWithNextBox(
+export function engineLookupTopMoves(
+  searchState: SearchState,
+  aiParams: AiParams,
+  paramMods: ParamMods,
+  inputFrameTimeline: string
+) {
+  if (searchState.nextPieceId !== null) {
+    return engineLookupTopMovesWithNextBox(
+      searchState,
+      aiParams,
+      paramMods,
+      inputFrameTimeline
+    );
+  }
+  return engineLookupTopMovesListNoNextBox(
+    searchState,
+    aiParams,
+    paramMods,
+    inputFrameTimeline
+  );
+}
+
+function engineLookupTopMovesWithNextBox(
   searchState: SearchState,
   aiParams: AiParams,
   paramMods: ParamMods,
@@ -44,7 +66,7 @@ export function engineLookupTopMovesWithNextBox(
   ]);
 }
 
-export function engineLookupTopMovesListNoNextBox(
+function engineLookupTopMovesListNoNextBox(
   searchState: SearchState,
   aiParams: AiParams,
   paramMods: ParamMods,

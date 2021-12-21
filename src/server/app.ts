@@ -30,6 +30,7 @@ function initExpressServer(requestHandler) {
     try {
       [response, responseCode] = requestHandler.routeRequest(req);
     } catch (err) {
+      console.error(err);
       responseCode = 500; // Internal Server Error
       response = err.message;
     }
