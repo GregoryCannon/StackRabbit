@@ -81,7 +81,7 @@ float getAverageHeightFactor(int avgHeight, float scareHeight) {
 float getBuiltOutLeftFactor(int surfaceArray[10], int board[20], float avgHeight, float scareHeight) {
   float heightRatio = avgHeight / max(3.0f, scareHeight);
   float heightDiff = 0.5 * (surfaceArray[0] - avgHeight) + 0.5 * (surfaceArray[0] - surfaceArray[1]);
-  
+
   // Handle low left cases first
   if (heightDiff < 0) {
     float softenedHeightRatio = 0.5f * (heightRatio + 1); // Average it with 1 to make it less extreme (faster than sqrt operation)
@@ -150,6 +150,21 @@ float getGuaranteedBurnsFactor(int board[20], int wellColumn) {
   return guaranteedBurns;
 }
 
+float getHoleWeightFactor(int board[20], int wellColumn) {
+  // Neither of these measures make sense in lineout mode, so don't calculate this factor
+  if (wellColumn == -1) {
+    return 0;
+  }
+  int holeWeight = 0;
+  for (int r = 0; r < 20; r++) {
+    if ((board[r] & HOLE_WEIGHT_BIT)) {
+      holeWeight++;
+    }
+  }
+  return holeWeight;
+}
+
+
 float getLikelyBurnsFactor(int surfaceArray[10], int wellColumn, int maxSafeCol9) {
   if (wellColumn != 9) {
     return 0;
@@ -172,13 +187,25 @@ float getLikelyBurnsFactor(int surfaceArray[10], int wellColumn, int maxSafeCol9
  * Assesses whether the surface allows for 5 taps.
  * @returns the multiple of the accessible left penalty that should be applied. That is, 0 if 5 taps are possible, or a float around 1.0 or higher (depending on how many lines would need to clear for the left to be accessible).
  */
-float getInaccessibleLeftFactor(int surfaceArray[10], int const maxAccessibleLeftSurface[10], int wellColumn){
+float getInaccessibleLeftFactor(int board[20], int surfaceArray[10], int const maxAccessibleLeftSurface[10], int wellColumn){
   float severity = 1.0f;
   // Check if the agent even needs to get a piece left first.
-  // If the left is built out higher than the max 5 tap height and also higher than col 9, then it's chilling.
-  int needs5Tap = wellColumn == 9 ? surfaceArray[0] < surfaceArray[8] : surfaceArray[0] < surfaceArray[1];
-  if (surfaceArray[0] > maxAccessibleLeftSurface[0] && !needs5Tap) {
-    severity = 0.2f;
+  int rowAboveCol1 = 19 - surfaceArray[0];
+  int needs5TapForDig = board[rowAboveCol1] & HOLE_WEIGHT_BIT;
+  int needs5TapForBurn = wellColumn == 9 && surfaceArray[0] <= surfaceArray[8];
+  int needs5Tap = needs5TapForDig || needs5TapForBurn;
+  
+  int hasHoleInLeft = false;
+  for (int r = rowAboveCol1 + 1; r < rowAboveCol1 + 4; r++){
+    if (board[r] & (HOLE_BIT(0) | HOLE_BIT(1) | HOLE_BIT(2))){
+      hasHoleInLeft = true;
+      break;
+    }
+  }
+  
+  // If the left is built out higher than the max 5 tap height, and there's no pressing need to get a piece there anyway, this factor doesn't matter
+  if (surfaceArray[0] > maxAccessibleLeftSurface[0] && surfaceArray[0] >= surfaceArray[1] && !needs5Tap && !hasHoleInLeft) {
+    return 0;
   }
 
   int highestAbove = 0;
@@ -224,7 +251,7 @@ float getUnableToBurnFactor(int board[20], int surfaceArray[10], float scareHeig
       col9Height--;
     }
   }
-  if (col9Height <= 0){
+  if (col9Height <= 0) {
     return 0;
   }
 
@@ -260,7 +287,7 @@ float getUnableToBurnFactor(int board[20], int surfaceArray[10], float scareHeig
     }
   }
 
-  float scareRatio = (float) col9Height / scareHeight;
+  float scareRatio = (float) col9Height / max(2.0f, scareHeight);
   float heightMultiplier = scareRatio * scareRatio * scareRatio;
 
   return totalPenalty * heightMultiplier;
@@ -295,9 +322,10 @@ float fastEval(GameState gameState,
   float likelyBurnsFactor = weights.burnCoef * getLikelyBurnsFactor(newState.surfaceArray, evalContext->wellColumn, evalContext->maxSafeCol9);
   float highCol9Factor = weights.col9Coef * getCol9Factor(newState.surfaceArray[8], evalContext->maxSafeCol9);
   float holeFactor = weights.holeCoef * newState.adjustedNumHoles;
+  float holeWeightFactor = abs(weights.holeWeightCoef) > FLOAT_EPSILON ? weights.holeWeightCoef * getHoleWeightFactor(newState.board, evalContext->wellColumn) : 0;
   float inaccessibleLeftFactor = isKillscreenLineout
               ? 0
-              : (weights.inaccessibleLeftCoef * getInaccessibleLeftFactor(newState.surfaceArray, evalContext->pieceRangeContext.maxAccessibleLeft5Surface, evalContext->wellColumn));
+              : (weights.inaccessibleLeftCoef * getInaccessibleLeftFactor(newState.board, newState.surfaceArray, evalContext->pieceRangeContext.maxAccessibleLeft5Surface, evalContext->wellColumn));
   float inaccessibleRightFactor = isKillscreenLineout
               ? 0
               : (weights.inaccessibleRightCoef * getInaccessibleRightFactor(newState.surfaceArray, evalContext->pieceRangeContext.maxAccessibleRightSurface));
@@ -313,7 +341,7 @@ float fastEval(GameState gameState,
       : 0;
   float unableToBurnFactor = weights.unableToBurnCoef * getUnableToBurnFactor(newState.board, newState.surfaceArray, evalContext->scareHeight);
 
-  float total = surfaceFactor + surfaceLeftFactor + avgHeightFactor + lineClearFactor + holeFactor + guaranteedBurnsFactor + likelyBurnsFactor + inaccessibleLeftFactor + inaccessibleRightFactor + coveredWellFactor + highCol9Factor + tetrisReadyFactor + builtOutLeftFactor + unableToBurnFactor;
+  float total = surfaceFactor + surfaceLeftFactor + avgHeightFactor + lineClearFactor + holeFactor + holeWeightFactor + guaranteedBurnsFactor + likelyBurnsFactor + inaccessibleLeftFactor + inaccessibleRightFactor + coveredWellFactor + highCol9Factor + tetrisReadyFactor + builtOutLeftFactor + unableToBurnFactor;
   total = max(weights.deathCoef, total); // Can't be worse than death
 
   // Logging
@@ -342,12 +370,13 @@ float fastEval(GameState gameState,
 
     printf("Numholes %f\n", newState.adjustedNumHoles);
     maybePrint(
-      "Surface %01f, LeftSurface %01f, AvgHeight %01f, LineClear %01f, Hole %01f, GuaranteedBurns %01f, LikelyBurns %01f, InaccLeft %01f, CoveredWell %01f, HighCol9 %01f, TetrisReady %01f, BuiltLeft %01f, UnableToBrn %01f,\t Total: %01f\n",
+      "Surface %01f, LeftSurface %01f, AvgHeight %01f, LineClear %01f, Hole %01f, HoleWeight %01f, GuaranteedBurns %01f, LikelyBurns %01f, InaccLeft %01f, CoveredWell %01f, HighCol9 %01f, TetrisReady %01f, BuiltLeft %01f, UnableToBrn %01f,\t Total: %01f\n",
       surfaceFactor,
       surfaceLeftFactor,
       avgHeightFactor,
       lineClearFactor,
       holeFactor,
+      holeWeightFactor,
       guaranteedBurnsFactor,
       likelyBurnsFactor,
       inaccessibleLeftFactor,

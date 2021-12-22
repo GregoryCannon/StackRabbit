@@ -71,8 +71,8 @@ const EvalContext getEvalContext(GameState gameState, const PieceRangeContext pi
     context.maxSafeCol9 = -1;
   } else {
     int lowerScareHeight = (PLAY_SAFE_PRE_KILLSCREEN && gameState.level < 29);
-    context.scareHeight = context.pieceRangeContext.max5TapHeight - (lowerScareHeight ? 4.5 : 3);
-    context.maxSafeCol9 = context.pieceRangeContext.max4TapHeight - (lowerScareHeight ? 7 : 5);
+    context.scareHeight = context.pieceRangeContext.max5TapHeight - (lowerScareHeight ? 4 : 3);
+    context.maxSafeCol9 = context.pieceRangeContext.max4TapHeight - (lowerScareHeight ? 6 : 5);
 
     context.scareHeight = context.scareHeight * 0.7 + 6 * 0.3;
     context.maxSafeCol9 = context.maxSafeCol9 * 0.7 + 8 * 0.3;

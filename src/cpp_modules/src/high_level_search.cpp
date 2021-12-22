@@ -14,8 +14,15 @@ std::string encodeLockPosition(LockLocation lockLocation){
   return string(buffer);
 }
 
-std::string formatLockPosition(LockLocation lockLocation){
+/**
+ * Processes a Possibility object and formats the result how the various agents would expect it.
+ * @returns a string of resulting data, in the format:
+ * {number of shifts | number of right rotations | string of inputs | resulting board | resulting level | resulting lines}
+ */
+std::string formatPossibility(Possibility possibility){
   // TODO: implement
+  // char buffer[300];
+  // sprintf(buffer, "%d")
   return "";
 }
 
@@ -51,7 +58,10 @@ int searchDepth1(GameState gameState, const Piece *firstPiece, int keepTopN, con
 }
 
 
-
+/**
+ * Performs a partial insertion sort such that the highest N elements of the list are guaranteed to be sorted and kept at the front of the list.
+ * The other elements can be anywhere.
+ */
 void partiallySortPossibilityList(list<Possibility> &possibilityList, int keepTopN, OUT list<Possibility> &sortedList){
   auto cutoffPossibility = possibilityList.begin(); // The node on the "cutoff" between being in the top N placements and not
   int size = 0; // Tracking manually is cheaper than doing the O(n) operation each iteration
@@ -97,17 +107,22 @@ void partiallySortPossibilityList(list<Possibility> &possibilityList, int keepTo
 /** Searches 2-ply from a starting state, and performs a fast eval on each of the resulting states. Maintains a sorted list of the top N possibilities, and adds all the rest onto the end in no specified order. */
 int searchDepth2(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int keepTopN, const EvalContext *evalContext, OUT list<Possibility> &possibilityList){
 
-
   // Get the placements of the first piece
   vector<LockPlacement> firstLockPlacements;
   moveSearch(gameState, firstPiece, evalContext->pieceRangeContext.inputFrameTimeline, firstLockPlacements);
   for (auto it = begin(firstLockPlacements); it != end(firstLockPlacements); ++it) {
     LockPlacement firstPlacement = *it;
+    maybePrint("\n\n\n\nNEW FIRST MOVE: rot=%d x=%d\n", firstPlacement.rotationIndex, firstPlacement.x);
+
     GameState afterFirstMove = advanceGameState(gameState, firstPlacement, evalContext);
     for (int i = 0; i < 19; i++) {
-      maybePrint("%d ", afterFirstMove.board[i] & ALL_TUCK_SETUP_BITS);
+      maybePrint("%d ", (afterFirstMove.board[i] & ALL_TUCK_SETUP_BITS) >> 20);
     }
-    maybePrint("%d end of post first move\n", afterFirstMove.board[19] & ALL_TUCK_SETUP_BITS);
+    maybePrint("%d end of post first move\n", (afterFirstMove.board[19] & ALL_TUCK_SETUP_BITS) >> 20);
+    if (LOGGING_ENABLED){
+      printBoard(afterFirstMove.board);
+    }
+    
     float firstMoveReward = getLineClearFactor(afterFirstMove.lines - gameState.lines, evalContext->weights, evalContext->shouldRewardLineClears);
 
     // Get the placements of the second piece
@@ -154,6 +169,7 @@ std::string getLockValueLookupEncoded(GameState gameState, const Piece *firstPie
   // Perform playouts on the promising possibilities
   int i = 0;
   int numPlayedOut = 0;
+  int unexploredPenalty = evalContext->weights.deathCoef * 1.5;
   for (Possibility const& possibility : sortedList) {
     string lockPosEncoded = encodeLockPosition(possibility.firstPlacement);
     // Cap the number of times a lock position can be repeated (despite differing second placements)
@@ -164,7 +180,7 @@ std::string getLockValueLookupEncoded(GameState gameState, const Piece *firstPie
 
     float overallScore = MAP_OFFSET + (shouldPlayout
       ? possibility.immediateReward + getPlayoutScore(possibility.resultingState, pieceRangeContextLookup, secondPiece->index)
-      : possibility.immediateReward + possibility.evalScore + UNEXPLORED_PENALTY);
+      : possibility.immediateReward + possibility.evalScore + unexploredPenalty);
     if (overallScore > lockValueMap[lockPosEncoded]) {
       if (PLAYOUT_LOGGING_ENABLED) {
         printf("Adding to map: %s %f (%f + %f)\n", lockPosEncoded.c_str(), overallScore - MAP_OFFSET, possibility.immediateReward, overallScore - possibility.immediateReward - MAP_OFFSET);

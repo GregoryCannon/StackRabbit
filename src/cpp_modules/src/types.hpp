@@ -79,7 +79,8 @@ enum AiMode {
   DIG,
   LINEOUT,
   NEAR_KILLSCREEN,
-  DIRTY_NEAR_KILLSCREEN
+  DIRTY_NEAR_KILLSCREEN,
+  PLAY_PERFECT
 };
 
 /**
@@ -94,6 +95,7 @@ struct FastEvalWeights {
   float deathCoef;
   float extremeGapCoef;
   float holeCoef;
+  float holeWeightCoef;
   float inaccessibleLeftCoef;
   float inaccessibleRightCoef;
   float tetrisCoef;
