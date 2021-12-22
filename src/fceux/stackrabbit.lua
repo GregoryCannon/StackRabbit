@@ -144,13 +144,15 @@ end
 
 -- Make a request that will kick off a longer calculation. Subsequent frames will ping the server again for the result.
 function requestAdjustmentAsync()
+  offsetXAtAdjustmentTime = 0
+  rotationAtAdjustmentTime = 0
+  canFirstFrameShiftAtAdjustmentTime = true
+  offsetYAtAdjustmentTime = 0
   -- Format URL arguments
-  local requestStr = "http://localhost:3000/async-nb/" .. getEncodedBoard()
-  requestStr = requestStr .. "/" .. orientToPiece[pcur] .. "/" .. orientToPiece[pnext] .. "/" .. level .. "/" .. numLines
-  requestStr = requestStr .. "/" .. offsetXAtAdjustmentTime .. "/" .. offsetYAtAdjustmentTime .. "/" .. rotationAtAdjustmentTime
-  requestStr = requestStr .. "/" .. REACTION_TIME_FRAMES .. "/0/" .. INPUT_TIMELINE .. "/" .. tostring(canFirstFrameShiftAtAdjustmentTime)
+  local reqStr = "http://localhost:3000/async-nb?board=" .. getEncodedBoard() .. "&currentPiece=" .. orientToPiece[pcur]
+  reqStr = reqStr .. "&nextPiece=" .. orientToPiece[pnext] .. "&level=" .. level .. "&lines=" .. numLines .. "&inputFrameTimeline=" .. INPUT_TIMELINE
 
-  local response = makeHttpRequest(requestStr)
+  local response = makeHttpRequest(reqStr)
   if response.code ~= 200 then
     error("Request not acknowledged by backend")
   end
@@ -167,12 +169,12 @@ function requestPrecompute()
     gameOver = true
     return
   end
-  local requestStr = "http://localhost:3000/precompute/" .. stateForNextPiece.board
-  local requestStr = requestStr .. "/" .. orientToPiece[pnext] .. "/null/" .. stateForNextPiece.level
-  local requestStr = requestStr .. "/" .. stateForNextPiece.lines .. "/0/0/0/0/"
-  local requestStr = requestStr .. REACTION_TIME_FRAMES .. "/" .. INPUT_TIMELINE .. "/false" -- use the 'framesAlreadyElapsed' param to communicate reaction time
 
-  local response = makeHttpRequest(requestStr)
+  local reqStr = "http://localhost:3000/precompute?board=" .. stateForNextPiece.board .. "&currentPiece=" .. orientToPiece[pnext]
+  reqStr = reqStr .. "&level=" .. stateForNextPiece.level .. "&lines=" .. numLines .. "&reactionTime="
+  reqStr = reqStr .. REACTION_TIME_FRAMES .. "&inputFrameTimeline=" .. INPUT_TIMELINE
+
+  local response = makeHttpRequest(reqStr)
   if response.code ~= 200 then
     error("Request not acknowledged by backend")
   end
@@ -333,10 +335,6 @@ function onFirstFrameOfNewPiece()
 
   -- If it's the first piece, make an 'adjustment' to do the initial placement
   if isFirstPiece then
-    offsetXAtAdjustmentTime = 0
-    rotationAtAdjustmentTime = 0
-    canFirstFrameShiftAtAdjustmentTime = true
-    offsetYAtAdjustmentTime = 0
     requestAdjustmentAsync()
   
   elseif not gameOver and waitingOnAsyncRequest then
