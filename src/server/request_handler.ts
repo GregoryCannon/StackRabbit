@@ -232,6 +232,7 @@ export class RequestHandler {
             );
           }
           result.lookaheadDepth = depth;
+          break;
 
         // These properties are pretty advanced, if you're using them you should know what you're doing
         case "existingXOffset":
@@ -262,6 +263,9 @@ export class RequestHandler {
           result.existingYOffset + (result.currentPiece === "I" ? -2 : -1)
         )[0]
       );
+      if (result.secondBoard) {
+        logBoard(result.secondBoard);
+      }
     }
 
     // Manually top out if past line cap
