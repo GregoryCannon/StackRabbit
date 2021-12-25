@@ -8,7 +8,7 @@ const int SCORE_REWARDS[] = {
   1200
 };
 
-int simulateGame(char const *inputFrameTimeline, int startingLevel, int maxLines){
+int simulateGame(char const *inputFrameTimeline, int startingLevel, int maxLines, int shouldAdjust, int reactionTime){
   // Init empty data structures
   GameState gameState = {
     /* board= */ {},
@@ -33,7 +33,7 @@ int simulateGame(char const *inputFrameTimeline, int startingLevel, int maxLines
     // Get pieces
     curPiece = nextPiece;
     nextPiece = getRandomPiece(curPiece);
-    
+
     // Figure out modes and eval context
     const EvalContext evalContextRaw = getEvalContext(gameState, pieceRangeContextLookup);
     const EvalContext *evalContext = &evalContextRaw;
@@ -49,18 +49,22 @@ int simulateGame(char const *inputFrameTimeline, int startingLevel, int maxLines
     // Pick the best placement
     LockPlacement bestMove = pickLockPlacement(gameState, evalContext, lockPlacements);
 
+//    if (shouldAdjust){
+//      predictSearchStateAtAdjustmentTime()
+//    }
+
     // Otherwise, update the state to keep playing
     int oldLines = gameState.lines;
     gameState = advanceGameState(gameState, bestMove, evalContext);
     score += SCORE_REWARDS[gameState.lines - oldLines] * gameState.level;
-    
+
     if (PLAYOUT_LOGGING_ENABLED) {
       printBoard(gameState.board);
       printf("Best placement: %c %d, %d\n\n", bestMove.piece->id, bestMove.rotationIndex, bestMove.x - SPAWN_X);
       printf("Score: %d, Lines: %d, Level: %d\n", score, gameState.lines, gameState.level);
     }
-    
-    if (maxLines > 0 && gameState.lines > maxLines){
+
+    if (maxLines > 0 && gameState.lines > maxLines) {
       break;
     }
   }
@@ -68,7 +72,7 @@ int simulateGame(char const *inputFrameTimeline, int startingLevel, int maxLines
 }
 
 void simulateGames(int numGames, char const *inputFrameTimeline, int startingLevel, int maxLines, int reactionTime, OUT std::vector<int> scores){
-  for (int i = 0; i < numGames; i++){
-    scores.push_back(simulateGame(inputFrameTimeline, startingLevel, maxLines));
+  for (int i = 0; i < numGames; i++) {
+    scores.push_back(simulateGame(inputFrameTimeline, startingLevel, maxLines, /* shouldAdjust= */ false, /* reactionTime */ 21));
   }
 }

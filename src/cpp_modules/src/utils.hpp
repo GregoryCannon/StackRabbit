@@ -188,6 +188,58 @@ int shouldPerformInputsThisFrame(int frameIndex, char const *inputFrameTimeline)
   return inputFrameTimeline[index] == 'X';
 }
 
+SimState predictStateAtAdjustmentTime(LockPlacement placement, char const *inputFrameTimeline, int gravity, int reactionTimeFrames){
+  // Figure out how many frames of input will have elapsed
+  // At the same time, calculate the Y value at adjustment time
+  int inputsPerformed = 0;
+  int adjTimeY = placement.piece->initialY;
+  for (int frame = 0; frame < reactionTimeFrames; frame++) {
+    if (shouldPerformInputsThisFrame(frame, inputFrameTimeline)) {
+      inputsPerformed++;
+    }
+    // Returns true every Nth frame, where N = gravity
+    if (frame % gravity == gravity - 1) {
+      adjTimeY++;
+    }
+  }
+  if (adjTimeY > placement.y) {
+    return {};
+  }
+
+  // Calculate the X position at adjustment time
+  int endXOffset = placement.x - SPAWN_X;
+  int shiftInputsNeeded = abs(endXOffset);
+  int shiftsPerformed = std::min(shiftInputsNeeded, inputsPerformed);
+  int adjTimeX = SPAWN_X + (endXOffset < 0 ? -1 : 1) * shiftsPerformed;
+
+  // Calculate the rotation at adjustment time
+  int adjTimeRot = 0;
+  int rotationInputsNeeded = placement.rotationIndex == 3 ? 1 : placement.rotationIndex;
+
+  // If there's enough time to do all rotations, it'll be at the final rotation
+  if (rotationInputsNeeded <= inputsPerformed) {
+    adjTimeRot = placement.rotationIndex;
+  }
+  // The only other cases are when there's 0 inputs performed, or when 1/2 right rotations are done.
+  // There would only ever be a single left rotation, so that doesn't need to be considered here.
+  else {
+    adjTimeRot = inputsPerformed;
+  }
+
+  // Check if ARR was reset
+  int arrWasReset = shiftInputsNeeded < inputsPerformed && rotationInputsNeeded < inputsPerformed;
+
+  return {
+           adjTimeX,
+           adjTimeY,
+           adjTimeRot,
+           reactionTimeFrames,
+           arrWasReset ? 0 : reactionTimeFrames,
+           placement.piece
+  };
+
+}
+
 template<typename T>
 T qualityRandom(T range_from, T range_to) {
   std::random_device rand_dev;

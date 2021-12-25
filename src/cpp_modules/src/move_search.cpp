@@ -74,7 +74,7 @@ int exploreHorizontally(int board[20],
 
   // Loop through hypothetical frames
   while (simState.x != maxOrMinX || simState.rotationIndex != goalRotationIndex) {
-    int isInputFrame = shouldPerformInputsThisFrame(simState.frameIndex, inputFrameTimeline);
+    int isInputFrame = shouldPerformInputsThisFrame(simState.arrIndex, inputFrameTimeline);
     int isGravityFrame =
       simState.frameIndex % gravity == gravity - 1;   // Returns true every Nth frame, where N = gravity
     // Event trackers to handle the ordering of a few edge cases (explained more below)
@@ -123,6 +123,7 @@ int exploreHorizontally(int board[20],
     }
 
     simState.frameIndex++;
+    simState.arrIndex++;
 
     /*
        This setup is done this way such that the simStates represent the state going into the next input,
