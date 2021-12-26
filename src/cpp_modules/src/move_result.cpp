@@ -5,7 +5,7 @@
  * Rates a hole from 0 to 1 based on how bad it is.
  * --Side effect-- marks the hole or tuck setup in the board data structure
  */
-float analyzeHole(int board[20], int r, int c){
+float analyzeHole(unsigned int board[20], int r, int c){
   // Check if it's a tuck setup
   if (
     (c >= 2 && ((board[r] >> (9-c)) & 7) == 0) ||   // left side tuck (2 cells of open space)
@@ -24,7 +24,7 @@ float analyzeHole(int board[20], int r, int c){
 
 
 float getNewSurfaceAndNumNewHoles(int surfaceArray[10],
-                                  int board[20],
+                                  unsigned int board[20],
                                   LockPlacement lockPlacement,
                                   const EvalContext *evalContext,
                                   int isTuck,
@@ -34,9 +34,9 @@ float getNewSurfaceAndNumNewHoles(int surfaceArray[10],
   }
 
   // Calculate the new overall surface by superimposing the piece's top surface on the existing surface
-  int const *topSurface = lockPlacement.piece->topSurfaceByRotation[lockPlacement.rotationIndex];
+  unsigned int const *topSurface = lockPlacement.piece->topSurfaceByRotation[lockPlacement.rotationIndex];
   for (int i = 0; i < 4; i++) {
-    if (topSurface[i] != -1) {
+    if (topSurface[i] != NONE) {
       newSurface[lockPlacement.x + i] = 20 - topSurface[i] - lockPlacement.y;
     }
   }
@@ -45,14 +45,17 @@ float getNewSurfaceAndNumNewHoles(int surfaceArray[10],
   if (isTuck){
     for (int i = 0; i < 10; i++){
       newSurface[i] = std::max(surfaceArray[i], newSurface[i]);
+      if (newSurface[i] > 20){
+        newSurface[i] = 20;
+      }
     }
   }
 
   // Check for new holes by comparing the bottom surface of the piece to the surface of the stack
   float numNewHoles = 0;
-  int const *bottomSurface = lockPlacement.piece->bottomSurfaceByRotation[lockPlacement.rotationIndex];
+  unsigned int const *bottomSurface = lockPlacement.piece->bottomSurfaceByRotation[lockPlacement.rotationIndex];
   for (int i = 0; i < 4; i++) {
-    if (bottomSurface[i] == -1) {
+    if (bottomSurface[i] == NONE) {
       continue;
     }
     // Maybe skip well holes
@@ -62,24 +65,30 @@ float getNewSurfaceAndNumNewHoles(int surfaceArray[10],
 
     // Loop through the cells between the bottom of the piece and the ground
     int c = lockPlacement.x + i;
-    const int highestCellInCol = 20 - surfaceArray[c];
+    const int highestRowInCol = 20 - surfaceArray[c];
     int holeWeightStartRow = -1; // Indicates that all rows above this row are weight on a hole
-    for (int r = (lockPlacement.y + bottomSurface[i]); r < highestCellInCol; r++) {
+    for (int r = (lockPlacement.y + bottomSurface[i]); r < highestRowInCol; r++) {
       float rating = analyzeHole(board, r, c);
-      if (std::abs(rating - TUCK_SETUP_HOLE_PROPORTION) < FLOAT_EPSILON) {
+      if (std::abs(rating - TUCK_SETUP_HOLE_PROPORTION) > FLOAT_EPSILON) { // If it's NOT a tuck setup
         holeWeightStartRow = r - 1;
       }
       numNewHoles += rating;
     }
     // If placing a piece on top of a row that's already weighing on a hole, then the new piece is adding weight to that
-    if (board[highestCellInCol] & HOLE_WEIGHT_BIT) {
-      holeWeightStartRow = highestCellInCol - 1;
+    if (board[highestRowInCol] & HOLE_WEIGHT_BIT) {
+      holeWeightStartRow = highestRowInCol - 1;
     }
     // Mark rows as needing to be cleared
     maybePrint("marking needToClear (column %d): start row = %d, surface = %d\n", c, holeWeightStartRow, 20 - newSurface[c]);
-    for (int r = holeWeightStartRow; r >= 20 - newSurface[c]; r--) {
-      if (!(board[r] & HOLE_BIT(c))) {
-        board[r] |= HOLE_WEIGHT_BIT;
+    if (holeWeightStartRow != -1){
+      for (int r = holeWeightStartRow; r >= 20 - newSurface[c]; r--) {
+        if (VARIABLE_RANGE_CHECKS_ENABLED && r < 0 || r >= 20){
+          printf("R value out of range %d %d\n", r, newSurface[c]);
+          throw std::invalid_argument( "r value out of range" );
+        }
+        if (!(board[r] & HOLE_BIT(c))) {
+          board[r] |= HOLE_WEIGHT_BIT;
+        }
       }
     }
   }
@@ -93,7 +102,7 @@ float getNewSurfaceAndNumNewHoles(int surfaceArray[10],
  * @param excludeHolesColumn - a prespecified column to ignore holes in (usually the well). A value of -1 disables this behavior.
  * @returns the new hole count
  */
-float updateSurfaceAndHoles(int surfaceArray[10], int board[20], int excludeHolesColumn) {
+float updateSurfaceAndHoles(int surfaceArray[10], unsigned int board[20], int excludeHolesColumn) {
   // Reset hole and tuck setup bits
   for (int i = 0; i < 20; i++) {
     board[i] &= ~ALL_AUXILIARY_BITS;
@@ -133,14 +142,14 @@ float updateSurfaceAndHoles(int surfaceArray[10], int board[20], int excludeHole
  * Calculates the resulting board after placing a piece in a specified spot.
  * @returns the number of lines cleared
  */
-int getNewBoardAndLinesCleared(int board[20], LockPlacement lockPlacement, OUT int newBoard[20]) {
+int getNewBoardAndLinesCleared(unsigned int board[20], LockPlacement lockPlacement, OUT unsigned int newBoard[20]) {
   int numLinesCleared = 0;
   // The rows below the piece are always the same
   for (int r = lockPlacement.y + 4; r < 20; r++) {
     newBoard[r] = board[r];
   }
   // Check the piece rows, bottom to top
-  int const *pieceRows = lockPlacement.piece->rowsByRotation[lockPlacement.rotationIndex];
+  unsigned int const *pieceRows = lockPlacement.piece->rowsByRotation[lockPlacement.rotationIndex];
   for (int i = 3; i >= 0; i--) {
     // Don't add any minos off the board
     if (lockPlacement.y + i < 0) {
@@ -172,9 +181,9 @@ int getNewBoardAndLinesCleared(int board[20], LockPlacement lockPlacement, OUT i
 }
 
 
-float adjustHoleCountAndBoardAfterTuck(int board[20], LockPlacement lockPlacement){
+float adjustHoleCountAndBoardAfterTuck(unsigned int board[20], LockPlacement lockPlacement){
   int tuckCellsFilled = 0;
-  int const *pieceRows = lockPlacement.piece->rowsByRotation[lockPlacement.rotationIndex];
+  unsigned int const *pieceRows = lockPlacement.piece->rowsByRotation[lockPlacement.rotationIndex];
   for (int i = 3; i >= 0; i--) {
     // Don't add any minos that are off the board
     if (lockPlacement.y + i < 0) {

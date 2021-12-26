@@ -1,5 +1,31 @@
 #include "piece_ranges.hpp"
 
+xtable getRangeXTable() {
+  xtable table = {};
+  for (int p = 0; p < 7; p++) {
+    for (int rot = 0; rot < 4; rot++) {
+      for (int x = -3; x <= 8;
+           x++) { // Lowest possible x is -2, highest possible is 7. Then one extra on either side.
+        int tableX = x + X_BOUNDS_COLLISION_TABLE_OFFSET;
+        table[p][rot][tableX] = 0; // No collision by default
+        for (int row = 0; row < 4; row++) {
+          if (SHIFTBY(PIECE_LIST[p].rowsByRotation[rot][row], x) >= 1024) {
+            table[p][rot][tableX] = 1; // Mark the collision
+            break;
+          }
+          if (SHIFTBY(PIECE_LIST[p].rowsByRotation[rot][row], x - 1) & 1) {
+            table[p][rot][tableX] = 1; // Mark the collision
+            break;
+          }
+        }
+      }
+    }
+  }
+  return table;
+}
+
+const xtable X_BOUNDS_COLLISION_TABLE = getRangeXTable();
+
 /**
  * Calculates a lookup table for the Y value you'd be at while doing shift number N.
  * This is used in the tuck search, since this would be the first Y value where you could perform a tuck after N inputs of a standard placement.
@@ -36,12 +62,12 @@ const PieceRangeContext getPieceRangeContext(char const *inputFrameTimeline, int
     context.maxAccessibleLeft5Surface[i] = 20;
     context.maxAccessibleRightSurface[i] = 20;
   }
-  int const *bottomSurface = PIECE_T.bottomSurfaceByRotation[3];
+  unsigned int const *bottomSurface = PIECE_T.bottomSurfaceByRotation[3];
 
   for (int tapIndex = 0; tapIndex < 5; tapIndex++){
     // Superimpose the piece's top surface on the inaccessible surface
     for (int i = 0; i < 4; i++) {
-      if (bottomSurface[i] == -1){
+      if (bottomSurface[i] == NONE){
         continue;
       }
       int xBeforeShift = SPAWN_X - tapIndex;
@@ -56,7 +82,7 @@ const PieceRangeContext getPieceRangeContext(char const *inputFrameTimeline, int
   for (int tapIndex = 0; tapIndex < 4; tapIndex++){
     // Superimpose the piece's top surface on the inaccessible surface
     for (int i = 0; i < 4; i++) {
-      if (bottomSurface[i] == -1){
+      if (bottomSurface[i] == NONE){
         continue;
       }
       int xBeforeShift = SPAWN_X + tapIndex;

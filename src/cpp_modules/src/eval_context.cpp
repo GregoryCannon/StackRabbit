@@ -13,7 +13,7 @@ const EvalContext DEBUG_CONTEXT = {
   /* wellColumn= */ 9,
 };
 
-int hasHoleBlockingTetrisReady(int board[20], int col10Height){
+int hasHoleBlockingTetrisReady(unsigned int board[20], int col10Height){
   if (col10Height > 16) {
     return 0;
   }

@@ -78,7 +78,7 @@ float getAverageHeightFactor(int avgHeight, float scareHeight) {
   return diff * diff;
 }
 
-float getBuiltOutLeftFactor(int surfaceArray[10], int board[20], float avgHeight, float scareHeight) {
+float getBuiltOutLeftFactor(int surfaceArray[10], unsigned int board[20], float avgHeight, float scareHeight) {
   float heightRatio = avgHeight / max(3.0f, scareHeight);
   float heightDiff = 0.5 * (surfaceArray[0] - avgHeight) + 0.5 * (surfaceArray[0] - surfaceArray[1]);
 
@@ -99,7 +99,7 @@ float getBuiltOutLeftFactor(int surfaceArray[10], int board[20], float avgHeight
   return heightRatio * heightDiff;
 }
 
-float getLeftSurfaceFactor(int board[20], int surfaceArray[10], int max5TapHeight){
+float getLeftSurfaceFactor(unsigned int board[20], int surfaceArray[10], int max5TapHeight){
   max5TapHeight = max(0, max5TapHeight);
   for (int r = 20 - surfaceArray[0]; r < 20; r++) {
     if (board[r] & HOLE_BIT(0)) {
@@ -120,7 +120,7 @@ float getCol9Factor(int col9Height, float maxSafeCol9Height){
   return diff * diff;
 }
 
-float getCoveredWellFactor(int board[20], int wellColumn, float scareHeight) {
+float getCoveredWellFactor(unsigned int board[20], int wellColumn, float scareHeight) {
   if (wellColumn == -1) {
     return 0;
   }
@@ -135,7 +135,7 @@ float getCoveredWellFactor(int board[20], int wellColumn, float scareHeight) {
   return 0;
 }
 
-float getGuaranteedBurnsFactor(int board[20], int wellColumn) {
+float getGuaranteedBurnsFactor(unsigned int board[20], int wellColumn) {
   // Neither of these measures make sense in lineout mode, so don't calculate this factor
   if (wellColumn == -1) {
     return 0;
@@ -150,7 +150,7 @@ float getGuaranteedBurnsFactor(int board[20], int wellColumn) {
   return guaranteedBurns;
 }
 
-float getHoleWeightFactor(int board[20], int wellColumn) {
+float getHoleWeightFactor(unsigned int board[20], int wellColumn) {
   // Neither of these measures make sense in lineout mode, so don't calculate this factor
   if (wellColumn == -1) {
     return 0;
@@ -187,7 +187,7 @@ float getLikelyBurnsFactor(int surfaceArray[10], int wellColumn, int maxSafeCol9
  * Assesses whether the surface allows for 5 taps.
  * @returns the multiple of the accessible left penalty that should be applied. That is, 0 if 5 taps are possible, or a float around 1.0 or higher (depending on how many lines would need to clear for the left to be accessible).
  */
-float getInaccessibleLeftFactor(int board[20], int surfaceArray[10], int const maxAccessibleLeftSurface[10], int wellColumn){
+float getInaccessibleLeftFactor(unsigned int board[20], int surfaceArray[10], int const maxAccessibleLeftSurface[10], int wellColumn){
   float severity = 1.0f;
   // Check if the agent even needs to get a piece left first.
   int rowAboveCol1 = 19 - surfaceArray[0];
@@ -241,7 +241,7 @@ float getLineClearFactor(int numLinesCleared, FastEvalWeights weights, int shoul
 }
 
 /** Calculate how hard it will be to fill in the middle of the board enough to burn. */
-float getUnableToBurnFactor(int board[20], int surfaceArray[10], float scareHeight){
+float getUnableToBurnFactor(unsigned int board[20], int surfaceArray[10], float scareHeight){
   float totalPenalty = 0;
   int col9Height = surfaceArray[8];
 
@@ -293,7 +293,7 @@ float getUnableToBurnFactor(int board[20], int surfaceArray[10], float scareHeig
   return totalPenalty * heightMultiplier;
 }
 
-int isTetrisReady(int board[20], int col10Height){
+int isTetrisReady(unsigned int board[20], int col10Height){
   if (col10Height > 16) {
     return 0;
   }

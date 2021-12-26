@@ -9,6 +9,21 @@ using namespace std;
 
 /** Concatenates the position of a piece into a single string. */
 std::string encodeLockPosition(LockLocation lockLocation){
+  if (VARIABLE_RANGE_CHECKS_ENABLED){
+    // Check variable ranges to avoid buffer overflows
+    if (lockLocation.rotationIndex > 4 || lockLocation.rotationIndex < 0){
+      printf("rotation index out of range %d\n", lockLocation.rotationIndex);
+      throw std::invalid_argument( "rotation index out of range" );
+    }
+    if (lockLocation.x > 7 || lockLocation.x < -2){
+      printf("x index out of range %d\n", lockLocation.x);
+      throw std::invalid_argument( "x index out of range" );
+    }
+    if (lockLocation.y < -2 || lockLocation.y > 19){
+      printf("y index out of range %d\n", lockLocation.y);
+      throw std::invalid_argument( "y index out of range" );
+    }
+  }
   char buffer[10];
   sprintf(buffer, "%d|%d|%d", lockLocation.rotationIndex, lockLocation.x, lockLocation.y);
   return string(buffer);

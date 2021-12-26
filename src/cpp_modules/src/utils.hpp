@@ -6,9 +6,6 @@
 #include <random>
 #include "./config.hpp"
 
-// No-op used to mark output parameters
-#define OUT
-
 // Shifts a variable X by Y places, either left or right depending on the sign
 #define SHIFTBY(x, y) ((y) > 0 ? x >> (y) : (x) << (-1 * (y)))
 
@@ -17,13 +14,13 @@
 #define SPAWN_Y(pieceIndex) ((pieceIndex) == 0 ? -2 : -1)
 
 // Useful bit-rows
-#define FULL_ROW 1023 // = 1111111111
-#define HOLE_WEIGHT_BIT (1 << 30) // = 01000...0000000000, marks when a row needs to be cleared
-#define TUCK_SETUP_BIT(x) (1 << (29 - x)) // See the comment in types.h for an explanation of this encoding
-#define HOLE_BIT(x) (1 << (19 - x)) // See the comment in types.h for an explanation of this encoding
-#define ALL_TUCK_SETUP_BITS (1023 << 20)
-#define ALL_HOLE_BITS (1023 << 10)
-#define ALL_AUXILIARY_BITS (~1023) // The union of hole bits and tuck bits
+#define FULL_ROW 1023U // = 1111111111
+#define HOLE_WEIGHT_BIT (1U << 30) // = 01000...0000000000, marks when a row needs to be cleared
+#define TUCK_SETUP_BIT(x) (1U << (29 - x)) // See the comment in types.h for an explanation of this encoding
+#define HOLE_BIT(x) (1U << (19 - x)) // See the comment in types.h for an explanation of this encoding
+#define ALL_TUCK_SETUP_BITS (1023U << 20)
+#define ALL_HOLE_BITS (1023U << 10)
+#define ALL_AUXILIARY_BITS (~1023U) // The union of hole bits and tuck bits
 
 // Other encodings
 #define TUCK_COL_ENCODED(r, x) ((r) * 10 + (x) + 2) // Encoding of a rotation/column pair, as a number 0-39
@@ -56,7 +53,7 @@ void debugPrint(const char *format, ...) {
   va_end(args);
 }
 
-void printBoard(int board[20]) {
+void printBoard(unsigned int board[20]) {
   printf("----- Board start -----\n");
   for (int i = 0; i < 20; i++) {
     char line[] = "..........";
@@ -69,7 +66,7 @@ void printBoard(int board[20]) {
   }
 }
 
-void printBoardWithPiece(int board[20], Piece piece, int x, int y, int rot){
+void printBoardWithPiece(unsigned int board[20], Piece piece, int x, int y, int rot){
   printf("----- Board & piece start -----\n");
   for (int i = 0; i < 20; i++) {
     char line[] = "..........";
@@ -100,7 +97,7 @@ void printArray(int *array, int range, char const *description){
   printf("\n");
 }
 
-void printBoardBits(int board[20]){
+void printBoardBits(unsigned int board[20]){
   maybePrint("Tuck setups:\n");
   for (int i = 0; i < 19; i++) {
     maybePrint("%d ", (board[i] & ALL_TUCK_SETUP_BITS) >> 20);
@@ -123,7 +120,7 @@ void printBoardBits(int board[20]){
 
 /* --------- BOARD ENCODINGS -------- */
 
-void encodeBoard(char const *boardStr, int outBoard[20]) {
+void encodeBoard(char const *boardStr, unsigned int outBoard[20]) {
   for (int i = 0; i < 20; i++) {
     int acc = 0;
     for (int j = 0; j < 10; j++) {
@@ -137,7 +134,7 @@ void encodeBoard(char const *boardStr, int outBoard[20]) {
   }
 }
 
-void getSurfaceArray(int board[20], int outSurface[10]) {
+void getSurfaceArray(unsigned int board[20], int outSurface[10]) {
   for (int col = 0; col < 10; col++) {
     int colMask = 1 << (9 - col);
     int row = 0;

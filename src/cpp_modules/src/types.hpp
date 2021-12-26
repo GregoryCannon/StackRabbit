@@ -2,6 +2,13 @@
 #define TYPES
 
 #define FLOAT_EPSILON 0.000001
+
+// Generic "not applicable" value for unsigned ints
+#define NONE 999999999
+
+// No-op used to mark output parameters
+#define OUT
+
 #undef max
 #undef min
 
@@ -14,9 +21,9 @@ enum RequestType {
 struct Piece {
   char id;
   int index;
-  int rowsByRotation[4][4];
-  int topSurfaceByRotation[4][4];
-  int bottomSurfaceByRotation[4][4];
+  unsigned int rowsByRotation[4][4];
+  unsigned int topSurfaceByRotation[4][4];
+  unsigned int bottomSurfaceByRotation[4][4];
   int maxYByRotation[4];
   int initialY;
 };
@@ -25,7 +32,7 @@ struct Piece {
  * A representation of the overall state of the game, like a freeze frame before each piece spawns.
  */
 struct GameState {
-  int board[20];  // See board encoding details below
+  unsigned int board[20];  // See board encoding details below
   int surfaceArray[10];
   float adjustedNumHoles; // A count of how many holes there are, with adjustments for the height of holes.
   int lines;

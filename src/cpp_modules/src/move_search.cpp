@@ -16,7 +16,7 @@ using namespace std;
 /**
  * Checks for collisions with the board and the edges of the screen
  */
-int collision(int board[20], const Piece *piece, int x, int y, int rotIndex) {
+int collision(unsigned int board[20], const Piece *piece, int x, int y, int rotIndex) {
   if (y > piece->maxYByRotation[rotIndex]) {
     return 1;
   }
@@ -60,7 +60,7 @@ int rotateTowardsGoal(int curRotation, int goalRotation) {
  * Explores how far in a given direction a piece can be shifted, and registers all the legal placements along
  * the way
  */
-int exploreHorizontally(int board[20],
+int exploreHorizontally(unsigned int board[20],
                         SimState simState,
                         int shiftIncrement,
                         int maxOrMinX,
@@ -157,7 +157,7 @@ int exploreHorizontally(int board[20],
  * Explores for moves with more rotations than shifts (the only blind spot of the default exploration
  * behavior).
  */
-void explorePlacementsNearSpawn(int board[20],
+void explorePlacementsNearSpawn(unsigned int board[20],
                                 SimState simState,
                                 int goalRotationIndex,
                                 char const *inputFrameTimeline,
@@ -189,15 +189,15 @@ void explorePlacementsNearSpawn(int board[20],
  * (!!) Doesn't allow for tucks.
  */
 void getLockPlacementsFast(vector<SimState> &legalPlacements,
-                           int board[20],
+                           unsigned int board[20],
                            int surfaceArray[10],
                            OUT int availableTuckCols[40],
                            OUT vector<LockPlacement> &lockPlacements) {
   for (auto simState : legalPlacements) {
-    int const *bottomSurface = simState.piece->bottomSurfaceByRotation[simState.rotationIndex];
+    unsigned int const *bottomSurface = simState.piece->bottomSurfaceByRotation[simState.rotationIndex];
     int rowsToShift = 99999;
     for (int c = 0; c < 4; c++) {
-      if (bottomSurface[c] == -1) {
+      if (bottomSurface[c] == NONE) {
         continue; // Skip columns that the piece doesn't occupy
       }
       // Check how high the piece is above the stack
@@ -215,13 +215,13 @@ void getLockPlacementsFast(vector<SimState> &legalPlacements,
   }
 }
 
-char findTuckInput(int board[20],
+char findTuckInput(unsigned int board[20],
                    SimState afterTuckState,
                    int availableTuckCols[40],
                    int minTuckYValsByNumPrevInputs[7]) {
   // Do rotations mod 4 or mod 2, depending on the piece (rotation logic skipped for O)
   int numOrientations = afterTuckState.piece->id == 'O'                    ? 1
-                        : afterTuckState.piece->rowsByRotation[3][0] == -1 ? 2
+                        : afterTuckState.piece->rowsByRotation[3][0] == NONE ? 2
                                                                           : 4;
   int rotationModulusMask = numOrientations == 4 ? 3 : 1;
   for (TuckInput tuckInput : TUCK_INPUTS) {
@@ -277,7 +277,7 @@ char findTuckInput(int board[20],
    precomputed list of the possible ways it can fill a tuck cell (defined in tetrominoes.h), which drastically
    reduces the number of placements to try each time.
  */
-void findTucks(int board[20],
+void findTucks(unsigned int board[20],
                const Piece *piece,
                int availableTuckCols[40],
                int minTuckYValsByNumPrevInputs[7],
@@ -341,7 +341,7 @@ int moveSearchInternal(GameState gameState,
   computeYValueOfEachShift(inputFrameTimeline, gravity, piece->initialY, minTuckYValsByNumPrevInputs);
 
   for (int goalRotIndex = 0; goalRotIndex < 4; goalRotIndex++) {
-    if (piece->rowsByRotation[goalRotIndex][0] == -1) {
+    if (piece->rowsByRotation[goalRotIndex][0] == NONE) {
       // Rotation doesn't exist on this piece
       debugPrint("Rotation doesn't exist\n");
       continue;
@@ -425,13 +425,13 @@ int adjustmentSearch(GameState gameState,
 /* ----------- TESTS ----------- */
 
 void testTuckSpots() {
-  int testBoard[] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1016, 1008, 1020, 1022};
+  unsigned int testBoard[] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1016, 1008, 1020, 1022};
   int overhangCellX = 6;
   int overhangCellY = 17;
   printBoard(testBoard);
 
   for (TuckOriginSpot spot : TUCK_SPOTS_J) {
-    int newBoard[20];
+    unsigned int newBoard[20];
     for (int i = 0; i < 20; i++) {
       newBoard[i] = testBoard[i];
     }

@@ -1,6 +1,9 @@
 #ifndef PARAMS
 #define PARAMS
 
+#include "config.hpp"
+#include "types.hpp"
+
 const FastEvalWeights MAIN_WEIGHTS = {
   /* avgHeightCoef= */ PLAY_SAFE_PRE_KILLSCREEN ? -8 : -5,
   /* builtOutLeftCoef= */ 2,
