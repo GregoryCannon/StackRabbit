@@ -52,9 +52,9 @@ type EngineResult = Array<
 interface FormattedMove {
   piece: PieceId;
   placement: Placement;
+  totalValue: number;
   inputSequence: string;
   isSpecialMove: boolean;
-  totalValue: number;
 }
 
 interface MinimalFormattedMove {
@@ -62,6 +62,8 @@ interface MinimalFormattedMove {
   isSpecialMove: boolean;
   totalValue: string; // String so that it can be rounded to fixed decimal places
   hypotheticalLines?: Array<HypotheticalLine>;
+  evalExplanation: string;
+  evalScore: string;
 }
 
 interface FormattedAdjustment extends FormattedMove {

@@ -96,6 +96,8 @@ function getMinimallyFormattedMove(
     isSpecialMove: move.inputCost !== 0,
     totalValue: move.totalValue.toFixed(2),
     hypotheticalLines: move.hypotheticalLines,
+    evalExplanation: move.evalExplanation,
+    evalScore: move.evalScore.toFixed(2),
   };
 }
 
