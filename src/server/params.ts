@@ -126,7 +126,7 @@ export const DEFAULT_PARAM_MODS = {
     SURFACE_COEF: 0.5,
   },
   KILLSCREEN_FOR_TETRISES: {
-    BURN_COEF: -4, // No need to be aggro when there's no line cap
+    BURN_COEF: -0, // No need to be aggro when there's no line cap
     // HIGH_COL_9_COEF: -2,
     // HIGH_COL_9_EXP: 1.6,
   },
