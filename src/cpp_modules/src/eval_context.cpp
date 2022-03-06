@@ -35,15 +35,15 @@ int getNumTrueHoles(float adjustedNumHoles){
 }
 
 AiMode getAiMode(GameState gameState, int currentMax5TapHeight, int max5TapHeight29) {
-  if (currentMax5TapHeight < 4) {
+  if (currentMax5TapHeight < 4 || ALWAYS_LINEOUT) {
     return LINEOUT;
   }
-  if (max5TapHeight29 < 2 && gameState.lines > 220 && gameState.level < 29) {
-    if (hasHoleBlockingTetrisReady(gameState.board, gameState.surfaceArray[9])) {
-      return DIRTY_NEAR_KILLSCREEN;
-    }
-    return NEAR_KILLSCREEN;
-  }
+//  if (max5TapHeight29 < 2 && gameState.lines > 220 && gameState.level < 29) {
+//    if (hasHoleBlockingTetrisReady(gameState.board, gameState.surfaceArray[9])) {
+//      return DIRTY_NEAR_KILLSCREEN;
+//    }
+//    return NEAR_KILLSCREEN;
+//  }
   if (getNumTrueHoles(gameState.adjustedNumHoles) >= 1) {
     return DIG;
   }
@@ -70,7 +70,7 @@ const EvalContext getEvalContext(GameState gameState, const PieceRangeContext pi
     context.scareHeight = 0;
     context.maxSafeCol9 = -1;
   } else {
-    int lowerScareHeight = (PLAY_SAFE_PRE_KILLSCREEN && gameState.level < 29);
+    int lowerScareHeight = (PLAY_SAFE_PRE_KILLSCREEN && gameState.level < 29) || (PLAY_SAFE_ON_KILLSCREEN && gameState.level >= 29);
     context.scareHeight = context.pieceRangeContext.max5TapHeight - (lowerScareHeight ? 4 : 3);
     context.maxSafeCol9 = context.pieceRangeContext.max4TapHeight - (lowerScareHeight ? 6 : 5);
 

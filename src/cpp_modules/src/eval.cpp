@@ -79,7 +79,7 @@ float getAverageHeightFactor(int avgHeight, float scareHeight) {
 }
 
 float getBuiltOutLeftFactor(int surfaceArray[10], unsigned int board[20], float avgHeight, float scareHeight) {
-  float heightRatio = avgHeight / max(3.0f, scareHeight);
+  float heightRatio = max(1.0f, avgHeight) / max(3.0f, scareHeight);
   float heightDiff = 0.5 * (surfaceArray[0] - avgHeight) + 0.5 * (surfaceArray[0] - surfaceArray[1]);
 
   // Handle low left cases first
@@ -103,7 +103,7 @@ float getLeftSurfaceFactor(unsigned int board[20], int surfaceArray[10], int max
   max5TapHeight = max(0, max5TapHeight);
   for (int r = 20 - surfaceArray[0]; r < 20; r++) {
     if (board[r] & HOLE_BIT(0)) {
-      return -3;
+      return -5;
     }
   }
   if (surfaceArray[1] > max5TapHeight && surfaceArray[1] > surfaceArray[0]) {
@@ -188,7 +188,6 @@ float getLikelyBurnsFactor(int surfaceArray[10], int wellColumn, int maxSafeCol9
  * @returns the multiple of the accessible left penalty that should be applied. That is, 0 if 5 taps are possible, or a float around 1.0 or higher (depending on how many lines would need to clear for the left to be accessible).
  */
 float getInaccessibleLeftFactor(unsigned int board[20], int surfaceArray[10], int const maxAccessibleLeftSurface[10], int wellColumn){
-  float severity = 1.0f;
   // Check if the agent even needs to get a piece left first.
   int rowAboveCol1 = 19 - surfaceArray[0];
   int needs5TapForDig = board[rowAboveCol1] & HOLE_WEIGHT_BIT;
@@ -214,7 +213,7 @@ float getInaccessibleLeftFactor(unsigned int board[20], int surfaceArray[10], in
       highestAbove = std::max(highestAbove, surfaceArray[i] - maxAccessibleLeftSurface[i]);
     }
   }
-  return highestAbove == 0 ? 0 : (1.0 + 0.2 * highestAbove * highestAbove) * severity;
+  return highestAbove == 0 ? 0 : (1.0 + 0.2 * highestAbove * highestAbove);
 }
 
 float getInaccessibleRightFactor(int surfaceArray[10], int const maxAccessibleRightSurface[10]){

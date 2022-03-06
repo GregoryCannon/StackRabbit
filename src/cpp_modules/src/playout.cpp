@@ -8,8 +8,8 @@ using namespace std;
 
 /** Selects the highest value lock placement using the fast eval function. */
 LockPlacement pickLockPlacement(GameState gameState,
-                           const EvalContext *evalContext,
-                           OUT vector<LockPlacement> &lockPlacements) {
+                                const EvalContext *evalContext,
+                                OUT vector<LockPlacement> &lockPlacements) {
   float bestSoFar = evalContext->weights.deathCoef - 1;
   LockPlacement bestPlacement = {};
   for (auto lockPlacement : lockPlacements) {
@@ -59,6 +59,7 @@ float playSequence(GameState gameState, const PieceRangeContext pieceRangeContex
         printf("Best placement: %c %d, %d\n\n", bestMove.piece->id, bestMove.rotationIndex, bestMove.x - SPAWN_X);
         printf("Cumulative reward: %01f\n", totalReward);
         printf("Final eval score: %01f\n", evalScore);
+        printf("*** TOTAL= %f ***", totalReward + evalScore);
       }
       return totalReward + evalScore;
     }
@@ -77,62 +78,71 @@ float playSequence(GameState gameState, const PieceRangeContext pieceRangeContex
 }
 
 
-float getPlayoutScore(GameState gameState, const PieceRangeContext pieceRangeContextLookup[3], int offsetIndex){
+float getPlayoutScore(GameState gameState, const PieceRangeContext pieceRangeContextLookup[3], int firstPieceIndex){
+  // Don't perform playouts if logging is enabled
   if (LOGGING_ENABLED) {
     return 0;
   }
 
-  int offset = offsetIndex * 1000; // Index into the sequences in batches, with batch size equal to the total number of playouts
+  int pieceOffset = firstPieceIndex * 1000; // Index into the sequences in batches, with batch size equal to the total number of playouts
+  int shortPlayoutOffset = 500; // Use new piece sequences for the short playouts
 
   float longPlayoutScore = 0;
   for (int i = 0; i < NUM_PLAYOUTS_LONG; i++) {
     // Do one playout
-    const int *pieceSequence = canonicalPieceSequences + (offset + i) * SEQUENCE_LENGTH; // Index into the mega array of piece sequences;
+    const int *pieceSequence = canonicalPieceSequences + (pieceOffset + i) * SEQUENCE_LENGTH; // Index into the mega array of piece sequences;
     float playoutScore = playSequence(gameState, pieceRangeContextLookup, pieceSequence, PLAYOUT_LENGTH_LONG);
     longPlayoutScore += playoutScore;
   }
-  // printf("(A) longPlayoutScore %f \n", longPlayoutScore);
 
   float shortPlayoutScore = 0;
   for (int i = 0; i < NUM_PLAYOUTS_SHORT; i++) {
     // Do one playout
-    const int *pieceSequence = canonicalPieceSequences + (offset + i) * SEQUENCE_LENGTH; // Index into the mega array of piece sequences;
+    const int *pieceSequence = canonicalPieceSequences + (pieceOffset + i) * SEQUENCE_LENGTH + shortPlayoutOffset; // Index into the mega array of piece sequences;
     float playoutScore = playSequence(gameState, pieceRangeContextLookup, pieceSequence, PLAYOUT_LENGTH_SHORT);
     shortPlayoutScore += playoutScore;
   }
-  // printf("    shortPlayoutScore %f \n", shortPlayoutScore);
 
+  float combined = (NUM_PLAYOUTS_SHORT == 0 ? 0 : (shortPlayoutScore / NUM_PLAYOUTS_SHORT)) +
+                   (NUM_PLAYOUTS_LONG == 0 ? 0 : (longPlayoutScore / NUM_PLAYOUTS_LONG));
 
-  return (NUM_PLAYOUTS_SHORT == 0 ? 0 : (shortPlayoutScore / NUM_PLAYOUTS_SHORT)) +
-         (NUM_PLAYOUTS_LONG == 0 ? 0 : (longPlayoutScore / NUM_PLAYOUTS_LONG));
+  // If long and short playouts are both used, weight each at 50%
+  if (NUM_PLAYOUTS_LONG > 0 && NUM_PLAYOUTS_SHORT > 0) {
+    combined *= 0.5;
+  }
+
+  if (PLAYOUT_RESULT_LOGGING_ENABLED) {
+    printf("long %.1f | shortPlayoutScore %.1f | diff %.1f | combined %.1f \n", longPlayoutScore, shortPlayoutScore, longPlayoutScore - shortPlayoutScore, combined);
+  }
+  return combined;
 }
 
 
 
 
 /*
- Unused code block for time-based playouts
+   Unused code block for time-based playouts
 
-#include <iostream>
-using namespace std::chrono;
+ #include <iostream>
+   using namespace std::chrono;
 
 
-int numPlayoutsShort = 0;
-high_resolution_clock::time_point t1 = high_resolution_clock::now();
-for (int i = 0; i < 1000; i++) {
-  // Do one playout
-  const int *pieceSequence = canonicalPieceSequences + (offset + i) * SEQUENCE_LENGTH;  // Index into the mega array of piece sequences;
-  float playoutScore = playSequence(gameState, pieceRangeContextLookup, pieceSequence, PLAYOUT_LENGTH_SHORT);
-  shortPlayoutScore += playoutScore;
-  numPlayoutsShort += 1;
+   int numPlayoutsShort = 0;
+   high_resolution_clock::time_point t1 = high_resolution_clock::now();
+   for (int i = 0; i < 1000; i++) {
+   // Do one playout
+   const int *pieceSequence = canonicalPieceSequences + (offset + i) * SEQUENCE_LENGTH;  // Index into the mega array of piece sequences;
+   float playoutScore = playSequence(gameState, pieceRangeContextLookup, pieceSequence, PLAYOUT_LENGTH_SHORT);
+   shortPlayoutScore += playoutScore;
+   numPlayoutsShort += 1;
 
-  // Check the elapsed time
-  high_resolution_clock::time_point t2 = high_resolution_clock::now();
-  duration<double, std::milli> time_span = t2 - t1;
+   // Check the elapsed time
+   high_resolution_clock::time_point t2 = high_resolution_clock::now();
+   duration<double, std::milli> time_span = t2 - t1;
 
-  if (time_span.count() > PLAYOUT_TIME_LIMIT_MS) {
+   if (time_span.count() > PLAYOUT_TIME_LIMIT_MS) {
     break;
-  }
-}
-// printf("    num playouts %d \n", numPlayoutsShort);
-*/
+   }
+   }
+   // printf("    num playouts %d \n", numPlayoutsShort);
+ */

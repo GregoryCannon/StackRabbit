@@ -184,11 +184,16 @@ std::string getLockValueLookupEncoded(GameState gameState, const Piece *firstPie
   // Perform playouts on the promising possibilities
   int i = 0;
   int numPlayedOut = 0;
-  int unexploredPenalty = evalContext->weights.deathCoef * 1.5;
+  int unexploredPenalty = evalContext->weights.deathCoef * 2;
   for (Possibility const& possibility : sortedList) {
     string lockPosEncoded = encodeLockPosition(possibility.firstPlacement);
     // Cap the number of times a lock position can be repeated (despite differing second placements)
     int shouldPlayout = i < numSorted && numPlayedOut < keepTopN && lockValueRepeatMap[lockPosEncoded] < 3;
+    if (PLAYOUT_LOGGING_ENABLED){
+      printf("\n----%s, repeats %d, willPlay %d\n", lockPosEncoded.c_str(), lockValueRepeatMap[lockPosEncoded], shouldPlayout);
+    }
+    lockValueRepeatMap[lockPosEncoded] += 1;
+
     // if (shouldPlayout){
     //   printf("Doing playout for: %s %s\n", encodeLockPosition(possibility.firstPlacement).c_str(), encodeLockPosition(possibility.secondPlacement).c_str());
     // }
@@ -197,11 +202,16 @@ std::string getLockValueLookupEncoded(GameState gameState, const Piece *firstPie
       ? possibility.immediateReward + getPlayoutScore(possibility.resultingState, pieceRangeContextLookup, secondPiece->index)
       : possibility.immediateReward + possibility.evalScore + unexploredPenalty);
     if (overallScore > lockValueMap[lockPosEncoded]) {
-      if (PLAYOUT_LOGGING_ENABLED) {
-        printf("Adding to map: %s %f (%f + %f)\n", lockPosEncoded.c_str(), overallScore - MAP_OFFSET, possibility.immediateReward, overallScore - possibility.immediateReward - MAP_OFFSET);
+      if (PLAYOUT_LOGGING_ENABLED || PLAYOUT_RESULT_LOGGING_ENABLED) {
+        if (shouldPlayout){
+          printf("Adding to map: %s %f (%f + %f)\n", lockPosEncoded.c_str(), overallScore - MAP_OFFSET, possibility.immediateReward, overallScore - possibility.immediateReward - MAP_OFFSET);
+        }
       }
       lockValueMap[lockPosEncoded] = overallScore;
-      lockValueRepeatMap[lockPosEncoded] += 1;
+    } else if (PLAYOUT_LOGGING_ENABLED || PLAYOUT_RESULT_LOGGING_ENABLED){
+      if (shouldPlayout){
+        printf("Score of %.1f is worse than existing move %.1f\n", overallScore, lockValueMap[lockPosEncoded]);
+      }
     }
     i++;
     if (shouldPlayout) {

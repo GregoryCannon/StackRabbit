@@ -7,7 +7,7 @@
 const FastEvalWeights MAIN_WEIGHTS = {
   /* avgHeightCoef= */ PLAY_SAFE_PRE_KILLSCREEN ? -8 : -5,
   /* builtOutLeftCoef= */ 2,
-  /* burnCoef= */ PLAY_SAFE_PRE_KILLSCREEN ? -6 : -12,
+  /* burnCoef= */ PLAY_SAFE_PRE_KILLSCREEN ? -9 : -12,
   /* coveredWellCoef= */ -5,
   /* col9Coef= */ -2,
   /* deathCoef= */ -2000,
@@ -118,10 +118,12 @@ const FastEvalWeights DIRTY_NEAR_KILLSCREEN_WEIGHTS = {
   MAIN_WEIGHTS.unableToBurnCoef
 };
 
+// set to avgHeight=-20, builtLeft=8 when testing 20hz killscreen linout
+
 const FastEvalWeights LINEOUT_WEIGHTS = {
-  MAIN_WEIGHTS.avgHeightCoef,
+  /* avgHeightCoef= */ -10,
   /* builtOutLeftCoef= */ 15,
-  MAIN_WEIGHTS.burnCoef,
+  /* burnCoef= */ 0,
   /* coveredWellCoef= */ 0,
   /* col9Coef= */ 0,
   MAIN_WEIGHTS.deathCoef,

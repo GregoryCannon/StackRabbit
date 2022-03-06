@@ -82,7 +82,7 @@ float getNewSurfaceAndNumNewHoles(int surfaceArray[10],
     maybePrint("marking needToClear (column %d): start row = %d, surface = %d\n", c, holeWeightStartRow, 20 - newSurface[c]);
     if (holeWeightStartRow != -1){
       for (int r = holeWeightStartRow; r >= 20 - newSurface[c]; r--) {
-        if (VARIABLE_RANGE_CHECKS_ENABLED && r < 0 || r >= 20){
+        if (VARIABLE_RANGE_CHECKS_ENABLED && (r < 0 || r >= 20)){
           printf("R value out of range %d %d\n", r, newSurface[c]);
           throw std::invalid_argument( "r value out of range" );
         }
