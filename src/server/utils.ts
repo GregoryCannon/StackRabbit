@@ -113,6 +113,8 @@ export function formatPossibility(
     possibility.placement[0] +
     "," +
     possibility.placement[1] +
+    "," +
+    possibility.placement[2] +
     "|" +
     (shouldPushDown && possibility.searchStateAfterMove.level == 18
       ? pushDown(possibility.inputSequence)
