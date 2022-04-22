@@ -580,7 +580,8 @@ function getBuiltOutLeftFactor(
 ) {
   // Handle low left cases first
   const averageHeight = surfaceArray.slice(2, 8).reduce((a, b) => a + b) / 7;
-  const heightMultiplier = averageHeight / Math.max(scareHeight, 2);
+  const heightMultiplier =
+    Math.max(1, averageHeight) / Math.max(scareHeight, 2);
   if (surfaceArray[0] < averageHeight) {
     return (
       -1 *
@@ -601,9 +602,8 @@ function getBuiltOutLeftFactor(
 
   // Otherwise reward building out the left
   const col1Height = surfaceArray[0];
-  const rawValue =
-    aiParams.BUILT_OUT_LEFT_COEF * Math.max(0, col1Height - averageHeight);
-  return heightMultiplier * rawValue;
+  const rawValue = Math.max(0, col1Height - averageHeight);
+  return aiParams.BUILT_OUT_LEFT_COEF * heightMultiplier * rawValue;
 }
 
 function getBuiltOutRightFactor(boardAfter, surfaceArray) {
@@ -1078,7 +1078,7 @@ function compileFactors(factors: Object, aiMode: AiMode): [number, string] {
       throw new Error(`NaN detected for factor: ${key}`);
     }
 
-    if (val !== 0) {
+    if (val !== -9999999999) {
       totalValue += val;
       const shortKeyName = key.substr(0, key.length - 6);
       explanation += `${shortKeyName}: ${val.toFixed(2)}, `;
