@@ -79,7 +79,7 @@ float getAverageHeightFactor(int avgHeight, float scareHeight) {
 }
 
 float getBuiltOutLeftFactor(int surfaceArray[10], unsigned int board[20], float avgHeight, float scareHeight) {
-  float heightRatio = max(1.0f, avgHeight) / max(3.0f, scareHeight);
+  float heightRatio = max(1.0f, avgHeight) / max(2.0f, scareHeight);
   float heightDiff = 0.5 * (surfaceArray[0] - avgHeight) + 0.5 * (surfaceArray[0] - surfaceArray[1]);
 
   // Handle low left cases first
@@ -192,7 +192,8 @@ float getInaccessibleLeftFactor(unsigned int board[20], int surfaceArray[10], in
   int rowAboveCol1 = 19 - surfaceArray[0];
   int needs5TapForDig = board[rowAboveCol1] & HOLE_WEIGHT_BIT;
   int needs5TapForBurn = wellColumn == 9 && surfaceArray[0] <= surfaceArray[8];
-  int needs5Tap = needs5TapForDig || needs5TapForBurn;
+  int needs5TapOnKillscreen = (surfaceArray[1] - surfaceArray[0]) > maxAccessibleLeftSurface[0];
+  int needs5Tap = needs5TapForDig || needs5TapForBurn || needs5TapOnKillscreen;
   
   int hasHoleInLeft = false;
   for (int r = rowAboveCol1 + 1; r < rowAboveCol1 + 4; r++){
@@ -220,7 +221,7 @@ float getInaccessibleRightFactor(int surfaceArray[10], int const maxAccessibleRi
   // Check if the agent even needs to get a piece left first.
   // If the left is built out higher than the max 5 tap height and also higher than col 9, then it's chilling.
   int needsRightTap = surfaceArray[9] < surfaceArray[8];
-  if (surfaceArray[0] > maxAccessibleRightSurface[0] && !needsRightTap) {
+  if (surfaceArray[9] > maxAccessibleRightSurface[9] && !needsRightTap) {
     return 0;
   }
 

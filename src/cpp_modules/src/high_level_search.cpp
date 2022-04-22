@@ -9,17 +9,17 @@ using namespace std;
 
 /** Concatenates the position of a piece into a single string. */
 std::string encodeLockPosition(LockLocation lockLocation){
-  if (VARIABLE_RANGE_CHECKS_ENABLED){
+  if (VARIABLE_RANGE_CHECKS_ENABLED) {
     // Check variable ranges to avoid buffer overflows
-    if (lockLocation.rotationIndex > 4 || lockLocation.rotationIndex < 0){
+    if (lockLocation.rotationIndex > 4 || lockLocation.rotationIndex < 0) {
       printf("rotation index out of range %d\n", lockLocation.rotationIndex);
       throw std::invalid_argument( "rotation index out of range" );
     }
-    if (lockLocation.x > 7 || lockLocation.x < -2){
+    if (lockLocation.x > 7 || lockLocation.x < -2) {
       printf("x index out of range %d\n", lockLocation.x);
       throw std::invalid_argument( "x index out of range" );
     }
-    if (lockLocation.y < -2 || lockLocation.y > 19){
+    if (lockLocation.y < -2 || lockLocation.y > 19) {
       printf("y index out of range %d\n", lockLocation.y);
       throw std::invalid_argument( "y index out of range" );
     }
@@ -40,38 +40,6 @@ std::string formatPossibility(Possibility possibility){
   // sprintf(buffer, "%d")
   return "";
 }
-
-/** Plays one move from a given state, with or without knowledge of the next box.*/
-LockLocation playOneMove(GameState gameState, Piece *firstPiece, Piece *secondPiece, int playoutLength, int keepTopN, const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3]){
-  // TODO: implement
-  return {};
-}
-
-/** Searches 1-ply from a starting state, and performs an eval on each resulting state.
- * @returns an UNSORTED list of evaluated possibilities
- */
-int searchDepth1(GameState gameState, const Piece *firstPiece, int keepTopN, const EvalContext *evalContext, OUT list<Possibility> &possibilityList){
-  vector<LockPlacement> firstLockPlacements;
-  moveSearch(gameState, firstPiece, evalContext->pieceRangeContext.inputFrameTimeline, firstLockPlacements);
-  for (auto it = begin(firstLockPlacements); it != end(firstLockPlacements); ++it) {
-    LockPlacement firstPlacement = *it;
-
-    GameState resultingState = advanceGameState(gameState, firstPlacement, evalContext);
-    float reward = getLineClearFactor(resultingState.lines - gameState.lines, evalContext->weights, evalContext->shouldRewardLineClears);
-    float evalScore = reward + fastEval(gameState, resultingState, firstPlacement, evalContext);
-
-    Possibility newPossibility = {
-      { firstPlacement.x, firstPlacement.y, firstPlacement.rotationIndex },
-      {},
-      resultingState,
-      evalScore,
-      reward
-    };
-    possibilityList.push_back(newPossibility);
-  }
-  return (int) possibilityList.size();
-}
-
 
 /**
  * Performs a partial insertion sort such that the highest N elements of the list are guaranteed to be sorted and kept at the front of the list.
@@ -118,6 +86,30 @@ void partiallySortPossibilityList(list<Possibility> &possibilityList, int keepTo
 
 }
 
+/** Searches 1-ply from a starting state, and performs an eval on each resulting state.
+ * @returns an UNSORTED list of evaluated possibilities
+ */
+int searchDepth1(GameState gameState, const Piece *firstPiece, int keepTopN, const EvalContext *evalContext, OUT list<Possibility> &possibilityList){
+  vector<LockPlacement> firstLockPlacements;
+  moveSearch(gameState, firstPiece, evalContext->pieceRangeContext.inputFrameTimeline, firstLockPlacements);
+  for (auto it = begin(firstLockPlacements); it != end(firstLockPlacements); ++it) {
+    LockPlacement firstPlacement = *it;
+
+    GameState resultingState = advanceGameState(gameState, firstPlacement, evalContext);
+    float reward = getLineClearFactor(resultingState.lines - gameState.lines, evalContext->weights, evalContext->shouldRewardLineClears);
+    float evalScore = reward + fastEval(gameState, resultingState, firstPlacement, evalContext);
+
+    Possibility newPossibility = {
+      { firstPlacement.x, firstPlacement.y, firstPlacement.rotationIndex },
+      {},
+      resultingState,
+      evalScore,
+      reward
+    };
+    possibilityList.push_back(newPossibility);
+  }
+  return (int) possibilityList.size();
+}
 
 /** Searches 2-ply from a starting state, and performs a fast eval on each of the resulting states. Maintains a sorted list of the top N possibilities, and adds all the rest onto the end in no specified order. */
 int searchDepth2(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int keepTopN, const EvalContext *evalContext, OUT list<Possibility> &possibilityList){
@@ -134,10 +126,10 @@ int searchDepth2(GameState gameState, const Piece *firstPiece, const Piece *seco
       maybePrint("%d ", (afterFirstMove.board[i] & ALL_TUCK_SETUP_BITS) >> 20);
     }
     maybePrint("%d end of post first move\n", (afterFirstMove.board[19] & ALL_TUCK_SETUP_BITS) >> 20);
-    if (LOGGING_ENABLED){
+    if (LOGGING_ENABLED) {
       printBoard(afterFirstMove.board);
     }
-    
+
     float firstMoveReward = getLineClearFactor(afterFirstMove.lines - gameState.lines, evalContext->weights, evalContext->shouldRewardLineClears);
 
     // Get the placements of the second piece
@@ -162,6 +154,41 @@ int searchDepth2(GameState gameState, const Piece *firstPiece, const Piece *seco
   }
   return (int) possibilityList.size();
 }
+
+/** Plays one move from a given state, with or without knowledge of the next box.*/
+LockLocation playOneMove(GameState gameState, Piece *firstPiece, Piece *secondPiece, int playoutLength, int keepTopN, const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3]){
+
+  // Keep a running list of the top X possibilities as the move search is happening.
+  // Keep twice as many as we'll eventually need, since some duplicates may be removed before playouts start
+  int numSorted = keepTopN;
+
+  // Get the list of evaluated possibilities
+  list<Possibility> possibilityList;
+  list<Possibility> sortedList;
+  searchDepth1(gameState, firstPiece, numSorted, evalContext, possibilityList);
+  partiallySortPossibilityList(possibilityList, keepTopN, sortedList);
+
+  // Perform playouts on the promising possibilities
+  int numPlayedOut = 0;
+  LockLocation const *bestLockLocation = NULL;
+  float bestPossibilityScore = NULL;
+  for (Possibility const& possibility : sortedList) {
+    if (numPlayedOut >= numSorted) {
+      break;
+    }
+    float overallScore = possibility.immediateReward + getPlayoutScore(possibility.resultingState, pieceRangeContextLookup, secondPiece->index);
+
+    // Potentially update the best possibility
+    if (bestLockLocation == NULL || overallScore > bestPossibilityScore) {
+      bestLockLocation = &(possibility.firstPlacement);
+      bestPossibilityScore = overallScore;
+    }
+
+    numPlayedOut++;
+  }
+  return *bestLockLocation;
+}
+
 
 
 /** Calculates the valuation of every possible terminal position for a given piece on a given board, and stores it in a map.
@@ -189,7 +216,7 @@ std::string getLockValueLookupEncoded(GameState gameState, const Piece *firstPie
     string lockPosEncoded = encodeLockPosition(possibility.firstPlacement);
     // Cap the number of times a lock position can be repeated (despite differing second placements)
     int shouldPlayout = i < numSorted && numPlayedOut < keepTopN && lockValueRepeatMap[lockPosEncoded] < 3;
-    if (PLAYOUT_LOGGING_ENABLED){
+    if (PLAYOUT_LOGGING_ENABLED) {
       printf("\n----%s, repeats %d, willPlay %d\n", lockPosEncoded.c_str(), lockValueRepeatMap[lockPosEncoded], shouldPlayout);
     }
     lockValueRepeatMap[lockPosEncoded] += 1;
@@ -203,13 +230,13 @@ std::string getLockValueLookupEncoded(GameState gameState, const Piece *firstPie
       : possibility.immediateReward + possibility.evalScore + unexploredPenalty);
     if (overallScore > lockValueMap[lockPosEncoded]) {
       if (PLAYOUT_LOGGING_ENABLED || PLAYOUT_RESULT_LOGGING_ENABLED) {
-        if (shouldPlayout){
+        if (shouldPlayout) {
           printf("Adding to map: %s %f (%f + %f)\n", lockPosEncoded.c_str(), overallScore - MAP_OFFSET, possibility.immediateReward, overallScore - possibility.immediateReward - MAP_OFFSET);
         }
       }
       lockValueMap[lockPosEncoded] = overallScore;
-    } else if (PLAYOUT_LOGGING_ENABLED || PLAYOUT_RESULT_LOGGING_ENABLED){
-      if (shouldPlayout){
+    } else if (PLAYOUT_LOGGING_ENABLED || PLAYOUT_RESULT_LOGGING_ENABLED) {
+      if (shouldPlayout) {
         printf("Score of %.1f is worse than existing move %.1f\n", overallScore, lockValueMap[lockPosEncoded]);
       }
     }

@@ -8,6 +8,16 @@ const int SCORE_REWARDS[] = {
   1200
 };
 
+int countInputsBeforeReactionTime(int reactionTime, char const *inputFrameTimeline) {
+  int numInputs = 0;
+  for (int i = 0; i < reactionTime; i++){
+    if (shouldPerformInputsThisFrame(i, inputFrameTimeline)){
+      numInputs++;
+    }
+  }
+  return numInputs;
+}
+
 int simulateGame(char const *inputFrameTimeline, int startingLevel, int maxLines, int shouldAdjust, int reactionTime){
   // Init empty data structures
   GameState gameState = {
@@ -49,9 +59,9 @@ int simulateGame(char const *inputFrameTimeline, int startingLevel, int maxLines
     // Pick the best placement
     LockPlacement bestMove = pickLockPlacement(gameState, evalContext, lockPlacements);
 
-//    if (shouldAdjust){
+    if (shouldAdjust) {
 //      predictSearchStateAtAdjustmentTime()
-//    }
+    }
 
     // Otherwise, update the state to keep playing
     int oldLines = gameState.lines;
@@ -71,8 +81,9 @@ int simulateGame(char const *inputFrameTimeline, int startingLevel, int maxLines
   return score;
 }
 
-void simulateGames(int numGames, char const *inputFrameTimeline, int startingLevel, int maxLines, int reactionTime, OUT std::vector<int> scores){
+void simulateGames(int numGames, char const *inputFrameTimeline, int startingLevel, int maxLines, int shouldAdjust, int reactionTime, OUT std::vector<int> &scores){
   for (int i = 0; i < numGames; i++) {
-    scores.push_back(simulateGame(inputFrameTimeline, startingLevel, maxLines, /* shouldAdjust= */ false, /* reactionTime */ 21));
+    int score = simulateGame(inputFrameTimeline, startingLevel, maxLines, /* shouldAdjust= */ false, /* reactionTime */ 21);
+    scores.push_back(score);
   }
 }

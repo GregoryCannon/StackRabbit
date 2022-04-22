@@ -65,7 +65,7 @@ const PieceRangeContext getPieceRangeContext(char const *inputFrameTimeline, int
   unsigned int const *bottomSurface = PIECE_T.bottomSurfaceByRotation[3];
 
   for (int tapIndex = 0; tapIndex < 5; tapIndex++){
-    // Superimpose the piece's top surface on the inaccessible surface
+    // Superimpose the piece's bottom surface on the inaccessible surface
     for (int i = 0; i < 4; i++) {
       if (bottomSurface[i] == NONE){
         continue;
@@ -80,7 +80,7 @@ const PieceRangeContext getPieceRangeContext(char const *inputFrameTimeline, int
   
   bottomSurface = PIECE_I.bottomSurfaceByRotation[1];
   for (int tapIndex = 0; tapIndex < 4; tapIndex++){
-    // Superimpose the piece's top surface on the inaccessible surface
+    // Superimpose the piece's bottom surface on the inaccessible surface
     for (int i = 0; i < 4; i++) {
       if (bottomSurface[i] == NONE){
         continue;
@@ -91,7 +91,7 @@ const PieceRangeContext getPieceRangeContext(char const *inputFrameTimeline, int
       context.maxAccessibleRightSurface[xBeforeShift + i] = 19 - bottomSurface[i] - shiftY - PIECE_I.initialY;
     }
   }
-  context.maxAccessibleRightSurface[9] = context.maxAccessibleRightSurface[8]; // The 5th shift is the last, so it just needs to resolve before/after (which is at the same Y value)
+  context.maxAccessibleRightSurface[9] = context.maxAccessibleRightSurface[8]; // The 4th shift is the last, so it just needs to resolve before/after (which is at the same Y value)
   
   // printArray(context.maxAccessibleRightSurface, 10, "MAX RIGHT SURFACE");
   
