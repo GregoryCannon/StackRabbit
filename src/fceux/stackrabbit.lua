@@ -1,4 +1,5 @@
 IS_MAC = true
+IS_PAL = false
 USE_PUSHDOWN = true
 
 local os = require("os")
@@ -18,15 +19,15 @@ TIMELINE_11_HZ = "X.....X....X....";
 TIMELINE_12_HZ = "X....";
 TIMELINE_13_HZ = "X....X...";
 TIMELINE_13_5_HZ = "X....X...X...";
-TIMEILNE_14_HZ = "X....X...X...X...";
+TIMELINE_14_HZ = "X....X...X...X...";
 TIMELINE_15_HZ = "X...";
 TIMELINE_20_HZ = "X..";
 TIMELINE_30_HZ = "X.";
 
 -- Config constants
 SHOULD_ADJUST = true
-REACTION_TIME_FRAMES = 21
-INPUT_TIMELINE = TIMELINE_20_HZ;
+REACTION_TIME_FRAMES = 24
+INPUT_TIMELINE = TIMELINE_14_HZ;
 SHOULD_RECORD_GAMES = true
 MOVIE_PATH = "C:\\Users\\Greg\\Desktop\\VODs\\" -- Where to store the fm2 VODS (absolute path)
 if IS_MAC then MOVIE_PATH = "/Users/greg/Documents/AiVods/" end
@@ -148,9 +149,23 @@ function requestAdjustmentAsync()
   rotationAtAdjustmentTime = 0
   canFirstFrameShiftAtAdjustmentTime = true
   offsetYAtAdjustmentTime = 0
+  -- Convert requests to PAL
+  local reqLevel = level
+  local reqLines = numLines
+  print("reqLines " .. reqLines)
+  if IS_PAL then
+    reqLines = numLines + 100
+    if reqLevel == 18 then
+      reqLevel = 19
+    elseif reqLevel == 19 then
+      reqLevel = 29
+    end
+  end
+  print("reqLines2 " .. reqLines)
+
   -- Format URL arguments
-  local reqStr = "http://localhost:3000/async-nb?board=" .. getEncodedBoard() .. "&currentPiece=" .. orientToPiece[pcur]
-  reqStr = reqStr .. "&nextPiece=" .. orientToPiece[pnext] .. "&level=" .. level .. "&lines=" .. numLines .. "&inputFrameTimeline=" .. INPUT_TIMELINE
+  local reqStr = "http://localhost:3000/get-move-async?board=" .. getEncodedBoard() .. "&currentPiece=" .. orientToPiece[pcur]
+  reqStr = reqStr .. "&nextPiece=" .. orientToPiece[pnext] .. "&level=" .. reqLevel .. "&lines=" .. reqLines .. "&inputFrameTimeline=" .. INPUT_TIMELINE
 
   local response = makeHttpRequest(reqStr)
   if response.code ~= 200 then
@@ -162,6 +177,20 @@ end
 
 function requestPrecompute()
   print("requestprecompute")
+  -- Convert requests to PAL
+  local reqLevel = stateForNextPiece.level
+  local reqLines = stateForNextPiece.lines
+  print("reqLines " .. reqLines)
+  if IS_PAL then
+    reqLines = numLines + 100
+    if reqLevel == 18 then
+      reqLevel = 19
+    elseif reqLevel == 19 then
+      reqLevel = 29
+    end
+  end
+  print("reqLines2 " .. reqLines)
+
   -- Format URL arguments
   if stateForNextPiece == nil or stateForNextPiece.board == nil
         or stateForNextPiece.lines == nil or stateForNextPiece.level == nil then
@@ -171,7 +200,7 @@ function requestPrecompute()
   end
 
   local reqStr = "http://localhost:3000/precompute?board=" .. stateForNextPiece.board .. "&currentPiece=" .. orientToPiece[pnext]
-  reqStr = reqStr .. "&level=" .. stateForNextPiece.level .. "&lines=" .. numLines .. "&reactionTime="
+  reqStr = reqStr .. "&level=" .. stateForNextPiece.level .. "&lines=" .. reqLines .. "&reactionTime="
   reqStr = reqStr .. REACTION_TIME_FRAMES .. "&inputFrameTimeline=" .. INPUT_TIMELINE
 
   local response = makeHttpRequest(reqStr)
@@ -225,13 +254,14 @@ function parseGameStateFromResponse(apiResult)
     return
   end
 
-  local split = splitString(apiResult, ",|\|")
+  -- local split = splitString(apiResult, ",|\|")
+  local split = splitString(apiResult, "\|")
   
-  if split[4] ~= nil and split[5] ~= nil and split[6] ~= nil then
+  if split[3] ~= nil and split[4] ~= nil and split[5] ~= nil then
     stateForNextPiece = { 
-      board=split[4], 
-      level=split[5], 
-      lines=split[6] 
+      board=split[3], 
+      level=split[4], 
+      lines=split[5] 
     }
   end
 end
@@ -263,8 +293,9 @@ function calculateInputs(apiResult, isAdjustment)
   end
 
   -- Parse the shifts and rotations from the API result
-  local split = splitString(apiResult, ",|\|")
-  inputSequence = split[3]
+  -- local split = splitString(apiResult, ",|\|")
+  local split = splitString(apiResult, "\|")
+  inputSequence = split[2]
   if inputSequence == nil or inputSequence == "none" then
     inputSequence = ""
   end
@@ -417,7 +448,7 @@ function runGameFrame()
     end
     -- If the agent is mistaken about the board state, crash immediately so I can debug it
     if gamePhase == 8 and not gameOver and getEncodedBoard() ~= stateForNextPiece.board then
-      error("Divergence")
+      -- error("Divergence")
     end
 
   -- Resets the index for the next piece. Disables user input when the game is not over.
