@@ -94,11 +94,11 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
   }
 
   case PLAY_MOVE_NO_NEXT_BOX: {
-    int debugSequence[SEQUENCE_LENGTH] = {curPiece.index};
-    playSequence(startingGameState, pieceRangeContextLookup, debugSequence, /* playoutLength= */ 1);
+//    int debugSequence[SEQUENCE_LENGTH] = {curPiece.index};
+//    playSequence(startingGameState, pieceRangeContextLookup, debugSequence, /* playoutLength= */ 1);
+//    return "Debug playout complete.";
+    LockLocation bestMove = playOneMove(startingGameState, &curPiece, /* nextPiece */ NULL, /* numCandidatesToPlayout */ DEPTH_1_PRUNING_BREADTH, &context, pieceRangeContextLookup);
     return "Debug playout complete.";
-    // LockPlacement bestMove = playOneMove(startingGameState, pieceRangeContextLookup, curPiece, /* nextPiece */ NULL, /* playoutLength= */ 0);
-    // return "";
   }
 
   default: {

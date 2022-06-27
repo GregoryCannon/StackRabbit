@@ -59,7 +59,7 @@ float playSequence(GameState gameState, const PieceRangeContext pieceRangeContex
         printf("Best placement: %c %d, %d\n\n", bestMove.piece->id, bestMove.rotationIndex, bestMove.x - SPAWN_X);
         printf("Cumulative reward: %01f\n", totalReward);
         printf("Final eval score: %01f\n", evalScore);
-        printf("*** TOTAL= %f ***", totalReward + evalScore);
+        printf("*** TOTAL= %f ***\n", totalReward + evalScore);
       }
       return totalReward + evalScore;
     }

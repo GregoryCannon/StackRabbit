@@ -18,7 +18,7 @@ float calculateFlatness(int surfaceArray[10], int wellColumn) {
     }
     int diff = surfaceArray[i + 1] - surfaceArray[i];
     // Correct for double wells
-    if (i == 7 && wellColumn == 9 && diff < -2) {
+    if (USE_RIGHT_WELL_FEATURES && i == 7 && wellColumn == 9 && diff < -2) {
       diff = -2;
     }
     // Punish based on the absolute value of the column differences
@@ -79,6 +79,9 @@ float getAverageHeightFactor(int avgHeight, float scareHeight) {
 }
 
 float getBuiltOutLeftFactor(int surfaceArray[10], unsigned int board[20], float avgHeight, float scareHeight) {
+  if (!USE_RIGHT_WELL_FEATURES){
+    return 0;
+  }
   float heightRatio = max(1.0f, avgHeight) / max(2.0f, scareHeight);
   float heightDiff = 0.5 * (surfaceArray[0] - avgHeight) + 0.5 * (surfaceArray[0] - surfaceArray[1]);
 
@@ -113,6 +116,9 @@ float getLeftSurfaceFactor(unsigned int board[20], int surfaceArray[10], int max
 }
 
 float getCol9Factor(int col9Height, float maxSafeCol9Height){
+  if (!USE_RIGHT_WELL_FEATURES){
+    return 0;
+  }
   if (col9Height <= maxSafeCol9Height) {
     return 0;
   }
@@ -166,7 +172,7 @@ float getHoleWeightFactor(unsigned int board[20], int wellColumn) {
 
 
 float getLikelyBurnsFactor(int surfaceArray[10], int wellColumn, int maxSafeCol9) {
-  if (wellColumn != 9) {
+  if (wellColumn != 9 || !USE_RIGHT_WELL_FEATURES) {
     return 0;
   }
   int col9 = surfaceArray[8];
@@ -189,14 +195,15 @@ float getLikelyBurnsFactor(int surfaceArray[10], int wellColumn, int maxSafeCol9
  */
 float getInaccessibleLeftFactor(unsigned int board[20], int surfaceArray[10], int const maxAccessibleLeftSurface[10], int wellColumn){
   // Check if the agent even needs to get a piece left first.
-  int rowAboveCol1 = 19 - surfaceArray[0];
-  int needs5TapForDig = board[rowAboveCol1] & HOLE_WEIGHT_BIT;
+  int highestRowOfCol1 = 19 - surfaceArray[0];
+  int needs5TapForDig = board[highestRowOfCol1] & HOLE_WEIGHT_BIT;
   int needs5TapForBurn = wellColumn == 9 && surfaceArray[0] <= surfaceArray[8];
-  int needs5TapOnKillscreen = (surfaceArray[1] - surfaceArray[0]) > maxAccessibleLeftSurface[0];
-  int needs5Tap = needs5TapForDig || needs5TapForBurn || needs5TapOnKillscreen;
+  int needs5Tap = needs5TapForDig || needs5TapForBurn;
+//  int needs5TapOnKillscreen = (surfaceArray[1] - surfaceArray[0]) > maxAccessibleLeftSurface[0];
+//  int needs5Tap = needs5TapForDig || needs5TapForBurn || needs5TapOnKillscreen;
   
   int hasHoleInLeft = false;
-  for (int r = rowAboveCol1 + 1; r < rowAboveCol1 + 4; r++){
+  for (int r = highestRowOfCol1 + 1; r < highestRowOfCol1 + 4; r++){
     if (board[r] & (HOLE_BIT(0) | HOLE_BIT(1) | HOLE_BIT(2))){
       hasHoleInLeft = true;
       break;
@@ -218,8 +225,8 @@ float getInaccessibleLeftFactor(unsigned int board[20], int surfaceArray[10], in
 }
 
 float getInaccessibleRightFactor(int surfaceArray[10], int const maxAccessibleRightSurface[10]){
-  // Check if the agent even needs to get a piece left first.
-  // If the left is built out higher than the max 5 tap height and also higher than col 9, then it's chilling.
+  // Check if the agent even needs to get a piece right first.
+  // If column 10 is higher than column 9, this feature doesn't matter.
   int needsRightTap = surfaceArray[9] < surfaceArray[8];
   if (surfaceArray[9] > maxAccessibleRightSurface[9] && !needsRightTap) {
     return 0;
@@ -242,6 +249,9 @@ float getLineClearFactor(int numLinesCleared, FastEvalWeights weights, int shoul
 
 /** Calculate how hard it will be to fill in the middle of the board enough to burn. */
 float getUnableToBurnFactor(unsigned int board[20], int surfaceArray[10], float scareHeight){
+  if (!USE_RIGHT_WELL_FEATURES){
+    return 0;
+  }
   float totalPenalty = 0;
   int col9Height = surfaceArray[8];
 
@@ -293,13 +303,16 @@ float getUnableToBurnFactor(unsigned int board[20], int surfaceArray[10], float 
   return totalPenalty * heightMultiplier;
 }
 
-int isTetrisReady(unsigned int board[20], int col10Height){
-  if (col10Height > 16) {
+int isTetrisReady(unsigned int board[20], int surfaceArray[10], int wellColumn){
+  int wellColHeight = surfaceArray[wellColumn];
+  if (wellColHeight > 16) {
     return 0;
   }
+  int wellMask = (1 << (9 - wellColumn));
+  int idealRowMask = FULL_ROW & !wellMask;
   // Check that the four rows where a right well tetris would happen are all full except col 10
   for (int r = 0; r < 4; r++) {
-    if ((board[19 - col10Height - r] & FULL_ROW) != 1022) {
+    if ((board[19 - wellColHeight - r] & FULL_ROW) != idealRowMask) {
       return false;
     }
   }
@@ -336,7 +349,7 @@ float fastEval(GameState gameState,
       ? weights.surfaceLeftCoef * getLeftSurfaceFactor(newState.board, newState.surfaceArray, evalContext->pieceRangeContext.max5TapHeight)
       : 0;
   float tetrisReadyFactor =
-    (evalContext->wellColumn >= 0 && isTetrisReady(newState.board, newState.surfaceArray[evalContext->wellColumn]))
+    (evalContext->wellColumn >= 0 && isTetrisReady(newState.board, newState.surfaceArray, evalContext->wellColumn))
       ? weights.tetrisReadyCoef
       : 0;
   float unableToBurnFactor = weights.unableToBurnCoef * getUnableToBurnFactor(newState.board, newState.surfaceArray, evalContext->scareHeight);

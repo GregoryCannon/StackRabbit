@@ -187,7 +187,7 @@ float adjustHoleCountAndBoardAfterTuck(unsigned int board[20], LockPlacement loc
   for (int i = 3; i >= 0; i--) {
     // Don't add any minos that are off the board
     if (lockPlacement.y + i < 0) {
-      continue;;
+      continue;
     }
 
     if (pieceRows[i] == 0) {

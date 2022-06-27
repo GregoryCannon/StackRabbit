@@ -35,7 +35,7 @@ int getNumTrueHoles(float adjustedNumHoles){
 }
 
 AiMode getAiMode(GameState gameState, int currentMax5TapHeight, int max5TapHeight29) {
-  if (currentMax5TapHeight < 4 || ALWAYS_LINEOUT) {
+  if (gameState.lines > 226 || currentMax5TapHeight < 4 || ALWAYS_LINEOUT) {
     return LINEOUT;
   }
 //  if (max5TapHeight29 < 2 && gameState.lines > 220 && gameState.level < 29) {
@@ -82,7 +82,7 @@ const EvalContext getEvalContext(GameState gameState, const PieceRangeContext pi
   if (aiMode == LINEOUT) {
     context.wellColumn = -1;
   } else {
-    context.wellColumn = 9;
+    context.wellColumn = WELL_COLUMN;
   }
 
   // Misc other properties

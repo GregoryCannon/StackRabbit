@@ -156,17 +156,22 @@ int searchDepth2(GameState gameState, const Piece *firstPiece, const Piece *seco
 }
 
 /** Plays one move from a given state, with or without knowledge of the next box.*/
-LockLocation playOneMove(GameState gameState, Piece *firstPiece, Piece *secondPiece, int playoutLength, int keepTopN, const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3]){
+LockLocation playOneMove(GameState gameState, Piece *firstPiece, Piece *secondPiece, int numCandidatesToPlayout, const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3]){
 
   // Keep a running list of the top X possibilities as the move search is happening.
   // Keep twice as many as we'll eventually need, since some duplicates may be removed before playouts start
-  int numSorted = keepTopN;
+  int numSorted = numCandidatesToPlayout;
 
   // Get the list of evaluated possibilities
   list<Possibility> possibilityList;
   list<Possibility> sortedList;
+  // (Next 3 lines currently hardcoded for NNB)
   searchDepth1(gameState, firstPiece, numSorted, evalContext, possibilityList);
-  partiallySortPossibilityList(possibilityList, keepTopN, sortedList);
+  if (possibilityList.size() == 0){
+    return {NONE, NONE, NONE}; // Return an invalid lock location to indicate the agent has topped out
+  }
+  partiallySortPossibilityList(possibilityList, numCandidatesToPlayout, sortedList);
+  Piece *lastSeenPiece = firstPiece;
 
   // Perform playouts on the promising possibilities
   int numPlayedOut = 0;
@@ -176,7 +181,7 @@ LockLocation playOneMove(GameState gameState, Piece *firstPiece, Piece *secondPi
     if (numPlayedOut >= numSorted) {
       break;
     }
-    float overallScore = possibility.immediateReward + getPlayoutScore(possibility.resultingState, pieceRangeContextLookup, secondPiece->index);
+    float overallScore = possibility.immediateReward + getPlayoutScore(possibility.resultingState, pieceRangeContextLookup, lastSeenPiece->index);
 
     // Potentially update the best possibility
     if (bestLockLocation == NULL || overallScore > bestPossibilityScore) {

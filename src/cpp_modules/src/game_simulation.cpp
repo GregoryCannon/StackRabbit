@@ -38,8 +38,11 @@ int simulateGame(char const *inputFrameTimeline, int startingLevel, int maxLines
     getPieceRangeContext(inputFrameTimeline, 3),
   };
   int score = 0;
+  int numMoves = 0;
 
   while (true) {
+    numMoves++;
+    
     // Get pieces
     curPiece = nextPiece;
     nextPiece = getRandomPiece(curPiece);
@@ -48,29 +51,22 @@ int simulateGame(char const *inputFrameTimeline, int startingLevel, int maxLines
     const EvalContext evalContextRaw = getEvalContext(gameState, pieceRangeContextLookup);
     const EvalContext *evalContext = &evalContextRaw;
 
-    // Get the lock placements
-    std::vector<LockPlacement> lockPlacements;
-    moveSearch(gameState, &curPiece, evalContext->pieceRangeContext.inputFrameTimeline, lockPlacements);
-
-    if (lockPlacements.size() == 0) {
+    LockLocation bestMove = playOneMove(gameState, &curPiece, NULL, DEPTH_1_PRUNING_BREADTH, evalContext, pieceRangeContextLookup);
+    if (bestMove.x == NONE){
+      // Agent died, simulated game is complete
       break;
     }
-
-    // Pick the best placement
-    LockPlacement bestMove = pickLockPlacement(gameState, evalContext, lockPlacements);
-
-    if (shouldAdjust) {
-//      predictSearchStateAtAdjustmentTime()
-    }
-
-    // Otherwise, update the state to keep playing
+    LockPlacement bestPlacement = {
+      bestMove.x, bestMove.y, bestMove.rotationIndex, -1, NO_TUCK_NOTATION, &curPiece
+    };
+    // Update the state to keep playing
     int oldLines = gameState.lines;
-    gameState = advanceGameState(gameState, bestMove, evalContext);
+    gameState = advanceGameState(gameState, bestPlacement, evalContext);
     score += SCORE_REWARDS[gameState.lines - oldLines] * gameState.level;
 
-    if (PLAYOUT_LOGGING_ENABLED) {
+    if (SIMULATION_LOGGING_ENABLED) {
       printBoard(gameState.board);
-      printf("Best placement: %c %d, %d\n\n", bestMove.piece->id, bestMove.rotationIndex, bestMove.x - SPAWN_X);
+      printf("Best placement: %c %d, %d\n\n", bestPlacement.piece->id, bestPlacement.rotationIndex, bestPlacement.x - SPAWN_X);
       printf("Score: %d, Lines: %d, Level: %d\n", score, gameState.lines, gameState.level);
     }
 
@@ -85,5 +81,6 @@ void simulateGames(int numGames, char const *inputFrameTimeline, int startingLev
   for (int i = 0; i < numGames; i++) {
     int score = simulateGame(inputFrameTimeline, startingLevel, maxLines, /* shouldAdjust= */ false, /* reactionTime */ 21);
     scores.push_back(score);
+    printf("%d: %d\n", i, score);
   }
 }
