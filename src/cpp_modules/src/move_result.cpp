@@ -6,6 +6,10 @@
  * --Side effect-- marks the hole or tuck setup in the board data structure
  */
 float analyzeHole(unsigned int board[20], int r, int c){
+  // VARIABLE_RANGE_CHECKS_ENABLED
+  if (true && (r < 0 || r >= 20)){
+    printf("PANIK, r=%d\n", r);
+  }
   // Check if it's a tuck setup
   if (
     (c >= 2 && ((board[r] >> (9-c)) & 7) == 0) ||   // left side tuck (2 cells of open space)
@@ -68,6 +72,10 @@ float getNewSurfaceAndNumNewHoles(int surfaceArray[10],
     const int highestRowInCol = 20 - surfaceArray[c];
     int holeWeightStartRow = -1; // Indicates that all rows above this row are weight on a hole
     for (int r = (lockPlacement.y + bottomSurface[i]); r < highestRowInCol; r++) {
+      // VARIABLE_RANGE_CHECKS
+      if (r < 0 || r >= 20){
+        continue;
+      }
       float rating = analyzeHole(board, r, c);
       if (std::abs(rating - TUCK_SETUP_HOLE_PROPORTION) > FLOAT_EPSILON) { // If it's NOT a tuck setup
         holeWeightStartRow = r - 1;
@@ -75,11 +83,11 @@ float getNewSurfaceAndNumNewHoles(int surfaceArray[10],
       numNewHoles += rating;
     }
     // If placing a piece on top of a row that's already weighing on a hole, then the new piece is adding weight to that
-    if (board[highestRowInCol] & HOLE_WEIGHT_BIT) {
+    if (highestRowInCol < 20 && board[highestRowInCol] & HOLE_WEIGHT_BIT) {
       holeWeightStartRow = highestRowInCol - 1;
     }
     // Mark rows as needing to be cleared
-    maybePrint("marking needToClear (column %d): start row = %d, surface = %d\n", c, holeWeightStartRow, 20 - newSurface[c]);
+//    maybePrint("marking needToClear (column %d): start row = %d, surface = %d\n", c, holeWeightStartRow, 20 - newSurface[c]);
     if (holeWeightStartRow != -1){
       for (int r = holeWeightStartRow; r >= 20 - newSurface[c]; r--) {
         if (VARIABLE_RANGE_CHECKS_ENABLED && (r < 0 || r >= 20)){
@@ -111,12 +119,15 @@ float updateSurfaceAndHoles(int surfaceArray[10], unsigned int board[20], int ex
   for (int c = 0; c < 10; c++) {
     int mask = 1 << (9 - c);
     int r = 20 - surfaceArray[c];
-    while (r < 20 && !(board[r] & mask)) {
+    while (r >= 0 && r < 20 && !(board[r] & mask)) {
       r++;
     }
     // Update the new surface array
     surfaceArray[c] = 20 - r;
 
+    // VARIABLE_RANGE_CHECKS
+    r = max(0, r);
+    r = min(19, r);
     int lowestHoleInCol = -1;
     while (r < 20) {
       // Add new holes to the overall count, unless they're in the well

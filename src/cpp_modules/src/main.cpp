@@ -21,7 +21,7 @@
 // #include "../data/ranks_output.cpp"
 
 std::string mainProcess(char const *inputStr, RequestType requestType) {
-  maybePrint("Input string %s\n", inputStr);
+//  printf("Input string %s\n", inputStr);
 
   // Init empty data structures
   GameState startingGameState = {

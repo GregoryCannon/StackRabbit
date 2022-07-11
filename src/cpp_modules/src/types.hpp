@@ -12,6 +12,8 @@
 #undef max
 #undef min
 
+
+
 enum RequestType {
   GET_LOCK_VALUE_LOOKUP,
   PLAY_MOVE_NO_NEXT_BOX,
@@ -71,6 +73,10 @@ struct LockPlacement {
   int tuckFrame;
   char tuckInput;
   const Piece *piece;
+};
+
+const LockPlacement NO_PLACEMENT {
+  NONE, NONE, NONE, NONE, 'x', NULL
 };
 
 /** Minimal representation of a lock location. */

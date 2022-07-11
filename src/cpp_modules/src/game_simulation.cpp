@@ -78,6 +78,7 @@ int simulateGame(char const *inputFrameTimeline, int startingLevel, int maxLines
 }
 
 void simulateGames(int numGames, char const *inputFrameTimeline, int startingLevel, int maxLines, int shouldAdjust, int reactionTime, OUT std::vector<int> &scores){
+  printf("Starting game simulations...");
   for (int i = 0; i < numGames; i++) {
     int score = simulateGame(inputFrameTimeline, startingLevel, maxLines, /* shouldAdjust= */ false, /* reactionTime */ 21);
     scores.push_back(score);

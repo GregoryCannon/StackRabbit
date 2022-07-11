@@ -1,5 +1,6 @@
 #include "eval.hpp"
 #include "move_result.hpp"
+#include "eval_context.hpp"
 #include "utils.hpp"
 #include "../data/ranks_output.hpp"
 #include <math.h>
@@ -79,7 +80,7 @@ float getAverageHeightFactor(int avgHeight, float scareHeight) {
 }
 
 float getBuiltOutLeftFactor(int surfaceArray[10], unsigned int board[20], float avgHeight, float scareHeight) {
-  if (!USE_RIGHT_WELL_FEATURES){
+  if (!USE_RIGHT_WELL_FEATURES) {
     return 0;
   }
   float heightRatio = max(1.0f, avgHeight) / max(2.0f, scareHeight);
@@ -116,7 +117,7 @@ float getLeftSurfaceFactor(unsigned int board[20], int surfaceArray[10], int max
 }
 
 float getCol9Factor(int col9Height, float maxSafeCol9Height){
-  if (!USE_RIGHT_WELL_FEATURES){
+  if (!USE_RIGHT_WELL_FEATURES) {
     return 0;
   }
   if (col9Height <= maxSafeCol9Height) {
@@ -201,15 +202,15 @@ float getInaccessibleLeftFactor(unsigned int board[20], int surfaceArray[10], in
   int needs5Tap = needs5TapForDig || needs5TapForBurn;
 //  int needs5TapOnKillscreen = (surfaceArray[1] - surfaceArray[0]) > maxAccessibleLeftSurface[0];
 //  int needs5Tap = needs5TapForDig || needs5TapForBurn || needs5TapOnKillscreen;
-  
+
   int hasHoleInLeft = false;
-  for (int r = highestRowOfCol1 + 1; r < highestRowOfCol1 + 4; r++){
-    if (board[r] & (HOLE_BIT(0) | HOLE_BIT(1) | HOLE_BIT(2))){
+  for (int r = highestRowOfCol1 + 1; r < highestRowOfCol1 + 4; r++) {
+    if (board[r] & (HOLE_BIT(0) | HOLE_BIT(1) | HOLE_BIT(2))) {
       hasHoleInLeft = true;
       break;
     }
   }
-  
+
   // If the left is built out higher than the max 5 tap height, and there's no pressing need to get a piece there anyway, this factor doesn't matter
   if (surfaceArray[0] > maxAccessibleLeftSurface[0] && surfaceArray[0] >= surfaceArray[1] && !needs5Tap && !hasHoleInLeft) {
     return 0;
@@ -249,7 +250,7 @@ float getLineClearFactor(int numLinesCleared, FastEvalWeights weights, int shoul
 
 /** Calculate how hard it will be to fill in the middle of the board enough to burn. */
 float getUnableToBurnFactor(unsigned int board[20], int surfaceArray[10], float scareHeight){
-  if (!USE_RIGHT_WELL_FEATURES){
+  if (!USE_RIGHT_WELL_FEATURES) {
     return 0;
   }
   float totalPenalty = 0;
@@ -319,10 +320,109 @@ int isTetrisReady(unsigned int board[20], int surfaceArray[10], int wellColumn){
   return true;
 }
 
+/** Rate the "badness" of a surface, where more points is worse. */
+float rateSurfaceForPerfectPlay(int surfaceArray[10], int wellColumn) {
+  float score = 0;
+  for (int i = 0; i < 9; i++) {
+    if (i == wellColumn || i+1 == wellColumn) {
+      continue;
+    }
+    int diff = surfaceArray[i + 1] - surfaceArray[i];
+
+    // Line dependencies
+    if (diff >= 7 && (i == 0 || surfaceArray[i-1] - surfaceArray[i] >= 7)) {
+      score += 40;
+    } else if (diff >= 3 && (i == 0 || surfaceArray[i-1] - surfaceArray[i] >= 3)) {
+      score += 20;
+    }  else if (diff <= -7 && i == wellColumn - 2) {
+      score += 40;
+    } else if (diff <= -3 && i == wellColumn - 2) {
+      score += 20;
+    } else if (diff != 0) {
+      // Otherwise, punish based on the absolute value of the column differences
+      score += pow(abs(diff), 1.5);
+    }
+  }
+  return score;
+}
+
+/** Custom evaluation function designed for perfect play. The score it returns is aimed to emulate the percent chance of maintaining a perfect board throughout all the playouts. */
+float evalForPerfectPlay(GameState gameState,
+                         GameState newState,
+                         LockPlacement lockPlacement,
+                         const EvalContext *evalContext) {
+  // Check for holes or covered well
+  float trueHoles = getNumTrueHoles(newState.adjustedNumHoles);
+  float tuckSetupCells = (newState.adjustedNumHoles - trueHoles) / TUCK_SETUP_HOLE_PROPORTION;
+  bool hasCoveredWell = newState.surfaceArray[evalContext->wellColumn] > 0;
+  bool inaccessibleRight = false;
+  for (int i = 5; i < 10; i++) {  // col 7 is the furthest right a 5 tap piece is on the board when tapped left
+    if (newState.surfaceArray[i] > evalContext->pieceRangeContext.maxAccessibleRightSurface[i]) {
+      inaccessibleRight = true;
+    }
+  }
+
+  if (trueHoles > 0 || hasCoveredWell || inaccessibleRight) {
+    if (LOGGING_ENABLED) {
+      maybePrint("\nEvaluating possibility %d %d %d\n",
+                 lockPlacement.rotationIndex,
+                 lockPlacement.x - SPAWN_X,
+                 lockPlacement.y);
+      printBoard(newState.board);
+      printf("RUN FAILED\n");
+    }
+    return 0;
+  }
+
+  // We'll track the overall badness of a position, such that as badness increases, the eval approaches 0.
+  float badness = 0;
+
+  // Rate the surface
+  badness += rateSurfaceForPerfectPlay(newState.surfaceArray, evalContext->wellColumn);
+
+  // Evaluate tuck setups
+  badness += tuckSetupCells * 20;
+
+  // Evaluate board height
+  badness += 20 * max(0.0f, getAverageHeight(newState.surfaceArray, evalContext->wellColumn) - 4);
+
+  // Use a decaying exponential with the following key points:
+  // 0 badness -> 100% survival
+  // 50 badness -> 50% survival
+  // 100 badness -> 25% survival
+  // infinite badness -> 0% survival
+  float evalScore = 100.0f * pow(0.5f, badness / 50.0f);
+
+  // TODO: reward tetris, and tetrisReady
+
+  // Logging
+  if (LOGGING_ENABLED) {
+    maybePrint("\nEvaluating possibility %d %d %d\n",
+               lockPlacement.rotationIndex,
+               lockPlacement.x - SPAWN_X,
+               lockPlacement.y);
+    printBoard(newState.board);
+    printf("Numholes %f\n", newState.adjustedNumHoles);
+    maybePrint(
+      "badness %01f, evalScore %01f\n",
+      badness,
+      evalScore);
+  }
+
+
+  return evalScore;
+}
+
+
+
 float fastEval(GameState gameState,
                GameState newState,
                LockPlacement lockPlacement,
                const EvalContext *evalContext) {
+  if (SHOULD_PLAY_PERFECT) {
+    return evalForPerfectPlay(gameState, newState, lockPlacement, evalContext);
+  }
+
   FastEvalWeights weights = evalContext->weights;
   // Preliminary helper work
   float avgHeight = getAverageHeight(newState.surfaceArray, evalContext->wellColumn);

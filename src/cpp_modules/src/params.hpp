@@ -5,12 +5,12 @@
 #include "types.hpp"
 
 const FastEvalWeights MAIN_WEIGHTS = {
-  /* avgHeightCoef= */ PLAY_SAFE_PRE_KILLSCREEN ? -8 : -5,
+  /* avgHeightCoef= */ PLAY_SAFE_PRE_KILLSCREEN ? -8 : -7,
   /* builtOutLeftCoef= */ 2,
-  /* burnCoef= */ PLAY_SAFE_PRE_KILLSCREEN ? -9 : -18,
+  /* burnCoef= */ PLAY_SAFE_PRE_KILLSCREEN ? -9 : -14,
   /* coveredWellCoef= */ -5,
-  /* col9Coef= */ -2,
-  /* deathCoef= */ -2000,
+  /* col9Coef= */ -3,
+  /* deathCoef= */ -3000,
   /* extremeGapCoef= */ -3,
   /* holeCoef= */ -50,
   /* holeWeightCoef= */ 0,
@@ -23,22 +23,23 @@ const FastEvalWeights MAIN_WEIGHTS = {
   /* unableToBurnCoef= */ -0.5
 };
 
+// No weights apply here, all are automatically set to 0
 const FastEvalWeights PLAY_PERFECT_WEIGHTS = {
-  MAIN_WEIGHTS.avgHeightCoef,
+  /* avgHeightCoef= */ 0,
   /* builtOutLeftCoef= */ 0,
-  /* burnCoef= */ -100,
-  MAIN_WEIGHTS.coveredWellCoef,
+  /* burnCoef= */ -50,
+  /* coveredWellCoef= */ 0,
   /* col9Coef= */ 0,
-  MAIN_WEIGHTS.deathCoef,
-  MAIN_WEIGHTS.extremeGapCoef,
-  /* holeCoef= */ -200,
-  MAIN_WEIGHTS.holeWeightCoef,
-  MAIN_WEIGHTS.inaccessibleLeftCoef,
-  MAIN_WEIGHTS.inaccessibleRightCoef,
-  MAIN_WEIGHTS.tetrisCoef,
-  MAIN_WEIGHTS.tetrisReadyCoef,
-  MAIN_WEIGHTS.surfaceCoef,
-  MAIN_WEIGHTS.surfaceLeftCoef,
+  /* deathCoef= */ 0,
+  /* extremeGapCoef= */ 0,
+  /* holeCoef= */ 0,
+  /* holeWeightCoef= */ 0,
+  /* inaccessibleLeftCoef= */ 0,
+  /* inaccessibleRightCoef= */ 0,
+  /* tetrisCoef= */ 0,
+  /* tetrisReadyCoef= */ 0,
+  /* surfaceCoef= */ 0,
+  /* surfaceLeft= */ 0,
   /* unableToBurnCoef= */ 0
 };
 
@@ -140,6 +141,9 @@ const FastEvalWeights LINEOUT_WEIGHTS = {
 };
 
 FastEvalWeights getWeights(AiMode mode){
+  if (SHOULD_PLAY_PERFECT){
+    return PLAY_PERFECT_WEIGHTS;
+  }
   switch (mode) {
     case DIG:
       return DIG_WEIGHTS;

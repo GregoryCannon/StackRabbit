@@ -1,7 +1,9 @@
 #include "high_level_search.hpp"
 #include <string>
+#include <math.h>
 #include <unordered_map>
 #include "params.hpp"
+#include <limits>
 using namespace std;
 
 #define UNEXPLORED_PENALTY -500   // A penalty for placements that weren't explored with playouts (could be worse than the eval indicates)
@@ -9,7 +11,7 @@ using namespace std;
 
 /** Concatenates the position of a piece into a single string. */
 std::string encodeLockPosition(LockLocation lockLocation){
-  if (VARIABLE_RANGE_CHECKS_ENABLED) {
+  if (VARIABLE_RANGE_CHECKS_ENABLED || true) {
     // Check variable ranges to avoid buffer overflows
     if (lockLocation.rotationIndex > 4 || lockLocation.rotationIndex < 0) {
       printf("rotation index out of range %d\n", lockLocation.rotationIndex);
@@ -176,12 +178,16 @@ LockLocation playOneMove(GameState gameState, Piece *firstPiece, Piece *secondPi
   // Perform playouts on the promising possibilities
   int numPlayedOut = 0;
   LockLocation const *bestLockLocation = NULL;
-  float bestPossibilityScore = NULL;
+  float bestPossibilityScore = -99999999.0f;
   for (Possibility const& possibility : sortedList) {
     if (numPlayedOut >= numSorted) {
       break;
     }
     float overallScore = possibility.immediateReward + getPlayoutScore(possibility.resultingState, pieceRangeContextLookup, lastSeenPiece->index);
+    if (SHOULD_PLAY_PERFECT){
+//      overallScore = std::max(0.0f, overallScore); // 0 is the lowest possible eval score in the "play perfect" system
+//      overallScore = std::min(100.0f, overallScore); // 100 is the max possible eval score in the "play perfect" system
+    }
 
     // Potentially update the best possibility
     if (bestLockLocation == NULL || overallScore > bestPossibilityScore) {
@@ -206,6 +212,14 @@ std::string getLockValueLookupEncoded(GameState gameState, const Piece *firstPie
   // Keep a running list of the top X possibilities as the move search is happening.
   // Keep twice as many as we'll eventually need, since some duplicates may be removed before playouts start
   int numSorted = keepTopN * 2;
+  
+  if (SHOULD_PLAY_PERFECT){
+    float baseEval = fastEval(gameState, gameState, /* lockPlacement */ { NO_PLACEMENT }, evalContext);
+    if (baseEval == 0){
+      printf("Already dead, aborting...");
+      return "{}";
+    }
+  }
 
   // Get the list of evaluated possibilities
   list<Possibility> possibilityList;
@@ -232,7 +246,12 @@ std::string getLockValueLookupEncoded(GameState gameState, const Piece *firstPie
 
     float overallScore = MAP_OFFSET + (shouldPlayout
       ? possibility.immediateReward + getPlayoutScore(possibility.resultingState, pieceRangeContextLookup, secondPiece->index)
-      : possibility.immediateReward + possibility.evalScore + unexploredPenalty);
+      : max(evalContext->weights.deathCoef, possibility.immediateReward + possibility.evalScore + unexploredPenalty)); // Can't be worse than death
+    if (SHOULD_PLAY_PERFECT){
+//      overallScore = std::max(MAP_OFFSET + 0.0f, overallScore); // 0 is the lowest possible eval score in the "play perfect" system
+//      overallScore = std::min(MAP_OFFSET + 100.0f, overallScore); // 100 is the max possible eval score in the "play perfect" system
+    }
+    
     if (overallScore > lockValueMap[lockPosEncoded]) {
       if (PLAYOUT_LOGGING_ENABLED || PLAYOUT_RESULT_LOGGING_ENABLED) {
         if (shouldPlayout) {
@@ -254,9 +273,9 @@ std::string getLockValueLookupEncoded(GameState gameState, const Piece *firstPie
   // Encode lookup to JSON
   std::string mapEncoded = std::string("{");
   for( const auto& n : lockValueMap ) {
-    char buf[20];
-    sprintf(buf, "\"%s\":%f,", n.first.c_str(), n.second - MAP_OFFSET);
-    mapEncoded.append(buf);
+    char mapEntryBuf[30];
+    sprintf(mapEntryBuf, "\"%s\":%.2f,", n.first.c_str(), n.second - MAP_OFFSET);
+    mapEncoded.append(mapEntryBuf);
   }
   if (lockValueMap.size() > 0) {
     mapEncoded.pop_back(); // Remove the last comma

@@ -61,6 +61,9 @@ float playSequence(GameState gameState, const PieceRangeContext pieceRangeContex
         printf("Final eval score: %01f\n", evalScore);
         printf("*** TOTAL= %f ***\n", totalReward + evalScore);
       }
+      if (SHOULD_PLAY_PERFECT && totalReward < 0){
+        return 0;
+      }
       return totalReward + evalScore;
     }
 

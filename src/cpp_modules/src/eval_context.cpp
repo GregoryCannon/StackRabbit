@@ -1,23 +1,24 @@
 #include "eval_context.hpp"
 #include <math.h>
 
-const EvalContext DEBUG_CONTEXT = {
-  /* aiMode= */ STANDARD,
-  /* fastEvalWeights= */ MAIN_WEIGHTS,
-  /* pieceRangeContext= */ {},
-  /* countWellHoles= */ false,
-  /* maxDirtyTetrisHeight= */ 1,
-  /* maxSafeCol9Height= */ 6,
-  /* scareHeight= */ 5,
-  /* shouldRewardLineClears= */ false,
-  /* wellColumn= */ 9,
-};
+// Unused
+//const EvalContext DEBUG_CONTEXT = {
+//  /* aiMode= */ STANDARD,
+//  /* fastEvalWeights= */ MAIN_WEIGHTS,
+//  /* pieceRangeContext= */ {},
+//  /* countWellHoles= */ false,
+//  /* maxDirtyTetrisHeight= */ 1,
+//  /* maxSafeCol9Height= */ 6,
+//  /* scareHeight= */ 5,
+//  /* shouldRewardLineClears= */ false,
+//  /* wellColumn= */ 9,
+//};
 
 int hasHoleBlockingTetrisReady(unsigned int board[20], int col10Height){
   if (col10Height > 16) {
     return 0;
   }
-  // Check that the four rows where a right well tetris would happen are all full except col 10
+  // Check that the four rows where a right well tetris would happen have no holes
   for (int r = 0; r <= 4; r++) {
     if (board[19 - col10Height - r] & ALL_HOLE_BITS) {
       return true;
@@ -38,12 +39,12 @@ AiMode getAiMode(GameState gameState, int currentMax5TapHeight, int max5TapHeigh
   if (gameState.lines > 226 || currentMax5TapHeight < 4 || ALWAYS_LINEOUT) {
     return LINEOUT;
   }
-//  if (max5TapHeight29 < 2 && gameState.lines > 220 && gameState.level < 29) {
-//    if (hasHoleBlockingTetrisReady(gameState.board, gameState.surfaceArray[9])) {
-//      return DIRTY_NEAR_KILLSCREEN;
-//    }
-//    return NEAR_KILLSCREEN;
-//  }
+  if (max5TapHeight29 < 2 && gameState.lines > 220 && gameState.level < 29) {
+    if (hasHoleBlockingTetrisReady(gameState.board, gameState.surfaceArray[9])) {
+      return DIRTY_NEAR_KILLSCREEN;
+    }
+    return NEAR_KILLSCREEN;
+  }
   if (getNumTrueHoles(gameState.adjustedNumHoles) >= 1) {
     return DIG;
   }
@@ -88,7 +89,7 @@ const EvalContext getEvalContext(GameState gameState, const PieceRangeContext pi
   // Misc other properties
   context.maxDirtyTetrisHeight = 0;
   // context.countWellHoles = context.aiMode == DIG;
-  context.countWellHoles = false;
+  context.countWellHoles = SHOULD_PLAY_PERFECT;
   context.shouldRewardLineClears = (aiMode == LINEOUT || aiMode == DIRTY_NEAR_KILLSCREEN);
 
   return context;
