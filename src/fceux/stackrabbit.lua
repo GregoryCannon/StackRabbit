@@ -1,6 +1,7 @@
 IS_MAC = true
 IS_PAL = false
 USE_PUSHDOWN = true
+DEBUG_MODE = false
 
 local os = require("os")
 if (IS_MAC) then
@@ -26,11 +27,17 @@ TIMELINE_30_HZ = "X.";
 
 -- Config constants
 SHOULD_ADJUST = true
-REACTION_TIME_FRAMES = 24
-INPUT_TIMELINE = TIMELINE_14_HZ;
+REACTION_TIME_FRAMES = 21
+INPUT_TIMELINE = TIMELINE_12_HZ;
 SHOULD_RECORD_GAMES = true
 MOVIE_PATH = "C:\\Users\\Greg\\Desktop\\VODs\\" -- Where to store the fm2 VODS (absolute path)
-if IS_MAC then MOVIE_PATH = "/Users/greg/Documents/AiVods/" end
+SCORES_TEXT_PATH = "C:\\Users\\Greg\\Desktop\\sr-test-scores.txt"
+if IS_MAC then 
+  MOVIE_PATH = "/Users/greg/Documents/AiVods/" 
+  SCORES_PATH = "/Users/greg/Desktop/sr-test-scores.txt"
+end
+file = io.open(SCORES_PATH, "StackRabbit Game Scores:")
+
 
 function resetGameScopedVariables()
   isFirstPiece = true;
@@ -176,6 +183,9 @@ function requestAdjustmentAsync()
 end
 
 function requestPrecompute()
+  if gameOver then
+    return
+  end
   print("requestprecompute")
   -- Convert requests to PAL
   local reqLevel = stateForNextPiece.level
@@ -410,14 +420,28 @@ function processAdjustment()
   end 
 end
 
+function onGameOver()
+  file:write("hello", "\n")
+  file:write("hello", "\n")
+end
 
 --[[------------------------------------ 
 ---------- Main Game Loop  ------------- 
 ------------------------------------]]--
 
 function runGameFrame()
+  if gamePhase == 10 then
+    startBtnVal = false;
+    if emu.framecount() % 10 == 1 then
+      startBtnVal = true
+    end
+    joypad.set(1, {A=false,B=false,left=false,right=false,up=false,down=false,select=false,start=startBtnVal});
+    return
+  end
+
   local gamePhaseLastFrame = gamePhase
   gamePhase = memory.readbyte(0x0048)
+  -- print("gamePhase" .. gamePhase)
   if(gamePhase == 1) then
     if(gamePhaseLastFrame ~= 1) then
       -- First active frame for piece. This is where board state/input sequence is calculated
@@ -441,14 +465,18 @@ function runGameFrame()
     if gamePhaseLastFrame == 1 then
       if not USE_PUSHDOWN and not isFirstPiece and not gameOver and getInputForFrame(arrFrameIndex + 1) ~= "*" then
         print(inputSequence)
-        error("Server mistimed lock delay")
+        if (DEBUG_MODE) then
+          error("Server mistimed lock delay")
+        end
       end
       asPieceLocks()
       return
     end
     -- If the agent is mistaken about the board state, crash immediately so I can debug it
     if gamePhase == 8 and not gameOver and getEncodedBoard() ~= stateForNextPiece.board then
-      -- error("Divergence")
+      if (DEBUG_MODE) then
+        error("Divergence")
+      end
     end
 
   -- Resets the index for the next piece. Disables user input when the game is not over.
@@ -469,6 +497,7 @@ function eachFrame()
   --Update metaGameState
   local metaGameStateLastFrame = metaGameState
   metaGameState = memory.readbyte(0x00C0)
+  -- print("Metastate" .. metaGameState)
 
   --Game starts
   if(metaGameStateLastFrame == 3 and metaGameState == 4) then
@@ -485,6 +514,16 @@ function eachFrame()
 
   if(metaGameState < 4) then
     -- Currently on menu
+    startBtnVal = false
+    aBtnVal = false
+    if emu.framecount() % 10 == 4 then
+      startBtnVal = true
+    end
+    if emu.framecount() % 10 < 5 then
+      aBtnVal = true
+    end
+    joypad.set(1, {A=aBtnVal,B=false,left=false,right=false,up=false,down=false,select=false,start=startBtnVal});
+    return
   end
 
   if(metaGameState == 4) then
