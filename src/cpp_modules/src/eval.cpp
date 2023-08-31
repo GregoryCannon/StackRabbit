@@ -310,7 +310,7 @@ int isTetrisReady(unsigned int board[20], int surfaceArray[10], int wellColumn){
     return 0;
   }
   int wellMask = (1 << (9 - wellColumn));
-  int idealRowMask = FULL_ROW & !wellMask;
+  int idealRowMask = FULL_ROW & ~wellMask;
   // Check that the four rows where a right well tetris would happen are all full except col 10
   for (int r = 0; r < 4; r++) {
     if ((board[19 - wellColHeight - r] & FULL_ROW) != idealRowMask) {
