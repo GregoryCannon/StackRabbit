@@ -49,6 +49,7 @@ float getNewSurfaceAndNumNewHoles(int surfaceArray[10],
   if (isTuck){
     for (int i = 0; i < 10; i++){
       newSurface[i] = std::max(surfaceArray[i], newSurface[i]);
+      // VARIABLE_RANGE_CHECKS
       if (newSurface[i] > 20){
         newSurface[i] = 20;
       }
@@ -74,6 +75,8 @@ float getNewSurfaceAndNumNewHoles(int surfaceArray[10],
     for (int r = (lockPlacement.y + bottomSurface[i]); r < highestRowInCol; r++) {
       // VARIABLE_RANGE_CHECKS
       if (r < 0 || r >= 20){
+        printf("PANIK 1, r=%d, y=%d, bottomSurface=%d\n", r, lockPlacement.y, bottomSurface[i]);
+        printBoard(board);
         continue;
       }
       float rating = analyzeHole(board, r, c);
@@ -127,7 +130,7 @@ float updateSurfaceAndHoles(int surfaceArray[10], unsigned int board[20], int ex
 
     // VARIABLE_RANGE_CHECKS
     r = max(0, r);
-    r = min(19, r);
+    r = min(20, r);
     int lowestHoleInCol = -1;
     while (r < 20) {
       // Add new holes to the overall count, unless they're in the well

@@ -20,6 +20,7 @@
 #define PLAY_SAFE_PRE_KILLSCREEN 0
 #define PLAY_SAFE_ON_KILLSCREEN 0
 #define ALWAYS_LINEOUT 0
+#define ALWAYS_LINEOUT_29 0
 #define SHOULD_PLAY_PERFECT 0
 
 // Logistics of move search and pruning

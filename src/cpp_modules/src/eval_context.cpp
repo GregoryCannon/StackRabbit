@@ -36,7 +36,7 @@ int getNumTrueHoles(float adjustedNumHoles){
 }
 
 AiMode getAiMode(GameState gameState, int currentMax5TapHeight, int max5TapHeight29) {
-  if (gameState.lines > 226 || currentMax5TapHeight < 4 || ALWAYS_LINEOUT) {
+  if ((ALWAYS_LINEOUT_29 && gameState.lines > 226) || currentMax5TapHeight < 4 || ALWAYS_LINEOUT) {
     return LINEOUT;
   }
   if (max5TapHeight29 < 2 && gameState.lines > 220 && gameState.level < 29) {

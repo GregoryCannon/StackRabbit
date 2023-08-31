@@ -7,7 +7,7 @@
 const FastEvalWeights MAIN_WEIGHTS = {
   /* avgHeightCoef= */ PLAY_SAFE_PRE_KILLSCREEN ? -8 : -7,
   /* builtOutLeftCoef= */ 2,
-  /* burnCoef= */ PLAY_SAFE_PRE_KILLSCREEN ? -9 : -14,
+  /* burnCoef= */ PLAY_SAFE_PRE_KILLSCREEN ? -9 : -16,
   /* coveredWellCoef= */ -5,
   /* col9Coef= */ -3,
   /* deathCoef= */ -3000,
@@ -16,7 +16,7 @@ const FastEvalWeights MAIN_WEIGHTS = {
   /* holeWeightCoef= */ 0,
   /* inaccessibleLeftCoef= */ -100,
   /* inaccessibleRightCoef= */ -200,
-  /* tetrisCoef= */ 40,
+  /* tetrisCoef= */ 50,
   /* tetrisReadyCoef= */ 6,
   /* surfaceCoef= */ 1,
   /* surfaceLeft= */ 0,
