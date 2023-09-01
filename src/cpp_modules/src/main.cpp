@@ -20,6 +20,17 @@
 #include "piece_rng.cpp"
 // #include "../data/ranks_output.cpp"
 
+template<typename ... Args>
+std::string string_format( const std::string& format, Args ... args )
+{
+    int size_s = std::snprintf( nullptr, 0, format.c_str(), args ... ) + 1; // Extra space for '\0'
+    if( size_s <= 0 ){ throw std::runtime_error( "Error during formatting." ); }
+    auto size = static_cast<size_t>( size_s );
+    std::unique_ptr<char[]> buf( new char[ size ] );
+    std::snprintf( buf.get(), size, format.c_str(), args ... );
+    return std::string( buf.get(), buf.get() + size - 1 ); // We don't want the '\0' inside
+}
+
 std::string mainProcess(char const *inputStr, RequestType requestType) {
 //  printf("Input string %s\n", inputStr);
 
@@ -98,7 +109,10 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
 //    playSequence(startingGameState, pieceRangeContextLookup, debugSequence, /* playoutLength= */ 1);
 //    return "Debug playout complete.";
     LockLocation bestMove = playOneMove(startingGameState, &curPiece, /* nextPiece */ NULL, /* numCandidatesToPlayout */ DEPTH_1_PRUNING_BREADTH, &context, pieceRangeContextLookup);
-    return "Debug playout complete.";
+    int xOffset = bestMove.x - 3;
+    int rot = bestMove.rotationIndex;
+
+    return string_format("[%d, %d]", rot, xOffset);
   }
 
   default: {
