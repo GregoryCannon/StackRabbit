@@ -454,6 +454,11 @@ function repeatedlyShiftPiece(
       }
     }
 
+    // If we just shifted and are in the intended rotation, then this is a legal placement
+    if (addNewPlacement) {
+      legalPlacementSimStates.push({ ...simState });
+    }
+
     if (isGravityFrame) {
       if (
         pieceCollision(
@@ -481,11 +486,6 @@ function repeatedlyShiftPiece(
 
     simState.frameIndex += 1;
     simState.arrFrameIndex += 1;
-
-    // If we just shifted and are in the intended rotation, then this is a legal placement
-    if (addNewPlacement) {
-      legalPlacementSimStates.push({ ...simState });
-    }
   }
 }
 

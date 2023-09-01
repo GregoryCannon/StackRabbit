@@ -201,6 +201,16 @@ function tapRangeTest() {
   ) {
     console.log(`Failed: 9 high 3 tap 29 13.5 Hz. Expected: ${expected16}`);
   }
+
+  const expected17 = true;
+  if (
+    canDoPlacement(getTestBoardWithHeight(2), 29, "I", 1, -5, "....X..X..X..X..X") !==
+    expected17
+  ) {
+    console.log(`Failed: 2 high 5 tap 29 15 Hz. Expected: ${expected17}`);
+  }
+
+  console.log("Run completed.");
 }
 
 function lastMinuteRotationsTest() {
@@ -360,7 +370,8 @@ function generateTestCases() {
 }
 
 // generateTestCases();
-testNumLegalAdjustments();
+// testNumLegalAdjustments();
+tapRangeTest();
 // for (const poss of testSingleCase([-5, 10, 3, 41])) {
 //   console.log(poss.placement);
 // }
