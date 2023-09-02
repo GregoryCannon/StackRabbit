@@ -12,8 +12,10 @@ float analyzeHole(unsigned int board[20], int r, int c){
   }
   // Check if it's a tuck setup
   if (
-    (c >= 2 && ((board[r] >> (9-c)) & 7) == 0) ||   // left side tuck (2 cells of open space)
-    (c <= 7 && ((board[r] >> (7-c)) & 7) == 0)      // right side tuck (2 cells of open space)
+    CAN_TUCK && 
+    (
+      (c >= 2 && ((board[r] >> (9-c)) & 7) == 0) ||   // left side tuck (2 cells of open space)
+      (c <= 7 && ((board[r] >> (7-c)) & 7) == 0))      // right side tuck (2 cells of open space)
     ) {
     // printf("MARKING TUCK SETUP %d %d, %d\n", c, r, board[r] >> 20);
     board[r] |= TUCK_SETUP_BIT(c); // Mark this cell as an overhang cell
@@ -70,25 +72,31 @@ float getNewSurfaceAndNumNewHoles(int surfaceArray[10],
 
     // Loop through the cells between the bottom of the piece and the ground
     int c = lockPlacement.x + i;
-    const int highestRowInCol = 20 - surfaceArray[c];
+    const int highestBoardCellInCol = 20 - surfaceArray[c];
     int holeWeightStartRow = -1; // Indicates that all rows above this row are weight on a hole
-    for (int r = (lockPlacement.y + bottomSurface[i]); r < highestRowInCol; r++) {
+    for (int r = (lockPlacement.y + bottomSurface[i]); r < 20; r++) {
       // VARIABLE_RANGE_CHECKS
       if (r < 0 || r >= 20){
         printf("PANIK 1, r=%d, y=%d, bottomSurface=%d\n", r, lockPlacement.y, bottomSurface[i]);
         printBoard(board);
         continue;
       }
-      float rating = analyzeHole(board, r, c);
-      if (std::abs(rating - TUCK_SETUP_HOLE_PROPORTION) > FLOAT_EPSILON) { // If it's NOT a tuck setup
-        holeWeightStartRow = r - 1;
+      if (r < highestBoardCellInCol){
+        // Check for new holes
+        float rating = analyzeHole(board, r, c);
+        if (std::abs(rating - TUCK_SETUP_HOLE_PROPORTION) > FLOAT_EPSILON) { // If it's NOT a tuck setup
+          holeWeightStartRow = r - 1;
+        }
+        numNewHoles += rating;
+      } else {
+        // Check for existing holes that we're adding weight to
+        if ((board[r] & HOLE_BIT(c))) {
+          holeWeightStartRow = r - 1;
+        }
       }
-      numNewHoles += rating;
+      
     }
-    // If placing a piece on top of a row that's already weighing on a hole, then the new piece is adding weight to that
-    if (highestRowInCol < 20 && board[highestRowInCol] & HOLE_WEIGHT_BIT) {
-      holeWeightStartRow = highestRowInCol - 1;
-    }
+
     // Mark rows as needing to be cleared
 //    maybePrint("marking needToClear (column %d): start row = %d, surface = %d\n", c, holeWeightStartRow, 20 - newSurface[c]);
     if (holeWeightStartRow != -1){

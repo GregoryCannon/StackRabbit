@@ -30,6 +30,9 @@ LockPlacement pickLockPlacement(GameState gameState,
  * @returns the total value of the playout (intermediate rewards + eval of the final board)
  */
 float playSequence(GameState gameState, const PieceRangeContext pieceRangeContextLookup[3], const int pieceSequence[SEQUENCE_LENGTH], int playoutLength) {
+  // Note down the original AI mode to prevent the AI from putting itself in alternate modes to affect the valuations
+  AiMode originalAiMode = getEvalContext(gameState, pieceRangeContextLookup).aiMode;
+
   float totalReward = 0;
   for (int i = 0; i < playoutLength; i++) {
     // Figure out modes and eval context
@@ -52,7 +55,9 @@ float playSequence(GameState gameState, const PieceRangeContext pieceRangeContex
     // On the last move, do a final evaluation
     if (i == playoutLength - 1) {
       GameState nextState = advanceGameState(gameState, bestMove, evalContext);
-      float evalScore = fastEval(gameState, nextState, bestMove, evalContext);
+      EvalContext contextRaw = *evalContext;
+      contextRaw.aiMode = originalAiMode;
+      float evalScore = fastEval(gameState, nextState, bestMove, &contextRaw);
       if (PLAYOUT_LOGGING_ENABLED) {
         gameState = nextState;
         printBoard(gameState.board);
@@ -82,42 +87,26 @@ float playSequence(GameState gameState, const PieceRangeContext pieceRangeContex
 
 
 float getPlayoutScore(GameState gameState, const PieceRangeContext pieceRangeContextLookup[3], int firstPieceIndex){
-  // Don't perform playouts if logging is enabled
-  if (LOGGING_ENABLED) {
-    return 0;
-  }
+  // // Don't perform playouts if logging is enabled
+  // if (LOGGING_ENABLED) {
+  //   return 0;
+  // }
 
   int pieceOffset = firstPieceIndex * 1000; // Index into the sequences in batches, with batch size equal to the total number of playouts
   int shortPlayoutOffset = 500; // Use new piece sequences for the short playouts
 
-  float longPlayoutScore = 0;
-  for (int i = 0; i < NUM_PLAYOUTS_LONG; i++) {
-    // Do one playout
-    const int *pieceSequence = canonicalPieceSequences + (pieceOffset + i) * SEQUENCE_LENGTH; // Index into the mega array of piece sequences;
-    float playoutScore = playSequence(gameState, pieceRangeContextLookup, pieceSequence, PLAYOUT_LENGTH_LONG);
-    longPlayoutScore += playoutScore;
-  }
-
   float shortPlayoutScore = 0;
-  for (int i = 0; i < NUM_PLAYOUTS_SHORT; i++) {
+  for (int i = 0; i < NUM_PLAYOUTS; i++) {
     // Do one playout
     const int *pieceSequence = canonicalPieceSequences + (pieceOffset + i) * SEQUENCE_LENGTH + shortPlayoutOffset; // Index into the mega array of piece sequences;
     float playoutScore = playSequence(gameState, pieceRangeContextLookup, pieceSequence, PLAYOUT_LENGTH_SHORT);
     shortPlayoutScore += playoutScore;
   }
 
-  float combined = (NUM_PLAYOUTS_SHORT == 0 ? 0 : (shortPlayoutScore / NUM_PLAYOUTS_SHORT)) +
-                   (NUM_PLAYOUTS_LONG == 0 ? 0 : (longPlayoutScore / NUM_PLAYOUTS_LONG));
-
-  // If long and short playouts are both used, weight each at 50%
-  if (NUM_PLAYOUTS_LONG > 0 && NUM_PLAYOUTS_SHORT > 0) {
-    combined *= 0.5;
-  }
-
   if (PLAYOUT_RESULT_LOGGING_ENABLED) {
-    printf("long %.1f | shortPlayoutScore %.1f | diff %.1f | combined %.1f \n", longPlayoutScore, shortPlayoutScore, longPlayoutScore - shortPlayoutScore, combined);
+    printf("PlayoutScore %.1f\n", shortPlayoutScore / NUM_PLAYOUTS);
   }
-  return combined;
+  return NUM_PLAYOUTS == 0 ? 0 : (shortPlayoutScore / NUM_PLAYOUTS);
 }
 
 
