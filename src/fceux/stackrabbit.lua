@@ -1,4 +1,4 @@
-IS_MAC = true
+IS_MAC = false
 IS_PAL = false
 USE_PUSHDOWN = true
 DEBUG_MODE = false
@@ -27,8 +27,8 @@ TIMELINE_30_HZ = "X.";
 
 -- Config constants
 SHOULD_ADJUST = true
-REACTION_TIME_FRAMES = 21
-INPUT_TIMELINE = TIMELINE_12_HZ;
+REACTION_TIME_FRAMES = 18
+INPUT_TIMELINE = TIMELINE_30_HZ;
 SHOULD_RECORD_GAMES = true
 MOVIE_PATH = "C:\\Users\\Greg\\Desktop\\VODs\\" -- Where to store the fm2 VODS (absolute path)
 SCORES_TEXT_PATH = "C:\\Users\\Greg\\Desktop\\sr-test-scores.txt"
@@ -36,11 +36,12 @@ if IS_MAC then
   MOVIE_PATH = "/Users/greg/Documents/AiVods/" 
   SCORES_PATH = "/Users/greg/Desktop/sr-test-scores.txt"
 end
-file = io.open(SCORES_PATH, "StackRabbit Game Scores:")
+-- file = io.open(SCORES_PATH, "StackRabbit Game Scores:")
 
 
 function resetGameScopedVariables()
-  isFirstPiece = true;
+  isFirstPiece = true
+  firstPieceDelayFrames = 10
   metaGameState = 0
   gamePhase = 0
   numLines = 0
@@ -421,8 +422,8 @@ function processAdjustment()
 end
 
 function onGameOver()
-  file:write("hello", "\n")
-  file:write("hello", "\n")
+  -- file:write("hello", "\n")
+  -- file:write("hello", "\n")
 end
 
 --[[------------------------------------ 
@@ -430,7 +431,15 @@ end
 ------------------------------------]]--
 
 function runGameFrame()
+  -- To account for TetrisGYM issues, ignore the first few frames of a new game start
+  if isFirstPiece and firstPieceDelayFrames > 0 then
+    firstPieceDelayFrames = firstPieceDelayFrames - 1
+    print("Skipping frame" .. firstPieceDelayFrames)
+    return
+  end
+
   if gamePhase == 10 then
+    -- Quit to menu
     startBtnVal = false;
     if emu.framecount() % 10 == 1 then
       startBtnVal = true
