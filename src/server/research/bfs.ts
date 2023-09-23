@@ -79,6 +79,7 @@ export function getPossibleMovesBfs(
     initialY,
     framesAlreadyElapsed,
     gravity,
+    doubleGravity: false,
     inputFrameTimeline,
     rotationsList,
     pieceId: currentPieceId,

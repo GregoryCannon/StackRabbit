@@ -185,7 +185,7 @@ export class RequestHandler {
           }
           if (level < 18) {
             throw new Error(
-              "Currently only 18, 19, and 29 starts are supported by StackRabbit. Requested: " +
+              "Currently levels lower than 18 are not supported by StackRabbit. Requested: " +
                 value
             );
           }
