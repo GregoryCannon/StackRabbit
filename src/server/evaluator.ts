@@ -13,6 +13,7 @@ import {
   IS_NON_RIGHT_WELL,
   KILLSCREEN_LINES,
   LINE_CAP,
+  USE_RANKS,
   WELL_COLUMN,
 } from "./params";
 import * as utils from "./utils";
@@ -439,7 +440,7 @@ function getSurfaceValue(
   totalHeightCorrected: number,
   aiParams: AiParams
 ) {
-  if (IS_NON_RIGHT_WELL) {
+  if (IS_NON_RIGHT_WELL || !USE_RANKS) {
     return transformSurfaceValue(getFlatnessScore(surfaceArray), 100, 30);
   }
   let rawValue = rankLookup.getValueOfBoardSurface(surfaceArray);

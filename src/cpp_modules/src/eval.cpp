@@ -198,7 +198,7 @@ float getInaccessibleLeftFactor(unsigned int board[20], int surfaceArray[10], in
   // Check if the agent even needs to get a piece left first.
   int highestRowOfCol1 = 19 - surfaceArray[0];
   int needs5TapForDig = board[highestRowOfCol1] & HOLE_WEIGHT_BIT;
-  int needs5TapForBurn = wellColumn == 9 && surfaceArray[0] <= surfaceArray[8];
+  int needs5TapForBurn = wellColumn == 9 && surfaceArray[0] < surfaceArray[8];
   int needs5Tap = needs5TapForDig || needs5TapForBurn;
 //  int needs5TapOnKillscreen = (surfaceArray[1] - surfaceArray[0]) > maxAccessibleLeftSurface[0];
 //  int needs5Tap = needs5TapForDig || needs5TapForBurn || needs5TapOnKillscreen;
@@ -482,6 +482,7 @@ float fastEval(GameState gameState,
     maybePrint("%d\n", (newState.board[19] & HOLE_WEIGHT_BIT) > 0);
 
     printf("Numholes %f\n", newState.adjustedNumHoles);
+    maybePrint("AiMode %d\n", evalContext->aiMode);
     maybePrint(
       "Surface %01f, LeftSurface %01f, AvgHeight %01f, LineClear %01f, Hole %01f, HoleWeight %01f, GuaranteedBurns %01f, LikelyBurns %01f, InaccLeft %01f, CoveredWell %01f, HighCol9 %01f, TetrisReady %01f, BuiltLeft %01f, UnableToBrn %01f,\t Total: %01f\n",
       surfaceFactor,

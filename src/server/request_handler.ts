@@ -2,7 +2,9 @@ import { PIECE_LOOKUP } from "../../docs/tetrominoes";
 import { getBoardAndLinesClearedAfterPlacement } from "./board_helper";
 import { engineLookup, engineLookupTopMoves } from "./engine_lookup";
 import { rateSurface } from "./evaluator";
-import { DISABLE_LOGGING, LINE_CAP, SHOULD_LOG } from "./params";
+import { getSearchStateAfter } from "./main";
+import { getPossibleMoves } from "./move_search";
+import { DISABLE_LOGGING, LINE_CAP, SHOULD_LOG, USE_CPP } from "./params";
 import { PreComputeManager } from "./precompute";
 import {
   boardEquals,
@@ -11,7 +13,7 @@ import {
   logBoard,
   parseBoard,
 } from "./utils";
-
+const cModule = require("../../../build/Release/cRabbit");
 const mainApp = require("./main");
 const params = require("./params");
 
@@ -301,16 +303,59 @@ export class RequestHandler {
   handleRequestSync(urlArgs) {
     console.time("GetMove");
 
-    // Get the best move
-    const bestMove = mainApp.getBestMove(
-      this._getSearchStateFromUrlArguments(urlArgs),
-      SHOULD_LOG,
-      params.getParams(),
-      params.getParamMods(),
-      urlArgs.inputFrameTimeline,
-      /* searchDepth= */ urlArgs.nextPiece !== null ? 2 : 1,
-      /* hypotheticalSearchDepth= */ urlArgs.lookaheadDepth
-    );
+    const searchState = this._getSearchStateFromUrlArguments(urlArgs);
+
+    let bestMove;
+
+    if (USE_CPP) {
+      // Ping the CPP backend
+      const boardStr = searchState.board.map((x) => x.join("")).join("");
+      const pieceLookup = ["I", "O", "L", "J", "T", "S", "Z"];
+      const curPieceIndex = pieceLookup.indexOf(searchState.currentPieceId);
+      const nextPieceIndex = pieceLookup.indexOf(searchState.nextPieceId);
+      const encodedInputString = `${boardStr}|${searchState.level}|${searchState.lines}|${curPieceIndex}|${nextPieceIndex}|${urlArgs.inputFrameTimeline}|`;
+      const result = JSON.parse(cModule.playMoveNoNextBox(encodedInputString));
+      const [rotation, xOffset] = result;
+      console.log("RESULT: ", result);
+
+      // Format it using Javascript stuff
+      let possibilityList = getPossibleMoves(
+        searchState.board,
+        searchState.currentPieceId,
+        searchState.level,
+        searchState.existingXOffset,
+        searchState.existingYOffset,
+        searchState.framesAlreadyElapsed,
+        urlArgs.inputFrameTimeline,
+        searchState.existingRotation,
+        searchState.canFirstFrameShift,
+        false
+      );
+      for (const possibility of possibilityList){
+        if (possibility.placement[0] === rotation && possibility.placement[1] === xOffset){
+          const possibilityChain : PossibilityChain = {
+            totalValue: -1,
+            searchStateAfterMove: getSearchStateAfter(searchState, possibility),
+            ...possibility
+          };
+          bestMove = possibilityChain;
+          break;
+        }
+      }
+    } else {
+      // Get the best move with StackRabbit 1.0 Javascript code
+      bestMove = mainApp.getBestMove(
+        this._getSearchStateFromUrlArguments(urlArgs),
+        SHOULD_LOG,
+        params.getParams(),
+        params.getParamMods(),
+        urlArgs.inputFrameTimeline,
+        /* searchDepth= */ urlArgs.nextPiece !== null ? 2 : 1,
+        /* hypotheticalSearchDepth= */ urlArgs.lookaheadDepth
+      );
+    }
+
+    
 
     console.timeEnd("GetMove");
     if (!bestMove) {

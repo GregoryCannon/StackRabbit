@@ -5,7 +5,7 @@
 #include "types.hpp"
 
 const FastEvalWeights MAIN_WEIGHTS = {
-  /* avgHeightCoef= */ PLAY_SAFE_PRE_KILLSCREEN ? -8 : -7,
+  /* avgHeightCoef= */ PLAY_SAFE_PRE_KILLSCREEN ? -10 : -7,
   /* builtOutLeftCoef= */ 2,
   /* burnCoef= */ PLAY_SAFE_PRE_KILLSCREEN ? -9 : -16,
   /* coveredWellCoef= */ -5,
@@ -66,12 +66,12 @@ const FastEvalWeights DIG_WEIGHTS = {
   MAIN_WEIGHTS.avgHeightCoef,
   MAIN_WEIGHTS.builtOutLeftCoef,
   /* burnCoef= */ -1,
-  /* coveredWellCoef= */ -2.5,
+  /* coveredWellCoef= */ -5,
   /* col9Coef= */ -1,
   MAIN_WEIGHTS.deathCoef,
   MAIN_WEIGHTS.extremeGapCoef,
   MAIN_WEIGHTS.holeCoef,
-  /* holeWeightCoef= */ -8,
+  /* holeWeightCoef= */ -7,
   MAIN_WEIGHTS.inaccessibleLeftCoef,
   MAIN_WEIGHTS.inaccessibleRightCoef,
   MAIN_WEIGHTS.tetrisCoef,
