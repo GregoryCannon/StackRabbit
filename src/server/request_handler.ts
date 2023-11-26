@@ -538,13 +538,14 @@ export class RequestHandler {
     );
   }
 
-  handleEngineLookupTopMoves(urlArgs) {
+  handleEngineLookupTopMoves(urlArgs: UrlArguments) {
     return JSON.stringify(
       engineLookupTopMoves(
         this._getSearchStateFromUrlArguments(urlArgs),
         params.getParams(),
         params.getParamMods(),
-        urlArgs.inputFrameTimeline
+        urlArgs.inputFrameTimeline,
+        urlArgs.lookaheadDepth
       )
     );
   }
