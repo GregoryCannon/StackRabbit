@@ -8,7 +8,8 @@
     "start": "node built/src/server/app.js",
     "format": "prettier --write \"src/**/*.+(js|jsx|ts|json|css|md)\"",
     "cb": "node-gyp build",
-    "cr": "node-gyp build && node built/src/server/cmodules.js"
+    "cr": "node-gyp build && node built/src/server/cmodules.js",
+    "test": "tsc && node built/src/server/move_search_test.js"
   },
   "author": "",
   "license": "ISC",

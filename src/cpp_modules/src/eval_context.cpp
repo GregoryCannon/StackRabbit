@@ -88,7 +88,7 @@ const EvalContext getEvalContext(GameState gameState, const PieceRangeContext pi
 
   // Misc other properties
   context.maxDirtyTetrisHeight = 0;
-  // context.countWellHoles = context.aiMode == DIG;
+  // context.countWellHoles = context.aiMode == DIG   // This turns out to not work in practice, it prevents filling the well to clear holes.
   context.countWellHoles = SHOULD_PLAY_PERFECT;
   context.shouldRewardLineClears = (aiMode == LINEOUT || aiMode == DIRTY_NEAR_KILLSCREEN);
 

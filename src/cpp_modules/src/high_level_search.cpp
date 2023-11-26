@@ -99,7 +99,8 @@ int searchDepth1(GameState gameState, const Piece *firstPiece, int keepTopN, con
 
     GameState resultingState = advanceGameState(gameState, firstPlacement, evalContext);
     float reward = getLineClearFactor(resultingState.lines - gameState.lines, evalContext->weights, evalContext->shouldRewardLineClears);
-    float evalScore = reward + fastEval(gameState, resultingState, firstPlacement, evalContext);
+    // NB: reward is already included in the eval!
+    float evalScore = fastEval(gameState, resultingState, firstPlacement, evalContext);
 
     Possibility newPossibility = {
       { firstPlacement.x, firstPlacement.y, firstPlacement.rotationIndex },
@@ -175,19 +176,29 @@ LockLocation playOneMove(GameState gameState, Piece *firstPiece, Piece *secondPi
   partiallySortPossibilityList(possibilityList, numCandidatesToPlayout, sortedList);
   Piece *lastSeenPiece = firstPiece;
 
-  // Perform playouts on the promising possibilities
   int numPlayedOut = 0;
   LockLocation const *bestLockLocation = NULL;
   float bestPossibilityScore = -99999999.0f;
+
+  bool shouldDoPlayouts = NUM_PLAYOUTS > 0;
   for (Possibility const& possibility : sortedList) {
-    if (numPlayedOut >= numSorted) {
+    if (shouldDoPlayouts && numPlayedOut >= numSorted) {
       break;
     }
-    float overallScore = possibility.immediateReward + getPlayoutScore(possibility.resultingState, pieceRangeContextLookup, lastSeenPiece->index);
-    if (SHOULD_PLAY_PERFECT){
-//      overallScore = std::max(0.0f, overallScore); // 0 is the lowest possible eval score in the "play perfect" system
-//      overallScore = std::min(100.0f, overallScore); // 100 is the max possible eval score in the "play perfect" system
+
+    float overallScore;
+
+    if (shouldDoPlayouts){
+      overallScore = possibility.immediateReward + getPlayoutScore(possibility.resultingState, pieceRangeContextLookup, lastSeenPiece->index);
+    } else {
+      overallScore = possibility.evalScore; // NB: immediateReward is included in the eval
     }
+    // if (SHOULD_PLAY_PERFECT){
+    //  overallScore = std::max(0.0f, overallScore); // 0 is the lowest possible eval score in the "play perfect" system
+    //  overallScore = std::min(100.0f, overallScore); // 100 is the max possible eval score in the "play perfect" system
+    // }
+
+    printf("Possibility %d %d has overallscore %f %f\n", possibility.firstPlacement.rotationIndex, possibility.firstPlacement.x - 3, overallScore, possibility.evalScore);
 
     // Potentially update the best possibility
     if (bestLockLocation == NULL || overallScore > bestPossibilityScore) {

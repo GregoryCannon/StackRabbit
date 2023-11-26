@@ -2,7 +2,7 @@
 #define CONFIG
 
 // Logging
-#define LOGGING_ENABLED 0
+#define LOGGING_ENABLED 0 // Refers to movesearch/eval logging
 #define PLAYOUT_LOGGING_ENABLED 0
 #define SIMULATION_LOGGING_ENABLED 0
 #define PLAYOUT_RESULT_LOGGING_ENABLED 0
@@ -14,10 +14,10 @@
 
 // How the agent should play
 #define USE_RANKS 0
-#define CAN_TUCK 1
+#define CAN_TUCK 0
 #define WELL_COLUMN 9
 #define USE_RIGHT_WELL_FEATURES 1
-#define PLAY_SAFE_PRE_KILLSCREEN 0
+#define PLAY_SAFE_PRE_KILLSCREEN 1
 #define PLAY_SAFE_ON_KILLSCREEN 0
 #define ALWAYS_LINEOUT 0
 #define ALWAYS_LINEOUT_29 0
@@ -31,10 +31,8 @@
 #define SEQUENCE_LENGTH 20
 
 // Playouts
-#define NUM_PLAYOUTS_LONG 0
-#define PLAYOUT_LENGTH_LONG 10
-#define NUM_PLAYOUTS_SHORT 100
-#define PLAYOUT_LENGTH_SHORT 5
+#define NUM_PLAYOUTS 120 // Supports up to 1000
+#define PLAYOUT_LENGTH_SHORT 3
 
 // Currently not used since the simulations use the exact same call as regular pipeline
 //#define SIM_NUM_PLAYOUTS 20
