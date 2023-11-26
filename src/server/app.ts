@@ -21,6 +21,9 @@ function initExpressServer(requestHandler) {
   });
 
   app.get("*", function (req: any, res: any) {
+    if (req.url == "/favicon.ico") {
+      return res.end("");
+    }
     // Log the request
     console.log("\n-------------------------\nlocalhost:" + port + req.url);
     console.time("Full request");
