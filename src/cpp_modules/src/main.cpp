@@ -41,8 +41,8 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
     /* lines= */ 0,
     /* level= */ 0
   };
-  Piece curPiece;
-  Piece nextPiece = NULL;
+  const Piece *curPiece = NULL;
+  const Piece *nextPiece = NULL;
   std::string inputFrameTimeline;
 
   // Loop through the other args
@@ -61,10 +61,10 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
       startingGameState.lines = argAsInt;
       break;
     case 2:
-      curPiece = PIECE_LIST[argAsInt];
+      curPiece = &(PIECE_LIST[argAsInt]);
       break;
     case 3:
-      nextPiece = PIECE_LIST[argAsInt];
+      nextPiece = &(PIECE_LIST[argAsInt]);
       break;
     case 4:
       inputFrameTimeline = arg;
@@ -100,14 +100,14 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
   // Take the specified action on the input based on the request type
   switch (requestType) {
   case GET_LOCK_VALUE_LOOKUP: {
-    return getLockValueLookupEncoded(startingGameState, &curPiece, &nextPiece, DEPTH_2_PRUNING_BREADTH, &context, pieceRangeContextLookup);
+    return getLockValueLookupEncoded(startingGameState, curPiece, nextPiece, DEPTH_2_PRUNING_BREADTH, &context, pieceRangeContextLookup);
   }
 
   case GET_MOVE: {
-//    int debugSequence[SEQUENCE_LENGTH] = {curPiece.index};
+//    int debugSequence[SEQUENCE_LENGTH] = {curPiece->index};
 //    playSequence(startingGameState, pieceRangeContextLookup, debugSequence, /* playoutLength= */ 1);
 //    return "Debug playout complete.";
-    LockLocation bestMove = playOneMove(startingGameState, &curPiece, &curPiece, /* numCandidatesToPlayout */ DEPTH_1_PRUNING_BREADTH, &context, pieceRangeContextLookup);
+    LockLocation bestMove = playOneMove(startingGameState, curPiece, nextPiece, /* numCandidatesToPlayout */ DEPTH_1_PRUNING_BREADTH, &context, pieceRangeContextLookup);
     int xOffset = bestMove.x - 3;
     int rot = bestMove.rotationIndex;
 

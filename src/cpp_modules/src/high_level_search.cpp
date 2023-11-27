@@ -161,7 +161,7 @@ int searchDepth2(GameState gameState, const Piece *firstPiece, const Piece *seco
 }
 
 /** Plays one move from a given state, with or without knowledge of the next box.*/
-LockLocation playOneMove(GameState gameState, Piece *firstPiece, Piece *secondPiece, int numCandidatesToPlayout, const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3]){
+LockLocation playOneMove(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int numCandidatesToPlayout, const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3]){
 
   // Keep a running list of the top X possibilities as the move search is happening.
   // Keep twice as many as we'll eventually need, since some duplicates may be removed before playouts start
@@ -182,7 +182,7 @@ LockLocation playOneMove(GameState gameState, Piece *firstPiece, Piece *secondPi
     return {NONE, NONE, NONE}; // Return an invalid lock location to indicate the agent has topped out
   }
   partiallySortPossibilityList(possibilityList, numCandidatesToPlayout, sortedList);
-  Piece *lastSeenPiece = firstPiece;
+  const Piece *lastSeenPiece = firstPiece;
 
   int numPlayedOut = 0;
   LockLocation const *bestLockLocation = NULL;
