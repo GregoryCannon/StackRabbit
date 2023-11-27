@@ -8,7 +8,7 @@ const FastEvalWeights MAIN_WEIGHTS = {
   /* avgHeightCoef= */ PLAY_SAFE_PRE_KILLSCREEN ? -10 : -7,
   /* builtOutLeftCoef= */ 2,
   /* burnCoef= */ PLAY_SAFE_PRE_KILLSCREEN ? -9 : -16,
-  /* coveredWellCoef= */ -5,
+  /* coveredWellCoef= */ -10,
   /* col9Coef= */ -3,
   /* deathCoef= */ -3000,
   /* extremeGapCoef= */ -3,
@@ -43,30 +43,30 @@ const FastEvalWeights PLAY_PERFECT_WEIGHTS = {
   /* unableToBurnCoef= */ 0
 };
 
-const FastEvalWeights SAFE_WEIGHTS = {
-  MAIN_WEIGHTS.avgHeightCoef,
-  MAIN_WEIGHTS.builtOutLeftCoef,
-  /* burnCoef= */ -6,
-  MAIN_WEIGHTS.coveredWellCoef,
-  MAIN_WEIGHTS.col9Coef,
-  MAIN_WEIGHTS.deathCoef,
-  MAIN_WEIGHTS.extremeGapCoef,
-  MAIN_WEIGHTS.holeCoef,
-  MAIN_WEIGHTS.holeWeightCoef,
-  MAIN_WEIGHTS.inaccessibleLeftCoef,
-  MAIN_WEIGHTS.inaccessibleRightCoef,
-  MAIN_WEIGHTS.tetrisCoef,
-  MAIN_WEIGHTS.tetrisReadyCoef,
-  MAIN_WEIGHTS.surfaceCoef,
-  MAIN_WEIGHTS.surfaceLeftCoef,
-  MAIN_WEIGHTS.unableToBurnCoef
-};
+// const FastEvalWeights SAFE_WEIGHTS = {
+//   MAIN_WEIGHTS.avgHeightCoef,
+//   MAIN_WEIGHTS.builtOutLeftCoef,
+//   /* burnCoef= */ -6,
+//   MAIN_WEIGHTS.coveredWellCoef,
+//   MAIN_WEIGHTS.col9Coef,
+//   MAIN_WEIGHTS.deathCoef,
+//   MAIN_WEIGHTS.extremeGapCoef,
+//   MAIN_WEIGHTS.holeCoef,
+//   MAIN_WEIGHTS.holeWeightCoef,
+//   MAIN_WEIGHTS.inaccessibleLeftCoef,
+//   MAIN_WEIGHTS.inaccessibleRightCoef,
+//   MAIN_WEIGHTS.tetrisCoef,
+//   MAIN_WEIGHTS.tetrisReadyCoef,
+//   MAIN_WEIGHTS.surfaceCoef,
+//   MAIN_WEIGHTS.surfaceLeftCoef,
+//   MAIN_WEIGHTS.unableToBurnCoef
+// };
 
 const FastEvalWeights DIG_WEIGHTS = {
   MAIN_WEIGHTS.avgHeightCoef,
   MAIN_WEIGHTS.builtOutLeftCoef,
   /* burnCoef= */ -1,
-  /* coveredWellCoef= */ -5,
+  /* coveredWellCoef= */ -3,
   /* col9Coef= */ -1,
   MAIN_WEIGHTS.deathCoef,
   MAIN_WEIGHTS.extremeGapCoef,
@@ -153,8 +153,6 @@ FastEvalWeights getWeights(AiMode mode){
       return DIRTY_NEAR_KILLSCREEN_WEIGHTS;
     case LINEOUT:
       return LINEOUT_WEIGHTS;
-    case SAFE:
-      return SAFE_WEIGHTS;
     case PLAY_PERFECT:
       return PLAY_PERFECT_WEIGHTS;
     case STANDARD:

@@ -27,7 +27,7 @@ NAN_METHOD(PlayMoveNoNextBox) {
   }
   char const * inputStr = *Nan::Utf8String(inputStrNan);
 
-  std::string result = mainProcess(inputStr, PLAY_MOVE_NO_NEXT_BOX);
+  std::string result = mainProcess(inputStr, GET_MOVE);
 
   info.GetReturnValue().Set(Nan::New<String>(result.c_str()).ToLocalChecked());
 }

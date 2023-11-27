@@ -13,11 +13,15 @@ using namespace std;
  */
 float calculateFlatness(int surfaceArray[10], int wellColumn) {
   float score = 30;
+  bool hasFlatSpot = false;
   for (int i = 0; i < 9; i++) {
     if (i == wellColumn || i+1 == wellColumn) {
       continue;
     }
     int diff = surfaceArray[i + 1] - surfaceArray[i];
+    if (diff == 0){
+      hasFlatSpot = true;
+    }
     // Correct for double wells
     if (USE_RIGHT_WELL_FEATURES && i == 7 && wellColumn == 9 && diff < -2) {
       diff = -2;
@@ -30,6 +34,10 @@ float calculateFlatness(int surfaceArray[10], int wellColumn) {
     if (diff >= 3 && (i == 0 || surfaceArray[i-1] + surfaceArray[i] >= 3)) {
       score -= 25;
     }
+  }
+  // Not having a single flat spot can be disastrous if you get a square or L/J
+  if (!hasFlatSpot){
+    score -= 12;
   }
   return score;
 }
@@ -134,7 +142,7 @@ float getCoveredWellFactor(unsigned int board[20], int wellColumn, float scareHe
   int mask = (1 << (9 - wellColumn));
   for (int r = 0; r < 20; r++) {
     if (board[r] & mask) {
-      int difficultyMultiplier = (board[r] & (ALL_HOLE_BITS | ALL_TUCK_SETUP_BITS)) > 0 ? 10 : 1;
+      int difficultyMultiplier = (board[r] & (ALL_TUCK_SETUP_BITS)) > 0 ? 10 : 1;
       float heightRatio = (20.0f - r) / max(3.0f, scareHeight);
       return heightRatio * heightRatio * heightRatio * difficultyMultiplier;
     }
@@ -353,7 +361,7 @@ float evalForPerfectPlay(GameState gameState,
                          const EvalContext *evalContext) {
   // Check for holes or covered well
   float trueHoles = getNumTrueHoles(newState.adjustedNumHoles);
-  float tuckSetupCells = (newState.adjustedNumHoles - trueHoles) / TUCK_SETUP_HOLE_PROPORTION;
+  float tuckSetupCells = (newState.adjustedNumHoles - trueHoles) / SEMI_HOLE_PROPORTION;
   bool hasCoveredWell = newState.surfaceArray[evalContext->wellColumn] > 0;
   bool inaccessibleRight = false;
   for (int i = 5; i < 10; i++) {  // col 7 is the furthest right a 5 tap piece is on the board when tapped left

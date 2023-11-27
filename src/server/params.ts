@@ -25,12 +25,12 @@ export const LINE_CAP = NO_LIMIT;
 export const USE_CPP = true;
 export const IS_PAL = false;
 export const WELL_COLUMN = 9; // 0-indexed
-export const CAN_TUCK = false;
+export const CAN_TUCK = true;
 export const SHOULD_PUSHDOWN = false;
 export const DISABLE_LOGGING = true;
 
 // Calculated automatically
-export const USE_RANKS = false
+export const USE_RANKS = true
 export const IS_NON_RIGHT_WELL = WELL_COLUMN !== 9;
 export const KILLSCREEN_LINES = IS_PAL ? 130 : 230;
 export const KILLSCREEN_LEVEL = IS_PAL ? 19 : 29;

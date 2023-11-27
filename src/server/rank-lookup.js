@@ -1,8 +1,8 @@
 const fs = require("fs");
-// const ranks_NoNextBox_NoBars = fs.readFileSync(
-//   "docs/condensed_NoNextBox_NoBars.txt",
-//   "utf8"
-// );
+const ranks_NoNextBox_NoBars = fs.readFileSync(
+  "docs/condensed_NoNextBox_NoBars.txt",
+  "utf8"
+);
 
 /**
  * Converts a list of board heights into the index into the ranks array.

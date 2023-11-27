@@ -29,6 +29,10 @@ function generateCanonicalPieceSequences() {
         : (PIECE_LIST[Math.floor(i / 1000) - 1][2] as PieceId);
     // sequence.push(i % 7); // First piece loops around the possible 7 pieces
     for (let j = 0; j < 20; j++) {
+      if (j == 0 && i < 1000){
+        sequence.push(PIECE_LIST.findIndex((x) => x[2] == lastKnownPiece));
+        continue;
+      }
       lastKnownPiece = getRandomPiece(lastKnownPiece, /* isDrought= */ false);
       sequence.push(PIECE_LIST.findIndex((x) => x[2] == lastKnownPiece));
     }
