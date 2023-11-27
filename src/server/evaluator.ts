@@ -1079,7 +1079,7 @@ function compileFactors(factors: Object, aiMode: AiMode): [number, string] {
       throw new Error(`NaN detected for factor: ${key}`);
     }
 
-    if (val !== -9999999999) {
+    if (val !== 0) {
       totalValue += val;
       const shortKeyName = key.substr(0, key.length - 6);
       explanation += `${shortKeyName}: ${val.toFixed(2)}, `;
