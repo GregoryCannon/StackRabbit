@@ -15,15 +15,15 @@ std::string encodeLockPosition(LockLocation lockLocation){
     // Check variable ranges to avoid buffer overflows
     if (lockLocation.rotationIndex > 4 || lockLocation.rotationIndex < 0) {
       printf("rotation index out of range %d\n", lockLocation.rotationIndex);
-      throw std::invalid_argument( "rotation index out of range" );
+//      throw std::invalid_argument( "rotation index out of range" );
     }
     if (lockLocation.x > 7 || lockLocation.x < -2) {
       printf("x index out of range %d\n", lockLocation.x);
-      throw std::invalid_argument( "x index out of range" );
+//      throw std::invalid_argument( "x index out of range" );
     }
     if (lockLocation.y < -2 || lockLocation.y > 19) {
       printf("y index out of range %d\n", lockLocation.y);
-      throw std::invalid_argument( "y index out of range" );
+//      throw std::invalid_argument( "y index out of range" );
     }
   }
   char buffer[10];
