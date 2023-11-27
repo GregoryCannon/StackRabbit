@@ -88,7 +88,6 @@ struct LockLocation {
 
 enum AiMode {
   STANDARD,
-  SAFE,
   DIG,
   LINEOUT,
   NEAR_KILLSCREEN,

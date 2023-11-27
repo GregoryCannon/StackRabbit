@@ -56,7 +56,10 @@ float playSequence(GameState gameState, const PieceRangeContext pieceRangeContex
     if (i == playoutLength - 1) {
       GameState nextState = advanceGameState(gameState, bestMove, evalContext);
       EvalContext contextRaw = *evalContext;
-      contextRaw.aiMode = originalAiMode;
+      // In some contexts, override the current aiMode such that the end of a playout is always compared fairly against other playouts
+      if (originalAiMode == DIG || originalAiMode == STANDARD){
+        contextRaw.aiMode = originalAiMode;
+      }
       float evalScore = fastEval(gameState, nextState, bestMove, &contextRaw);
       if (PLAYOUT_LOGGING_ENABLED) {
         gameState = nextState;

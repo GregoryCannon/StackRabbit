@@ -27,12 +27,12 @@
 #define DEPTH_2_PRUNING_BREADTH 12
 #define DEPTH_1_PRUNING_BREADTH 8
 #define LOCK_POSITION_REPEAT_CAP 3
-#define TUCK_SETUP_HOLE_PROPORTION 0.81f
+#define SEMI_HOLE_PROPORTION 0.81f // Value used for things that are sort of like holes but not fully (tuck setups, unfilled wells while digging)
 #define SEQUENCE_LENGTH 20
 
 // Playouts
-#define NUM_PLAYOUTS 120 // Supports up to 1000
-#define PLAYOUT_LENGTH_SHORT 3
+#define NUM_PLAYOUTS 100 // Supports up to 1000
+#define PLAYOUT_LENGTH_SHORT 2
 
 // Currently not used since the simulations use the exact same call as regular pipeline
 //#define SIM_NUM_PLAYOUTS 20
