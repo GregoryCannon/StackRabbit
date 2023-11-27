@@ -32,7 +32,7 @@
 
 // Playouts
 #define NUM_PLAYOUTS 100 // Supports up to 1000
-#define PLAYOUT_LENGTH_SHORT 2
+#define PLAYOUT_LENGTH 2
 
 // Currently not used since the simulations use the exact same call as regular pipeline
 //#define SIM_NUM_PLAYOUTS 20

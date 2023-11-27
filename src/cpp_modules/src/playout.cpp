@@ -95,14 +95,15 @@ float getPlayoutScore(GameState gameState, const PieceRangeContext pieceRangeCon
   //   return 0;
   // }
 
-  int pieceOffset = firstPieceIndex * 1000; // Index into the sequences in batches, with batch size equal to the total number of playouts
-  int shortPlayoutOffset = 500; // Use new piece sequences for the short playouts
+  // Index into the sequences based on the last known piece given by the in-game randomizer.
+  // The piece RNG is dependent on the previous piece, we will then have 1000 sequences with accurate RNG given the last known piece
+  int pieceOffset = 1000 + firstPieceIndex * 1000;
 
   float shortPlayoutScore = 0;
   for (int i = 0; i < NUM_PLAYOUTS; i++) {
     // Do one playout
-    const int *pieceSequence = canonicalPieceSequences + (pieceOffset + i) * SEQUENCE_LENGTH + shortPlayoutOffset; // Index into the mega array of piece sequences;
-    float playoutScore = playSequence(gameState, pieceRangeContextLookup, pieceSequence, PLAYOUT_LENGTH_SHORT);
+    const int *pieceSequence = canonicalPieceSequences + (pieceOffset + i) * SEQUENCE_LENGTH; // Index into the mega array of piece sequences;
+    float playoutScore = playSequence(gameState, pieceRangeContextLookup, pieceSequence, PLAYOUT_LENGTH);
     shortPlayoutScore += playoutScore;
   }
 
@@ -127,7 +128,7 @@ float getPlayoutScore(GameState gameState, const PieceRangeContext pieceRangeCon
    for (int i = 0; i < 1000; i++) {
    // Do one playout
    const int *pieceSequence = canonicalPieceSequences + (offset + i) * SEQUENCE_LENGTH;  // Index into the mega array of piece sequences;
-   float playoutScore = playSequence(gameState, pieceRangeContextLookup, pieceSequence, PLAYOUT_LENGTH_SHORT);
+   float playoutScore = playSequence(gameState, pieceRangeContextLookup, pieceSequence, PLAYOUT_LENGTH);
    shortPlayoutScore += playoutScore;
    numPlayoutsShort += 1;
 
