@@ -15,9 +15,8 @@
 
 
 enum RequestType {
-  GET_LOCK_VALUE_LOOKUP,
-  PLAY_MOVE_NO_NEXT_BOX,
-  CHOOSE_MOVE_FROM_LOCK_VALUES
+  GET_LOCK_VALUE_LOOKUP, // Gets a map of all the values for all possible places where the current piece could lock.
+  GET_MOVE // Gets a single best move for a given scenario, using full playouts. Supports with or without next box.
 };
 
 struct Piece {

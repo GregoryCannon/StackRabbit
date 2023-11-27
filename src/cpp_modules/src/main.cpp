@@ -42,7 +42,7 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
     /* level= */ 0
   };
   Piece curPiece;
-  Piece nextPiece;
+  Piece nextPiece = NULL;
   std::string inputFrameTimeline;
 
   // Loop through the other args
@@ -103,11 +103,11 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
     return getLockValueLookupEncoded(startingGameState, &curPiece, &nextPiece, DEPTH_2_PRUNING_BREADTH, &context, pieceRangeContextLookup);
   }
 
-  case PLAY_MOVE_NO_NEXT_BOX: {
+  case GET_MOVE: {
 //    int debugSequence[SEQUENCE_LENGTH] = {curPiece.index};
 //    playSequence(startingGameState, pieceRangeContextLookup, debugSequence, /* playoutLength= */ 1);
 //    return "Debug playout complete.";
-    LockLocation bestMove = playOneMove(startingGameState, &curPiece, /* nextPiece */ NULL, /* numCandidatesToPlayout */ DEPTH_1_PRUNING_BREADTH, &context, pieceRangeContextLookup);
+    LockLocation bestMove = playOneMove(startingGameState, &curPiece, &curPiece, /* numCandidatesToPlayout */ DEPTH_1_PRUNING_BREADTH, &context, pieceRangeContextLookup);
     int xOffset = bestMove.x - 3;
     int rot = bestMove.rotationIndex;
 

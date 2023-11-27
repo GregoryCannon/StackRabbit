@@ -114,7 +114,9 @@ int searchDepth1(GameState gameState, const Piece *firstPiece, int keepTopN, con
   return (int) possibilityList.size();
 }
 
-/** Searches 2-ply from a starting state, and performs a fast eval on each of the resulting states. Maintains a sorted list of the top N possibilities, and adds all the rest onto the end in no specified order. */
+/** Searches 2-ply from a starting state, and performs a fast eval on each of the resulting states. 
+ * @returns an UNSORTED list of evaluated possibilities
+ */
 int searchDepth2(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int keepTopN, const EvalContext *evalContext, OUT list<Possibility> &possibilityList){
 
   // Get the placements of the first piece
@@ -168,8 +170,14 @@ LockLocation playOneMove(GameState gameState, Piece *firstPiece, Piece *secondPi
   // Get the list of evaluated possibilities
   list<Possibility> possibilityList;
   list<Possibility> sortedList;
-  // (Next 3 lines currently hardcoded for NNB)
-  searchDepth1(gameState, firstPiece, numSorted, evalContext, possibilityList);
+  
+  // Search depth either 1 or 2 depending on whether a next piece was provided
+  if (secondPiece == NULL){
+    searchDepth1(gameState, firstPiece, numSorted, evalContext, possibilityList);
+  } else {
+    searchDepth2(gameState, firstPiece, secondPiece, numSorted, evalContext, possibilityList);
+  }
+
   if (possibilityList.size() == 0){
     return {NONE, NONE, NONE}; // Return an invalid lock location to indicate the agent has topped out
   }
@@ -198,7 +206,7 @@ LockLocation playOneMove(GameState gameState, Piece *firstPiece, Piece *secondPi
     //  overallScore = std::min(100.0f, overallScore); // 100 is the max possible eval score in the "play perfect" system
     // }
 
-    printf("Possibility %d %d has overallscore %f %f\n", possibility.firstPlacement.rotationIndex, possibility.firstPlacement.x - 3, overallScore, possibility.evalScore);
+    maybePrint("Possibility %d %d has overallscore %f %f\n", possibility.firstPlacement.rotationIndex, possibility.firstPlacement.x - 3, overallScore, possibility.evalScore);
 
     // Potentially update the best possibility
     if (bestLockLocation == NULL || overallScore > bestPossibilityScore) {
