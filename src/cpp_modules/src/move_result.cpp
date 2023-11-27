@@ -113,7 +113,8 @@ float getNewSurfaceAndNumNewHoles(int surfaceArray[10],
       for (int r = holeWeightStartRow; r >= 20 - newSurface[c]; r--) {
         if (VARIABLE_RANGE_CHECKS_ENABLED && (r < 0 || r >= 20)){
           printf("R value out of range %d %d\n", r, newSurface[c]);
-          throw std::invalid_argument( "r value out of range" );
+          return numNewHoles;
+//          throw std::invalid_argument( "r value out of range" );
         }
         if (!(board[r] & HOLE_BIT(c))) {
           board[r] |= HOLE_WEIGHT_BIT;
