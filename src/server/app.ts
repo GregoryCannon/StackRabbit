@@ -17,7 +17,8 @@ function initExpressServer(requestHandler) {
   app.use((req, res, next) => {
     res.setHeader(
       "Access-Control-Allow-Origin",
-      IS_DEPLOY ? TETRIS_TRAINER_URL : "*"
+      "*"
+      // IS_DEPLOY ? TETRIS_TRAINER_URL : "*"
     );
     next();
   });
