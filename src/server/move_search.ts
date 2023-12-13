@@ -163,6 +163,36 @@ function exploreLegalPlacementsUntilLock(
     let highestRegisteredY = -1; // Tracks the Y values already registered to avoid duplicates
 
     while (true) {
+      const registerPossibility = () => {
+        // Piece would lock in!
+        // Do some housekeeping and then generate the possibility
+        lockHeightLookup.set(
+          simState.rotationIndex + "," + simState.x,
+          simState.y
+        );
+        lockPossibilities.push(
+          getPossibilityFromSimState(
+            simState,
+            simParams,
+            inputSequenceWithWait,
+            /* inputCost= */ 0
+          )
+        );
+      };
+
+      // If it collides immediately, quit
+      if (
+        pieceCollision(
+          simParams.board,
+          simState.x,
+          simState.y,
+          currentRotationPiece
+        )
+      ) {
+        registerPossibility();
+        break;
+      }
+
       // Run simulated frames of only gravity
       const isGravityFrame =
         simState.frameIndex % simParams.gravity === simParams.gravity - 1; // Returns true every Nth frame, where N = gravity
@@ -419,6 +449,7 @@ function repeatedlyShiftPiece(
     );
     const isGravityFrame = simState.frameIndex % gravity === gravity - 1; // Returns true every Nth frame, where N = gravity
     let addNewPlacement = false;
+    let lockAfterThisFrame = false;
 
     if (isInputFrame) {
       // Try the shift input, then the rotation input
@@ -454,11 +485,6 @@ function repeatedlyShiftPiece(
       }
     }
 
-    // If we just shifted and are in the intended rotation, then this is a legal placement
-    if (addNewPlacement) {
-      legalPlacementSimStates.push({ ...simState });
-    }
-
     if (isGravityFrame) {
       if (
         pieceCollision(
@@ -468,8 +494,8 @@ function repeatedlyShiftPiece(
           rotationsList[simState.rotationIndex]
         )
       ) {
-        debugLog(simState, simParams, "GRAVITY");
-        return rangeCurrent; // Piece would lock in
+        console.log("DEBUG GRAVITY");
+        lockAfterThisFrame = true;
       }
       simState.y++;
     }
@@ -486,6 +512,16 @@ function repeatedlyShiftPiece(
 
     simState.frameIndex += 1;
     simState.arrFrameIndex += 1;
+
+    // If we previously marked that we reached a legal placement this frame, save this as a legal placement.
+    // We do this at the very end such that the whole frame is done processing, and simState is ready for the next frame (e.g. looking for tucks)
+    if (addNewPlacement) {
+      legalPlacementSimStates.push({ ...simState });
+    }
+
+    if (lockAfterThisFrame) {
+      return rangeCurrent; // Piece would lock in, no further search needed
+    }
   }
 }
 
@@ -711,7 +747,7 @@ function performSimulationRotation(
 }
 
 function debugLog(simState: SimState, simParams: SimParams, reason: string) {
-  // console.log("DEBUG: " + reason);
+  // console.log("\nDEBUG: " + reason);
   // logBoard(
   //   getBoardAndLinesClearedAfterPlacement(
   //     simParams.board,
