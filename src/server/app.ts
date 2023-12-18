@@ -3,8 +3,8 @@ import { RequestHandler } from "./request_handler";
 import * as express from "express";
 require("dotenv").config();
 
-const IS_DEPLOY = process.env.DEPLOY;
-console.log("IS_DEPLOY = ", IS_DEPLOY);
+const IS_DEPLOY = process.env.DEPLOY == "true";
+console.log("IS_DEPLOY = ", IS_DEPLOY, !IS_DEPLOY);
 const TETRIS_TRAINER_URL = "https://gregorycannon.github.io";
 
 const port = process.env.PORT || 3000;
