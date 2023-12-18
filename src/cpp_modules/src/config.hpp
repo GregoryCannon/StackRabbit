@@ -14,7 +14,7 @@
 
 // How the agent should play
 #define USE_RANKS 0
-#define CAN_TUCK 0
+#define CAN_TUCK 1
 #define WELL_COLUMN 9
 #define USE_RIGHT_WELL_FEATURES 1
 #define PLAY_SAFE_PRE_KILLSCREEN 1
