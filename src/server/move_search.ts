@@ -494,10 +494,11 @@ function repeatedlyShiftPiece(
           rotationsList[simState.rotationIndex]
         )
       ) {
-        console.log("DEBUG GRAVITY");
+        // console.log("DEBUG GRAVITY");
         lockAfterThisFrame = true;
+      } else {
+        simState.y++;
       }
-      simState.y++;
     }
 
     debugLog(
