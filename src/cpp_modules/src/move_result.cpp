@@ -8,7 +8,7 @@
 float analyzeHole(unsigned int board[20], int r, int c, int excludeHolesColumn){
   // VARIABLE_RANGE_CHECKS_ENABLED
   if (true && (r < 0 || r >= 20)){
-    printf("PANIK, r=%d\n", r);
+    printf("PANIK B, r=%d\n", r);
   }
   // Check if it's a tuck setup
   if (
@@ -87,8 +87,9 @@ float getNewSurfaceAndNumNewHoles(int surfaceArray[10],
     for (int r = (lockPlacement.y + bottomSurface[i]); r < 20; r++) {
       // VARIABLE_RANGE_CHECKS
       if (r < 0 || r >= 20){
-        printf("PANIK 1, r=%d, y=%d, bottomSurface=%d\n", r, lockPlacement.y, bottomSurface[i]);
+        printf("\n\nPANIK A, r=%d, y=%d, bottomSurface=%d\n", r, lockPlacement.y, bottomSurface[i]);
         printBoard(board);
+        printBoardWithPiece(board, *lockPlacement.piece, lockPlacement.x, lockPlacement.y, lockPlacement.rotationIndex);
         continue;
       }
       if (r < highestBoardCellInCol){

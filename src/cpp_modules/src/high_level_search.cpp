@@ -224,7 +224,7 @@ LockLocation playOneMove(GameState gameState, const Piece *firstPiece, const Pie
 /** Calculates the valuation of every possible terminal position for a given piece on a given board, and stores it in a map.
  * @param keepTopN - How many possibilities to evaluate via a full set of playouts, as opposed to just the eval function.
  */
-std::string getLockValueLookupEncoded(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int playoutCount, int playoutLength, int keepTopN, const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3]){
+std::string getLockValueLookupEncoded(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int keepTopN, int playoutCount, int playoutLength, const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3]){
   unordered_map<string, float> lockValueMap;
   unordered_map<string, int> lockValueRepeatMap;
 
