@@ -18,7 +18,7 @@ int countInputsBeforeReactionTime(int reactionTime, char const *inputFrameTimeli
   return numInputs;
 }
 
-int simulateGame(char const *inputFrameTimeline, int startingLevel, int maxLines, int shouldAdjust, int reactionTime){
+int simulateGame(char const *inputFrameTimeline, int startingLevel, int maxLines, int shouldAdjust, int reactionTime, int playoutCount, int playoutLength){
   // Init empty data structures
   GameState gameState = {
     /* board= */ {},
@@ -51,7 +51,7 @@ int simulateGame(char const *inputFrameTimeline, int startingLevel, int maxLines
     const EvalContext evalContextRaw = getEvalContext(gameState, pieceRangeContextLookup);
     const EvalContext *evalContext = &evalContextRaw;
 
-    LockLocation bestMove = playOneMove(gameState, &curPiece, NULL, DEPTH_1_PRUNING_BREADTH, evalContext, pieceRangeContextLookup);
+    LockLocation bestMove = playOneMove(gameState, &curPiece, NULL, DEPTH_1_PRUNING_BREADTH, playoutCount, playoutLength, pieceRangeContextLookup);
     if (bestMove.x == NONE){
       // Agent died, simulated game is complete
       break;

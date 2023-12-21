@@ -161,7 +161,7 @@ int searchDepth2(GameState gameState, const Piece *firstPiece, const Piece *seco
 }
 
 /** Plays one move from a given state, with or without knowledge of the next box.*/
-LockLocation playOneMove(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int numCandidatesToPlayout, const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3]){
+LockLocation playOneMove(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int numCandidatesToPlayout, int playoutCount, int playoutLength, const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3]){
 
   // Keep a running list of the top X possibilities as the move search is happening.
   // Keep twice as many as we'll eventually need, since some duplicates may be removed before playouts start
@@ -188,7 +188,7 @@ LockLocation playOneMove(GameState gameState, const Piece *firstPiece, const Pie
   LockLocation const *bestLockLocation = NULL;
   float bestPossibilityScore = -99999999.0f;
 
-  bool shouldDoPlayouts = NUM_PLAYOUTS > 0;
+  bool shouldDoPlayouts = playoutCount > 0;
   for (Possibility const& possibility : sortedList) {
     if (shouldDoPlayouts && numPlayedOut >= numSorted) {
       break;
@@ -197,7 +197,7 @@ LockLocation playOneMove(GameState gameState, const Piece *firstPiece, const Pie
     float overallScore;
 
     if (shouldDoPlayouts){
-      overallScore = possibility.immediateReward + getPlayoutScore(possibility.resultingState, pieceRangeContextLookup, lastSeenPiece->index);
+      overallScore = possibility.immediateReward + getPlayoutScore(possibility.resultingState, playoutCount, playoutLength, pieceRangeContextLookup, lastSeenPiece->index);
     } else {
       overallScore = possibility.evalScore; // NB: immediateReward is included in the eval
     }
@@ -224,7 +224,7 @@ LockLocation playOneMove(GameState gameState, const Piece *firstPiece, const Pie
 /** Calculates the valuation of every possible terminal position for a given piece on a given board, and stores it in a map.
  * @param keepTopN - How many possibilities to evaluate via a full set of playouts, as opposed to just the eval function.
  */
-std::string getLockValueLookupEncoded(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int keepTopN, const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3]){
+std::string getLockValueLookupEncoded(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int playoutCount, int playoutLength, int keepTopN, const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3]){
   unordered_map<string, float> lockValueMap;
   unordered_map<string, int> lockValueRepeatMap;
 
@@ -264,7 +264,7 @@ std::string getLockValueLookupEncoded(GameState gameState, const Piece *firstPie
     // }
 
     float overallScore = MAP_OFFSET + (shouldPlayout
-      ? possibility.immediateReward + getPlayoutScore(possibility.resultingState, pieceRangeContextLookup, secondPiece->index)
+      ? possibility.immediateReward + getPlayoutScore(possibility.resultingState, playoutCount, playoutLength, pieceRangeContextLookup, secondPiece->index)
       : max(evalContext->weights.deathCoef, possibility.immediateReward + possibility.evalScore + unexploredPenalty)); // Can't be worse than death
     if (SHOULD_PLAY_PERFECT){
 //      overallScore = std::max(MAP_OFFSET + 0.0f, overallScore); // 0 is the lowest possible eval score in the "play perfect" system
