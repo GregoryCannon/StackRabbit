@@ -75,8 +75,8 @@ const EvalContext getEvalContext(GameState gameState, const PieceRangeContext pi
     context.scareHeight = context.pieceRangeContext.max5TapHeight - (lowerScareHeight ? 4 : 3);
     context.maxSafeCol9 = context.pieceRangeContext.max4TapHeight - (lowerScareHeight ? 6 : 5);
 
-    context.scareHeight = context.scareHeight * 0.7 + 6 * 0.3;
-    context.maxSafeCol9 = context.maxSafeCol9 * 0.7 + 8 * 0.3;
+    context.scareHeight = context.scareHeight * 0.5 + 6 * 0.5;
+    context.maxSafeCol9 = context.maxSafeCol9 * 0.5 + 8 * 0.5;
   }
 
   // Set the well column
