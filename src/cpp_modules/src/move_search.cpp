@@ -196,6 +196,7 @@ void getLockPlacementsFast(vector<SimState> &legalPlacements,
   for (auto simState : legalPlacements) {
     unsigned int const *bottomSurface = simState.piece->bottomSurfaceByRotation[simState.rotationIndex];
     int rowsToShift = 99999;
+    bool shouldAbort = false;
     for (int c = 0; c < 4; c++) {
       if (bottomSurface[c] == NONE) {
         continue; // Skip columns that the piece doesn't occupy
@@ -204,6 +205,19 @@ void getLockPlacementsFast(vector<SimState> &legalPlacements,
       int currentUnderSurface = 20 - bottomSurface[c] - simState.y;
       int colHeight = surfaceArray[simState.x + c];
       rowsToShift = min(rowsToShift, currentUnderSurface - colHeight);
+      // There's a very obscure scenario where a Z piece can spawn already underneath an overhang when the stack is all the way up to the ceiling.
+      // In this case, rowsToShift would be negative, since it's already below its natural resting place above the stack.
+      // Such a placement is ludicrous, so disregard it.
+      if (rowsToShift < 0){
+        shouldAbort = true;
+        break;
+//        printf("\n\nPANIK C, col=%d colHeight=%d currentUnderSurface=%d\n", c, colHeight, currentUnderSurface);
+//        printBoard(board);
+//        printBoardWithPiece(board, *simState.piece, simState.x, simState.y, simState.rotationIndex);
+      }
+    }
+    if (shouldAbort){
+      continue;
     }
     // Shift down to its lock position
     simState.y += rowsToShift;
