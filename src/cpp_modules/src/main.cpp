@@ -46,6 +46,8 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
   };
   const Piece *curPiece = NULL;
   const Piece *nextPiece = NULL;
+  int playoutCount = 50;
+  int playoutLength = 3;
   std::string inputFrameTimeline;
 
   // Loop through the other args
@@ -71,6 +73,13 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
       break;
     case 4:
       inputFrameTimeline = arg;
+      break;
+    case 5:
+      playoutCount = argAsInt;
+      break;
+    case 6:
+      playoutLength = argAsInt;
+      break;
     default:
       break;
     }

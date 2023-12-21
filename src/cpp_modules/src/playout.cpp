@@ -89,7 +89,7 @@ float playSequence(GameState gameState, const PieceRangeContext pieceRangeContex
 }
 
 
-float getPlayoutScore(GameState gameState, const PieceRangeContext pieceRangeContextLookup[3], int firstPieceIndex){
+float getPlayoutScore(GameState gameState, int playoutCount, int playoutLength, const PieceRangeContext pieceRangeContextLookup[3], int firstPieceIndex){
   // // Don't perform playouts if logging is enabled
   // if (LOGGING_ENABLED) {
   //   return 0;
@@ -99,18 +99,18 @@ float getPlayoutScore(GameState gameState, const PieceRangeContext pieceRangeCon
   // The piece RNG is dependent on the previous piece, we will then have 1000 sequences with accurate RNG given the last known piece
   int pieceOffset = 1000 + firstPieceIndex * 1000;
 
-  float shortPlayoutScore = 0;
-  for (int i = 0; i < NUM_PLAYOUTS; i++) {
+  float playoutScore = 0;
+  for (int i = 0; i < playoutCount; i++) {
     // Do one playout
     const int *pieceSequence = canonicalPieceSequences + (pieceOffset + i) * SEQUENCE_LENGTH; // Index into the mega array of piece sequences;
-    float playoutScore = playSequence(gameState, pieceRangeContextLookup, pieceSequence, PLAYOUT_LENGTH);
-    shortPlayoutScore += playoutScore;
+    float playoutScore = playSequence(gameState, pieceRangeContextLookup, pieceSequence, playoutCount);
+    playoutScore += playoutScore;
   }
 
   if (PLAYOUT_RESULT_LOGGING_ENABLED) {
-    printf("PlayoutScore %.1f\n", shortPlayoutScore / NUM_PLAYOUTS);
+    printf("PlayoutScore %.1f\n", playoutScore / playoutCount);
   }
-  return NUM_PLAYOUTS == 0 ? 0 : (shortPlayoutScore / NUM_PLAYOUTS);
+  return playoutCount == 0 ? 0 : (playoutScore / playoutCount);
 }
 
 
