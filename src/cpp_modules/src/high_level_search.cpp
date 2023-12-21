@@ -6,7 +6,6 @@
 #include <limits>
 using namespace std;
 
-#define UNEXPLORED_PENALTY -500   // A penalty for placements that weren't explored with playouts (could be worse than the eval indicates)
 #define MAP_OFFSET 20000          // An offset to make any placement better than the default 0 in the map
 
 /** Concatenates the position of a piece into a single string. */
@@ -249,7 +248,6 @@ std::string getLockValueLookupEncoded(GameState gameState, const Piece *firstPie
   // Perform playouts on the promising possibilities
   int i = 0;
   int numPlayedOut = 0;
-  int unexploredPenalty = evalContext->weights.deathCoef * 2;
   for (Possibility const& possibility : sortedList) {
     string lockPosEncoded = encodeLockPosition(possibility.firstPlacement);
     // Cap the number of times a lock position can be repeated (despite differing second placements)
@@ -264,12 +262,13 @@ std::string getLockValueLookupEncoded(GameState gameState, const Piece *firstPie
     // }
 
     float overallScore = MAP_OFFSET + (shouldPlayout
-      ? possibility.immediateReward + getPlayoutScore(possibility.resultingState, playoutCount, playoutLength, pieceRangeContextLookup, secondPiece->index)
-      : max(evalContext->weights.deathCoef, possibility.immediateReward + possibility.evalScore + unexploredPenalty)); // Can't be worse than death
-    if (SHOULD_PLAY_PERFECT){
+       ? possibility.immediateReward + getPlayoutScore(possibility.resultingState, playoutCount, playoutLength, pieceRangeContextLookup, secondPiece->index)
+       : evalContext->weights.deathCoef);
+
+//    if (SHOULD_PLAY_PERFECT){
 //      overallScore = std::max(MAP_OFFSET + 0.0f, overallScore); // 0 is the lowest possible eval score in the "play perfect" system
 //      overallScore = std::min(MAP_OFFSET + 100.0f, overallScore); // 100 is the max possible eval score in the "play perfect" system
-    }
+//    }
     
     if (overallScore > lockValueMap[lockPosEncoded]) {
       if (PLAYOUT_LOGGING_ENABLED || PLAYOUT_RESULT_LOGGING_ENABLED) {
