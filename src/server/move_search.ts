@@ -165,7 +165,7 @@ function exploreLegalPlacementsUntilLock(
     let startedLookingForTuckSpins = false;
     let highestRegisteredY = -1; // Tracks the Y values already registered to avoid duplicates
 
-    while (true) {
+    infiniteloop: while (true) {
       // Run simulated frames of only gravity
       const isGravityFrame =
         simState.frameIndex % simParams.gravity === simParams.gravity - 1; // Returns true every Nth frame, where N = gravity
@@ -194,31 +194,33 @@ function exploreLegalPlacementsUntilLock(
       inputSequenceWithWait += ".";
 
       if (isGravityFrame) {
-        if (
-          pieceCollision(
-            simParams.board,
-            simState.x,
-            simState.y + 1,
-            currentRotationPiece
-          )
-        ) {
-          // Piece would lock in!
-          // Do some housekeeping and then generate the possibility
-          lockHeightLookup.set(
-            simState.rotationIndex + "," + simState.x,
-            simState.y
-          );
-          lockPossibilities.push(
-            getPossibilityFromSimState(
-              simState,
-              simParams,
-              inputSequenceWithWait,
-              /* inputCost= */ 0
+        for (let repeat = 0; repeat < (simParams.doubleGravity ? 2 : 1); repeat++){
+          if (
+            pieceCollision(
+              simParams.board,
+              simState.x,
+              simState.y + 1,
+              currentRotationPiece
             )
-          );
-          break;
+          ) {
+            // Piece would lock in!
+            // Do some housekeeping and then generate the possibility
+            lockHeightLookup.set(
+              simState.rotationIndex + "," + simState.x,
+              simState.y
+            );
+            lockPossibilities.push(
+              getPossibilityFromSimState(
+                simState,
+                simParams,
+                inputSequenceWithWait,
+                /* inputCost= */ 0
+              )
+            );
+            break infiniteloop;
+          }
+          simState.y++;
         }
-        simState.y++;
       }
 
       simState.frameIndex += 1;
@@ -465,18 +467,20 @@ function repeatedlyShiftPiece(
     }
 
     if (isGravityFrame) {
-      if (
-        pieceCollision(
-          board,
-          simState.x,
-          simState.y + 1,
-          rotationsList[simState.rotationIndex]
-        )
-      ) {
-        debugLog(simState, simParams, "GRAVITY");
-        return rangeCurrent; // Piece would lock in
+      for (let repeat = 0; repeat < (simParams.doubleGravity ? 2 : 1); repeat++) {
+        if (
+          pieceCollision(
+            board,
+            simState.x,
+            simState.y + 1,
+            rotationsList[simState.rotationIndex]
+          )
+        ) {
+          debugLog(simState, simParams, "GRAVITY");
+          return rangeCurrent; // Piece would lock in
+        }
+        simState.y++;
       }
-      simState.y++;
     }
 
     debugLog(
@@ -604,21 +608,23 @@ export function placementIsLegal(
     }
 
     if (isGravityFrame) {
-      if (
-        pieceCollision(
-          board,
-          simState.x,
-          simState.y + 1,
-          rotationsList[simState.rotationIndex]
-        )
-      ) {
-        debugLog(simState, simParams, "GRAVITY");
-        return (
-          simState.x == initialX + goalOffsetX &&
-          simState.rotationIndex === goalRotationIndex
-        ); // Piece would lock in
+      for (let repeat = 0; repeat < (simParams.doubleGravity ? 2 : 1); repeat++) {
+        if (
+          pieceCollision(
+            board,
+            simState.x,
+            simState.y + 1,
+            rotationsList[simState.rotationIndex]
+          )
+        ) {
+          debugLog(simState, simParams, "GRAVITY");
+          return (
+            simState.x == initialX + goalOffsetX &&
+            simState.rotationIndex === goalRotationIndex
+          ); // Piece would lock in
+        }
+        simState.y++;
       }
-      simState.y++;
     }
 
     if (shouldLog) {
