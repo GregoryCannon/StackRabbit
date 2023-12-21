@@ -7,10 +7,11 @@ import {
   _validateIntParam,
 } from "./board_helper";
 import { searchForTucksOrSpins } from "./dfs";
-import { CAN_TUCK } from "./params";
+import { CAN_TUCK, DOUBLE_KS_ENABLED } from "./params";
 import {
   GetGravity,
   getSurfaceArrayAndHoles,
+  IsGravityDoubled,
   logBoard,
   NUM_ROW,
   shouldPerformInputsThisFrame,
@@ -47,6 +48,7 @@ export function getPossibleMoves(
   const initialX = 3 + existingXOffset;
   const initialY = (currentPieceId == "I" ? -2 : -1) + existingYOffset;
   const gravity = GetGravity(level);
+  const doubleGravity = IsGravityDoubled(level);
   const rotationsList = PIECE_LOOKUP[currentPieceId][0] as Array<PieceArray>;
 
   const simParams: SimParams = {
@@ -55,6 +57,7 @@ export function getPossibleMoves(
     initialY,
     framesAlreadyElapsed,
     gravity,
+    doubleGravity,
     inputFrameTimeline,
     rotationsList,
     pieceId: currentPieceId,
@@ -377,6 +380,7 @@ export function getPieceRanges(
     throw new Error("Unknown input timeline when checking placement");
   }
   const gravity = GetGravity(level); // 0-indexed, executes on the 0 frame. e.g. 2... 1... 0(shift).. 2... 1... 0(shift)
+  const doubleGravity = IsGravityDoubled(level);
   const rotationsList = PIECE_LOOKUP[pieceId as string][0];
   const simParams: SimParams = {
     board,
@@ -384,6 +388,7 @@ export function getPieceRanges(
     initialY: pieceId === "I" ? -2 : -1,
     framesAlreadyElapsed: 0,
     gravity,
+    doubleGravity,
     rotationsList,
     pieceId,
     existingRotation: 0,
@@ -538,6 +543,7 @@ export function canDoPlacement(
     throw new Error("Unknown input timeline when checking placement");
   }
   const gravity = GetGravity(level); // 0-indexed, executes on the 0 frame. e.g. 2... 1... 0(shift).. 2... 1... 0(shift)
+  const doubleGravity = IsGravityDoubled(level);
   const rotationsList = PIECE_LOOKUP[pieceId][0];
   const simParams: SimParams = {
     board,
@@ -545,6 +551,7 @@ export function canDoPlacement(
     initialY: pieceId === "I" ? -2 : -1,
     framesAlreadyElapsed: 0,
     gravity,
+    doubleGravity,
     rotationsList,
     pieceId: pieceId as PieceId,
     existingRotation: 0,

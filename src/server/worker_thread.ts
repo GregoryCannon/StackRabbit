@@ -1,6 +1,7 @@
 console.time("loading");
 import * as process from "process";
 import { getBestMove, getSortedMoveList } from "./main";
+import { GetDoubleKillscreenEquivalentInputTimeline, IsGravityDoubled } from "./utils";
 const cModule = require("../../../build/Release/cRabbit");
 
 console.timeEnd("loading");
@@ -34,7 +35,10 @@ function performComputationFinesseCpp(args: WorkerDataArgs): Object {
   const pieceLookup = ["I", "O", "L", "J", "T", "S", "Z"];
   const curPieceIndex = pieceLookup.indexOf(args.newSearchState.currentPieceId);
   const nextPieceIndex = pieceLookup.indexOf(args.newSearchState.nextPieceId);
-  const encodedInputString = `${boardStr}|${args.newSearchState.level}|${args.newSearchState.lines}|${curPieceIndex}|${nextPieceIndex}|${args.inputFrameTimeline}|`;
+  const inputFrameTimeline = IsGravityDoubled(args.newSearchState.level)
+    ? GetDoubleKillscreenEquivalentInputTimeline(args.inputFrameTimeline)
+    : args.inputFrameTimeline;
+  const encodedInputString = `${boardStr}|${args.newSearchState.level}|${args.newSearchState.lines}|${curPieceIndex}|${nextPieceIndex}|${inputFrameTimeline}|`;
 
   const lockPositionValueLookup = JSON.parse(
     cModule.getLockValueLookup(encodedInputString)

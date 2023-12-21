@@ -20,6 +20,8 @@ export const SHOULD_LOG = false;
 
 export const IS_DROUGHT_MODE = false;
 export const LINE_CAP = NO_LIMIT;
+export const DOUBLE_KS_ENABLED = false;
+export const DOUBLE_KS_DEBUG_ALWAYS_ENABLED = false;
 
 // Rarely changed
 export const USE_CPP = true;

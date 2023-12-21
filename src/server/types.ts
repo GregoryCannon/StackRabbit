@@ -16,6 +16,7 @@ interface SimParams {
   initialY: number;
   framesAlreadyElapsed: number;
   gravity: number;
+  doubleGravity: boolean;
   rotationsList: Array<PieceArray>;
   pieceId: PieceId;
   existingRotation: number;
