@@ -60,6 +60,7 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
     switch (i) {
     case 0:
       startingGameState.level = argAsInt;
+      break;
     case 1:
       startingGameState.lines = argAsInt;
       break;
