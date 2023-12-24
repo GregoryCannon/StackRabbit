@@ -103,8 +103,8 @@ float getPlayoutScore(GameState gameState, int playoutCount, int playoutLength, 
   for (int i = 0; i < playoutCount; i++) {
     // Do one playout
     const int *pieceSequence = canonicalPieceSequences + (pieceOffset + i) * SEQUENCE_LENGTH; // Index into the mega array of piece sequences;
-    float playoutScore = playSequence(gameState, pieceRangeContextLookup, pieceSequence, playoutCount);
-    playoutScore += playoutScore;
+    float resultScore = playSequence(gameState, pieceRangeContextLookup, pieceSequence, playoutLength);
+    playoutScore += resultScore;
   }
 
   if (PLAYOUT_RESULT_LOGGING_ENABLED) {
