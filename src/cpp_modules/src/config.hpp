@@ -30,12 +30,4 @@
 #define SEMI_HOLE_PROPORTION 0.81f // Value used for things that are sort of like holes but not fully (tuck setups, unfilled wells while digging)
 #define SEQUENCE_LENGTH 20
 
-// Playouts
-#define NUM_PLAYOUTS 100 // Supports up to 1000
-#define PLAYOUT_LENGTH 2
-
-// Currently not used since the simulations use the exact same call as regular pipeline
-//#define SIM_NUM_PLAYOUTS 20
-//#define SIM_PLAYOUT_LENGTH 1
-
 #endif
