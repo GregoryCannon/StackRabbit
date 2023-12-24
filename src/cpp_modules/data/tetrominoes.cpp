@@ -1,9 +1,23 @@
-#ifndef TETROMINOES
-#define TETROMINOES
-
 #include "../src/types.hpp"
-#include "tetrominoes.hpp"
 #include <list>
+
+/* A set of very particular data about each piece, used for finding tucks/spins in move search.
+
+   The idea is that for any legal tuck/spin, either the top rightmost mino or the top leftmost mino must be placed on an overhang cell (except for absurdly rare contrived cases).
+   Therefore, for each piece, we store a list of where these cells are within the 4x4 grid occupied by each cell.
+   Then, during move search, we can line up these key cells with the overhang cells on the board to find tuck/spins. */
+
+struct TuckOriginSpot {
+  int orientation;
+  int x;
+  int y;
+};
+
+struct TuckInput {
+  char notation;
+  int xChange;
+  int rotationChange;
+};
 
 const Piece PIECE_I = { 'I', 0, {
                  {0, 0, 960, 0}, // e.g. 960 = 1111000000
@@ -131,20 +145,6 @@ const Piece PIECE_Z = { 'Z', 6, {
                },{ 17, 17, NONE, NONE},
                -1 };
 
-const Piece PIECE_LIST[7] = {PIECE_I, PIECE_O, PIECE_L, PIECE_J, PIECE_T, PIECE_S, PIECE_Z};
-
-/* A set of very particular data about each piece, used for finding tucks/spins in move search.
-
-   The idea is that for any legal tuck/spin, either the top rightmost mino or the top leftmost mino must be placed on an overhang cell (except for absurdly rare contrived cases).
-   Therefore, for each piece, we store a list of where these cells are within the 4x4 grid occupied by each cell.
-   Then, during move search, we can line up these key cells with the overhang cells on the board to find tuck/spins. */
-
-struct TuckOriginSpot {
-  int orientation;
-  int x;
-  int y;
-};
-
 static std::list<TuckOriginSpot> TUCK_SPOTS_I = {
   {0, 0, 2},
   {0, 3, 2},
@@ -203,13 +203,9 @@ static std::list<TuckOriginSpot> TUCK_SPOTS_Z = {
   {1, 2, 1}
 };
 
-static std::list<TuckOriginSpot> TUCK_SPOTS_LIST[7] = {TUCK_SPOTS_I, TUCK_SPOTS_O, TUCK_SPOTS_L, TUCK_SPOTS_J, TUCK_SPOTS_T, TUCK_SPOTS_S, TUCK_SPOTS_Z};
+const Piece PIECE_LIST[7] = {PIECE_I, PIECE_O, PIECE_L, PIECE_J, PIECE_T, PIECE_S, PIECE_Z};
 
-struct TuckInput {
-  char notation;
-  int xChange;
-  int rotationChange;
-};
+static std::list<TuckOriginSpot> TUCK_SPOTS_LIST[7] = {TUCK_SPOTS_I, TUCK_SPOTS_O, TUCK_SPOTS_L, TUCK_SPOTS_J, TUCK_SPOTS_T, TUCK_SPOTS_S, TUCK_SPOTS_Z};
 
 std::list<TuckInput> TUCK_INPUTS {
   {'L', -1, 0},
@@ -221,5 +217,3 @@ std::list<TuckInput> TUCK_INPUTS {
   {'F', -1, -1},
   {'G', 1, -1}
 };
-
-#endif
