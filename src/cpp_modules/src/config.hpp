@@ -23,6 +23,11 @@
 #define ALWAYS_LINEOUT_29 0
 #define SHOULD_PLAY_PERFECT 0
 
+// Engine API params
+#define NUM_TOP_ENGINE_MOVES 8
+#define DEFAULT_PLAYOUT_COUNT 49
+#define DEFAULT_PLAYOUT_LENGTH 2
+
 // Logistics of move search and pruning
 #define DEPTH_2_PRUNING_BREADTH 12
 #define DEPTH_1_PRUNING_BREADTH 8

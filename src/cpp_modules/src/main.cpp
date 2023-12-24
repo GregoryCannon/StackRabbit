@@ -46,8 +46,8 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
   };
   const Piece *curPiece = NULL;
   const Piece *nextPiece = NULL;
-  int playoutCount = 50;
-  int playoutLength = 3;
+  int playoutCount = DEFAULT_PLAYOUT_COUNT;
+  int playoutLength = DEFAULT_PLAYOUT_LENGTH;
   std::string inputFrameTimeline;
 
   // Loop through the other args
@@ -112,24 +112,28 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
 
   // Take the specified action on the input based on the request type
   switch (requestType) {
-  case GET_LOCK_VALUE_LOOKUP: {
-    return getLockValueLookupEncoded(startingGameState, curPiece, nextPiece, DEPTH_2_PRUNING_BREADTH, playoutCount, playoutLength, &context, pieceRangeContextLookup);
-  }
+    case GET_LOCK_VALUE_LOOKUP: {
+      return getLockValueLookupEncoded(startingGameState, curPiece, nextPiece, DEPTH_2_PRUNING_BREADTH, playoutCount, playoutLength, &context, pieceRangeContextLookup);
+    }
 
-  case GET_MOVE: {
-//    int debugSequence[SEQUENCE_LENGTH] = {curPiece->index};
-//    playSequence(startingGameState, pieceRangeContextLookup, debugSequence, /* playoutLength= */ 1);
-//    return "Debug playout complete.";
-    LockLocation bestMove = playOneMove(startingGameState, curPiece, nextPiece, /* numCandidatesToPlayout */ DEPTH_1_PRUNING_BREADTH, playoutCount, playoutLength, &context, pieceRangeContextLookup);
-    int xOffset = bestMove.x - 3;
-    int rot = bestMove.rotationIndex;
+    case GET_TOP_MOVES: {
+      return getTopMoveList(startingGameState, curPiece, nextPiece, NUM_TOP_ENGINE_MOVES, playoutCount, playoutLength, &context, pieceRangeContextLookup);
+    }
 
-    return string_format("[%d, %d]", rot, xOffset);
-  }
+    case GET_MOVE: {
+  //    int debugSequence[SEQUENCE_LENGTH] = {curPiece->index};
+  //    playSequence(startingGameState, pieceRangeContextLookup, debugSequence, /* playoutLength= */ 1);
+  //    return "Debug playout complete.";
+      LockLocation bestMove = playOneMove(startingGameState, curPiece, nextPiece, /* numCandidatesToPlayout */ DEPTH_1_PRUNING_BREADTH, playoutCount, playoutLength, &context, pieceRangeContextLookup);
+      int xOffset = bestMove.x - 3;
+      int rot = bestMove.rotationIndex;
 
-  default: {
-    return "Unknown request";
-  }
+      return string_format("[%d, %d]", rot, xOffset);
+    }
+
+    default: {
+      return "Unknown request";
+    }
   }
 }
 

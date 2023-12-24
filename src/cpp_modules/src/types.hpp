@@ -12,10 +12,11 @@
 #undef max
 #undef min
 
-
+#define INITIAL_X 3
 
 enum RequestType {
   GET_LOCK_VALUE_LOOKUP, // Gets a map of all the values for all possible places where the current piece could lock.
+  GET_TOP_MOVES, // Gets a list of the top moves, using full playouts. Supports with or without next box.
   GET_MOVE // Gets a single best move for a given scenario, using full playouts. Supports with or without next box.
 };
 
@@ -150,8 +151,15 @@ struct Possibility {
   LockLocation firstPlacement;
   LockLocation secondPlacement; // Can be null if it's actually depth 1
   GameState resultingState;
-  float evalScore;
+  float evalScoreInclReward;
   float immediateReward;
+};
+
+struct EngineMoveData {
+  LockLocation firstPlacement;
+  LockLocation secondPlacement;
+  float playoutScore;
+  float evalScore;
 };
 
 #endif

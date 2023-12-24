@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include "params.hpp"
 #include <limits>
+#include "formatting.hpp"
 using namespace std;
 
 #define MAP_OFFSET 20000          // An offset to make any placement better than the default 0 in the map
@@ -31,18 +32,6 @@ std::string encodeLockPosition(LockLocation lockLocation){
 }
 
 /**
- * Processes a Possibility object and formats the result how the various agents would expect it.
- * @returns a string of resulting data, in the format:
- * {number of shifts | number of right rotations | string of inputs | resulting board | resulting level | resulting lines}
- */
-std::string formatPossibility(Possibility possibility){
-  // TODO: implement
-  // char buffer[300];
-  // sprintf(buffer, "%d")
-  return "";
-}
-
-/**
  * Performs a partial insertion sort such that the highest N elements of the list are guaranteed to be sorted and kept at the front of the list.
  * The other elements can be anywhere.
  */
@@ -52,7 +41,7 @@ void partiallySortPossibilityList(list<Possibility> &possibilityList, int keepTo
 
   for (auto it = begin(possibilityList); it != end(possibilityList); ++it) {
     Possibility newPossibility = *it;
-    if (size < keepTopN || newPossibility.evalScore + newPossibility.immediateReward > cutoffPossibility->evalScore + cutoffPossibility->immediateReward) {
+    if (size < keepTopN || newPossibility.evalScoreInclReward > cutoffPossibility->evalScoreInclReward) {
       // Insert into the list in its correct sorted place
       for (auto it2 = sortedList.begin(); true; it2++) {
         if (it2 == sortedList.end()) {
@@ -60,7 +49,7 @@ void partiallySortPossibilityList(list<Possibility> &possibilityList, int keepTo
           size++;
           break;
         }
-        if (newPossibility.evalScore > it2->evalScore) {
+        if (newPossibility.evalScoreInclReward > it2->evalScoreInclReward) {
           sortedList.insert(it2, newPossibility);
           size++;
           break;
@@ -87,6 +76,22 @@ void partiallySortPossibilityList(list<Possibility> &possibilityList, int keepTo
 
 }
 
+/** Performs the insertion operation from insertion sort. */
+void insertIntoList(EngineMoveData newData, OUT list<EngineMoveData> &sortedList){
+  // printf("inserting into list %d %d\n", newData.firstPlacement.x, newData.firstPlacement.rotationIndex);
+  // Insert into the list in its correct sorted place
+  for (auto ptr = sortedList.begin(); true; ptr++) {
+    if (ptr == sortedList.end()) {
+      sortedList.push_back(newData);
+      break;
+    }
+    if (newData.evalScore > ptr->evalScore) {
+      sortedList.insert(ptr, newData);
+      break;
+    }
+  }
+}
+
 /** Searches 1-ply from a starting state, and performs an eval on each resulting state.
  * @returns an UNSORTED list of evaluated possibilities
  */
@@ -98,14 +103,13 @@ int searchDepth1(GameState gameState, const Piece *firstPiece, int keepTopN, con
 
     GameState resultingState = advanceGameState(gameState, firstPlacement, evalContext);
     float reward = getLineClearFactor(resultingState.lines - gameState.lines, evalContext->weights, evalContext->shouldRewardLineClears);
-    // NB: reward is already included in the eval!
-    float evalScore = fastEval(gameState, resultingState, firstPlacement, evalContext);
+    float evalScoreInclReward = fastEval(gameState, resultingState, firstPlacement, evalContext);
 
     Possibility newPossibility = {
       { firstPlacement.x, firstPlacement.y, firstPlacement.rotationIndex },
       {},
       resultingState,
-      evalScore,
+      evalScoreInclReward,
       reward
     };
     possibilityList.push_back(newPossibility);
@@ -181,7 +185,6 @@ LockLocation playOneMove(GameState gameState, const Piece *firstPiece, const Pie
     return {NONE, NONE, NONE}; // Return an invalid lock location to indicate the agent has topped out
   }
   partiallySortPossibilityList(possibilityList, numCandidatesToPlayout, sortedList);
-  const Piece *lastSeenPiece = firstPiece;
 
   int numPlayedOut = 0;
   LockLocation const *bestLockLocation = NULL;
@@ -194,18 +197,18 @@ LockLocation playOneMove(GameState gameState, const Piece *firstPiece, const Pie
     }
 
     float overallScore;
-
     if (shouldDoPlayouts){
+      const Piece *lastSeenPiece = firstPiece;
       overallScore = possibility.immediateReward + getPlayoutScore(possibility.resultingState, playoutCount, playoutLength, pieceRangeContextLookup, lastSeenPiece->index);
     } else {
-      overallScore = possibility.evalScore; // NB: immediateReward is included in the eval
+      overallScore = possibility.evalScoreInclReward;
     }
     // if (SHOULD_PLAY_PERFECT){
     //  overallScore = std::max(0.0f, overallScore); // 0 is the lowest possible eval score in the "play perfect" system
     //  overallScore = std::min(100.0f, overallScore); // 100 is the max possible eval score in the "play perfect" system
     // }
 
-    maybePrint("Possibility %d %d has overallscore %f %f\n", possibility.firstPlacement.rotationIndex, possibility.firstPlacement.x - 3, overallScore, possibility.evalScore);
+    maybePrint("Possibility %d %d has overallscore %f %f\n", possibility.firstPlacement.rotationIndex, possibility.firstPlacement.x - 3, overallScore, possibility.evalScoreInclReward);
 
     // Potentially update the best possibility
     if (bestLockLocation == NULL || overallScore > bestPossibilityScore) {
@@ -216,6 +219,59 @@ LockLocation playOneMove(GameState gameState, const Piece *firstPiece, const Pie
     numPlayedOut++;
   }
   return *bestLockLocation;
+}
+
+/**
+ * Gets a list of the top moves, formatted as a JSON string. (See formatting.hpp for exact format details).
+ */
+std::string getTopMoveList(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int keepTopN, int playoutCount, int playoutLength, const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3]){
+  // Keep a running list of the top X possibilities as the move search is happening.
+  // Keep twice as many as we'll eventually need, since some duplicates may be removed before playouts start
+  int numSorted = keepTopN * 2;
+
+  // Get the list of evaluated possibilities
+  list<Possibility> possibilityList;
+  list<Possibility> initiallySortedList;
+  list<EngineMoveData> sortedList;
+  
+  // Search depth either 1 or 2 depending on whether a next piece was provided
+  const Piece *lastSeenPiece;
+  if (secondPiece == NULL){
+    searchDepth1(gameState, firstPiece, numSorted, evalContext, possibilityList);
+    lastSeenPiece = firstPiece;
+  } else {
+    searchDepth2(gameState, firstPiece, secondPiece, numSorted, evalContext, possibilityList);
+    lastSeenPiece = secondPiece;
+  }
+
+  if (possibilityList.size() == 0){
+    return "No legal moves";
+  }
+  partiallySortPossibilityList(possibilityList, numSorted, initiallySortedList);
+
+  // Perform playouts on the promising possibilities
+  int numAdded = 0;
+  for (Possibility const& possibility : initiallySortedList) {
+    if (numAdded >= keepTopN){
+      break;
+    }
+    // printf("Doing playout for: %s %s\n", encodeLockPosition(possibility.firstPlacement).c_str(), encodeLockPosition(possibility.secondPlacement).c_str());
+    string lockPosEncoded = encodeLockPosition(possibility.firstPlacement);
+    float playoutRaw = getPlayoutScore(possibility.resultingState, playoutCount, playoutLength, pieceRangeContextLookup, lastSeenPiece->index);
+    float overallScore = possibility.immediateReward 
+          + playoutRaw;
+
+    EngineMoveData newMoveData = {
+      possibility.firstPlacement,
+      possibility.secondPlacement,
+      /* playoutScore= */ overallScore,
+      /* shallowEvalScore= */ possibility.evalScoreInclReward
+    };
+    insertIntoList(newMoveData, sortedList);
+    numAdded++;
+  }
+
+  return formatEngineMoveList(sortedList);
 }
 
 
@@ -243,7 +299,7 @@ std::string getLockValueLookupEncoded(GameState gameState, const Piece *firstPie
   list<Possibility> possibilityList;
   list<Possibility> sortedList;
   searchDepth2(gameState, firstPiece, secondPiece, numSorted, evalContext, possibilityList);
-  partiallySortPossibilityList(possibilityList, keepTopN, sortedList);
+  partiallySortPossibilityList(possibilityList, numSorted, sortedList);
 
   // Perform playouts on the promising possibilities
   int i = 0;
