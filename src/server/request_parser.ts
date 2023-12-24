@@ -151,6 +151,9 @@ export function parseUrlArguments(
         if (length < 0) {
           throw new Error("Invalid playout length: " + length);
         }
+        if (length > 20) {
+          throw new Error("Invalid playout length (max is 20): " + length);
+        }
         if (result.playoutCount * length > MAX_CPP_PLAYOUT_MOVES) {
           throw new Error(
             "Playout volume exceeds the current limit of 500 moves. Current volume (count * length): " +

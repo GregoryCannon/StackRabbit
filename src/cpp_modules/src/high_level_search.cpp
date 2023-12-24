@@ -85,7 +85,7 @@ void insertIntoList(EngineMoveData newData, OUT list<EngineMoveData> &sortedList
       sortedList.push_back(newData);
       break;
     }
-    if (newData.evalScore > ptr->evalScore) {
+    if (newData.playoutScore > ptr->playoutScore) {
       sortedList.insert(ptr, newData);
       break;
     }
