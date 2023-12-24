@@ -34,7 +34,7 @@ std::string string_format( const std::string& format, Args ... args )
 }
 
 std::string mainProcess(char const *inputStr, RequestType requestType) {
-//  printf("Input string %s\n", inputStr);
+  maybePrint("Input string %s\n", inputStr);
 
   // Init empty data structures
   GameState startingGameState = {

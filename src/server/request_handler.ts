@@ -4,7 +4,12 @@ import { engineLookup, engineLookupTopMoves } from "./engine_lookup";
 import { rateSurface } from "./evaluator";
 import { getSearchStateAfter } from "./main";
 import { getPossibleMoves } from "./move_search";
-import { DISABLE_LOGGING, LINE_CAP, SHOULD_LOG, USE_CPP } from "./params";
+import {
+  DISABLE_LOGGING,
+  LINE_CAP,
+  MAX_CPP_PLAYOUT_MOVES,
+  SHOULD_LOG,
+} from "./params";
 import { PreComputeManager } from "./precompute";
 import {
   boardEquals,
@@ -82,10 +87,20 @@ export class RequestHandler {
         return [this.handleEngineLookupTopMoves(urlArgs), 200];
 
       case "get-move":
-        return [this.handleRequestSync(urlArgs), 200];
+        return [this.getMoveSync(urlArgs, /* isCpp= */ false), 200];
+
+      case "get-move-cpp":
+        return [this.getMoveSync(urlArgs, /* isCpp= */ true), 200];
 
       case "get-move-async":
-        return this._wrapAsync(() => this.handleRequestSync(urlArgs));
+        return this._wrapAsync(() =>
+          this.getMoveSync(urlArgs, /* isCpp= */ false)
+        );
+
+      case "get-move-async-cpp":
+        return this._wrapAsync(() =>
+          this.getMoveSync(urlArgs, /* isCpp= */ true)
+        );
 
       case "eval":
         return [this.handleRequestEvalNoNextBox(urlArgs), 200];
@@ -106,10 +121,10 @@ export class RequestHandler {
         return [
           JSON.stringify({
             jsVersion: JS_APP_VERSION,
-            cppVersion: CPP_APP_VERSION
+            cppVersion: CPP_APP_VERSION,
           }),
           200,
-        ]
+        ];
       default:
         return [
           "Please specify the request type, e.g. 'get-move' or 'rate-move'. Received: " +
@@ -153,6 +168,8 @@ export class RequestHandler {
       inputFrameTimeline: undefined,
       arrWasReset: false,
       lookaheadDepth: 0,
+      playoutCount: 0,
+      playoutLength: 0,
       existingXOffset: 0,
       existingYOffset: 0,
       existingRotation: 0,
@@ -246,6 +263,34 @@ export class RequestHandler {
           result.lookaheadDepth = depth;
           break;
 
+        case "playoutCount":
+          const count = parseInt(value);
+          if (count < 0) {
+            throw new Error("Invalid playout count: " + count);
+          }
+          if (count * result.playoutLength > MAX_CPP_PLAYOUT_MOVES) {
+            throw new Error(
+              "Playout volume exceeds the current limit of 500 moves. Current volume (count * length): " +
+                count * result.lookaheadDepth
+            );
+          }
+          result.playoutCount = count;
+          break;
+
+        case "playoutLength":
+          const length = parseInt(value);
+          if (length < 0) {
+            throw new Error("Invalid playout length: " + length);
+          }
+          if (result.playoutCount * length > MAX_CPP_PLAYOUT_MOVES) {
+            throw new Error(
+              "Playout volume exceeds the current limit of 500 moves. Current volume (count * length): " +
+                result.playoutCount * length
+            );
+          }
+          result.playoutLength = length;
+          break;
+
         // These properties are pretty advanced, if you're using them you should know what you're doing
         case "existingXOffset":
           result.existingXOffset = parseInt(value);
@@ -310,20 +355,21 @@ export class RequestHandler {
    * Synchronously choose the best placement, with no next box and no search.
    * @returns {string} the API response
    */
-  handleRequestSync(urlArgs) {
+  getMoveSync(urlArgs: UrlArguments, isCpp: boolean) {
     console.time("GetMove");
 
     const searchState = this._getSearchStateFromUrlArguments(urlArgs);
 
     let bestMove;
 
-    if (USE_CPP) {
+    if (isCpp) {
       // Ping the CPP backend
       const boardStr = searchState.board.map((x) => x.join("")).join("");
       const pieceLookup = ["I", "O", "L", "J", "T", "S", "Z"];
       const curPieceIndex = pieceLookup.indexOf(searchState.currentPieceId);
       const nextPieceIndex = pieceLookup.indexOf(searchState.nextPieceId);
-      const encodedInputString = `${boardStr}|${searchState.level}|${searchState.lines}|${curPieceIndex}|${nextPieceIndex}|${urlArgs.inputFrameTimeline}|`;
+      // Includes the final | character at the end due to how the string is parsed (cpp doesn't have an easy split method rip)
+      const encodedInputString = `${boardStr}|${searchState.level}|${searchState.lines}|${curPieceIndex}|${nextPieceIndex}|${urlArgs.inputFrameTimeline}|${urlArgs.playoutCount}|${urlArgs.playoutLength}|`;
       const result = JSON.parse(cModule.playMoveNoNextBox(encodedInputString));
       const [rotation, xOffset] = result;
       console.log("RESULT: ", result);
@@ -341,12 +387,15 @@ export class RequestHandler {
         searchState.canFirstFrameShift,
         false
       );
-      for (const possibility of possibilityList){
-        if (possibility.placement[0] === rotation && possibility.placement[1] === xOffset){
-          const possibilityChain : PossibilityChain = {
+      for (const possibility of possibilityList) {
+        if (
+          possibility.placement[0] === rotation &&
+          possibility.placement[1] === xOffset
+        ) {
+          const possibilityChain: PossibilityChain = {
             totalValue: -1,
             searchStateAfterMove: getSearchStateAfter(searchState, possibility),
-            ...possibility
+            ...possibility,
           };
           bestMove = possibilityChain;
           break;
@@ -364,8 +413,6 @@ export class RequestHandler {
         /* hypotheticalSearchDepth= */ urlArgs.lookaheadDepth
       );
     }
-
-    
 
     console.timeEnd("GetMove");
     if (!bestMove) {

@@ -22,12 +22,12 @@ export const IS_DROUGHT_MODE = false;
 export const LINE_CAP = NO_LIMIT;
 
 // Rarely changed
-export const USE_CPP = true;
 export const IS_PAL = false;
 export const WELL_COLUMN = 9; // 0-indexed
 export const CAN_TUCK = true;
 export const SHOULD_PUSHDOWN = false;
 export const DISABLE_LOGGING = true;
+export const MAX_CPP_PLAYOUT_MOVES = 500;
 
 // Calculated automatically
 export const USE_RANKS = true;
