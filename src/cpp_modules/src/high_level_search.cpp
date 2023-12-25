@@ -9,28 +9,6 @@ using namespace std;
 
 #define MAP_OFFSET 20000          // An offset to make any placement better than the default 0 in the map
 
-/** Concatenates the position of a piece into a single string. */
-std::string encodeLockPosition(LockLocation lockLocation){
-  if (VARIABLE_RANGE_CHECKS_ENABLED || true) {
-    // Check variable ranges to avoid buffer overflows
-    if (lockLocation.rotationIndex > 4 || lockLocation.rotationIndex < 0) {
-      printf("rotation index out of range %d\n", lockLocation.rotationIndex);
-//      throw std::invalid_argument( "rotation index out of range" );
-    }
-    if (lockLocation.x > 7 || lockLocation.x < -2) {
-      printf("x index out of range %d\n", lockLocation.x);
-//      throw std::invalid_argument( "x index out of range" );
-    }
-    if (lockLocation.y < -2 || lockLocation.y > 19) {
-      printf("y index out of range %d\n", lockLocation.y);
-//      throw std::invalid_argument( "y index out of range" );
-    }
-  }
-  char buffer[10];
-  sprintf(buffer, "%d|%d|%d", lockLocation.rotationIndex, lockLocation.x, lockLocation.y);
-  return string(buffer);
-}
-
 /**
  * Performs a partial insertion sort such that the highest N elements of the list are guaranteed to be sorted and kept at the front of the list.
  * The other elements can be anywhere.
@@ -74,22 +52,6 @@ void partiallySortPossibilityList(list<Possibility> &possibilityList, int keepTo
     }
   }
 
-}
-
-/** Performs the insertion operation from insertion sort. */
-void insertIntoList(EngineMoveData newData, OUT list<EngineMoveData> &sortedList){
-  // printf("inserting into list %d %d\n", newData.firstPlacement.x, newData.firstPlacement.rotationIndex);
-  // Insert into the list in its correct sorted place
-  for (auto ptr = sortedList.begin(); true; ptr++) {
-    if (ptr == sortedList.end()) {
-      sortedList.push_back(newData);
-      break;
-    }
-    if (newData.playoutScore > ptr->playoutScore) {
-      sortedList.insert(ptr, newData);
-      break;
-    }
-  }
 }
 
 /** Searches 1-ply from a starting state, and performs an eval on each resulting state.
@@ -257,15 +219,25 @@ std::string getTopMoveList(GameState gameState, const Piece *firstPiece, const P
     }
     // printf("Doing playout for: %s %s\n", encodeLockPosition(possibility.firstPlacement).c_str(), encodeLockPosition(possibility.secondPlacement).c_str());
     string lockPosEncoded = encodeLockPosition(possibility.firstPlacement);
-    float playoutRaw = getPlayoutScore(possibility.resultingState, playoutCount, playoutLength, pieceRangeContextLookup, lastSeenPiece->index);
+    vector<PlayoutData> playoutDataList = {};
     float overallScore = possibility.immediateReward 
-          + playoutRaw;
+          + getPlayoutScore(possibility.resultingState, playoutCount, playoutLength, pieceRangeContextLookup, lastSeenPiece->index, &playoutDataList);
 
+    // Pick 7 playouts from the sorted playout list
+    int len = playoutDataList.size();
     EngineMoveData newMoveData = {
       possibility.firstPlacement,
       possibility.secondPlacement,
-      /* playoutScore= */ overallScore,
-      /* shallowEvalScore= */ possibility.evalScoreInclReward
+      /* playoutScore */ overallScore,
+      /* shallowEvalScore */ possibility.evalScoreInclReward,
+      /* resultingBoard */ formatBoard(possibility.resultingState.board),
+      /* playout1 (best case) */ playoutDataList.at(0),
+      /* playout2 (83 %ile case) */ playoutDataList.at(len / 6), // Fractions are "backwards" because moves are ordered best (100%ile) to worst (0%ile).
+      /* playout3 (66 %ile case) */ playoutDataList.at(len / 3),
+      /* playout4 (median case) */ playoutDataList.at(len / 2),
+      /* playout5 (33 %ile case) */ playoutDataList.at(len * 2 / 3),
+      /* playout6 (16 %ile case) */ playoutDataList.at(len * 5 / 6),
+      /* playout7 (worst case) */ playoutDataList.at(len - 1),
     };
     insertIntoList(newMoveData, sortedList);
     numAdded++;

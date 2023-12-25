@@ -27,6 +27,7 @@
 #define NUM_TOP_ENGINE_MOVES 8
 #define DEFAULT_PLAYOUT_COUNT 49
 #define DEFAULT_PLAYOUT_LENGTH 2
+#define TRACK_PLAYOUT_DETAILS true // Can disable for performance reasons
 
 // Logistics of move search and pruning
 #define DEPTH_2_PRUNING_BREADTH 12

@@ -1,6 +1,12 @@
 #include "../src/types.hpp"
 #include <list>
 
+std::string PIECE_CHAR_LIST = "IOLJTSZ";
+
+char getPieceChar(int index){
+  return PIECE_CHAR_LIST.at(index);
+}
+
 /* A set of very particular data about each piece, used for finding tucks/spins in move search.
 
    The idea is that for any legal tuck/spin, either the top rightmost mino or the top leftmost mino must be placed on an overhang cell (except for absurdly rare contrived cases).

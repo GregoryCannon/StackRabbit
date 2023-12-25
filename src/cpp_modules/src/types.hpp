@@ -155,11 +155,28 @@ struct Possibility {
   float immediateReward;
 };
 
+/** A data model for one playout within a series of such playouts*/
+struct PlayoutData {
+  float totalScore;
+  std::vector<LockLocation> placements;
+  std::string pieceSequence;
+  unsigned int resultingBoard[20];
+};
+
+/** A data model for a move, as it relates to being part of an API response for the list of top moves */
 struct EngineMoveData {
   LockLocation firstPlacement;
   LockLocation secondPlacement;
   float playoutScore;
   float evalScore;
+  std::string resultingBoard;
+  PlayoutData playout1; // Best case
+  PlayoutData playout2; // 83 %ile
+  PlayoutData playout3; // 66 %ile
+  PlayoutData playout4; // Median case
+  PlayoutData playout5; // 33 %ile
+  PlayoutData playout6; // 16 %ile
+  PlayoutData playout7; // Worst case
 };
 
 #endif
