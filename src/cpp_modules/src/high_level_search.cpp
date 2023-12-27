@@ -127,20 +127,18 @@ int searchDepth2(GameState gameState, const Piece *firstPiece, const Piece *seco
 
 /** Plays one move from a given state, with or without knowledge of the next box.*/
 LockLocation playOneMove(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int numCandidatesToPlayout, int playoutCount, int playoutLength, const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3]){
-
-  // Keep a running list of the top X possibilities as the move search is happening.
-  // Keep twice as many as we'll eventually need, since some duplicates may be removed before playouts start
-  int numSorted = numCandidatesToPlayout;
-
   // Get the list of evaluated possibilities
   list<Possibility> possibilityList;
   list<Possibility> sortedList;
   
   // Search depth either 1 or 2 depending on whether a next piece was provided
+  const Piece *lastSeenPiece;
   if (secondPiece == NULL){
-    searchDepth1(gameState, firstPiece, numSorted, evalContext, possibilityList);
+    searchDepth1(gameState, firstPiece, numCandidatesToPlayout, evalContext, possibilityList);
+    lastSeenPiece = firstPiece;
   } else {
-    searchDepth2(gameState, firstPiece, secondPiece, numSorted, evalContext, possibilityList);
+    searchDepth2(gameState, firstPiece, secondPiece, numCandidatesToPlayout, evalContext, possibilityList);
+    lastSeenPiece = secondPiece;
   }
 
   if (possibilityList.size() == 0){
@@ -154,13 +152,12 @@ LockLocation playOneMove(GameState gameState, const Piece *firstPiece, const Pie
 
   bool shouldDoPlayouts = playoutCount > 0;
   for (Possibility const& possibility : sortedList) {
-    if (shouldDoPlayouts && numPlayedOut >= numSorted) {
+    if (shouldDoPlayouts && numPlayedOut >= numCandidatesToPlayout) {
       break;
     }
 
     float overallScore;
     if (shouldDoPlayouts){
-      const Piece *lastSeenPiece = firstPiece;
       overallScore = possibility.immediateReward + getPlayoutScore(possibility.resultingState, playoutCount, playoutLength, pieceRangeContextLookup, lastSeenPiece->index);
     } else {
       overallScore = possibility.evalScoreInclReward;
