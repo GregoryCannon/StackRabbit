@@ -224,7 +224,11 @@ function exploreLegalPlacementsUntilLock(
       inputSequenceWithWait += ".";
 
       if (isGravityFrame) {
-        for (let repeat = 0; repeat < (simParams.doubleGravity ? 2 : 1); repeat++){
+        for (
+          let repeat = 0;
+          repeat < (simParams.doubleGravity ? 2 : 1);
+          repeat++
+        ) {
           if (
             pieceCollision(
               simParams.board,
@@ -493,7 +497,11 @@ function repeatedlyShiftPiece(
     }
 
     if (isGravityFrame) {
-      for (let repeat = 0; repeat < (simParams.doubleGravity ? 2 : 1); repeat++) {
+      for (
+        let repeat = 0;
+        repeat < (simParams.doubleGravity ? 2 : 1);
+        repeat++
+      ) {
         if (
           pieceCollision(
             board,
@@ -646,7 +654,11 @@ export function placementIsLegal(
     }
 
     if (isGravityFrame) {
-      for (let repeat = 0; repeat < (simParams.doubleGravity ? 2 : 1); repeat++) {
+      for (
+        let repeat = 0;
+        repeat < (simParams.doubleGravity ? 2 : 1);
+        repeat++
+      ) {
         if (
           pieceCollision(
             board,
