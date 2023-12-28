@@ -1,7 +1,6 @@
 #ifndef PIECE_RANGES
 #define PIECE_RANGES
 
-#include "../data/tetrominoes.hpp"
 #include <array>
 
 using namespace std;

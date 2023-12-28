@@ -4,12 +4,12 @@
   "description": "an AI for playing NES Tetris",
   "main": "src/web_client/index.js",
   "scripts": {
-    "start-server": "node-gyp build && tsc && node built/src/server/app.js",
-    "start": "node built/src/server/app.js",
+    "restart": "node built/src/server/app.js",
+    "start": "node-gyp build && tsc && node built/src/server/app.js",
+    "deploy": "node-gyp build && tsc && pm2 stop all && pm2 start built/src/server/app.js",
     "format": "prettier --write \"src/**/*.+(js|jsx|ts|json|css|md)\"",
-    "cb": "node-gyp build",
-    "cr": "node-gyp build && node built/src/server/cmodules.js",
-    "test": "tsc && node built/src/server/move_search_test.js"
+    "cpp_test": "node-gyp build && node built/src/server/cmodules.js",
+    "move_test": "tsc && node built/src/server/move_search_test.js"
   },
   "author": "",
   "license": "ISC",

@@ -23,19 +23,17 @@
 #define ALWAYS_LINEOUT_29 0
 #define SHOULD_PLAY_PERFECT 0
 
+// Engine API params
+#define NUM_TOP_ENGINE_MOVES 8
+#define DEFAULT_PLAYOUT_COUNT 49
+#define DEFAULT_PLAYOUT_LENGTH 2
+#define TRACK_PLAYOUT_DETAILS true // Can disable for performance reasons
+
 // Logistics of move search and pruning
 #define DEPTH_2_PRUNING_BREADTH 12
 #define DEPTH_1_PRUNING_BREADTH 8
 #define LOCK_POSITION_REPEAT_CAP 3
 #define SEMI_HOLE_PROPORTION 0.81f // Value used for things that are sort of like holes but not fully (tuck setups, unfilled wells while digging)
 #define SEQUENCE_LENGTH 20
-
-// Playouts
-#define NUM_PLAYOUTS 100 // Supports up to 1000
-#define PLAYOUT_LENGTH 2
-
-// Currently not used since the simulations use the exact same call as regular pipeline
-//#define SIM_NUM_PLAYOUTS 20
-//#define SIM_PLAYOUT_LENGTH 1
 
 #endif
