@@ -112,6 +112,9 @@ export class RequestHandler {
       case "rate-move":
         return [this.handleRequestRateMove(searchState, urlArgs), 200];
 
+      case "rate-move-cpp":
+        return [this.handleCppRateMove(searchState, urlArgs), 200];
+
       case "precompute":
         if (!this.preComputeManager) {
           return [
@@ -226,6 +229,11 @@ export class RequestHandler {
     return cModule.getTopMoves(encodedInputString);
   }
 
+  handleCppRateMove(searchState: SearchState, urlArgs: UrlArguments) {
+    const encodedInputString = getCppEncodedInputString(searchState, urlArgs);
+    return cModule.rateMove(encodedInputString);
+  }
+
   /**
    * Synchronously evaluate a board, with no next box and no search.
    * @returns {string} the API response
@@ -315,8 +323,8 @@ export class RequestHandler {
     console.timeEnd("RateMove");
     return JSON.stringify({
       playerMoveNoAdjustment: formatScore(playerScoreNoAdj),
-      playerMoveAfterAdjustment: formatScore(playerScoreAfterAdj),
       bestMoveNoAdjustment: formatScore(bestNnbMoves[0].totalValue),
+      playerMoveAfterAdjustment: formatScore(playerScoreAfterAdj),
       bestMoveAfterAdjustment: formatScore(bestScoreAfterAdj),
     });
   }

@@ -233,7 +233,10 @@ export function getCppEncodedInputString(
   searchState: SearchState,
   urlArgs: UrlArguments
 ) {
-  const boardStr = searchState.board.map((x) => x.join("")).join("");
+  let boardStr = searchState.board.map((x) => x.join("")).join("");
+  if (urlArgs.secondBoard) {
+    boardStr += "|" + urlArgs.secondBoard.map((x) => x.join("")).join("");
+  }
   const pieceLookup = ["I", "O", "L", "J", "T", "S", "Z"];
   const curPieceIndex = pieceLookup.indexOf(searchState.currentPieceId);
   const nextPieceIndex = pieceLookup.indexOf(searchState.nextPieceId);

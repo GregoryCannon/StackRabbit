@@ -32,6 +32,9 @@ std::string encodeLockPosition(LockLocation lockLocation){
 
 /** Formats a human-readable lock location */
 std::string formatLockPosition(LockLocation lockLocation) {
+  if (lockLocation.x == NULL_LOCK_LOCATION.x){
+    return "null";
+  }
   char buffer[12]; // 4 for separators, 1 for rotIndex, 2 for x, 2 for y, 3 for expect the unexpected
   sprintf(buffer, "[%d,%d,%d]", lockLocation.rotationIndex, lockLocation.x - INITIAL_X, lockLocation.y);
   return string(buffer);
@@ -130,15 +133,15 @@ std::string formatPlayout(PlayoutData playoutData){
 std::string formatEngineMoveList(list<EngineMoveData> moveList){
   std::string output = std::string("[");
   for( const auto& move : moveList ) {
-    char formattedMoveBuffer[150]; // Max length I got in my testing was 108 with for just the scores
+    output += "{\"firstPlacement\":";
+    output += formatLockPosition(move.firstPlacement);
+    if (move.secondPlacement.x != NULL_LOCK_LOCATION.x){
+      output += ", \"secondPlacement\":";
+      output += formatLockPosition(move.secondPlacement);
+    }
+    char formattedMoveBuffer[70]; // Max length I got in my testing was 108 with for just the scores
     sprintf(formattedMoveBuffer, 
-        "{ \"firstPlacement\":[%d,%d,%d], \"secondPlacement\":[%d,%d,%d], \"playoutScore\":%.2f, \"shallowEvalScore\":%.2f", 
-        move.firstPlacement.rotationIndex, 
-        move.firstPlacement.x - INITIAL_X, 
-        move.firstPlacement.y,
-        move.secondPlacement.rotationIndex, 
-        move.secondPlacement.x - INITIAL_X, 
-        move.secondPlacement.y,
+        ", \"playoutScore\":%.2f, \"shallowEvalScore\":%.2f",
         move.playoutScore,
         move.evalScore
         );
@@ -171,5 +174,19 @@ std::string formatEngineMoveList(list<EngineMoveData> moveList){
   output.append("]");
   return output;
 }
+
+std::string formatRateMove(float playerNoAdj, float bestNoAdj, float playerWithAdj, float bestWithAdj){
+  std::string output = "{\"playerMoveNoAdjustment:\"";
+  output += std::to_string(playerNoAdj);
+  output += ", \"bestMoveNoAdjustment:\"";
+  output += std::to_string(bestNoAdj);
+  output += ", \"playerMoveAfterAdjustment:\"";
+  output += std::to_string(playerWithAdj);
+  output += ", \"bestMoveAfterAdjustment\":";
+  output += std::to_string(bestWithAdj);
+  output += "}";
+  return output;
+}
+
 
 #endif

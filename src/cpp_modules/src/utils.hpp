@@ -245,6 +245,10 @@ SimState predictStateAtAdjustmentTime(LockPlacement placement, char const *input
 
 /* ----------------- SORTING & GENERIC ALGS -------------- */
 
+bool lockLocationEquals(LockLocation a, LockLocation b){
+  return a.rotationIndex == b.rotationIndex && a.x == b.x && a.y == b.y;
+}
+
 /** Performs the insertion operation from insertion sort. */
 void insertIntoList(EngineMoveData newData, OUT std::list<EngineMoveData> &sortedList){
   // printf("inserting into list %d %d\n", newData.firstPlacement.x, newData.firstPlacement.rotationIndex);

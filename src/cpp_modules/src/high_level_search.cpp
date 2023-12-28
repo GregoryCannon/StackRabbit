@@ -17,7 +17,7 @@ void partiallySortPossibilityList(list<Possibility> &possibilityList, int keepTo
   auto cutoffPossibility = possibilityList.begin(); // The node on the "cutoff" between being in the top N placements and not
   int size = 0; // Tracking manually is cheaper than doing the O(n) operation each iteration
 
-  for (auto it = begin(possibilityList); it != end(possibilityList); ++it) {
+  for (auto it = begin(possibilityList); it != end(possibilityList); it++) {
     Possibility newPossibility = *it;
     if (size < keepTopN || newPossibility.evalScoreInclReward > cutoffPossibility->evalScoreInclReward) {
       // Insert into the list in its correct sorted place
@@ -69,7 +69,7 @@ int searchDepth1(GameState gameState, const Piece *firstPiece, int keepTopN, con
 
     Possibility newPossibility = {
       { firstPlacement.x, firstPlacement.y, firstPlacement.rotationIndex },
-      {},
+      NULL_LOCK_LOCATION,
       resultingState,
       evalScoreInclReward,
       reward
@@ -142,26 +142,24 @@ LockLocation playOneMove(GameState gameState, const Piece *firstPiece, const Pie
   }
 
   if (possibilityList.size() == 0){
-    return {NONE, NONE, NONE}; // Return an invalid lock location to indicate the agent has topped out
+    return NULL_LOCK_LOCATION; // Return an invalid lock location to indicate the agent has topped out
   }
   partiallySortPossibilityList(possibilityList, numCandidatesToPlayout, sortedList);
 
-  int numPlayedOut = 0;
-  LockLocation const *bestLockLocation = NULL;
-  float bestPossibilityScore = -99999999.0f;
+  if (playoutCount * playoutLength == 0){
+    // Return the first element in the preliminary sorted list
+    return (*sortedList.begin()).firstPlacement;
+  }
 
-  bool shouldDoPlayouts = playoutCount > 0;
-  for (Possibility const& possibility : sortedList) {
-    if (shouldDoPlayouts && numPlayedOut >= numCandidatesToPlayout) {
+  LockLocation const *bestLockLocation = NULL;
+  float bestPossibilityScore = FLOAT_MIN;
+  int numPlayedOut = 0;
+  for (auto possibility : sortedList){
+    if (numPlayedOut >= numCandidatesToPlayout) {
       break;
     }
+    float overallScore = possibility.immediateReward + getPlayoutScore(possibility.resultingState, playoutCount, playoutLength, pieceRangeContextLookup, lastSeenPiece->index, /* playoutDataList */ NULL);
 
-    float overallScore;
-    if (shouldDoPlayouts){
-      overallScore = possibility.immediateReward + getPlayoutScore(possibility.resultingState, playoutCount, playoutLength, pieceRangeContextLookup, lastSeenPiece->index);
-    } else {
-      overallScore = possibility.evalScoreInclReward;
-    }
     // if (SHOULD_PLAY_PERFECT){
     //  overallScore = std::max(0.0f, overallScore); // 0 is the lowest possible eval score in the "play perfect" system
     //  overallScore = std::min(100.0f, overallScore); // 100 is the max possible eval score in the "play perfect" system
@@ -174,10 +172,127 @@ LockLocation playOneMove(GameState gameState, const Piece *firstPiece, const Pie
       bestLockLocation = &(possibility.firstPlacement);
       bestPossibilityScore = overallScore;
     }
-
     numPlayedOut++;
   }
   return *bestLockLocation;
+}
+
+/**
+ * Finds the move out of a list of possibilities that has the resulting board equal to the player's resulting board.
+ * NB: REMOVES THE ELEMENT FROM THE LIST IN-PLACE (to avoid having to do that later in rateMove())
+ */
+Possibility findPlayerMove(list<Possibility> possibilityList, unsigned int playerBoardAfter[20]){
+  // Find the player move
+  Possibility playerMove = {NULL_LOCK_LOCATION,NULL_LOCK_LOCATION,{}, -1, -1 /* rest default initializer */};
+
+  for (list<Possibility>::iterator iter=possibilityList.begin(); iter!=possibilityList.end(); iter++) {
+    bool boardEqual = true;
+    for (int i = 19; i >= 0; i--){
+      if (playerBoardAfter[i] != (*iter).resultingState.board[i]){
+        boardEqual = false;
+        break;
+      }
+    }
+    if (boardEqual){
+      playerMove = *iter;
+      possibilityList.erase(iter);
+    }
+  }
+  return playerMove;
+}
+
+std::string rateMove(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, unsigned int playerBoardAfter[20], int numCandidatesToPlayout, int playoutCount, int playoutLength, const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3]){
+  list<Possibility> possibilityListD1;
+  list<Possibility> possibilityListD2;
+  list<Possibility> sortedListD1; // Does not include player move
+  list<Possibility> sortedListD2; // Includes player move
+
+  // Search depth 1
+  searchDepth1(gameState, firstPiece, numCandidatesToPlayout, evalContext, possibilityListD1);
+  searchDepth2(gameState, firstPiece, secondPiece, numCandidatesToPlayout, evalContext, possibilityListD2);
+  if (possibilityListD1.size() == 0 || possibilityListD2.size() == 0){
+    return std::string("Error: no legal moves found");
+  }
+
+  // Find the player move (and remove it from the D1 possibility list)
+  Possibility playerMove = findPlayerMove(possibilityListD1, playerBoardAfter);
+  if (playerMove.firstPlacement.x == NONE){
+    return std::string("Error: player move not found");
+  }
+
+  // Sort the rest of the possibilities
+  partiallySortPossibilityList(possibilityListD1, numCandidatesToPlayout, sortedListD1);
+  partiallySortPossibilityList(possibilityListD2, 999999, sortedListD2); // Large numCandidatesToPlayout = full sort
+
+  float playerValNoAdj = FLOAT_MIN;
+  float bestValNoAdj = FLOAT_MIN;
+  float playerValAfterAdj = FLOAT_MIN;
+  float bestValAfterAdj = FLOAT_MIN;
+  
+  // NO PLAYOUTS NEEDED
+  if (playoutCount * playoutLength == 0){
+    // NNB
+    // If no playouts are requested, add the NNB values based on the already sorted list
+    playerValNoAdj = playerMove.evalScoreInclReward;
+    bestValNoAdj = playerValNoAdj;
+    if (sortedListD1.size() > 0){
+      float bestOtherVal = (*sortedListD1.begin()).evalScoreInclReward;
+      bestValNoAdj = std::max(playerValNoAdj, bestOtherVal);
+    }
+
+    // WITH NB
+    // Find the best NB values, as well as the best NB value that uses the player move for the first move
+    bestValAfterAdj = (*sortedListD2.begin()).evalScoreInclReward;
+    for (auto possibility : sortedListD2){
+      if (lockLocationEquals(possibility.firstPlacement, playerMove.firstPlacement)){
+        playerValAfterAdj = possibility.evalScoreInclReward;
+        break;
+      }
+    }
+  } 
+  // PLAYOUTS NEEDED
+  else {    
+    // NNB Playouts (first on the player move, then on the rest)
+    playerValNoAdj = playerMove.immediateReward + getPlayoutScore(playerMove.resultingState, playoutCount, playoutLength, pieceRangeContextLookup, firstPiece->index, /* playoutDataList */ NULL);
+
+    bestValNoAdj = playerValNoAdj;
+    int numPlayedOut = 0;
+    for (auto possibility : sortedListD1){
+      if (numPlayedOut >= numCandidatesToPlayout) {
+        break;
+      }
+      float overallScore = possibility.immediateReward + getPlayoutScore(possibility.resultingState, playoutCount, playoutLength, pieceRangeContextLookup, firstPiece->index, /* playoutDataList */ NULL);
+      if (overallScore > bestValNoAdj) {
+        bestValNoAdj = overallScore;
+      }
+      numPlayedOut++;
+    }
+
+    // NB Playouts
+    bool bestValUnset = true;
+    bestValAfterAdj = FLOAT_MIN;
+    bool playerValUnset = true;
+    playerValAfterAdj = FLOAT_MIN;
+    numPlayedOut = 0;
+    for (auto possibility : sortedListD2){
+      if (numPlayedOut >= numCandidatesToPlayout) {
+        break;
+      }
+      float overallScore = possibility.immediateReward + getPlayoutScore(possibility.resultingState, playoutCount, playoutLength, pieceRangeContextLookup, secondPiece->index, /* playoutDataList */ NULL);
+      if (bestValUnset || overallScore > bestValAfterAdj) {
+        bestValUnset = false;
+        bestValAfterAdj = overallScore;
+      }
+      if (lockLocationEquals(playerMove.firstPlacement, possibility.firstPlacement) 
+            && (playerValUnset || overallScore > playerValAfterAdj)) {
+        playerValUnset = false;
+        playerValAfterAdj = overallScore;
+      }
+      numPlayedOut++;
+    }
+  }
+
+  return formatRateMove(playerValNoAdj, bestValNoAdj, playerValAfterAdj, bestValAfterAdj);
 }
 
 /**
@@ -187,6 +302,7 @@ std::string getTopMoveList(GameState gameState, const Piece *firstPiece, const P
   // Keep a running list of the top X possibilities as the move search is happening.
   // Keep twice as many as we'll eventually need, since some duplicates may be removed before playouts start
   int numSorted = keepTopN * 2;
+  printf("SecondPiece %p %d\n", secondPiece, secondPiece == NULL);
 
   // Get the list of evaluated possibilities
   list<Possibility> possibilityList;
@@ -287,7 +403,7 @@ std::string getLockValueLookupEncoded(GameState gameState, const Piece *firstPie
     // }
 
     float overallScore = MAP_OFFSET + (shouldPlayout
-       ? possibility.immediateReward + getPlayoutScore(possibility.resultingState, playoutCount, playoutLength, pieceRangeContextLookup, secondPiece->index)
+       ? possibility.immediateReward + getPlayoutScore(possibility.resultingState, playoutCount, playoutLength, pieceRangeContextLookup, secondPiece->index, /* playoutDataList */ NULL)
        : evalContext->weights.deathCoef);
 
 //    if (SHOULD_PLAY_PERFECT){
