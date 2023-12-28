@@ -24,21 +24,24 @@ export function engineLookupTopMoves(
   searchState: SearchState,
   aiParams: AiParams,
   paramMods: ParamMods,
-  inputFrameTimeline: string
+  inputFrameTimeline: string,
+  hypotheticalSearchDepth: number
 ) {
   if (searchState.nextPieceId !== null) {
     return engineLookupTopMovesWithNextBox(
       searchState,
       aiParams,
       paramMods,
-      inputFrameTimeline
+      inputFrameTimeline,
+      hypotheticalSearchDepth
     );
   }
   return engineLookupTopMovesListNoNextBox(
     searchState,
     aiParams,
     paramMods,
-    inputFrameTimeline
+    inputFrameTimeline,
+    hypotheticalSearchDepth
   );
 }
 
@@ -46,7 +49,8 @@ function engineLookupTopMovesWithNextBox(
   searchState: SearchState,
   aiParams: AiParams,
   paramMods: ParamMods,
-  inputFrameTimeline: string
+  inputFrameTimeline: string,
+  hypotheticalSearchDepth: number
 ) {
   const bestNbMoves = getSortedMoveList(
     {
@@ -57,7 +61,7 @@ function engineLookupTopMovesWithNextBox(
     paramMods,
     inputFrameTimeline,
     /* searchDepth= */ 2,
-    /* hypotheticalSearchDepth= */ 1
+    /* hypotheticalSearchDepth= */ hypotheticalSearchDepth
   )[0];
 
   return bestNbMoves.map((move) => [
@@ -70,7 +74,8 @@ function engineLookupTopMovesListNoNextBox(
   searchState: SearchState,
   aiParams: AiParams,
   paramMods: ParamMods,
-  inputFrameTimeline: string
+  inputFrameTimeline: string,
+  hypotheticalSearchDepth: number
 ) {
   const bestNnbMoves = getSortedMoveList(
     {
@@ -81,7 +86,7 @@ function engineLookupTopMovesListNoNextBox(
     paramMods,
     inputFrameTimeline,
     /* searchDepth= */ 1,
-    /* hypotheticalSearchDepth= */ 1
+    /* hypotheticalSearchDepth= */ hypotheticalSearchDepth
   )[0];
   return bestNnbMoves.map(getMinimallyFormattedMove);
 }

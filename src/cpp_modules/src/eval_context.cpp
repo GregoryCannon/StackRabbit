@@ -30,7 +30,7 @@ int hasHoleBlockingTetrisReady(unsigned int board[20], int col10Height){
 /** Gets the number of holes that are holes and not tuck setups*/
 int getNumTrueHoles(float adjustedNumHoles){
   while (std::abs(adjustedNumHoles - round(adjustedNumHoles)) > FLOAT_EPSILON) {
-    adjustedNumHoles -= TUCK_SETUP_HOLE_PROPORTION;
+    adjustedNumHoles -= SEMI_HOLE_PROPORTION;
   }
   return (int) adjustedNumHoles;
 }
@@ -48,10 +48,10 @@ AiMode getAiMode(GameState gameState, int currentMax5TapHeight, int max5TapHeigh
   if (getNumTrueHoles(gameState.adjustedNumHoles) >= 1) {
     return DIG;
   }
-  // Optionally play very safe on killscreen
-  if (PLAY_SAFE_ON_KILLSCREEN && gameState.level >= 29) {
-    return SAFE;
-  }
+  // // Optionally play very safe on killscreen
+  // if (PLAY_SAFE_ON_KILLSCREEN && gameState.level >= 29) {
+  //   return SAFE;
+  // }
   return STANDARD;
 }
 

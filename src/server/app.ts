@@ -1,8 +1,10 @@
 import { PreComputeManager } from "./precompute";
 import { RequestHandler } from "./request_handler";
 import * as express from "express";
+require("dotenv").config();
 
-const IS_DEPLOY = process.env.DEPLOY;
+const IS_DEPLOY = process.env.DEPLOY == "true";
+console.log("IS_DEPLOY = ", IS_DEPLOY, !IS_DEPLOY);
 const TETRIS_TRAINER_URL = "https://gregorycannon.github.io";
 
 const port = process.env.PORT || 3000;
@@ -15,12 +17,16 @@ function initExpressServer(requestHandler) {
   app.use((req, res, next) => {
     res.setHeader(
       "Access-Control-Allow-Origin",
-      IS_DEPLOY ? TETRIS_TRAINER_URL : "*"
+      "*"
+      // IS_DEPLOY ? TETRIS_TRAINER_URL : "*"
     );
     next();
   });
 
   app.get("*", function (req: any, res: any) {
+    if (req.url == "/favicon.ico") {
+      return res.end("");
+    }
     // Log the request
     console.log("\n-------------------------\nlocalhost:" + port + req.url);
     console.time("Full request");

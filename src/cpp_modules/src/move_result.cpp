@@ -5,10 +5,10 @@
  * Rates a hole from 0 to 1 based on how bad it is.
  * --Side effect-- marks the hole or tuck setup in the board data structure
  */
-float analyzeHole(unsigned int board[20], int r, int c){
+float analyzeHole(unsigned int board[20], int r, int c, int excludeHolesColumn){
   // VARIABLE_RANGE_CHECKS_ENABLED
   if (true && (r < 0 || r >= 20)){
-    printf("PANIK, r=%d\n", r);
+    printf("PANIK B, r=%d\n", r);
   }
   // Check if it's a tuck setup
   if (
@@ -20,7 +20,16 @@ float analyzeHole(unsigned int board[20], int r, int c){
     // printf("MARKING TUCK SETUP %d %d, %d\n", c, r, board[r] >> 20);
     board[r] |= TUCK_SETUP_BIT(c); // Mark this cell as an overhang cell
     // printf("After mark: %d\n", board[r] >> 20);
-    return TUCK_SETUP_HOLE_PROPORTION;
+    return SEMI_HOLE_PROPORTION;
+  }
+  if (c == excludeHolesColumn) {
+    if ((board[r] & ALL_HOLE_BITS) == 0){
+      // Not strictly a problem, if the holes are cleared this is just a regular well
+      return 0;
+    } else {
+      // The well needs to be filled to clear some hole. Treat it almost like a hole itself
+      return SEMI_HOLE_PROPORTION;
+    }
   }
   // Otherwise it's a hole
   // printf("MARKING HOLE %d %d\n", c, r);
@@ -66,25 +75,27 @@ float getNewSurfaceAndNumNewHoles(int surfaceArray[10],
       continue;
     }
     // Maybe skip well holes
-    if (!evalContext->countWellHoles && lockPlacement.x + i == evalContext->wellColumn) {
+    int c = lockPlacement.x + i;
+    if (!evalContext->countWellHoles && c == evalContext->wellColumn) {
       continue;
     }
+    int excludeHolesCol = evalContext->countWellHoles ? -1 : evalContext->wellColumn;
 
     // Loop through the cells between the bottom of the piece and the ground
-    int c = lockPlacement.x + i;
     const int highestBoardCellInCol = 20 - surfaceArray[c];
     int holeWeightStartRow = -1; // Indicates that all rows above this row are weight on a hole
     for (int r = (lockPlacement.y + bottomSurface[i]); r < 20; r++) {
       // VARIABLE_RANGE_CHECKS
       if (r < 0 || r >= 20){
-        printf("PANIK 1, r=%d, y=%d, bottomSurface=%d\n", r, lockPlacement.y, bottomSurface[i]);
+        printf("\n\nPANIK A, r=%d, y=%d, bottomSurface=%d\n", r, lockPlacement.y, bottomSurface[i]);
         printBoard(board);
+        printBoardWithPiece(board, *lockPlacement.piece, lockPlacement.x, lockPlacement.y, lockPlacement.rotationIndex);
         continue;
       }
       if (r < highestBoardCellInCol){
         // Check for new holes
-        float rating = analyzeHole(board, r, c);
-        if (std::abs(rating - TUCK_SETUP_HOLE_PROPORTION) > FLOAT_EPSILON) { // If it's NOT a tuck setup
+        float rating = analyzeHole(board, r, c, excludeHolesCol);
+        if (std::abs(rating - SEMI_HOLE_PROPORTION) > FLOAT_EPSILON) { // If it's NOT a tuck setup
           holeWeightStartRow = r - 1;
         }
         numNewHoles += rating;
@@ -103,7 +114,8 @@ float getNewSurfaceAndNumNewHoles(int surfaceArray[10],
       for (int r = holeWeightStartRow; r >= 20 - newSurface[c]; r--) {
         if (VARIABLE_RANGE_CHECKS_ENABLED && (r < 0 || r >= 20)){
           printf("R value out of range %d %d\n", r, newSurface[c]);
-          throw std::invalid_argument( "r value out of range" );
+          return numNewHoles;
+//          throw std::invalid_argument( "r value out of range" );
         }
         if (!(board[r] & HOLE_BIT(c))) {
           board[r] |= HOLE_WEIGHT_BIT;
@@ -142,10 +154,10 @@ float updateSurfaceAndHoles(int surfaceArray[10], unsigned int board[20], int ex
     int lowestHoleInCol = -1;
     while (r < 20) {
       // Add new holes to the overall count, unless they're in the well
-      if (!(board[r] & mask) && c != excludeHolesColumn) {
-        float rating = analyzeHole(board, r, c);
+      if (!(board[r] & mask)) {
+        float rating = analyzeHole(board, r, c, excludeHolesColumn);
         // Check that it's a hole (1.0) and not a tuck setup (eg. 0.9)
-        if (rating > TUCK_SETUP_HOLE_PROPORTION + FLOAT_EPSILON) {
+        if (rating > SEMI_HOLE_PROPORTION + FLOAT_EPSILON) {
           lowestHoleInCol = r;
         }
         numHoles += rating;
@@ -224,7 +236,7 @@ float adjustHoleCountAndBoardAfterTuck(unsigned int board[20], LockPlacement loc
       intersection = intersection >> 1;
     }
   }
-  return -1 * TUCK_SETUP_HOLE_PROPORTION * tuckCellsFilled;
+  return -1 * SEMI_HOLE_PROPORTION * tuckCellsFilled;
 }
 
 

@@ -18,7 +18,7 @@ int countInputsBeforeReactionTime(int reactionTime, char const *inputFrameTimeli
   return numInputs;
 }
 
-int simulateGame(char const *inputFrameTimeline, int startingLevel, int maxLines, int shouldAdjust, int reactionTime){
+int simulateGame(char const *inputFrameTimeline, int startingLevel, int maxLines, int shouldAdjust, int reactionTime, int playoutCount, int playoutLength){
   // Init empty data structures
   GameState gameState = {
     /* board= */ {},
@@ -51,7 +51,7 @@ int simulateGame(char const *inputFrameTimeline, int startingLevel, int maxLines
     const EvalContext evalContextRaw = getEvalContext(gameState, pieceRangeContextLookup);
     const EvalContext *evalContext = &evalContextRaw;
 
-    LockLocation bestMove = playOneMove(gameState, &curPiece, NULL, DEPTH_1_PRUNING_BREADTH, evalContext, pieceRangeContextLookup);
+    LockLocation bestMove = playOneMove(gameState, &curPiece, NULL, DEPTH_1_PRUNING_BREADTH, playoutCount, playoutLength, evalContext, pieceRangeContextLookup);
     if (bestMove.x == NONE){
       // Agent died, simulated game is complete
       break;
@@ -77,10 +77,10 @@ int simulateGame(char const *inputFrameTimeline, int startingLevel, int maxLines
   return score;
 }
 
-void simulateGames(int numGames, char const *inputFrameTimeline, int startingLevel, int maxLines, int shouldAdjust, int reactionTime, OUT std::vector<int> &scores){
+void simulateGames(int numGames, char const *inputFrameTimeline, int startingLevel, int maxLines, int shouldAdjust, int reactionTime, int playoutCount, int playoutLength, OUT std::vector<int> &scores){
   printf("Starting game simulations...");
   for (int i = 0; i < numGames; i++) {
-    int score = simulateGame(inputFrameTimeline, startingLevel, maxLines, /* shouldAdjust= */ false, /* reactionTime */ 21);
+    int score = simulateGame(inputFrameTimeline, startingLevel, maxLines, /* shouldAdjust= */ false, /* reactionTime */ 21, playoutCount, playoutLength);
     scores.push_back(score);
     printf("%d: %d\n", i, score);
   }

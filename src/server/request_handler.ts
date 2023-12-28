@@ -13,6 +13,7 @@ import {
   logBoard,
   parseBoard,
 } from "./utils";
+import { CPP_APP_VERSION, JS_APP_VERSION } from "./versions";
 const cModule = require("../../../build/Release/cRabbit");
 const mainApp = require("./main");
 const params = require("./params");
@@ -44,6 +45,7 @@ export class RequestHandler {
     const [requestType, requestArgs] = requestArgsFull.split("?");
     const urlArgs =
       requestType !== "ping" &&
+      requestType !== "version" &&
       requestType !== "async-result" &&
       this._parseArguments(requestArgs);
 
@@ -100,6 +102,14 @@ export class RequestHandler {
         }
         return this._wrapAsync(() => this.handlePrecomputeRequest(urlArgs));
 
+      case "version":
+        return [
+          JSON.stringify({
+            jsVersion: JS_APP_VERSION,
+            cppVersion: CPP_APP_VERSION
+          }),
+          200,
+        ]
       default:
         return [
           "Please specify the request type, e.g. 'get-move' or 'rate-move'. Received: " +
@@ -538,13 +548,14 @@ export class RequestHandler {
     );
   }
 
-  handleEngineLookupTopMoves(urlArgs) {
+  handleEngineLookupTopMoves(urlArgs: UrlArguments) {
     return JSON.stringify(
       engineLookupTopMoves(
         this._getSearchStateFromUrlArguments(urlArgs),
         params.getParams(),
         params.getParamMods(),
-        urlArgs.inputFrameTimeline
+        urlArgs.inputFrameTimeline,
+        urlArgs.lookaheadDepth
       )
     );
   }

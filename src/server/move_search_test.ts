@@ -79,7 +79,7 @@ function tapRangeTest() {
     canDoPlacement(getTestBoardWithHeight(0), 29, "I", 1, -5, timeline13Hz) !==
     expected1
   ) {
-    console.log(`Failed: 0 left 29 2 delay. Expected: ${expected1}`);
+    console.log(`Failed: 0 left 29 13Hz. Expected: ${expected1}`);
   }
 
   const expected2 = false;
@@ -87,7 +87,7 @@ function tapRangeTest() {
     canDoPlacement(getTestBoardWithHeight(1), 29, "I", 1, -5, timeline13Hz) !==
     expected2
   ) {
-    console.log(`Failed: 1 left 29 2 delay. Expected: ${expected2}`);
+    console.log(`Failed: 1 left 29 13Hz. Expected: ${expected2}`);
   }
 
   const expected3 = true;
@@ -95,7 +95,7 @@ function tapRangeTest() {
     canDoPlacement(getTestBoardWithHeight(1), 29, "I", 1, -5, timeline14Hz) !==
     expected3
   ) {
-    console.log(`Failed: 1 left 29 1 delay. Expected: ${expected3}`);
+    console.log(`Failed: 1 left 29 14Hz. Expected: ${expected3}`);
   }
 
   const expected4 = false;
@@ -103,7 +103,7 @@ function tapRangeTest() {
     canDoPlacement(getTestBoardWithHeight(2), 29, "I", 1, -5, timeline14Hz) !==
     expected4
   ) {
-    console.log(`Failed: 2 left 29 1 delay. Expected: ${expected4}`);
+    console.log(`Failed: 2 left 29 14Hz. Expected: ${expected4}`);
   }
 
   const expected5 = true;
@@ -127,7 +127,7 @@ function tapRangeTest() {
     canDoPlacement(getTestBoardWithHeight(5), 29, "I", 1, 4, timeline13Hz) !==
     expected7
   ) {
-    console.log(`Failed: 5 right 29 0 delay. Expected: ${expected7}`);
+    console.log(`Failed: 5 right 29 15 Hz. Expected: ${expected7}`);
   }
 
   const expected8 = true;
@@ -135,7 +135,7 @@ function tapRangeTest() {
     canDoPlacement(getTestBoardWithHeight(4), 29, "I", 1, 4, timeline13Hz) !==
     expected8
   ) {
-    console.log(`Failed: 4 right 29 0 delay. Expected: ${expected8}`);
+    console.log(`Failed: 4 right 29 15 Hz. Expected: ${expected8}`);
   }
 
   const expected9 = true;
@@ -143,7 +143,7 @@ function tapRangeTest() {
     canDoPlacement(getTestBoardWithHeight(11), 19, "I", 1, 4, timeline13Hz) !==
     expected9
   ) {
-    console.log(`Failed: 11 left 19 2 delay. Expected: ${expected9}`);
+    console.log(`Failed: 11 left 19 13Hz. Expected: ${expected9}`);
   }
 
   const expected10 = true;
@@ -151,7 +151,7 @@ function tapRangeTest() {
     canDoPlacement(getTestBoardWithHeight(11), 19, "I", 1, 4, timeline13Hz) !==
     expected10
   ) {
-    console.log(`Failed: 12 right 19 2 delay. Expected: ${expected10}`);
+    console.log(`Failed: 12 right 19 13Hz. Expected: ${expected10}`);
   }
 
   const expected11 = false;
@@ -204,8 +204,14 @@ function tapRangeTest() {
 
   const expected17 = true;
   if (
-    canDoPlacement(getTestBoardWithHeight(2), 29, "I", 1, -5, "....X..X..X..X..X") !==
-    expected17
+    canDoPlacement(
+      getTestBoardWithHeight(2),
+      29,
+      "I",
+      1,
+      -5,
+      "....X..X..X..X..X"
+    ) !== expected17
   ) {
     console.log(`Failed: 2 high 5 tap 29 15 Hz. Expected: ${expected17}`);
   }
