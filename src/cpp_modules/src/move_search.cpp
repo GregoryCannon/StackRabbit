@@ -8,9 +8,9 @@
 #include <unordered_set>
 #include <vector>
 #include "utils.hpp"
+#include "types.hpp"
 using namespace std;
 
-#define INITIAL_X 3
 #define NO_TUCK_NOTATION '.'
 
 /**

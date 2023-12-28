@@ -33,7 +33,9 @@ interface UrlArguments {
   lines?: number;
   reactionTime?: number;
   inputFrameTimeline?: string;
-  lookaheadDepth?: number;
+  lookaheadDepth?: number; // Only used in Javascript queries
+  playoutCount: number; // Only used in C++ queries
+  playoutLength: number; // Only used in C++ queries
   arrWasReset?: boolean;
   existingXOffset?: number;
   existingYOffset?: number;

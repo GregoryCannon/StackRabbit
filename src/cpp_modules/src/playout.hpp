@@ -10,6 +10,6 @@ LockPlacement pickLockPlacement(GameState gameState,
                            const EvalContext *evalContext,
                            OUT std::vector<LockPlacement> &lockPlacements);
 
-float getPlayoutScore(GameState gameState, int playoutCount, int playoutLength, const PieceRangeContext pieceRangeContextLookup[3], int pieceOffsetIndex);
+float getPlayoutScore(GameState gameState, int playoutCount, int playoutLength, const PieceRangeContext pieceRangeContextLookup[3], int pieceOffsetIndex, OUT vector<PlayoutData> *playoutDataList);
 
 #endif

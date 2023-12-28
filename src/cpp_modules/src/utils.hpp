@@ -135,6 +135,12 @@ void encodeBoard(char const *boardStr, unsigned int outBoard[20]) {
   }
 }
 
+void copyBoard(unsigned int sourceBoard[20], unsigned int destBoard[20]){
+  for (int i = 0; i < 20; i++){
+    destBoard[i] = sourceBoard[i];
+  }
+}
+
 void getSurfaceArray(unsigned int board[20], int outSurface[10]) {
   for (int col = 0; col < 10; col++) {
     int colMask = 1 << (9 - col);
@@ -235,9 +241,47 @@ SimState predictStateAtAdjustmentTime(LockPlacement placement, char const *input
            arrWasReset ? 0 : reactionTimeFrames,
            placement.piece
   };
-
 }
 
+/* ----------------- SORTING & GENERIC ALGS -------------- */
+
+bool lockLocationEquals(LockLocation a, LockLocation b){
+  return a.rotationIndex == b.rotationIndex && a.x == b.x && a.y == b.y;
+}
+
+/** Performs the insertion operation from insertion sort. */
+void insertIntoList(EngineMoveData newData, OUT std::list<EngineMoveData> &sortedList){
+  // printf("inserting into list %d %d\n", newData.firstPlacement.x, newData.firstPlacement.rotationIndex);
+  // Insert into the list in its correct sorted place
+  for (auto ptr = sortedList.begin(); true; ptr++) {
+    if (ptr == sortedList.end()) {
+      sortedList.push_back(newData);
+      break;
+    }
+    if (newData.playoutScore > ptr->playoutScore) {
+      sortedList.insert(ptr, newData);
+      break;
+    }
+  }
+}
+
+/** Performs the insertion operation from insertion sort. */
+void insertIntoList(PlayoutData newData, OUT std::vector<PlayoutData> *sortedList){
+  // printf("inserting into list %d %d\n", newData.firstPlacement.x, newData.firstPlacement.rotationIndex);
+  // Insert into the list in its correct sorted place
+  for (auto ptr = sortedList->begin(); true; ptr++) {
+    if (ptr == sortedList->end()) {
+      sortedList->push_back(newData);
+      break;
+    }
+    if (newData.totalScore > ptr->totalScore) {
+      sortedList->insert(ptr, newData);
+      break;
+    }
+  }
+}
+
+/** Random number generator taken from StackOverflow */
 template<typename T>
 T qualityRandom(T range_from, T range_to) {
   std::random_device rand_dev;

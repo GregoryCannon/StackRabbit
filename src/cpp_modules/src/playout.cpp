@@ -26,12 +26,15 @@ LockPlacement pickLockPlacement(GameState gameState,
 
 
 /**
- * Plays out a starting state 10 moves into the future.
+ * Plays out a starting state N moves into the future.
  * @returns the total value of the playout (intermediate rewards + eval of the final board)
  */
-float playSequence(GameState gameState, const PieceRangeContext pieceRangeContextLookup[3], const int pieceSequence[SEQUENCE_LENGTH], int playoutLength) {
+float playSequence(GameState gameState, const PieceRangeContext pieceRangeContextLookup[3], const int pieceSequence[SEQUENCE_LENGTH], int playoutLength, OUT vector<PlayoutData> *playoutDataList) {
   // Note down the original AI mode to prevent the AI from putting itself in alternate modes to affect the valuations
   AiMode originalAiMode = getEvalContext(gameState, pieceRangeContextLookup).aiMode;
+  
+  PlayoutData newPlayoutData;
+  const bool trackPlayouts = TRACK_PLAYOUT_DETAILS && playoutDataList != NULL;
 
   float totalReward = 0;
   for (int i = 0; i < playoutLength; i++) {
@@ -51,6 +54,11 @@ float playSequence(GameState gameState, const PieceRangeContext pieceRangeContex
 
     // Pick the best placement
     LockPlacement bestMove = pickLockPlacement(gameState, evalContext, lockPlacements);
+    if (trackPlayouts){
+      LockLocation bestMoveLocation = { bestMove.x, bestMove.y, bestMove.rotationIndex };
+      newPlayoutData.pieceSequence += getPieceChar(piece.index);
+      newPlayoutData.placements.push_back(bestMoveLocation);
+    }
 
     // On the last move, do a final evaluation
     if (i == playoutLength - 1) {
@@ -72,6 +80,12 @@ float playSequence(GameState gameState, const PieceRangeContext pieceRangeContex
       if (SHOULD_PLAY_PERFECT && totalReward < 0){
         return 0;
       }
+
+      if (trackPlayouts) {
+        newPlayoutData.totalScore = totalReward + evalScore;
+        copyBoard(nextState.board, newPlayoutData.resultingBoard);
+        insertIntoList(newPlayoutData, playoutDataList);
+      }
       return totalReward + evalScore;
     }
 
@@ -89,7 +103,7 @@ float playSequence(GameState gameState, const PieceRangeContext pieceRangeContex
 }
 
 
-float getPlayoutScore(GameState gameState, int playoutCount, int playoutLength, const PieceRangeContext pieceRangeContextLookup[3], int firstPieceIndex){
+float getPlayoutScore(GameState gameState, int playoutCount, int playoutLength, const PieceRangeContext pieceRangeContextLookup[3], int firstPieceIndex, OUT vector<PlayoutData> *playoutDataList){
   // // Don't perform playouts if logging is enabled
   // if (LOGGING_ENABLED) {
   //   return 0;
@@ -99,12 +113,18 @@ float getPlayoutScore(GameState gameState, int playoutCount, int playoutLength, 
   // The piece RNG is dependent on the previous piece, we will then have 1000 sequences with accurate RNG given the last known piece
   int pieceOffset = 1000 + firstPieceIndex * 1000;
 
+  // Special case: if exactly 7 playouts are requested, do one of each starting piece. 
+  // The first 1000 sequences loop through the first pieces in order, so if we start from 0 offset we'll get the desired behavior.
+  if (playoutCount == 7){
+    pieceOffset = 0;
+  }
+
   float playoutScore = 0;
   for (int i = 0; i < playoutCount; i++) {
     // Do one playout
     const int *pieceSequence = canonicalPieceSequences + (pieceOffset + i) * SEQUENCE_LENGTH; // Index into the mega array of piece sequences;
-    float playoutScore = playSequence(gameState, pieceRangeContextLookup, pieceSequence, playoutCount);
-    playoutScore += playoutScore;
+    float resultScore = playSequence(gameState, pieceRangeContextLookup, pieceSequence, playoutLength, playoutDataList);
+    playoutScore += resultScore;
   }
 
   if (PLAYOUT_RESULT_LOGGING_ENABLED) {

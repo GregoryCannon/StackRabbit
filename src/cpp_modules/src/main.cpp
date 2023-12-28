@@ -34,7 +34,7 @@ std::string string_format( const std::string& format, Args ... args )
 }
 
 std::string mainProcess(char const *inputStr, RequestType requestType) {
-//  printf("Input string %s\n", inputStr);
+  maybePrint("Input string %s\n", inputStr);
 
   // Init empty data structures
   GameState startingGameState = {
@@ -44,19 +44,29 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
     /* lines= */ 0,
     /* level= */ 0
   };
+  unsigned int secondBoard[20];
   const Piece *curPiece = NULL;
   const Piece *nextPiece = NULL;
-  int playoutCount = 50;
-  int playoutLength = 3;
+  int playoutCount = DEFAULT_PLAYOUT_COUNT;
+  int playoutLength = DEFAULT_PLAYOUT_LENGTH;
   std::string inputFrameTimeline;
 
   // Loop through the other args
-  std::string s = std::string(inputStr + 201); // 201 = the length of the board string + 1 for the delimiter
+  std::string nonBoardInputString;
+  std::string secondBoardStr;
+  if (requestType == RATE_MOVE){
+    // Rate move requests have two boards;
+    secondBoardStr = std::string(inputStr + 201);
+    nonBoardInputString = std::string(inputStr + 402); // board1 + delim + board2 + delim
+  } else {
+    nonBoardInputString = std::string(inputStr + 201); // 201 = the length of the board string + 1 for the delimiter
+  }
+  
   std::string delim = "|";
   auto start = 0U;
-  auto end = s.find(delim);
+  auto end = nonBoardInputString.find(delim);
   for (int i = 0; end != std::string::npos; i++) {
-    std::string arg = s.substr(start, end - start);
+    std::string arg = nonBoardInputString.substr(start, end - start);
     int argAsInt = atoi(arg.c_str());
     maybePrint("ARG %d: %d\n", i, argAsInt);
     switch (i) {
@@ -67,10 +77,17 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
       startingGameState.lines = argAsInt;
       break;
     case 2:
+      if (argAsInt == -1){
+        return "Error: please provide a value for currentPiece.";
+      }
       curPiece = &(PIECE_LIST[argAsInt]);
       break;
     case 3:
-      nextPiece = &(PIECE_LIST[argAsInt]);
+      if (argAsInt == -1){
+        nextPiece = NULL;
+      } else {
+        nextPiece = &(PIECE_LIST[argAsInt]);
+      }
       break;
     case 4:
       inputFrameTimeline = arg;
@@ -86,11 +103,14 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
     }
 
     start = (int) end + (int) delim.length();
-    end = s.find(delim, start);
+    end = nonBoardInputString.find(delim, start);
   }
   int wellColumn = 9;
   // Fill in the data structures
   encodeBoard(inputStr, startingGameState.board);
+  if (secondBoardStr.length() > 0){
+    encodeBoard(secondBoardStr.c_str(), secondBoard);
+  }
   getSurfaceArray(startingGameState.board, startingGameState.surfaceArray);
   startingGameState.adjustedNumHoles = updateSurfaceAndHoles(startingGameState.surfaceArray, startingGameState.board, wellColumn);
 
@@ -112,24 +132,31 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
 
   // Take the specified action on the input based on the request type
   switch (requestType) {
-  case GET_LOCK_VALUE_LOOKUP: {
-    return getLockValueLookupEncoded(startingGameState, curPiece, nextPiece, DEPTH_2_PRUNING_BREADTH, playoutCount, playoutLength, &context, pieceRangeContextLookup);
-  }
+    case GET_LOCK_VALUE_LOOKUP: {
+      return getLockValueLookupEncoded(startingGameState, curPiece, nextPiece, DEPTH_2_PRUNING_BREADTH, playoutCount, playoutLength, &context, pieceRangeContextLookup);
+    }
 
-  case GET_MOVE: {
-//    int debugSequence[SEQUENCE_LENGTH] = {curPiece->index};
-//    playSequence(startingGameState, pieceRangeContextLookup, debugSequence, /* playoutLength= */ 1);
-//    return "Debug playout complete.";
-    LockLocation bestMove = playOneMove(startingGameState, curPiece, nextPiece, /* numCandidatesToPlayout */ DEPTH_1_PRUNING_BREADTH, playoutCount, playoutLength, &context, pieceRangeContextLookup);
-    int xOffset = bestMove.x - 3;
-    int rot = bestMove.rotationIndex;
+    case GET_TOP_MOVES: {
+      return getTopMoveList(startingGameState, curPiece, nextPiece, NUM_TOP_ENGINE_MOVES, playoutCount, playoutLength, &context, pieceRangeContextLookup);
+    }
 
-    return string_format("[%d, %d]", rot, xOffset);
-  }
+    case RATE_MOVE: {
+      return rateMove(startingGameState, curPiece, nextPiece, secondBoard, DEPTH_2_PRUNING_BREADTH, playoutCount, playoutLength, &context, pieceRangeContextLookup);
+    }
 
-  default: {
-    return "Unknown request";
-  }
+    case GET_MOVE: {
+      LockLocation bestMove = playOneMove(startingGameState, curPiece, nextPiece, /* numCandidatesToPlayout */ DEPTH_1_PRUNING_BREADTH, playoutCount, playoutLength, &context, pieceRangeContextLookup);
+      int xOffset = bestMove.x - 3;
+      int rot = bestMove.rotationIndex;
+      return string_format("[%d, %d]", rot, xOffset);
+      // int debugSequence[SEQUENCE_LENGTH] = {curPiece->index};
+      // playSequence(startingGameState, pieceRangeContextLookup, debugSequence, /* playoutLength= */ 1);
+      // return "Debug playout complete.";
+    }
+
+    default: {
+      return "Unknown request";
+    }
   }
 }
 

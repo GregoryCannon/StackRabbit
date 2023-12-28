@@ -5,6 +5,8 @@
 
 // Generic "not applicable" value for unsigned ints
 #define NONE 999999999
+// Not actually the minimum float but a generic "huge negative value" to use in maximization loops
+#define FLOAT_MIN -999999999.0
 
 // No-op used to mark output parameters
 #define OUT
@@ -12,10 +14,12 @@
 #undef max
 #undef min
 
-
+#define INITIAL_X 3
 
 enum RequestType {
   GET_LOCK_VALUE_LOOKUP, // Gets a map of all the values for all possible places where the current piece could lock.
+  GET_TOP_MOVES, // Gets a list of the top moves, using full playouts. Supports with or without next box.
+  RATE_MOVE, // Compares a player move to the best move, and gives the score for both, with and without next box.
   GET_MOVE // Gets a single best move for a given scenario, using full playouts. Supports with or without next box.
 };
 
@@ -74,7 +78,7 @@ struct LockPlacement {
   const Piece *piece;
 };
 
-const LockPlacement NO_PLACEMENT {
+const LockPlacement NO_PLACEMENT = {
   NONE, NONE, NONE, NONE, 'x', NULL
 };
 
@@ -84,6 +88,8 @@ struct LockLocation {
   int y;
   int rotationIndex;
 };
+
+const LockLocation NULL_LOCK_LOCATION = {NONE, NONE, NONE};
 
 enum AiMode {
   STANDARD,
@@ -150,8 +156,32 @@ struct Possibility {
   LockLocation firstPlacement;
   LockLocation secondPlacement; // Can be null if it's actually depth 1
   GameState resultingState;
-  float evalScore;
+  float evalScoreInclReward;
   float immediateReward;
+};
+
+/** A data model for one playout within a series of such playouts*/
+struct PlayoutData {
+  float totalScore;
+  std::vector<LockLocation> placements;
+  std::string pieceSequence;
+  unsigned int resultingBoard[20];
+};
+
+/** A data model for a move, as it relates to being part of an API response for the list of top moves */
+struct EngineMoveData {
+  LockLocation firstPlacement;
+  LockLocation secondPlacement;
+  float playoutScore;
+  float evalScore;
+  std::string resultingBoard;
+  PlayoutData playout1; // Best case
+  PlayoutData playout2; // 83 %ile
+  PlayoutData playout3; // 66 %ile
+  PlayoutData playout4; // Median case
+  PlayoutData playout5; // 33 %ile
+  PlayoutData playout6; // 16 %ile
+  PlayoutData playout7; // Worst case
 };
 
 #endif
