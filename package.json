@@ -4,6 +4,7 @@
   "description": "an AI for playing NES Tetris",
   "main": "src/web_client/index.js",
   "scripts": {
+    "restart": "node built/src/server/app.js",
     "start": "node-gyp build && tsc && node built/src/server/app.js",
     "deploy": "node-gyp build && tsc && pm2 stop all && pm2 start built/src/server/app.js",
     "format": "prettier --write \"src/**/*.+(js|jsx|ts|json|css|md)\"",
