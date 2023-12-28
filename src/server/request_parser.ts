@@ -42,7 +42,13 @@ export function parseUrlArguments(
         break;
 
       case "secondBoard":
-        result.secondBoard = parseBoard(value);
+        if (requestType.includes("rate-move")) {
+          result.secondBoard = parseBoard(value);
+        } else {
+          console.log(
+            "Ignoring 'secondBoard' parameter, as it's not relevant to this request"
+          );
+        }
         break;
 
       case "currentPiece":
@@ -134,8 +140,9 @@ export function parseUrlArguments(
         }
         if (count * result.playoutLength > MAX_CPP_PLAYOUT_MOVES) {
           throw new Error(
-            "Playout volume exceeds the current limit of 500 moves. Current volume (count * length): " +
-              count * result.lookaheadDepth
+            `Playout volume exceeds the current limit of ${MAX_CPP_PLAYOUT_MOVES} moves. Current volume (count * length): ${
+              count * result.playoutLength
+            }"`
           );
         }
         result.playoutCount = count;
@@ -156,8 +163,9 @@ export function parseUrlArguments(
         }
         if (result.playoutCount * length > MAX_CPP_PLAYOUT_MOVES) {
           throw new Error(
-            "Playout volume exceeds the current limit of 500 moves. Current volume (count * length): " +
-              result.playoutCount * length
+            `Playout volume exceeds the current limit of ${MAX_CPP_PLAYOUT_MOVES} moves. Current volume (count * length): ${
+              length * result.playoutCount
+            }"`
           );
         }
         result.playoutLength = length;
