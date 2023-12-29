@@ -1,6 +1,10 @@
 #ifndef CONFIG
 #define CONFIG
 
+// ROM configuration
+#define DOUBLE_KILLSCREEN_ENABLED 1
+#define DEBUG_DOUBLE_KS_ALWAYS_ENABLED 0
+
 // Logging
 #define LOGGING_ENABLED 0 // Refers to movesearch/eval logging
 #define PLAYOUT_LOGGING_ENABLED 0

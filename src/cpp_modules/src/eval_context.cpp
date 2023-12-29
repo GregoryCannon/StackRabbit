@@ -59,7 +59,11 @@ const EvalContext getEvalContext(GameState gameState, const PieceRangeContext pi
   EvalContext context = {};
 
   // Copy the piece range context from the global lookup
-  context.pieceRangeContext = pieceRangeContextLookup[getGravity(gameState.level) - 1];
+  bool gravityDoubled = isGravityDoubled(gameState.level);
+  int pieceRangeContextIndex = gravityDoubled 
+          ? 0 // double killscreen context is at index 0 of the array 
+          : getGravity(gameState.level); // The rest are indexed by the gravity value
+  context.pieceRangeContext = pieceRangeContextLookup[pieceRangeContextIndex];
 
   // Set the mode
   AiMode aiMode = getAiMode(gameState, context.pieceRangeContext.max5TapHeight, pieceRangeContextLookup[0].max5TapHeight);

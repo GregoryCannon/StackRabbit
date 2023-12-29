@@ -20,8 +20,10 @@ export const SHOULD_LOG = false;
 
 export const IS_DROUGHT_MODE = false;
 export const LINE_CAP = NO_LIMIT;
-export const DOUBLE_KS_ENABLED = true;
-export const DOUBLE_KS_DEBUG_ALWAYS_ENABLED = true;
+export const DOUBLE_KILLSCREEN_ENABLED = true;
+export const DEBUG_DOUBLE_KS_ALWAYS_ENABLED = false;
+export const CPP_LIVEGAME_PLAYOUT_COUNT = 50;
+export const CPP_LIVEGAME_PLAYOUT_LENGTH = 2;
 
 // Rarely changed
 export const IS_PAL = false;

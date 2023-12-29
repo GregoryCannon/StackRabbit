@@ -7,7 +7,7 @@ import {
   _validateIntParam,
 } from "./board_helper";
 import { searchForTucksOrSpins } from "./dfs";
-import { CAN_TUCK, DOUBLE_KS_ENABLED } from "./params";
+import { CAN_TUCK } from "./params";
 import {
   GetGravity,
   getSurfaceArrayAndHoles,

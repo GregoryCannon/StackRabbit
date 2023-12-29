@@ -1,4 +1,10 @@
-import { CAN_TUCK, DOUBLE_KS_DEBUG_ALWAYS_ENABLED, DOUBLE_KS_ENABLED, IS_PAL, WELL_COLUMN } from "./params";
+import {
+  CAN_TUCK,
+  DEBUG_DOUBLE_KS_ALWAYS_ENABLED,
+  DOUBLE_KILLSCREEN_ENABLED,
+  IS_PAL,
+  WELL_COLUMN,
+} from "./params";
 let performance = null;
 
 export const NUM_ROW = 20;
@@ -19,11 +25,13 @@ export const POSSIBLE_NEXT_PIECES: Array<PieceId> = [
 ];
 
 export function IsGravityDoubled(level) {
-  return DOUBLE_KS_DEBUG_ALWAYS_ENABLED || (DOUBLE_KS_ENABLED && level >= 39);
+  return (
+    DEBUG_DOUBLE_KS_ALWAYS_ENABLED || (DOUBLE_KILLSCREEN_ENABLED && level >= 39)
+  );
 }
 
 export function GetDoubleKillscreenEquivalentInputTimeline(timeline: string) {
-  return timeline.split("").join(".") + "."
+  return timeline.split("").join(".") + ".";
 }
 
 export function GetGravity(level) {

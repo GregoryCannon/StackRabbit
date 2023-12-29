@@ -67,6 +67,7 @@ int exploreHorizontally(unsigned int board[20],
                         int goalRotationIndex,
                         char const *inputFrameTimeline,
                         int gravity,
+                        bool gravityDoubled,
                         vector<SimState> &legalPlacements,
                         int availableTuckCols[40]) {
   int rangeCurrent = 0;
@@ -115,10 +116,13 @@ int exploreHorizontally(unsigned int board[20],
     }
 
     if (isGravityFrame) {
-      if (collision(board, simState.piece, simState.x, simState.y + 1, simState.rotationIndex)) {
-        didLockThisFrame = true;
-      } else {
-        simState.y++;
+      for (int i = 0; i < (gravityDoubled ? 2 : 1); i++){
+        if (collision(board, simState.piece, simState.x, simState.y + 1, simState.rotationIndex)) {
+          didLockThisFrame = true;
+          break;
+        } else {
+          simState.y++;
+        }
       }
     }
 
@@ -162,6 +166,7 @@ void explorePlacementsNearSpawn(unsigned int board[20],
                                 int goalRotationIndex,
                                 char const *inputFrameTimeline,
                                 int gravity,
+                                bool gravityDoubled,
                                 vector<SimState> &legalPlacements,
                                 int availableTuckCols[40]) {
   int rotationDifference = abs(goalRotationIndex - simState.rotationIndex);
@@ -179,6 +184,7 @@ void explorePlacementsNearSpawn(unsigned int board[20],
                         goalRotationIndex,
                         inputFrameTimeline,
                         gravity,
+                        gravityDoubled,
                         legalPlacements,
                         availableTuckCols);
   }
@@ -348,11 +354,12 @@ int moveSearchInternal(GameState gameState,
                        OUT std::vector<LockPlacement> &lockPlacements) {
   vector<SimState> legalMidairPlacements;
   int gravity = getGravity(gameState.level);
+  bool gravityDoubled = isGravityDoubled(gameState.level);
 
   // Encodes which rotation/column pairs are reachable, and stores the lowest Y value reached in that pair
   int availableTuckCols[40] = {};
   int minTuckYValsByNumPrevInputs[7] = {};
-  computeYValueOfEachShift(inputFrameTimeline, gravity, piece->initialY, minTuckYValsByNumPrevInputs);
+  computeYValueOfEachShift(inputFrameTimeline, gravity, gravityDoubled, piece->initialY, minTuckYValsByNumPrevInputs);
 
   for (int goalRotIndex = 0; goalRotIndex < 4; goalRotIndex++) {
     if (piece->rowsByRotation[goalRotIndex][0] == NONE) {
@@ -382,6 +389,7 @@ int moveSearchInternal(GameState gameState,
                         goalRotIndex,
                         inputFrameTimeline,
                         gravity,
+                        gravityDoubled,
                         legalMidairPlacements,
                         availableTuckCols);
     exploreHorizontally(gameState.board,
@@ -391,6 +399,7 @@ int moveSearchInternal(GameState gameState,
                         goalRotIndex,
                         inputFrameTimeline,
                         gravity,
+                        gravityDoubled,
                         legalMidairPlacements,
                         availableTuckCols);
     // Then double check for some we missed near spawn
@@ -399,6 +408,7 @@ int moveSearchInternal(GameState gameState,
                                goalRotIndex,
                                inputFrameTimeline,
                                gravity,
+                               gravityDoubled,
                                legalMidairPlacements,
                                availableTuckCols);
   }

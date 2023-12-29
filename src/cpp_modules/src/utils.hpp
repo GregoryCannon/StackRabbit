@@ -182,6 +182,10 @@ int getGravity(int level){
   return 1;
 }
 
+bool isGravityDoubled(int level){
+  return (DOUBLE_KILLSCREEN_ENABLED && level >= 39) || DEBUG_DOUBLE_KS_ALWAYS_ENABLED;
+}
+
 /**
  * Given a string such as X.... that represents a loop of which frames are allowed for inputs,
  * determines if a given frame index is an input frame
@@ -192,7 +196,7 @@ int shouldPerformInputsThisFrame(int frameIndex, char const *inputFrameTimeline)
   return inputFrameTimeline[index] == 'X';
 }
 
-SimState predictStateAtAdjustmentTime(LockPlacement placement, char const *inputFrameTimeline, int gravity, int reactionTimeFrames){
+SimState predictStateAtAdjustmentTime(LockPlacement placement, char const *inputFrameTimeline, int gravity, bool gravityDoubled, int reactionTimeFrames){
   // Figure out how many frames of input will have elapsed
   // At the same time, calculate the Y value at adjustment time
   int inputsPerformed = 0;
@@ -201,8 +205,12 @@ SimState predictStateAtAdjustmentTime(LockPlacement placement, char const *input
     if (shouldPerformInputsThisFrame(frame, inputFrameTimeline)) {
       inputsPerformed++;
     }
-    // Returns true every Nth frame, where N = gravity
-    if (frame % gravity == gravity - 1) {
+    // On double killscreen, increment gravity twice every frame
+    if (gravityDoubled){
+      adjTimeY += 2;
+    }
+    // Returns true every Nth frame, where N = gravity 
+    else if (frame % gravity == gravity - 1) {
       adjTimeY++;
     }
   }

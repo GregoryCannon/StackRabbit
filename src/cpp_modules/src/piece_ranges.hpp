@@ -15,9 +15,9 @@ extern const xtable X_BOUNDS_COLLISION_TABLE;
  * Calculates a lookup table for the Y value you'd be at while doing shift number N.
  * This is used in the tuck search, since this would be the first Y value where you could perform a tuck after N inputs of a standard placement.
  */
-void computeYValueOfEachShift(char const *inputFrameTimeline, int gravity, int initialY, OUT int result[7]);
+void computeYValueOfEachShift(char const *inputFrameTimeline, int gravity, bool gravityDoubled, int initialY, OUT int result[7]);
 
-const PieceRangeContext getPieceRangeContext(char const *inputFrameTimeline, int gravity);
+const PieceRangeContext getPieceRangeContext(char const *inputFrameTimeline, int gravity, bool gravityDoubled);
 
 
 #endif
