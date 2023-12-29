@@ -95,6 +95,10 @@ interface SimState {
   rotationIndex: number;
 }
 
+interface LegalPlacementSimState extends SimState {
+  hasAlreadyLocked: boolean;
+}
+
 interface BFSState extends SimState {
   hasPassedOnInput: boolean;
   grammarToken: string;

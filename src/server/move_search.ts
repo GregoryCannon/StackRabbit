@@ -71,7 +71,7 @@ export function getPossibleMoves(
       )[0]
     );
 
-  const legalPlacementSimStates: Array<SimState> = [];
+  const legalPlacementSimStates: Array<LegalPlacementSimState> = [];
 
   const NUM_ROTATIONS_FOR_PIECE = rotationsList.length;
   explorePlacementsHorizontally(
@@ -141,7 +141,7 @@ export function getPossibleMoves(
  * ]
  */
 function exploreLegalPlacementsUntilLock(
-  legalPlacementSimStates: Array<SimState>,
+  legalPlacementSimStates: Array<LegalPlacementSimState>,
   simParams: SimParams
 ): [Array<Possibility>, Map<string, number>, Array<DFSState>] {
   const lockPossibilities = [];
@@ -182,6 +182,7 @@ function exploreLegalPlacementsUntilLock(
 
       // If it collides immediately, quit
       if (
+        simState.hasAlreadyLocked ||
         pieceCollision(
           simParams.board,
           simState.x,
@@ -333,7 +334,7 @@ function calculateEntryDelayFrames(
 function explorePlacementsHorizontally(
   pieceId: string,
   simParams: SimParams,
-  legalPlacementSimStates: Array<SimState>
+  legalPlacementSimStates: Array<LegalPlacementSimState>
 ) {
   const rotationsList = PIECE_LOOKUP[pieceId][0];
 
@@ -404,7 +405,7 @@ function repeatedlyShiftPiece(
   shiftIncrement: number,
   goalRotationIndex: number,
   simParams: SimParams,
-  legalPlacementSimStates: Array<SimState>
+  legalPlacementSimStates: Array<LegalPlacementSimState>
 ) {
   const {
     board,
@@ -517,7 +518,10 @@ function repeatedlyShiftPiece(
     // If we previously marked that we reached a legal placement this frame, save this as a legal placement.
     // We do this at the very end such that the whole frame is done processing, and simState is ready for the next frame (e.g. looking for tucks)
     if (addNewPlacement) {
-      legalPlacementSimStates.push({ ...simState });
+      legalPlacementSimStates.push({
+        ...simState,
+        hasAlreadyLocked: lockAfterThisFrame,
+      });
     }
 
     if (lockAfterThisFrame) {
@@ -559,7 +563,7 @@ export function placementIsLegal(
   goalOffsetX: number,
   simParams: SimParams,
   shouldLog: boolean = false,
-  legalPlacementSimStates: Array<SimState> = null
+  legalPlacementSimStates: Array<LegalPlacementSimState> = null
 ) {
   const {
     board,
@@ -664,8 +668,9 @@ export function placementIsLegal(
     simState.frameIndex += 1;
     simState.arrFrameIndex += 1;
   }
+  // If it gets to this point, the placement is legal
   if (legalPlacementSimStates !== null) {
-    legalPlacementSimStates.push(simState);
+    legalPlacementSimStates.push({ ...simState, hasAlreadyLocked: false });
   }
   return true;
 }
