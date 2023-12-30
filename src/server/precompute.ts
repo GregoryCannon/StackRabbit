@@ -5,6 +5,7 @@ import { getPieceProbability } from "./piece_rng";
 import {
   formatPossibility,
   GetGravity,
+  IsGravityDoubled,
   POSSIBLE_NEXT_PIECES,
   shouldPerformInputsThisFrame,
 } from "./utils";
@@ -579,6 +580,9 @@ export function predictSearchStateAtAdjustmentTime(
   let offsetYAtAdjustmentTime = Math.floor(
     totalActiveFrames / GetGravity(initialState.level)
   );
+  if (IsGravityDoubled(initialState.level)) {
+    offsetYAtAdjustmentTime *= 2;
+  }
 
   return {
     board: initialState.board,

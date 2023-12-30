@@ -4,6 +4,7 @@ raw_data/
 *.csv
 *.exe
 src/cpp_modules/data/ranks_output.cpp
+src/cpp_modules/data/ranksOutput.cc
 src/cpp_modules/unused/
 .vscode/
 built/

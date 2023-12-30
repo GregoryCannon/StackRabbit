@@ -115,10 +115,11 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
   startingGameState.adjustedNumHoles = updateSurfaceAndHoles(startingGameState.surfaceArray, startingGameState.board, wellColumn);
 
   // Calculate global context for the 3 possible gravity values
-  const PieceRangeContext pieceRangeContextLookup[3] = {
-    getPieceRangeContext(inputFrameTimeline.c_str(), 1),
-    getPieceRangeContext(inputFrameTimeline.c_str(), 2),
-    getPieceRangeContext(inputFrameTimeline.c_str(), 3),
+  const PieceRangeContext pieceRangeContextLookup[4] = {
+    getPieceRangeContext(inputFrameTimeline.c_str(), 1, /* gravityDoubled= */ true),
+    getPieceRangeContext(inputFrameTimeline.c_str(), 1, /* gravityDoubled= */ false),
+    getPieceRangeContext(inputFrameTimeline.c_str(), 2, /* gravityDoubled= */ false),
+    getPieceRangeContext(inputFrameTimeline.c_str(), 3, /* gravityDoubled= */ false),
   };
   const EvalContext context = getEvalContext(startingGameState, pieceRangeContextLookup);
 

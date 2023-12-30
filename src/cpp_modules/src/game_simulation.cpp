@@ -31,11 +31,12 @@ int simulateGame(char const *inputFrameTimeline, int startingLevel, int maxLines
   Piece curPiece;
   Piece nextPiece = PIECE_LIST[qualityRandom(0,7)];
 
-  // Calculate global context for the 3 possible gravity values
-  const PieceRangeContext pieceRangeContextLookup[3] = {
-    getPieceRangeContext(inputFrameTimeline, 1),
-    getPieceRangeContext(inputFrameTimeline, 2),
-    getPieceRangeContext(inputFrameTimeline, 3),
+  // Calculate global context for the 4 possible gravity values
+  const PieceRangeContext pieceRangeContextLookup[4] = {
+    getPieceRangeContext(inputFrameTimeline.c_str(), 1, /* gravityDoubled= */ true),
+    getPieceRangeContext(inputFrameTimeline.c_str(), 1, /* gravityDoubled= */ false),
+    getPieceRangeContext(inputFrameTimeline.c_str(), 2, /* gravityDoubled= */ false),
+    getPieceRangeContext(inputFrameTimeline.c_str(), 3, /* gravityDoubled= */ false),
   };
   int score = 0;
   int numMoves = 0;
