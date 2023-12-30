@@ -1,4 +1,4 @@
-IS_MAC = true
+IS_MAC = false
 IS_PAL = false
 USE_PUSHDOWN = true
 DEBUG_MODE = false

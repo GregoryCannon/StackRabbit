@@ -5,9 +5,9 @@
 #include "types.hpp"
 
 const FastEvalWeights MAIN_WEIGHTS = {
-  /* avgHeightCoef= */ PLAY_SAFE_PRE_KILLSCREEN ? -10 : -7,
+  /* avgHeightCoef= */ PLAY_SAFE_PRE_KILLSCREEN ? -10 : -9,
   /* builtOutLeftCoef= */ 2,
-  /* burnCoef= */ PLAY_SAFE_PRE_KILLSCREEN ? -9 : -16,
+  /* burnCoef= */ PLAY_SAFE_PRE_KILLSCREEN ? -9 : -12,
   /* coveredWellCoef= */ -10,
   /* col9Coef= */ -3,
   /* deathCoef= */ -3000,
