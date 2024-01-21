@@ -1,5 +1,7 @@
 #include "eval_context.hpp"
 #include <math.h>
+#include <algorithm>
+#include "config.hpp"
 
 // Unused
 //const EvalContext DEBUG_CONTEXT = {
@@ -75,12 +77,27 @@ const EvalContext getEvalContext(GameState gameState, const PieceRangeContext pi
     context.scareHeight = 0;
     context.maxSafeCol9 = -1;
   } else {
-    int lowerScareHeight = (PLAY_SAFE_PRE_KILLSCREEN && gameState.level < 29) || (PLAY_SAFE_ON_KILLSCREEN && gameState.level >= 29);
-    context.scareHeight = context.pieceRangeContext.max5TapHeight - (lowerScareHeight ? 4 : 3);
-    context.maxSafeCol9 = context.pieceRangeContext.max4TapHeight - (lowerScareHeight ? 6 : 5);
+    bool lowerScareHeight = (PLAY_SAFE_PRE_KILLSCREEN && gameState.level < 29) || (PLAY_SAFE_ON_KILLSCREEN && gameState.level >= 29);
+    float prelimScareHeight = context.pieceRangeContext.max5TapHeight - (lowerScareHeight ? 4 : 3);
+    float prelimCol9 = context.pieceRangeContext.max4TapHeight - (lowerScareHeight ? 6 : 5);
 
-    context.scareHeight = context.scareHeight * 0.5 + 6 * 0.5;
-    context.maxSafeCol9 = context.maxSafeCol9 * 0.5 + 8 * 0.5;
+    prelimScareHeight = prelimScareHeight * 0.5 + 6 * 0.5;
+    prelimCol9 = prelimCol9 * 0.5 + 8 * 0.5;
+
+    // FOR TESTING
+    float ratio = 0;
+
+    if (DOUBLE_KILLSCREEN_ENABLED){
+      int cutoffLines = 320;
+      int linearInterpolationLines = 10; // Slowly shift from the killscreen scare height to the double killscreen scare height
+      if (gameState.lines > cutoffLines){
+        int diff = std::min(linearInterpolationLines, gameState.lines - cutoffLines);
+        ratio = (float)diff / (float)linearInterpolationLines;
+      }
+    }
+    
+    context.scareHeight = prelimScareHeight * (1.0 - ratio);
+    context.maxSafeCol9 = prelimCol9 * (1.0 - ratio);
   }
 
   // Set the well column
