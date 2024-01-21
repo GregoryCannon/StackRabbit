@@ -452,7 +452,9 @@ function formatPrecomputeResult(results, defaultPlacement) {
     /* pushDown= */ SHOULD_PUSHDOWN
   );
   let resultString = `Default:${
-    defaultPlacement ? formatPossibility(defaultPlacement) : "N/A"
+    defaultPlacement
+      ? formatPossibility(defaultPlacement)
+      : "N/A (0 reaction time)"
   }`;
   for (const piece of POSSIBLE_NEXT_PIECES) {
     if (results == null) {
