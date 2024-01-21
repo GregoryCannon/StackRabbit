@@ -183,8 +183,6 @@ LockLocation playOneMove(GameState gameState, const Piece *firstPiece, const Pie
  */
 Possibility findPlayerMove(list<Possibility> possibilityList, unsigned int playerBoardAfter[20]){
   // Find the player move
-  Possibility playerMove = {NULL_LOCK_LOCATION,NULL_LOCK_LOCATION,{}, -1, -1 /* rest default initializer */};
-
   for (list<Possibility>::iterator iter=possibilityList.begin(); iter!=possibilityList.end(); iter++) {
     bool boardEqual = true;
     for (int i = 19; i >= 0; i--){
@@ -194,11 +192,12 @@ Possibility findPlayerMove(list<Possibility> possibilityList, unsigned int playe
       }
     }
     if (boardEqual){
-      playerMove = *iter;
       possibilityList.erase(iter);
+      return *iter;
     }
   }
-  return playerMove;
+  // Error out
+  return {NULL_LOCK_LOCATION,NULL_LOCK_LOCATION,{}, -1, -1 /* rest default initializer */};
 }
 
 std::string rateMove(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, unsigned int playerBoardAfter[20], int numCandidatesToPlayout, int playoutCount, int playoutLength, const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3]){
@@ -213,10 +212,10 @@ std::string rateMove(GameState gameState, const Piece *firstPiece, const Piece *
   if (possibilityListD1.size() == 0 || possibilityListD2.size() == 0){
     return std::string("Error: no legal moves found");
   }
-
+  
   // Find the player move (and remove it from the D1 possibility list)
   Possibility playerMove = findPlayerMove(possibilityListD1, playerBoardAfter);
-  if (playerMove.firstPlacement.x == NONE){
+  if (playerMove.firstPlacement.x == NONE){     // Check for the particular error value supplied by the function
     return std::string("Error: player move not found");
   }
 
