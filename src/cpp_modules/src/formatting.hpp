@@ -90,7 +90,7 @@ std::string formatPlayout(PlayoutData playoutData){
   std::string output = std::string("{ ");
 
   // Add the piece sequence
-  output += "\"pieceSequence:\":\"" + playoutData.pieceSequence;
+  output += "\"pieceSequence\":\"" + playoutData.pieceSequence;
 
   // Add the placements list
   output += "\", \"placements\": [";
