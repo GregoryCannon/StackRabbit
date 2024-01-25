@@ -87,6 +87,9 @@ export class RequestHandler {
       case "engine-movelist-cpp":
         return [this.handleCppLookupTopMoves(searchState, urlArgs), 200];
 
+      case "engine-movelist-cpp-hybrid":
+        return [this.handleCppLookupTopMovesHybrid(searchState, urlArgs), 200];
+
       case "get-move":
         return [
           this.getMoveSync(searchState, urlArgs, /* isCpp= */ false),
@@ -227,6 +230,17 @@ export class RequestHandler {
   handleCppLookupTopMoves(searchState: SearchState, urlArgs: UrlArguments) {
     const encodedInputString = getCppEncodedInputString(searchState, urlArgs);
     return cModule.getTopMoves(encodedInputString);
+  }
+
+  handleCppLookupTopMovesHybrid(
+    searchState: SearchState,
+    urlArgs: UrlArguments
+  ) {
+    const encodedInputString = getCppEncodedInputString(searchState, urlArgs);
+    if (!urlArgs.nextPiece) {
+      return "Error: engine-movelist-cpp-hybrid request requires the next piece as a URL argument.";
+    }
+    return cModule.getTopMovesHybrid(encodedInputString);
   }
 
   handleCppRateMove(searchState: SearchState, urlArgs: UrlArguments) {

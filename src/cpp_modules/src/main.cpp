@@ -141,6 +141,12 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
       return getTopMoveList(startingGameState, curPiece, nextPiece, NUM_TOP_ENGINE_MOVES, playoutCount, playoutLength, &context, pieceRangeContextLookup);
     }
 
+    case GET_TOP_MOVES_HYBRID: {
+      std::string nnbResult = getTopMoveList(startingGameState, curPiece, /* nextPiece= */ NULL, NUM_TOP_ENGINE_MOVES, playoutCount, playoutLength, &context, pieceRangeContextLookup);
+      std::string nbResult = getTopMoveList(startingGameState, curPiece, nextPiece, NUM_TOP_ENGINE_MOVES, playoutCount, playoutLength, &context, pieceRangeContextLookup);
+      return "{\"noNextBox\":" + nnbResult + ", \"nextBox\":" + nbResult + "}";
+    }
+
     case RATE_MOVE: {
       return rateMove(startingGameState, curPiece, nextPiece, secondBoard, DEPTH_2_PRUNING_BREADTH, playoutCount, playoutLength, &context, pieceRangeContextLookup);
     }

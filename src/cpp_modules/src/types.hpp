@@ -19,6 +19,7 @@
 enum RequestType {
   GET_LOCK_VALUE_LOOKUP, // Gets a map of all the values for all possible places where the current piece could lock.
   GET_TOP_MOVES, // Gets a list of the top moves, using full playouts. Supports with or without next box.
+  GET_TOP_MOVES_HYBRID, // Gets a list of the top moves *BOTH* with and without next box.
   RATE_MOVE, // Compares a player move to the best move, and gives the score for both, with and without next box.
   GET_MOVE // Gets a single best move for a given scenario, using full playouts. Supports with or without next box.
 };

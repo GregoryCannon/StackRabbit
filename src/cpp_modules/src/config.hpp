@@ -28,7 +28,7 @@
 #define SHOULD_PLAY_PERFECT 0
 
 // Engine API params
-#define NUM_TOP_ENGINE_MOVES 8
+#define NUM_TOP_ENGINE_MOVES 5
 #define DEFAULT_PLAYOUT_COUNT 49
 #define DEFAULT_PLAYOUT_LENGTH 2
 #define TRACK_PLAYOUT_DETAILS true // Can disable for performance reasons
