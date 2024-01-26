@@ -61,7 +61,7 @@ std::string formatBoard(const unsigned int board[20]){
 
   // Skip empty rows at the top
   int i = 0;
-  while ((board[i] & FULL_ROW) == 0){
+  while (i < 20 && ((board[i] & FULL_ROW) == 0)){
     i++;
   }
 
