@@ -37,7 +37,7 @@
 #define DEPTH_2_PRUNING_BREADTH 12
 #define DEPTH_1_PRUNING_BREADTH 8
 #define LOCK_POSITION_REPEAT_CAP 3
-#define SEMI_HOLE_PROPORTION 0.81f // Value used for things that are sort of like holes but not fully (tuck setups, unfilled wells while digging)
+#define SEMI_HOLE_PROPORTION 0.6f // Value used for things that are sort of like holes but not fully (tuck setups, unfilled wells while digging)
 #define SEQUENCE_LENGTH 20
 
 #endif
