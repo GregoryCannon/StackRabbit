@@ -355,7 +355,7 @@ std::string getTopMoveList(GameState gameState, const Piece *firstPiece, const P
     numAdded++;
   }
 
-  return formatEngineMoveList(sortedList);
+  return formatEngineMoveList(sortedList, firstPiece, secondPiece);
 }
 
 

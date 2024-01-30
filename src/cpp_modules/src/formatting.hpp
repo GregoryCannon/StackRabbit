@@ -31,12 +31,12 @@ std::string encodeLockPosition(LockLocation lockLocation){
 }
 
 /** Formats a human-readable lock location */
-std::string formatLockPosition(LockLocation lockLocation) {
+std::string formatLockPosition(LockLocation lockLocation, int pieceInitialY) {
   if (lockLocation.x == NULL_LOCK_LOCATION.x){
     return "null";
   }
   char buffer[12]; // 4 for separators, 1 for rotIndex, 2 for x, 2 for y, 3 for expect the unexpected
-  sprintf(buffer, "[%d,%d,%d]", lockLocation.rotationIndex, lockLocation.x - INITIAL_X, lockLocation.y);
+  sprintf(buffer, "[%d,%d,%d]", lockLocation.rotationIndex, lockLocation.x - INITIAL_X, lockLocation.y - pieceInitialY);
   return string(buffer);
 }
 
@@ -94,8 +94,11 @@ std::string formatPlayout(PlayoutData playoutData){
 
   // Add the placements list
   output += "\", \"placements\": [";
+  int i = 0;
   for (auto placement : playoutData.placements){
-    output += formatLockPosition(placement) + ",";
+    int initialY = playoutData.pieceSequence.at(i) == 'I' ? -2 : -1;
+    i++;
+    output += formatLockPosition(placement, initialY) + ",";
   }
   if (playoutData.placements.size() > 0) {
     output.pop_back(); // Remove the last comma
@@ -130,14 +133,14 @@ std::string formatPlayout(PlayoutData playoutData){
  *   { ... },
  * ]"
 */
-std::string formatEngineMoveList(list<EngineMoveData> moveList){
+std::string formatEngineMoveList(list<EngineMoveData> moveList, const Piece *firstPiece, const Piece *secondPiece){
   std::string output = std::string("[");
   for( const auto& move : moveList ) {
     output += "{\"firstPlacement\":";
-    output += formatLockPosition(move.firstPlacement);
+    output += formatLockPosition(move.firstPlacement, firstPiece->initialY);
     if (move.secondPlacement.x != NULL_LOCK_LOCATION.x){
       output += ", \"secondPlacement\":";
-      output += formatLockPosition(move.secondPlacement);
+      output += formatLockPosition(move.secondPlacement, secondPiece->initialY);
     }
     char formattedMoveBuffer[70]; // Max length I got in my testing was 108 with for just the scores
     sprintf(formattedMoveBuffer, 
