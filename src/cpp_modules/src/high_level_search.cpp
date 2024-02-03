@@ -151,7 +151,7 @@ LockLocation playOneMove(GameState gameState, const Piece *firstPiece, const Pie
     return (*sortedList.begin()).firstPlacement;
   }
 
-  LockLocation const *bestLockLocation = NULL;
+  LockLocation bestLockLocation = {NONE, NONE, NONE};
   float bestPossibilityScore = FLOAT_MIN;
   int numPlayedOut = 0;
   for (auto possibility : sortedList){
@@ -168,13 +168,13 @@ LockLocation playOneMove(GameState gameState, const Piece *firstPiece, const Pie
     maybePrint("Possibility %d %d has overallscore %f %f\n", possibility.firstPlacement.rotationIndex, possibility.firstPlacement.x - 3, overallScore, possibility.evalScoreInclReward);
 
     // Potentially update the best possibility
-    if (bestLockLocation == NULL || overallScore > bestPossibilityScore) {
-      bestLockLocation = &(possibility.firstPlacement);
+    if (bestLockLocation.x == NONE || overallScore > bestPossibilityScore) {
+      bestLockLocation = possibility.firstPlacement;
       bestPossibilityScore = overallScore;
     }
     numPlayedOut++;
   }
-  return *bestLockLocation;
+  return bestLockLocation;
 }
 
 /**
