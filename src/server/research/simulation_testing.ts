@@ -153,22 +153,25 @@ function openerFitnessFunction(
 }
 
 function processResults() {
-  switch (curTestType) {
-    case TestType.OPENER:
-      console.log("\n\nFitness:", openerFitnessFunction(results));
-      break;
+  // DISABLED TO PREVENT TYPESCRIPT COMPILATION ERRORS
+  // (aka it broke but I don't use this anymore)
+  
+  // switch (curTestType) {
+  //   case TestType.OPENER:
+  //     console.log("\n\nFitness:", openerFitnessFunction(results));
+  //     break;
 
-    case TestType.STANDARD:
-      console.log("\n\nFitness:", defaultFitnessFunction(results));
-      break;
+  //   case TestType.STANDARD:
+  //     console.log("\n\nFitness:", defaultFitnessFunction(results));
+  //     break;
 
-    case TestType.DIG:
-      console.log("\n\nFitness:", digFitnessFunction(results));
-      break;
+  //   case TestType.DIG:
+  //     console.log("\n\nFitness:", digFitnessFunction(results));
+  //     break;
 
-    case TestType.LEFT_SURFACE_SUCCESSORS:
-      processKillscreenResults(results);
-  }
+  //   case TestType.LEFT_SURFACE_SUCCESSORS:
+  //     processKillscreenResults(results);
+  // }
 }
 
 if (require.main === module) {

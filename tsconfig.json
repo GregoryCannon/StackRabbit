@@ -3,7 +3,8 @@
     "outDir": "./built",
     "allowJs": true,
     "target": "es5",
-    "downlevelIteration": true
+    "downlevelIteration": true,
+    "skipLibCheck": true,
   },
   "include": ["./src/server/*.ts", "./src/server/research/*.ts", "./src/server/rank-lookup.js", "./docs/tetrominoes.js", "./docs/killscreen_ranks.js", "src/server/cmodules.ts"]
 }
