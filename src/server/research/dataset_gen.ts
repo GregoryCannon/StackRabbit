@@ -17,7 +17,7 @@ const lookupStr = fs.readFileSync(
  * e.g. sequences 3000 - 3999 all assume the last known piece was an L
  */
 function generateCanonicalPieceSequences() {
-  const filename = "docs/canonical_sequences.txt";
+  const filename = "docs/canonical_sequences_output.txt";
   // fs.open(filename, "w");
   fs.truncateSync(filename, 0);
 
@@ -37,6 +37,23 @@ function generateCanonicalPieceSequences() {
       sequence.push(PIECE_LIST.findIndex((x) => x[2] == lastKnownPiece));
     }
     fs.appendFileSync(filename, "\t" + sequence.join(", ") + ",\n");
+  }
+}
+
+function generateExhaustivePieceSequences() {
+  const filename = "docs/exhaustive_sequences_output.txt";
+  // fs.open(filename, "w");
+  fs.truncateSync(filename, 0);
+
+  console.log("writing to file");
+
+  for (let i = 0; i < 7; i++){
+    for (let j = 0; j < 7; j++){
+      for (let k = 0; k < 7; k++){
+        const sequenceStr = `${k}, ${j}, ${i}`; // In reverse order to ensure that the first 7 contains all 7 pieces, first 49 contains first 49, etc.
+        fs.appendFileSync(filename, "\t" + sequenceStr + ",\n")
+      }
+    }
   }
 }
 
@@ -77,4 +94,5 @@ function generateRanksDataset() {
   }
 }
 
-generateCanonicalPieceSequences();
+// generateCanonicalPieceSequences();
+generateExhaustivePieceSequences();

@@ -112,17 +112,19 @@ float getPlayoutScore(GameState gameState, int playoutCount, int playoutLength, 
   // Index into the sequences based on the last known piece given by the in-game randomizer.
   // The piece RNG is dependent on the previous piece, we will then have 1000 sequences with accurate RNG given the last known piece
   int pieceOffset = 1000 + firstPieceIndex * 1000;
-
-  // Special case: if exactly 7 playouts are requested, do one of each starting piece. 
-  // The first 1000 sequences loop through the first pieces in order, so if we start from 0 offset we'll get the desired behavior.
-  if (playoutCount == 7){
-    pieceOffset = 0;
-  }
+  
+  // Special case: if the playout count is equal to the full count of possible sequences at the requested length, use the exahustive sequence list,
+  // as opposed to randomly generated ones.
+  bool useExhaustiveSequences = (playoutCount == 7 && playoutLength == 1 
+    || playoutCount == 49 && playoutLength == 2 
+    || playoutCount == 343 && playoutLength == 3);
 
   float playoutScore = 0;
   for (int i = 0; i < playoutCount; i++) {
     // Do one playout
-    const int *pieceSequence = canonicalPieceSequences + (pieceOffset + i) * SEQUENCE_LENGTH; // Index into the mega array of piece sequences;
+    const int *pieceSequence = useExhaustiveSequences 
+          ? exhaustivePieceSequences + i * EXHAUSTIVE_SEQUENCE_LENGTH // Index into the exhaustive list of possible sequences;
+          : canonicalPieceSequences + (pieceOffset + i) * SEQUENCE_LENGTH; // Index into the mega array of randomly-generated piece sequences;
     float resultScore = playSequence(gameState, pieceRangeContextLookup, pieceSequence, playoutLength, playoutDataList);
     playoutScore += resultScore;
   }

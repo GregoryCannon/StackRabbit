@@ -39,5 +39,6 @@
 #define LOCK_POSITION_REPEAT_CAP 3
 #define SEMI_HOLE_PROPORTION 0.6f // Value used for things that are sort of like holes but not fully (tuck setups, unfilled wells while digging)
 #define SEQUENCE_LENGTH 20
+#define EXHAUSTIVE_SEQUENCE_LENGTH 3
 
 #endif
