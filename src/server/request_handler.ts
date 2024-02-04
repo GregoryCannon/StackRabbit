@@ -20,6 +20,12 @@ const cModule = require("../../../build/Release/cRabbit");
 const mainApp = require("./main");
 const params = require("./params");
 
+function sleep(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
 export class RequestHandler {
   preComputeManager: PreComputeManager;
   asyncCallInProgress: boolean;
@@ -40,7 +46,8 @@ export class RequestHandler {
     this._wrapAsync = this._wrapAsync.bind(this);
   }
 
-  routeRequest(req): [string, number] {
+  // Returns [string (result data), number (http code)]
+  async routeRequest(req) {
     let requestArgsFull = req.url.slice(1); // Remove initial slash
     requestArgsFull = decodeURI(requestArgsFull); // Decode URL artifacts, e.g. %20
     requestArgsFull = requestArgsFull.replace(/\s/g, ""); // Remove spaces
@@ -129,6 +136,16 @@ export class RequestHandler {
           this.handlePrecomputeRequest(searchState, urlArgs)
         );
 
+      case "precompute-sync":
+        if (!this.preComputeManager) {
+          return [
+            "Precompute requests are not supported on this server instance.",
+            200,
+          ];
+        }
+        const result = await this.handlePrecomputeRequestSync(searchState, urlArgs);
+        return [result, 200];
+
       case "version":
         return [
           JSON.stringify({
@@ -149,7 +166,7 @@ export class RequestHandler {
   _wrapAsync(func): [string, number] {
     const execute = async function () {
       // Wait 1ms to ensure that this is called async
-      await new Promise((resolve) => setTimeout(resolve, 1));
+      await sleep(1);
       const result = func();
       if (result !== undefined) {
         this.asyncResult = result;
@@ -402,6 +419,29 @@ export class RequestHandler {
         this.asyncCallInProgress = false;
       }.bind(this)
     );
+  }
+
+  /**
+   * Runs a standard precompute request (as for live-games), but returns the result synchronously.
+   * @param searchState 
+   * @param urlArgs 
+   * @returns 
+   */
+  async handlePrecomputeRequestSync(searchState: SearchState, urlArgs: UrlArguments) {
+    if (!this.preComputeManager) {
+      return;
+    }
+    // Manually set these variables in lieu of _wrapAsync()
+    this.asyncCallInProgress = true;
+    this.asyncResult = null;
+    this.partialResult = null;
+
+    this.handlePrecomputeRequest(searchState, urlArgs);
+    // Check on the async task for completion every 10 ms
+    while(this.asyncCallInProgress){
+      await sleep(10);
+    }
+    return this.asyncResult;
   }
 
   handleRankLookup(urlArgs) {

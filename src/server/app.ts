@@ -23,7 +23,7 @@ function initExpressServer(requestHandler) {
     next();
   });
 
-  app.get("*", function (req: any, res: any) {
+  app.get("*", async function (req: any, res: any) {
     if (req.url == "/favicon.ico") {
       return res.end("");
     }
@@ -34,7 +34,7 @@ function initExpressServer(requestHandler) {
     // Main processing
     let response, responseCode;
     try {
-      [response, responseCode] = requestHandler.routeRequest(req);
+      [response, responseCode] = await requestHandler.routeRequest(req);
     } catch (err) {
       console.error(err);
       responseCode = 500; // Internal Server Error

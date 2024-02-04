@@ -22,8 +22,8 @@ export const IS_DROUGHT_MODE = false;
 export const LINE_CAP = NO_LIMIT;
 export const DOUBLE_KILLSCREEN_ENABLED = false;
 export const DEBUG_DOUBLE_KS_ALWAYS_ENABLED = false;
-export const CPP_LIVEGAME_PLAYOUT_COUNT = 200;
-export const CPP_LIVEGAME_PLAYOUT_LENGTH = 6;
+export const CPP_LIVEGAME_PLAYOUT_COUNT = 343;
+export const CPP_LIVEGAME_PLAYOUT_LENGTH = 3;
 
 // Rarely changed
 export const IS_PAL = false;
