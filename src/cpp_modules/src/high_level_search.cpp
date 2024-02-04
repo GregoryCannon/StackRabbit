@@ -174,6 +174,11 @@ LockLocation playOneMove(GameState gameState, const Piece *firstPiece, const Pie
     }
     numPlayedOut++;
   }
+
+  if (SHOULD_PLAY_PERFECT && bestPossibilityScore < 0.0001){
+    // Game is over
+    return {NONE, NONE, NONE};
+  }
   return bestLockLocation;
 }
 

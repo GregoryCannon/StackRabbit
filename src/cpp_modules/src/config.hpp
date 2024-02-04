@@ -2,7 +2,7 @@
 #define CONFIG
 
 // ROM configuration
-#define DOUBLE_KILLSCREEN_ENABLED 1
+#define DOUBLE_KILLSCREEN_ENABLED 0
 #define DEBUG_DOUBLE_KS_ALWAYS_ENABLED 0
 
 // Logging
@@ -25,7 +25,7 @@
 #define PLAY_SAFE_ON_KILLSCREEN 0
 #define ALWAYS_LINEOUT 0
 #define ALWAYS_LINEOUT_29 0
-#define SHOULD_PLAY_PERFECT 0
+#define SHOULD_PLAY_PERFECT 1
 
 // Engine API params
 #define NUM_TOP_ENGINE_MOVES 5

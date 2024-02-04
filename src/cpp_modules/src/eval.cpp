@@ -359,26 +359,22 @@ float evalForPerfectPlay(GameState gameState,
                          GameState newState,
                          LockPlacement lockPlacement,
                          const EvalContext *evalContext) {
+  // Check for burns
+  if (newState.lines != gameState.lines && newState.lines - gameState.lines != 4){
+    return 0; // 0% chance of survival since it's over
+  }
+
   // Check for holes or covered well
   float trueHoles = getNumTrueHoles(newState.adjustedNumHoles);
   float tuckSetupCells = (newState.adjustedNumHoles - trueHoles) / SEMI_HOLE_PROPORTION;
   bool hasCoveredWell = newState.surfaceArray[evalContext->wellColumn] > 0;
   bool inaccessibleRight = false;
-  for (int i = 5; i < 10; i++) {  // col 7 is the furthest right a 5 tap piece is on the board when tapped left
+  for (int i = 5; i < 10; i++) {
     if (newState.surfaceArray[i] > evalContext->pieceRangeContext.maxAccessibleRightSurface[i]) {
       inaccessibleRight = true;
     }
   }
-
   if (trueHoles > 0 || hasCoveredWell || inaccessibleRight) {
-    if (LOGGING_ENABLED) {
-      maybePrint("\nEvaluating possibility %d %d %d\n",
-                 lockPlacement.rotationIndex,
-                 lockPlacement.x - SPAWN_X,
-                 lockPlacement.y);
-      printBoard(newState.board);
-      printf("RUN FAILED\n");
-    }
     return 0;
   }
 
@@ -392,7 +388,7 @@ float evalForPerfectPlay(GameState gameState,
   badness += tuckSetupCells * 20;
 
   // Evaluate board height
-  badness += 20 * max(0.0f, getAverageHeight(newState.surfaceArray, evalContext->wellColumn) - 4);
+  badness += 8 * max(0.0f, getAverageHeight(newState.surfaceArray, evalContext->wellColumn) - 4);
 
   // Use a decaying exponential with the following key points:
   // 0 badness -> 100% survival

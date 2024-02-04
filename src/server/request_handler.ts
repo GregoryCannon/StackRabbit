@@ -177,7 +177,7 @@ export class RequestHandler {
       // Ping the CPP backend
       const encodedInputString = getCppEncodedInputString(searchState, urlArgs);
       const result = JSON.parse(cModule.getMove(encodedInputString));
-      const [rotation, xOffset] = result;
+      const [rotation, xOffset, yOffset] = result;
       console.log("RESULT: ", result);
 
       // Format it using Javascript stuff
@@ -196,7 +196,8 @@ export class RequestHandler {
       for (const possibility of possibilityList) {
         if (
           possibility.placement[0] === rotation &&
-          possibility.placement[1] === xOffset
+          possibility.placement[1] === xOffset && 
+          possibility.placement[2] === yOffset
         ) {
           const possibilityChain: PossibilityChain = {
             totalValue: -1,

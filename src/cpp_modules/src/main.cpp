@@ -155,7 +155,8 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
       LockLocation bestMove = playOneMove(startingGameState, curPiece, nextPiece, /* numCandidatesToPlayout */ DEPTH_1_PRUNING_BREADTH, playoutCount, playoutLength, &context, pieceRangeContextLookup);
       int xOffset = bestMove.x - 3;
       int rot = bestMove.rotationIndex;
-      return string_format("[%d, %d]", rot, xOffset);
+      int yOffset = bestMove.y - curPiece->initialY;
+      return string_format("[%d, %d, %d]", rot, xOffset, yOffset);
       // int debugSequence[SEQUENCE_LENGTH] = {curPiece->index};
       // playSequence(startingGameState, pieceRangeContextLookup, debugSequence, /* playoutLength= */ 1);
       // return "Debug playout complete.";

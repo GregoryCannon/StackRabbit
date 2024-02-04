@@ -63,6 +63,11 @@ float playSequence(GameState gameState, const PieceRangeContext pieceRangeContex
     // On the last move, do a final evaluation
     if (i == playoutLength - 1) {
       GameState nextState = advanceGameState(gameState, bestMove, evalContext);
+      
+      if (SHOULD_PLAY_PERFECT){
+        return evalForPerfectPlay(gameState, nextState, bestMove, evalContext);
+      }
+      
       EvalContext contextRaw = *evalContext;
       // In some contexts, override the current aiMode such that the end of a playout is always compared fairly against other playouts
       if (originalAiMode == DIG || originalAiMode == STANDARD){
@@ -77,10 +82,6 @@ float playSequence(GameState gameState, const PieceRangeContext pieceRangeContex
         printf("Final eval score: %01f\n", evalScore);
         printf("*** TOTAL= %f ***\n", totalReward + evalScore);
       }
-      if (SHOULD_PLAY_PERFECT && totalReward < 0){
-        return 0;
-      }
-
       if (trackPlayouts) {
         newPlayoutData.totalScore = totalReward + evalScore;
         copyBoard(nextState.board, newPlayoutData.resultingBoard);
@@ -92,11 +93,19 @@ float playSequence(GameState gameState, const PieceRangeContext pieceRangeContex
     // Otherwise, update the state to keep playing
     int oldLines = gameState.lines;
     gameState = advanceGameState(gameState, bestMove, evalContext);
-    FastEvalWeights rewardWeights = evalContext->aiMode == DIG ? getWeights(STANDARD) : weights; // When the AI is digging, still deduct from the overall value of the sequence at standard levels
-    totalReward += getLineClearFactor(gameState.lines - oldLines, rewardWeights, evalContext->shouldRewardLineClears);
-    if (PLAYOUT_LOGGING_ENABLED) {
-      printBoard(gameState.board);
-      printf("Best placement: %c %d, %d\n\n", bestMove.piece->id, bestMove.rotationIndex, bestMove.x - SPAWN_X);
+    
+    if (SHOULD_PLAY_PERFECT){
+      int lineDiff = gameState.lines - oldLines;
+      if (lineDiff != 0 && lineDiff != 4){
+        return 0; // 0% chance of continuing perfect
+      }
+    } else {
+      FastEvalWeights rewardWeights = evalContext->aiMode == DIG ? getWeights(STANDARD) : weights; // When the AI is digging, still deduct from the overall value of the sequence at standard amounts
+      totalReward += getLineClearFactor(gameState.lines - oldLines, rewardWeights, evalContext->shouldRewardLineClears);
+      if (PLAYOUT_LOGGING_ENABLED) {
+        printBoard(gameState.board);
+        printf("Best placement: %c %d, %d\n\n", bestMove.piece->id, bestMove.rotationIndex, bestMove.x - SPAWN_X);
+      }
     }
   }
   return -1; // Doesn't reach here, always returns from i == 9 case
