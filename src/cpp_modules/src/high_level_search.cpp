@@ -379,7 +379,7 @@ std::string getLockValueLookupEncoded(GameState gameState, const Piece *firstPie
   if (SHOULD_PLAY_PERFECT){
     float baseEval = fastEval(gameState, gameState, /* lockPlacement */ { NO_PLACEMENT }, evalContext);
     if (baseEval == 0){
-      printf("Already dead, aborting...");
+      printf("Already dead, aborting...\n");
       return "{}";
     }
   }

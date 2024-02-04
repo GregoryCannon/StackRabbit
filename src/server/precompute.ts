@@ -122,7 +122,6 @@ export class PreComputeManager {
       const nextPieceId = POSSIBLE_NEXT_PIECES[i];
 
       const argsData: WorkerDataArgs = {
-        computationType: "finesse",
         piece: nextPieceId,
         newSearchState: { ...searchState, nextPieceId },
         initialAiParams,
@@ -140,71 +139,6 @@ export class PreComputeManager {
       inputFrameTimeline
     );
     this._precompileAdjustmentMoves();
-  }
-
-  precompute(
-    searchState: SearchState,
-    shouldLog: boolean,
-    initialAiParams: InitialAiParams,
-    paramMods: ParamMods,
-    inputFrameTimeline: string,
-    onPartialResultCallback: Function,
-    onResultCallback: Function
-  ) {
-    console.time("PRECOMPUTE");
-    this.onResultCallback = onResultCallback;
-    this.results = {};
-    this.pendingResults = POSSIBLE_NEXT_PIECES.length;
-
-    // Get initial NNB placement
-    if (searchState.reactionTime === 0) {
-      this.defaultPlacement = null;
-    } else {
-      this.defaultPlacement = getBestMove(
-        searchState,
-        shouldLog,
-        initialAiParams,
-        paramMods,
-        inputFrameTimeline,
-        /* searchDepth= */ 1,
-        /* hypotheticalSearchDepth= */ 1
-      );
-      if (this.defaultPlacement === null) {
-        onResultCallback("No legal moves");
-        return;
-      }
-      // Send a response with just the default placement in case the other computation doesn't finish
-      const formattedResult = formatPrecomputeResult({}, this.defaultPlacement);
-      console.log(
-        "Saving partial result",
-        formatPossibility(this.defaultPlacement)
-      );
-      onPartialResultCallback(formattedResult);
-    }
-
-    // Ping the worker threads to compute all possible adjustments
-    const newSearchState =
-      searchState.reactionTime > 0
-        ? predictSearchStateAtAdjustmentTime(
-            searchState,
-            this.defaultPlacement.inputSequence,
-            inputFrameTimeline
-          )
-        : searchState;
-
-    for (let i = 0; i < POSSIBLE_NEXT_PIECES.length; i++) {
-      const nextPieceId = POSSIBLE_NEXT_PIECES[i];
-
-      const argsData: WorkerDataArgs = {
-        computationType: "standard",
-        piece: nextPieceId,
-        newSearchState: { ...newSearchState, nextPieceId },
-        initialAiParams,
-        paramMods,
-        inputFrameTimeline,
-      };
-      this.workers[THREAD_ASSIGNMENT[nextPieceId]].send(argsData);
-    }
   }
 
   _calculatePhantomPlacements(
@@ -271,15 +205,6 @@ export class PreComputeManager {
         break;
 
       case "result":
-        this.results[message.piece] = message.result;
-        this.pendingResults--;
-        // If all results are in, compile them and send back to parent
-        if (this.pendingResults == 0) {
-          this._compileResponse();
-        }
-        break;
-
-      case "result-finesse":
         // Save the partial result
         this.results[message.piece] = message.result;
         this.pendingResults--;

@@ -238,7 +238,6 @@ interface ParamMods {
 /* ------------ Messages for Worker Threads ------------ */
 
 interface WorkerDataArgs {
-  computationType: string; // Either 'finesse' or 'standard'
   piece: PieceId;
   newSearchState: SearchState;
   initialAiParams: InitialAiParams;
