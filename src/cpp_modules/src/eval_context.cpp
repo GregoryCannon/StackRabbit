@@ -31,8 +31,11 @@ int hasHoleBlockingTetrisReady(unsigned int board[20], int col10Height){
 
 /** Gets the number of holes that are holes and not tuck setups*/
 int getNumTrueHoles(float adjustedNumHoles){
-  while (std::abs(adjustedNumHoles - round(adjustedNumHoles)) > FLOAT_EPSILON) {
+  while (std::abs(adjustedNumHoles - round(adjustedNumHoles)) > 0.001) {
     adjustedNumHoles -= SEMI_HOLE_PROPORTION;
+  }
+  if (VARIABLE_RANGE_CHECKS_ENABLED && adjustedNumHoles < 0){
+    printf("ERROR: detected negative count of true holes");
   }
   return (int) adjustedNumHoles;
 }
@@ -110,7 +113,7 @@ const EvalContext getEvalContext(GameState gameState, const PieceRangeContext pi
   // Misc other properties
   context.maxDirtyTetrisHeight = 0;
   // context.countWellHoles = context.aiMode == DIG   // This turns out to not work in practice, it prevents filling the well to clear holes.
-  context.countWellHoles = SHOULD_PLAY_PERFECT;
+  context.countWellHoles = false;
   context.shouldRewardLineClears = (aiMode == LINEOUT || aiMode == DIRTY_NEAR_KILLSCREEN);
 
   return context;
