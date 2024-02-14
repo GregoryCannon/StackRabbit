@@ -33,10 +33,10 @@ int simulateGame(char const *inputFrameTimeline, int startingLevel, int maxLines
 
   // Calculate global context for the 4 possible gravity values
   const PieceRangeContext pieceRangeContextLookup[4] = {
-    getPieceRangeContext(inputFrameTimeline.c_str(), 1, /* gravityDoubled= */ true),
-    getPieceRangeContext(inputFrameTimeline.c_str(), 1, /* gravityDoubled= */ false),
-    getPieceRangeContext(inputFrameTimeline.c_str(), 2, /* gravityDoubled= */ false),
-    getPieceRangeContext(inputFrameTimeline.c_str(), 3, /* gravityDoubled= */ false),
+    getPieceRangeContext(inputFrameTimeline, 1, /* gravityDoubled= */ true),
+    getPieceRangeContext(inputFrameTimeline, 1, /* gravityDoubled= */ false),
+    getPieceRangeContext(inputFrameTimeline, 2, /* gravityDoubled= */ false),
+    getPieceRangeContext(inputFrameTimeline, 3, /* gravityDoubled= */ false),
   };
   int score = 0;
   int numMoves = 0;

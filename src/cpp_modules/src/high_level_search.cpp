@@ -344,8 +344,12 @@ std::string getTopMoveList(GameState gameState, const Piece *firstPiece, const P
     float overallScore = possibility.immediateReward 
           + getPlayoutScore(possibility.resultingState, playoutCount, playoutLength, pieceRangeContextLookup, lastSeenPiece->index, &playoutDataList);
 
+    // If this position has no legal playouts, ignore it
+    if (playoutDataList.size() == 0){
+      continue;
+    }
     // Pick 7 playouts from the sorted playout list
-    int len = playoutDataList.size();
+    int len = (int) playoutDataList.size();
     EngineMoveData newMoveData = {
       possibility.firstPlacement,
       possibility.secondPlacement,
