@@ -95,8 +95,7 @@ float playSequence(GameState gameState, const PieceRangeContext pieceRangeContex
     gameState = advanceGameState(gameState, bestMove, evalContext);
     
     if (SHOULD_PLAY_PERFECT){
-      int lineDiff = gameState.lines - oldLines;
-      if (lineDiff != 0 && lineDiff != 4){
+      if ((gameState.lines - oldLines) % 4 != 0){
         return 0; // 0% chance of continuing perfect
       }
     } else {

@@ -361,7 +361,7 @@ float evalForPerfectPlay(GameState gameState,
                          const EvalContext *evalContext) {
   // Check for burns
   if (newState.lines != gameState.lines && newState.lines - gameState.lines != 4){
-    return 0; // 0% chance of survival since it's over
+    return -1; // 0% chance of survival since it's over
   }
 
   // Check for holes or covered well

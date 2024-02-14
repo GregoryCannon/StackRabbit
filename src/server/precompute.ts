@@ -47,8 +47,7 @@ export class PreComputeManager {
     // Callbacks to notify parent
     this.onResultCallback = null;
     this.onReadyCallback = null;
-    // The results to calculate
-    this.defaultPlacement = null;
+    // The results from the worker threads
     this.results = {};
     // Helper variables only used with finesse
     this.phantomPlacements = null;
@@ -102,17 +101,17 @@ export class PreComputeManager {
       /* searchDepth= */ 1,
       /* hypotheticalSearchDepth= */ 0
     );
-    this.defaultPlacement = possibleMoves[0] || null;
-    if (this.defaultPlacement === null) {
+    const defaultPlacement = possibleMoves[0] || null;
+    if (defaultPlacement === null) {
       onResultCallback("No legal moves");
       return;
     }
 
     // Send a response with just the default placement in case the other computation doesn't finish
-    const formattedResult = formatPrecomputeResult({}, this.defaultPlacement);
+    const formattedResult = formatPrecomputeResult({}, defaultPlacement);
     console.log(
       "Saving partial result",
-      formatPossibility(this.defaultPlacement)
+      formatPossibility(defaultPlacement)
     );
     onPartialResultCallback(formattedResult);
 
@@ -222,19 +221,6 @@ export class PreComputeManager {
     }
   }
 
-  _compileResponse() {
-    console.timeEnd("PRECOMPUTE");
-    const formattedResult = formatPrecomputeResult(
-      this.results,
-      this.defaultPlacement
-    );
-    if (this.onResultCallback === null) {
-      throw new Error("No result callback provided");
-    }
-    // console.log(formattedResult);
-    this.onResultCallback(formattedResult);
-  }
-
   _precompileAdjustmentMoves() {
     console.time("Get adjustment moves");
     for (const phantomPlacement of this.phantomPlacements) {
@@ -279,12 +265,13 @@ export class PreComputeManager {
 
   _compileResponseFinesse() {
     // console.log("STARTING COLLAPSE");
-    console.time("COLLAPSE");
-    let overallResponse: string = formatPrecomputeResult(
-      {},
-      this.defaultPlacement
-    );
 
+    let overallResponse: string = "No legal moves";
+    // if (this.results['I'].abort){
+    //   return this.onResultCallback(overallResponse);
+    // }
+
+    console.time("COLLAPSE");
     let bestPhantomPlacementValue = Number.MIN_SAFE_INTEGER;
     for (const phantomPlacement of this.phantomPlacements) {
       let totalValue = 0;

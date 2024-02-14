@@ -27,7 +27,7 @@ const FastEvalWeights MAIN_WEIGHTS = {
 const FastEvalWeights PLAY_PERFECT_WEIGHTS = {
   /* avgHeightCoef= */ 0,
   /* builtOutLeftCoef= */ 0,
-  /* burnCoef= */ -50,
+  /* burnCoef= */ -1000,
   /* coveredWellCoef= */ 0,
   /* col9Coef= */ 0,
   /* deathCoef= */ 0,
@@ -153,8 +153,6 @@ FastEvalWeights getWeights(AiMode mode){
       return DIRTY_NEAR_KILLSCREEN_WEIGHTS;
     case LINEOUT:
       return LINEOUT_WEIGHTS;
-    case PLAY_PERFECT:
-      return PLAY_PERFECT_WEIGHTS;
     case STANDARD:
       return MAIN_WEIGHTS;
     default:

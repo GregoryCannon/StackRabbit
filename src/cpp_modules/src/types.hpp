@@ -1,7 +1,7 @@
 #ifndef TYPES
 #define TYPES
 
-#define FLOAT_EPSILON 0.000001
+#define FLOAT_EPSILON 0.0001
 
 // Generic "not applicable" value for unsigned ints
 #define NONE 999999999
@@ -98,7 +98,6 @@ enum AiMode {
   LINEOUT,
   NEAR_KILLSCREEN,
   DIRTY_NEAR_KILLSCREEN,
-  PLAY_PERFECT
 };
 
 /**

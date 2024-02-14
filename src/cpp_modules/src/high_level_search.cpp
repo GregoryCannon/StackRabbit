@@ -7,7 +7,7 @@
 #include "formatting.hpp"
 using namespace std;
 
-#define MAP_OFFSET 20000          // An offset to make any placement better than the default 0 in the map
+#define MAP_OFFSET 5000          // An offset to make any placement better than the default 0 in the map
 
 /**
  * Performs a partial insertion sort such that the highest N elements of the list are guaranteed to be sorted and kept at the front of the list.
@@ -64,6 +64,9 @@ int searchDepth1(GameState gameState, const Piece *firstPiece, int keepTopN, con
     LockPlacement firstPlacement = *it;
 
     GameState resultingState = advanceGameState(gameState, firstPlacement, evalContext);
+    if (SHOULD_PLAY_PERFECT && ((resultingState.lines - gameState.lines) % 4) != 0) {
+      continue; // While playing perfect, ignore any placements that burn lines
+    }
     float reward = getLineClearFactor(resultingState.lines - gameState.lines, evalContext->weights, evalContext->shouldRewardLineClears);
     float evalScoreInclReward = fastEval(gameState, resultingState, firstPlacement, evalContext);
 
@@ -92,6 +95,9 @@ int searchDepth2(GameState gameState, const Piece *firstPiece, const Piece *seco
     maybePrint("\n\n\n\nNEW FIRST MOVE: rot=%d x=%d\n", firstPlacement.rotationIndex, firstPlacement.x);
 
     GameState afterFirstMove = advanceGameState(gameState, firstPlacement, evalContext);
+    if (SHOULD_PLAY_PERFECT && ((afterFirstMove.lines - gameState.lines) % 4) != 0) {
+      continue; // While playing perfect, ignore any placements that burn lines
+    }
     for (int i = 0; i < 19; i++) {
       maybePrint("%d ", (afterFirstMove.board[i] & ALL_TUCK_SETUP_BITS) >> 20);
     }
@@ -108,6 +114,9 @@ int searchDepth2(GameState gameState, const Piece *firstPiece, const Piece *seco
 
     for (auto secondPlacement : secondLockPlacements) {
       GameState resultingState = advanceGameState(afterFirstMove, secondPlacement, evalContext);
+      if (SHOULD_PLAY_PERFECT && ((resultingState.lines - afterFirstMove.lines) % 4) != 0) {
+        continue; // While playing perfect, ignore any placements that burn lines
+      }
       float evalScore = firstMoveReward + fastEval(afterFirstMove, resultingState, secondPlacement, evalContext);
       float secondMoveReward = getLineClearFactor(resultingState.lines - afterFirstMove.lines, evalContext->weights, evalContext->shouldRewardLineClears);
 
@@ -159,11 +168,6 @@ LockLocation playOneMove(GameState gameState, const Piece *firstPiece, const Pie
       break;
     }
     float overallScore = possibility.immediateReward + getPlayoutScore(possibility.resultingState, playoutCount, playoutLength, pieceRangeContextLookup, lastSeenPiece->index, /* playoutDataList */ NULL);
-
-    // if (SHOULD_PLAY_PERFECT){
-    //  overallScore = std::max(0.0f, overallScore); // 0 is the lowest possible eval score in the "play perfect" system
-    //  overallScore = std::min(100.0f, overallScore); // 100 is the max possible eval score in the "play perfect" system
-    // }
 
     maybePrint("Possibility %d %d has overallscore %f %f\n", possibility.firstPlacement.rotationIndex, possibility.firstPlacement.x - 3, overallScore, possibility.evalScoreInclReward);
 
@@ -376,14 +380,6 @@ std::string getLockValueLookupEncoded(GameState gameState, const Piece *firstPie
   // Keep twice as many as we'll eventually need, since some duplicates may be removed before playouts start
   int numSorted = keepTopN * 2;
   
-  if (SHOULD_PLAY_PERFECT){
-    float baseEval = fastEval(gameState, gameState, /* lockPlacement */ { NO_PLACEMENT }, evalContext);
-    if (baseEval == 0){
-      printf("Already dead, aborting...\n");
-      return "{}";
-    }
-  }
-
   // Get the list of evaluated possibilities
   list<Possibility> possibilityList;
   list<Possibility> sortedList;
@@ -402,18 +398,9 @@ std::string getLockValueLookupEncoded(GameState gameState, const Piece *firstPie
     }
     lockValueRepeatMap[lockPosEncoded] += 1;
 
-    // if (shouldPlayout){
-    //   printf("Doing playout for: %s %s\n", encodeLockPosition(possibility.firstPlacement).c_str(), encodeLockPosition(possibility.secondPlacement).c_str());
-    // }
-
     float overallScore = MAP_OFFSET + (shouldPlayout
        ? possibility.immediateReward + getPlayoutScore(possibility.resultingState, playoutCount, playoutLength, pieceRangeContextLookup, secondPiece->index, /* playoutDataList */ NULL)
-       : evalContext->weights.deathCoef);
-
-//    if (SHOULD_PLAY_PERFECT){
-//      overallScore = std::max(MAP_OFFSET + 0.0f, overallScore); // 0 is the lowest possible eval score in the "play perfect" system
-//      overallScore = std::min(MAP_OFFSET + 100.0f, overallScore); // 100 is the max possible eval score in the "play perfect" system
-//    }
+       : (SHOULD_PLAY_PERFECT ? 0 : evalContext->weights.deathCoef));
     
     if (overallScore > lockValueMap[lockPosEncoded]) {
       if (PLAYOUT_LOGGING_ENABLED || PLAYOUT_RESULT_LOGGING_ENABLED) {
@@ -435,11 +422,18 @@ std::string getLockValueLookupEncoded(GameState gameState, const Piece *firstPie
 
   // Encode lookup to JSON
   std::string mapEncoded = std::string("{");
+  // float globalMax = 0; // Only used for perfect play
   for( const auto& n : lockValueMap ) {
     char mapEntryBuf[30];
     sprintf(mapEntryBuf, "\"%s\":%.2f,", n.first.c_str(), n.second - MAP_OFFSET);
     mapEncoded.append(mapEntryBuf);
+    // if (SHOULD_PLAY_PERFECT){
+    //   globalMax = std::max(globalMax, n.second - MAP_OFFSET);
+    // }
   }
+  // if (SHOULD_PLAY_PERFECT && globalMax < FLOAT_EPSILON){
+  //   return "{\"abort\": true}";
+  // }
   if (lockValueMap.size() > 0) {
     mapEncoded.pop_back(); // Remove the last comma
   }
