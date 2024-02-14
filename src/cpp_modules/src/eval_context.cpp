@@ -34,8 +34,8 @@ int getNumTrueHoles(float adjustedNumHoles){
   while (std::abs(adjustedNumHoles - round(adjustedNumHoles)) > 0.001) {
     adjustedNumHoles -= SEMI_HOLE_PROPORTION;
   }
-  if (VARIABLE_RANGE_CHECKS_ENABLED && adjustedNumHoles < 0){
-    printf("ERROR: detected negative count of true holes");
+  if (VARIABLE_RANGE_CHECKS_ENABLED && adjustedNumHoles < -0.001){
+    printf("ERROR: detected negative count of true holes %f\n", adjustedNumHoles);
   }
   return (int) adjustedNumHoles;
 }
