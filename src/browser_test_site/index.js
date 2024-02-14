@@ -3,6 +3,14 @@ const canvas = document.getElementById("canvas");
 const resultContainer = document.getElementById("results-container");
 const lineDisplay = document.getElementById("line-display");
 
+// CONFIG VARS
+const SHOW_BOARD_UI = false;
+const REACTION_TIME_FRAMES = 18;
+const USE_PRECOMPUTE = true;
+const INPUT_TIMELINE = "X.";
+const PLAYOUT_COUNT = 49;
+const PLAYOUT_LENGTH = 2;
+
 async function getRenderedMiniBoard(boardStr) {
     const squareSize = 10;
     // Create drawing canvas
@@ -56,7 +64,7 @@ function sleep(ms) {
   });
 }
 
-async function simulateGame(showBoardUi){
+async function simulateGame(showBoardUi, usePrecompute){
   // Initial Setup
   let boardStr = "";
   for (let i = 0; i < 200; i++) {
@@ -69,9 +77,10 @@ async function simulateGame(showBoardUi){
 
   while (true){
     const PIECES = ['I', 'O', 'L', 'J', 'T', 'S', 'Z'];
-    const reqStr = `http://localhost:3000/get-move-cpp?board=${boardStr}&currentPiece=${PIECES[curPieceIndex]}&nextPiece=${PIECES[nextPieceIndex]}&level=${level}&lines=${lines}&inputFrameTimeline=X.&playoutCount=49&playoutLength=2`;
 
-    // console.log(reqStr);
+    const reqStr = usePrecompute 
+      ? `http://localhost:3000/precompute-sync?board=${boardStr}&currentPiece=${PIECES[curPieceIndex]}&level=${level}&lines=${lines}&inputFrameTimeline=${INPUT_TIMELINE}&reactionTime=${REACTION_TIME_FRAMES}`
+      : `http://localhost:3000/get-move-cpp?board=${boardStr}&currentPiece=${PIECES[curPieceIndex]}&nextPiece=${PIECES[nextPieceIndex]}&level=${level}&lines=${lines}&inputFrameTimeline=${INPUT_TIMELINE}&playoutCount=${PLAYOUT_COUNT}&playoutLength=${PLAYOUT_LENGTH}`;
     const result = await fetch(reqStr).then(x => x.text());
 
     // Check for death
@@ -79,8 +88,23 @@ async function simulateGame(showBoardUi){
       await sleep(300);
       return lines;
     }
-    // console.log(result);
-    const [_, __, boardAfter, levelAfter, linesAfter] = result.split("|");
+
+    let boardAfter, levelAfter, linesAfter;
+    if (usePrecompute){
+      const rows = result.split("\n");
+      // console.log(rows);
+      resultRow = rows[nextPieceIndex + 1].split(":")[1]; // Offset by 1 for the default placement row;
+      if (resultRow == "No legal moves"){
+        resultRow = rows[0];
+      }
+      [_, __, boardAfter, levelAfter, linesAfter] = resultRow.split("|")
+    } else {
+      [_, __, boardAfter, levelAfter, linesAfter] = result.split("|")
+    }
+    // console.log("board", boardAfter);
+    // console.log("level", levelAfter);
+    // console.log("lines", linesAfter);
+
     if (showBoardUi){
       await getRenderedMiniBoard(boardAfter);
     }
@@ -99,7 +123,7 @@ async function simulateGame(showBoardUi){
 async function simulateGames(){
   let lineCounts = [];
   for (let i = 0; i < 100; i++){
-    const result = await simulateGame(/* showBoardUi= */ false);
+    const result = await simulateGame(SHOW_BOARD_UI, USE_PRECOMPUTE);
     lineCounts.push(result);
     resultContainer.innerHTML += "<br/>" + result;
   }
