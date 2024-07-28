@@ -45,7 +45,7 @@ Then there are two components of the backend:
 
 6. **Setup FCEUX**:
    - Open the FCEUX folder.
-   - Add all `.lua` files (excluding `itn12.lua`, `mime.lua`, and `socket.lua`, put them in `C:/path/to/fceux/lua`) from the [Luasocket repository](https://github.com/lunarmodules/luasocket) to `C:/path/to/fceux/lua/socket/`. (if there is no `lua` folder, create it)
+   - Add all `.lua` files (excluding `itn12.lua`, `mime.lua`, and `socket.lua`, put them in `C:/path/to/fceux/lua`) from the [Luasocket repository](https://github.com/lunarmodules/luasocket) to `C:/path/to/fceux/lua/socket/`. (if there is no `lua` folder, create it and the socket folder inside)
 
 7. **Load Tetris ROM**:
    - In FCEUX, click `File > Open` and select the Tetris ROM.
