@@ -168,14 +168,14 @@ function getDifficultyToFillCell(
   }
   // Check for a line dependency in that column
   const thisCol = surfaceArray[col];
-  const prevCol = surfaceArray[col - 1] || 999;
-  const nextCol = surfaceArray[col + 1] || 999;
+  const prevCol = surfaceArray[col - 1] ?? 999;
+  const nextCol = surfaceArray[col + 1] ?? 999;
   if (prevCol - thisCol >= 3 && nextCol - thisCol >= 3) {
     return 10;
   }
   // Otherwise check for 2-wide dependencies in that column
-  const prevPrevCol = surfaceArray[col - 2] || 999;
-  const nextNextCol = surfaceArray[col + 2] || 999;
+  const prevPrevCol = surfaceArray[col - 2] ?? 999;
+  const nextNextCol = surfaceArray[col + 2] ?? 999;
   if (
     Math.max(prevCol, prevPrevCol) - thisCol >= 2 &&
     Math.max(nextNextCol, nextCol) - thisCol >= 2
