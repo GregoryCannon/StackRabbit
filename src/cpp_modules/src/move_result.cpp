@@ -68,7 +68,12 @@ std::pair<int, float> getNewSurfaceAndNumNewHoles(int surfaceArray[10],
   unsigned int const *topSurface = lockPlacement.piece->topSurfaceByRotation[lockPlacement.rotationIndex];
   for (int i = 0; i < 4; i++) {
     if (topSurface[i] != NONE) {
-      newSurface[lockPlacement.x + i] = 20 - topSurface[i] - lockPlacement.y;
+      int newHeight = 20 - topSurface[i] - lockPlacement.y;
+      // VARIABLE RANGE CHECKS
+      if (newHeight > 20){
+        newHeight = 20;
+      }
+      newSurface[lockPlacement.x + i] = newHeight;
     }
   }
   
@@ -76,10 +81,6 @@ std::pair<int, float> getNewSurfaceAndNumNewHoles(int surfaceArray[10],
   if (isTuck){
     for (int i = 0; i < 10; i++){
       newSurface[i] = std::max(surfaceArray[i], newSurface[i]);
-      // VARIABLE_RANGE_CHECKS
-      if (newSurface[i] > 20){
-        newSurface[i] = 20;
-      }
     }
   }
 
@@ -129,13 +130,12 @@ std::pair<int, float> getNewSurfaceAndNumNewHoles(int surfaceArray[10],
     }
 
     // Mark rows as needing to be cleared
-//    maybePrint("marking needToClear (column %d): start row = %d, surface = %d\n", c, holeWeightStartRow, 20 - newSurface[c]);
+    // maybePrint("marking needToClear (column %d): start row = %d, surface = %d\n", c, holeWeightStartRow, 20 - newSurface[c]);
     if (holeWeightStartRow != -1){
       for (int r = holeWeightStartRow; r >= 20 - newSurface[c]; r--) {
         if (VARIABLE_RANGE_CHECKS_ENABLED && (r < 0 || r >= 20)){
-          break;
           printf("R value out of range %d %d\n", r, newSurface[c]);
-          // return pair<int, float>(numNewTrueHoles, numNewPartialHoles);
+          break;
           // throw std::invalid_argument( "r value out of range" );
         }
         if (!(board[r] & HOLE_BIT(c))) {
@@ -190,6 +190,11 @@ std::pair<int, float> updateSurfaceAndHoles(int surfaceArray[10], unsigned int b
     }
     // Mark rows as needing to be cleared
     for (int r = lowestHoleInCol - 1; r >= 20 - surfaceArray[c]; r--) {
+      if (VARIABLE_RANGE_CHECKS_ENABLED && (r < 0 || r >= 20)){
+        printf("R value out of range %d\n", r);
+        break;
+        // throw std::invalid_argument( "r value out of range" );
+      }
       board[r] |= HOLE_WEIGHT_BIT;
     }
   }
@@ -267,8 +272,6 @@ float adjustHoleCountAndBoardAfterTuck(unsigned int board[20], LockPlacement loc
 /** Gets the game state after completing a given move */
 GameState advanceGameState(GameState gameState, LockPlacement lockPlacement, const EvalContext *evalContext) {
   GameState newState = {{}, {}, gameState.numTrueHoles, gameState.numPartialHoles, gameState.lines, gameState.level};
-  int numNewTrueHoles = 0;
-  float numNewPartialHoles = 0;
   bool isTuck = lockPlacement.tuckInput != NO_TUCK_NOTATION;
   int numLinesCleared = getNewBoardAndLinesCleared(gameState.board, lockPlacement, newState.board);
   std::pair<int, float> initialResult =
