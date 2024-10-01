@@ -365,8 +365,7 @@ float evalForPerfectPlay(GameState gameState,
   }
 
   // Check for holes or covered well
-  float trueHoles = getNumTrueHoles(newState.adjustedNumHoles);
-  float tuckSetupCells = (newState.adjustedNumHoles - trueHoles) / SEMI_HOLE_PROPORTION;
+  float tuckSetupCells = newState.numPartialHoles;
   bool hasCoveredWell = newState.surfaceArray[evalContext->wellColumn] > 0;
   bool inaccessibleRight = false;
   for (int i = 5; i < 10; i++) {
@@ -374,7 +373,7 @@ float evalForPerfectPlay(GameState gameState,
       inaccessibleRight = true;
     }
   }
-  if (trueHoles > 0 || hasCoveredWell || inaccessibleRight) {
+  if (newState.numTrueHoles > 0 || hasCoveredWell || inaccessibleRight) {
     return 0;
   }
 
@@ -406,7 +405,7 @@ float evalForPerfectPlay(GameState gameState,
                lockPlacement.x - SPAWN_X,
                lockPlacement.y);
     printBoard(newState.board);
-    printf("Numholes %f\n", newState.adjustedNumHoles);
+    printf("Numholes %f\n", newState.numTrueHoles);
     maybePrint(
       "badness %01f, evalScore %01f\n",
       badness,
@@ -438,7 +437,7 @@ float fastEval(GameState gameState,
   float guaranteedBurnsFactor = weights.burnCoef * getGuaranteedBurnsFactor(newState.board, evalContext->wellColumn);
   float likelyBurnsFactor = weights.burnCoef * getLikelyBurnsFactor(newState.surfaceArray, evalContext->wellColumn, evalContext->maxSafeCol9);
   float highCol9Factor = weights.col9Coef * getCol9Factor(newState.surfaceArray[8], evalContext->maxSafeCol9);
-  float holeFactor = weights.holeCoef * newState.adjustedNumHoles;
+  float holeFactor = weights.holeCoef * (newState.numTrueHoles + newState.numPartialHoles);
   float holeWeightFactor = abs(weights.holeWeightCoef) > FLOAT_EPSILON ? weights.holeWeightCoef * getHoleWeightFactor(newState.board, evalContext->wellColumn) : 0;
   float inaccessibleLeftFactor = isKillscreenLineout
               ? 0
@@ -485,7 +484,7 @@ float fastEval(GameState gameState,
     }
     maybePrint("%d\n", (newState.board[19] & HOLE_WEIGHT_BIT) > 0);
 
-    printf("Numholes %f\n", newState.adjustedNumHoles);
+    printf("Numholes %f\n", newState.numTrueHoles);
     maybePrint("AiMode %d\n", evalContext->aiMode);
     maybePrint(
       "Surface %01f, LeftSurface %01f, AvgHeight %01f, LineClear %01f, Hole %01f, HoleWeight %01f, GuaranteedBurns %01f, LikelyBurns %01f, InaccLeft %01f, CoveredWell %01f, HighCol9 %01f, TetrisReady %01f, BuiltLeft %01f, UnableToBrn %01f,\t Total: %01f\n",

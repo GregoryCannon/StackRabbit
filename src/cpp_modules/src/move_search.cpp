@@ -11,8 +11,6 @@
 #include "types.hpp"
 using namespace std;
 
-#define NO_TUCK_NOTATION '.'
-
 /**
  * Checks for collisions with the board and the edges of the screen
  */
@@ -506,7 +504,8 @@ int testAdjustmentSearch(int testCase[4]){
   GameState gameState = {
     {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1022, 1022, 1022},
     /* surfaceArray= */ {},
-    /* adjustedNumHoles= */ 0,
+    /* numTrueHoles= */ 0,
+    /* numPartialHoles= */ 0,
     /* lines= */ 0,
     /* level= */ 18
   };

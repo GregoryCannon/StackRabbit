@@ -390,6 +390,17 @@ std::string getLockValueLookupEncoded(GameState gameState, const Piece *firstPie
   searchDepth2(gameState, firstPiece, secondPiece, numSorted, evalContext, possibilityList);
   partiallySortPossibilityList(possibilityList, numSorted, sortedList);
 
+  // If no playouts, just use the eval
+  if (playoutCount * playoutLength == 0){
+    for (Possibility const& possibility : sortedList) {
+      string lockPosEncoded = encodeLockPosition(possibility.firstPlacement);
+      float overallScore = MAP_OFFSET + possibility.evalScoreInclReward;
+      if (overallScore > lockValueMap[lockPosEncoded]) {
+        lockValueMap[lockPosEncoded] = overallScore;
+      }
+    }
+  }
+
   // Perform playouts on the promising possibilities
   int i = 0;
   int numPlayedOut = 0;

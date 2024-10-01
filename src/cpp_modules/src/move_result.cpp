@@ -1,5 +1,6 @@
 #include "move_result.hpp"
 #include <stdexcept>
+#include <utility>
 
 /**
  * Rates a hole from 0 to 1 based on how bad it is.
@@ -10,17 +11,32 @@ float analyzeHole(unsigned int board[20], int r, int c, int excludeHolesColumn){
   if (true && (r < 0 || r >= 20)){
     printf("PANIK B, r=%d\n", r);
   }
-  // Check if it's a tuck setup
-  if (
-    CAN_TUCK && 
-    (
-      (c >= 2 && ((board[r] >> (9-c)) & 7) == 0) ||   // left side tuck (2 cells of open space)
-      (c <= 7 && ((board[r] >> (7-c)) & 7) == 0))      // right side tuck (2 cells of open space)
-    ) {
-    // printf("MARKING TUCK SETUP %d %d, %d\n", c, r, board[r] >> 20);
-    board[r] |= TUCK_SETUP_BIT(c); // Mark this cell as an overhang cell
-    // printf("After mark: %d\n", board[r] >> 20);
-    return SEMI_HOLE_PROPORTION;
+  if (CAN_TUCK){
+    // Check for tucks
+    if (c >= 4 && ((board[r] >> (9-c)) & 0b11111) == 0){
+      board[r] |= TUCK_SETUP_BIT(c); // Mark this cell as an overhang cell
+      return 0.2f; // Left side tuck, with ample space = 4+ pieces solve.
+    }
+    if (c >= 3 && ((board[r] >> (9-c)) & 0b1111) == 0){
+      board[r] |= TUCK_SETUP_BIT(c);
+      return 0.4f; // Left side tuck, with some space = generally 3+ pieces solve.
+    }
+    if (c >= 2 && ((board[r] >> (9-c)) & 0b111) == 0){
+      board[r] |= TUCK_SETUP_BIT(c);
+      return 0.7f; // Left side tuck, with minimal space = generally 1-piece solve.
+    }
+    if (c <= 5 && ((board[r] >> (5-c)) & 0b11111) == 0){
+      board[r] |= TUCK_SETUP_BIT(c);
+      return 0.15; // Right side tuck, with ample space = 4+ piece solve
+    }
+    if (c <= 6 && ((board[r] >> (6-c)) & 0b1111) == 0){
+      board[r] |= TUCK_SETUP_BIT(c);
+      return 0.35f; // Right side tuck, with some space = generally 3+ pieces solve.
+    }
+    if (c <= 7 && ((board[r] >> (7-c)) & 0b111) == 0){
+      board[r] |= TUCK_SETUP_BIT(c);
+      return 0.65f; // Right side tuck, with minimal space = 1-piece solve + spin option.
+    }
   }
   if (c == excludeHolesColumn) {
     if ((board[r] & ALL_HOLE_BITS) == 0){
@@ -38,7 +54,7 @@ float analyzeHole(unsigned int board[20], int r, int c, int excludeHolesColumn){
 }
 
 
-float getNewSurfaceAndNumNewHoles(int surfaceArray[10],
+std::pair<int, float> getNewSurfaceAndNumNewHoles(int surfaceArray[10],
                                   unsigned int board[20],
                                   LockPlacement lockPlacement,
                                   const EvalContext *evalContext,
@@ -68,7 +84,8 @@ float getNewSurfaceAndNumNewHoles(int surfaceArray[10],
   }
 
   // Check for new holes by comparing the bottom surface of the piece to the surface of the stack
-  float numNewHoles = 0;
+  int numNewTrueHoles = 0;
+  float numNewPartialHoles = 0;
   unsigned int const *bottomSurface = lockPlacement.piece->bottomSurfaceByRotation[lockPlacement.rotationIndex];
   for (int i = 0; i < 4; i++) {
     if (bottomSurface[i] == NONE) {
@@ -95,10 +112,13 @@ float getNewSurfaceAndNumNewHoles(int surfaceArray[10],
       if (r < highestBoardCellInCol){
         // Check for new holes
         float rating = analyzeHole(board, r, c, excludeHolesCol);
-        if (std::abs(rating - SEMI_HOLE_PROPORTION) > FLOAT_EPSILON) { // If it's NOT a tuck setup
+        if (rating == 1) {
+           // If it's a true hole
           holeWeightStartRow = r - 1;
+          numNewTrueHoles += 1;
+        } else {
+          numNewPartialHoles += rating;
         }
-        numNewHoles += rating;
       } else {
         // Check for existing holes that we're adding weight to
         if ((board[r] & HOLE_BIT(c))) {
@@ -113,9 +133,10 @@ float getNewSurfaceAndNumNewHoles(int surfaceArray[10],
     if (holeWeightStartRow != -1){
       for (int r = holeWeightStartRow; r >= 20 - newSurface[c]; r--) {
         if (VARIABLE_RANGE_CHECKS_ENABLED && (r < 0 || r >= 20)){
+          break;
           printf("R value out of range %d %d\n", r, newSurface[c]);
-          return numNewHoles;
-//          throw std::invalid_argument( "r value out of range" );
+          // return pair<int, float>(numNewTrueHoles, numNewPartialHoles);
+          // throw std::invalid_argument( "r value out of range" );
         }
         if (!(board[r] & HOLE_BIT(c))) {
           board[r] |= HOLE_WEIGHT_BIT;
@@ -124,7 +145,7 @@ float getNewSurfaceAndNumNewHoles(int surfaceArray[10],
     }
   }
 
-  return numNewHoles;
+  return pair<int, float>(numNewTrueHoles, numNewPartialHoles);
 }
 
 /**
@@ -133,12 +154,13 @@ float getNewSurfaceAndNumNewHoles(int surfaceArray[10],
  * @param excludeHolesColumn - a prespecified column to ignore holes in (usually the well). A value of -1 disables this behavior.
  * @returns the new hole count
  */
-float updateSurfaceAndHoles(int surfaceArray[10], unsigned int board[20], int excludeHolesColumn) {
+std::pair<int, float> updateSurfaceAndHoles(int surfaceArray[10], unsigned int board[20], int excludeHolesColumn) {
   // Reset hole and tuck setup bits
   for (int i = 0; i < 20; i++) {
     board[i] &= ~ALL_AUXILIARY_BITS;
   }
-  float numHoles = 0;
+  int numTrueHoles = 0;
+  float numPartialHoles = 0;
   for (int c = 0; c < 10; c++) {
     int mask = 1 << (9 - c);
     int r = 20 - surfaceArray[c];
@@ -157,10 +179,12 @@ float updateSurfaceAndHoles(int surfaceArray[10], unsigned int board[20], int ex
       if (!(board[r] & mask)) {
         float rating = analyzeHole(board, r, c, excludeHolesColumn);
         // Check that it's a hole (1.0) and not a tuck setup (eg. 0.9)
-        if (rating > SEMI_HOLE_PROPORTION + FLOAT_EPSILON) {
+        if (rating == 1){
           lowestHoleInCol = r;
+          numTrueHoles += 1;
+        } else {
+          numPartialHoles += rating;
         }
-        numHoles += rating;
       }
       r++;
     }
@@ -169,7 +193,7 @@ float updateSurfaceAndHoles(int surfaceArray[10], unsigned int board[20], int ex
       board[r] |= HOLE_WEIGHT_BIT;
     }
   }
-  return numHoles;
+  return pair<int, float>(numTrueHoles, numPartialHoles);
 }
 
 /**
@@ -242,23 +266,22 @@ float adjustHoleCountAndBoardAfterTuck(unsigned int board[20], LockPlacement loc
 
 /** Gets the game state after completing a given move */
 GameState advanceGameState(GameState gameState, LockPlacement lockPlacement, const EvalContext *evalContext) {
-  GameState newState = {{}, {}, gameState.adjustedNumHoles, gameState.lines, gameState.level};
-  float numNewHoles = 0;
-  int isTuck = lockPlacement.tuckFrame == -1;
-  // Post-process after tucks
-  // This has to happen before getNewBoardAndLinesCleared, which updates the tuck cell bits
-  if (isTuck) {
-    numNewHoles += adjustHoleCountAndBoardAfterTuck(gameState.board, lockPlacement);
-  }
+  GameState newState = {{}, {}, gameState.numTrueHoles, gameState.numPartialHoles, gameState.lines, gameState.level};
+  int numNewTrueHoles = 0;
+  float numNewPartialHoles = 0;
+  bool isTuck = lockPlacement.tuckInput != NO_TUCK_NOTATION;
   int numLinesCleared = getNewBoardAndLinesCleared(gameState.board, lockPlacement, newState.board);
-  numNewHoles +=
+  std::pair<int, float> initialResult =
     getNewSurfaceAndNumNewHoles(gameState.surfaceArray, newState.board, lockPlacement, evalContext, isTuck, OUT newState.surfaceArray);
-  // Post-process after line clears
-  if (numLinesCleared > 0) {
-    newState.adjustedNumHoles =
-      updateSurfaceAndHoles(newState.surfaceArray, newState.board, evalContext->countWellHoles ? -1 : evalContext->wellColumn);
+  if (numLinesCleared == 0 && gameState.numPartialHoles == 0){
+    // Use the initial result, since its predictions are reliable for boards with no holes or overhangs
+    newState.numTrueHoles += initialResult.first;
+    newState.numPartialHoles += initialResult.second;
   } else {
-    newState.adjustedNumHoles += numNewHoles;
+    // Recalculate the holes and overhangs from scratch
+    std::pair<int, float> recalcResult = updateSurfaceAndHoles(newState.surfaceArray, newState.board, evalContext->countWellHoles ? -1 : evalContext->wellColumn);
+    newState.numTrueHoles = recalcResult.first;
+    newState.numPartialHoles = recalcResult.second;
   }
 
   newState.lines += numLinesCleared;

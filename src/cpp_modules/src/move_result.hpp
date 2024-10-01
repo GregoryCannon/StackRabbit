@@ -4,7 +4,7 @@
 #include "types.hpp"
 #include "utils.hpp"
 
-float getNewSurfaceAndNumNewHoles(int surfaceArray[10],
+std::pair<int, float> getNewSurfaceAndNumNewHoles(int surfaceArray[10],
                                   unsigned int board[20],
                                   LockPlacement lockPlacement,
                                   const EvalContext *evalContext,
@@ -15,7 +15,7 @@ float getNewSurfaceAndNumNewHoles(int surfaceArray[10],
  * Manually finds the surface heights and holes after lines have been cleared (since usual prediction tricks don't apply).
  * @returns the new hole count
  */
-float updateSurfaceAndHoles(int surfaceArray[10], unsigned int board[20], int excludeHolesColumn);
+std::pair<int, float> updateSurfaceAndHoles(int surfaceArray[10], unsigned int board[20], int excludeHolesColumn);
 
 /**
  * Calculates the resulting board after placing a piece in a specified spot.
