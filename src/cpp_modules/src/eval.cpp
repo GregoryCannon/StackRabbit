@@ -405,7 +405,7 @@ float evalForPerfectPlay(GameState gameState,
                lockPlacement.x - SPAWN_X,
                lockPlacement.y);
     printBoard(newState.board);
-    printf("Numholes %f\n", newState.numTrueHoles);
+    printf("Numholes %d\n", newState.numTrueHoles);
     maybePrint(
       "badness %01f, evalScore %01f\n",
       badness,
@@ -484,7 +484,7 @@ float fastEval(GameState gameState,
     }
     maybePrint("%d\n", (newState.board[19] & HOLE_WEIGHT_BIT) > 0);
 
-    printf("Numholes %f\n", newState.numTrueHoles);
+    printf("Numholes %d\n", newState.numTrueHoles);
     maybePrint("AiMode %d\n", evalContext->aiMode);
     maybePrint(
       "Surface %01f, LeftSurface %01f, AvgHeight %01f, LineClear %01f, Hole %01f, HoleWeight %01f, GuaranteedBurns %01f, LikelyBurns %01f, InaccLeft %01f, CoveredWell %01f, HighCol9 %01f, TetrisReady %01f, BuiltLeft %01f, UnableToBrn %01f,\t Total: %01f\n",

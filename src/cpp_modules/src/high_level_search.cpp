@@ -440,7 +440,7 @@ std::string getLockValueLookupEncoded(GameState gameState, const Piece *firstPie
   // float globalMax = 0; // Only used for perfect play
   for( const auto& n : lockValueMap ) {
     char mapEntryBuf[30];
-    sprintf(mapEntryBuf, "\"%s\":%.2f,", n.first.c_str(), n.second - MAP_OFFSET);
+    snprintf(mapEntryBuf, 30, "\"%s\":%.2f,", n.first.c_str(), n.second - MAP_OFFSET);
     mapEncoded.append(mapEntryBuf);
     // if (SHOULD_PLAY_PERFECT){
     //   globalMax = std::max(globalMax, n.second - MAP_OFFSET);

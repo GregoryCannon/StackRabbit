@@ -26,7 +26,7 @@ std::string encodeLockPosition(LockLocation lockLocation){
     }
   }
   char buffer[10]; // 2 for separators, 1 for rotIndex, 2 for x, 2 for y, 3 for expect the unexpected
-  sprintf(buffer, "%d|%d|%d", lockLocation.rotationIndex, lockLocation.x, lockLocation.y);
+  snprintf(buffer, 10, "%d|%d|%d", lockLocation.rotationIndex, lockLocation.x, lockLocation.y);
   return string(buffer);
 }
 
@@ -36,7 +36,7 @@ std::string formatLockPosition(LockLocation lockLocation, int pieceInitialY) {
     return "null";
   }
   char buffer[12]; // 4 for separators, 1 for rotIndex, 2 for x, 2 for y, 3 for expect the unexpected
-  sprintf(buffer, "[%d,%d,%d]", lockLocation.rotationIndex, lockLocation.x - INITIAL_X, lockLocation.y - pieceInitialY);
+  snprintf(buffer, 12, "[%d,%d,%d]", lockLocation.rotationIndex, lockLocation.x - INITIAL_X, lockLocation.y - pieceInitialY);
   return string(buffer);
 }
 
@@ -113,7 +113,7 @@ std::string formatPlayout(PlayoutData playoutData){
   // Add the score
   output += " \"score\":";
   char scoreBuffer[10]; // 4 digits for LHS + 1 for decimal + 2 for RHS + 1 for sign + 2 for expect the unexpected
-  sprintf(scoreBuffer, "%.2f", playoutData.totalScore);
+  snprintf(scoreBuffer, 10, "%.2f", playoutData.totalScore);
   output += scoreBuffer;
   output += " }";
   return output;
@@ -143,7 +143,8 @@ std::string formatEngineMoveList(list<EngineMoveData> moveList, const Piece *fir
       output += formatLockPosition(move.secondPlacement, secondPiece->initialY);
     }
     char formattedMoveBuffer[70]; // Max length I got in my testing was 108 with for just the scores
-    sprintf(formattedMoveBuffer, 
+    snprintf(formattedMoveBuffer,
+        70,
         ", \"playoutScore\":%.2f, \"shallowEvalScore\":%.2f",
         move.playoutScore,
         move.evalScore
