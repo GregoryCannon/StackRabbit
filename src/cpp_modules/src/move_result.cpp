@@ -6,34 +6,73 @@
  * Rates a hole from 0 to 1 based on how bad it is.
  * --Side effect-- marks the hole or tuck setup in the board data structure
  */
-float analyzeHole(unsigned int board[20], int r, int c, int excludeHolesColumn){
+float analyzeHole(unsigned int board[20], int r, int c, int excludeHolesColumn, int surfaceArray[10]){
   // VARIABLE_RANGE_CHECKS_ENABLED
   if (true && (r < 0 || r >= 20)){
     printf("PANIK B, r=%d\n", r);
   }
   if (CAN_TUCK){
-    // Check for tucks
-    if (c >= 4 && ((board[r] >> (9-c)) & 0b11111) == 0){
+    if (c >= 4 
+        && ((board[r] >> (9-c)) & 0b11111) == 0
+        && (20 - surfaceArray[c-1] == r+1)
+        && (surfaceArray[c-2] == surfaceArray[c-1])
+        && (surfaceArray[c-3] == surfaceArray[c-2])
+        && (surfaceArray[c-4] == surfaceArray[c-3])){
       board[r] |= TUCK_SETUP_BIT(c); // Mark this cell as an overhang cell
       return 0.2f; // Left side tuck, with ample space = 4+ pieces solve.
     }
-    if (c >= 3 && ((board[r] >> (9-c)) & 0b1111) == 0){
+    if (c >= 3 
+        && ((board[r] >> (9-c)) & 0b1111) == 0
+        && (20 - surfaceArray[c-1] == r+1)
+        && (surfaceArray[c-2] == surfaceArray[c-1])
+        && (surfaceArray[c-3] == surfaceArray[c-2])){
       board[r] |= TUCK_SETUP_BIT(c);
-      return 0.4f; // Left side tuck, with some space = generally 3+ pieces solve.
+      return 0.35f; // Left side tuck, with some space = generally 3+ pieces solve.
     }
-    if (c >= 2 && ((board[r] >> (9-c)) & 0b111) == 0){
+    if (c >= 3 
+        && ((board[r] >> (9-c)) & 0b1111) == 0
+        && (20 - surfaceArray[c-1] > r+1)
+        && (surfaceArray[c-2] == surfaceArray[c-1])
+        && (surfaceArray[c-3] == surfaceArray[c-2])){
       board[r] |= TUCK_SETUP_BIT(c);
-      return 0.7f; // Left side tuck, with minimal space = generally 1-piece solve.
+      return 0.5f; // Left side tuck raised off the ground, with some space = generally 2 pieces solve.
     }
-    if (c <= 5 && ((board[r] >> (5-c)) & 0b11111) == 0){
+    if (c >= 2
+        && ((board[r] >> (9-c)) & 0b111) == 0
+        && (20 - surfaceArray[c-1] >= r+1)
+        && (20 - surfaceArray[c-2] >= r+1)){
       board[r] |= TUCK_SETUP_BIT(c);
-      return 0.15; // Right side tuck, with ample space = 4+ piece solve
+      return 0.75f; // Left side tuck, with minimal space = generally 1-piece solve.
     }
-    if (c <= 6 && ((board[r] >> (6-c)) & 0b1111) == 0){
+    if (c <= 5 
+        && ((board[r] >> (5-c)) & 0b11111) == 0
+        && (20 - surfaceArray[c+1] == r+1)
+        && (surfaceArray[c+2] == surfaceArray[c+1])
+        && (surfaceArray[c+3] == surfaceArray[c+2])
+        && (surfaceArray[c+4] == surfaceArray[c+3])){
       board[r] |= TUCK_SETUP_BIT(c);
-      return 0.35f; // Right side tuck, with some space = generally 3+ pieces solve.
+      return 0.1875; // Right side tuck, with ample space = 4+ piece solve
     }
-    if (c <= 7 && ((board[r] >> (7-c)) & 0b111) == 0){
+    if (c <= 6 
+        && ((board[r] >> (6-c)) & 0b1111) == 0
+        && (20 - surfaceArray[c+1] == r+1)
+        && (surfaceArray[c+2] == surfaceArray[c+1])
+        && (surfaceArray[c+3] == surfaceArray[c+2])){
+      board[r] |= TUCK_SETUP_BIT(c);
+      return 0.325f; // Right side tuck, with some space = generally 3+ pieces solve.
+    }
+    if (c <= 6 
+        && ((board[r] >> (6-c)) & 0b1111) == 0
+        && (20 - surfaceArray[c+1] > r+1)
+        && (surfaceArray[c+2] == surfaceArray[c+1])
+        && (surfaceArray[c+3] == surfaceArray[c+2])){
+      board[r] |= TUCK_SETUP_BIT(c);
+      return 0.45f; // Right side tuck raised off the ground, with some space = generally 2 pieces solve.
+    }
+    if (c <= 7
+        && ((board[r] >> (7-c)) & 0b111) == 0
+        && (20 - surfaceArray[c+1] >= r+1)
+        && (20 - surfaceArray[c+2] >= r+1)){
       board[r] |= TUCK_SETUP_BIT(c);
       return 0.65f; // Right side tuck, with minimal space = 1-piece solve + spin option.
     }
@@ -112,7 +151,7 @@ std::pair<int, float> getNewSurfaceAndNumNewHoles(int surfaceArray[10],
       }
       if (r < highestBoardCellInCol){
         // Check for new holes
-        float rating = analyzeHole(board, r, c, excludeHolesCol);
+        float rating = analyzeHole(board, r, c, excludeHolesCol, surfaceArray);
         if (rating == 1) {
            // If it's a true hole
           holeWeightStartRow = r - 1;
@@ -161,6 +200,8 @@ std::pair<int, float> updateSurfaceAndHoles(int surfaceArray[10], unsigned int b
   }
   int numTrueHoles = 0;
   float numPartialHoles = 0;
+  
+  // Calculate the new surface array first, since its value is used in subsequent calculations
   for (int c = 0; c < 10; c++) {
     int mask = 1 << (9 - c);
     int r = 20 - surfaceArray[c];
@@ -169,7 +210,12 @@ std::pair<int, float> updateSurfaceAndHoles(int surfaceArray[10], unsigned int b
     }
     // Update the new surface array
     surfaceArray[c] = 20 - r;
-
+  }
+  
+  // Update hole and tuck setup info
+  for (int c = 0; c < 10; c++) {
+    int mask = 1 << (9 - c);
+    int r = 20 - surfaceArray[c];
     // VARIABLE_RANGE_CHECKS
     r = max(0, r);
     r = min(20, r);
@@ -177,7 +223,7 @@ std::pair<int, float> updateSurfaceAndHoles(int surfaceArray[10], unsigned int b
     while (r < 20) {
       // Add new holes to the overall count, unless they're in the well
       if (!(board[r] & mask)) {
-        float rating = analyzeHole(board, r, c, excludeHolesColumn);
+        float rating = analyzeHole(board, r, c, excludeHolesColumn, surfaceArray);
         // Check that it's a hole (1.0) and not a tuck setup (eg. 0.9)
         if (rating == 1){
           lowestHoleInCol = r;
