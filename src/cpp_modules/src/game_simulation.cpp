@@ -23,7 +23,8 @@ int simulateGame(char const *inputFrameTimeline, int startingLevel, int maxLines
   GameState gameState = {
     /* board= */ {},
     /* surfaceArray= */ {},
-    /* adjustedNumHole= */ 0,
+    /* numTrueHole= */ 0,
+    /* numPartialHoles= */ 0,
     /* lines= */ 0,
     /* level= */ startingLevel
   };

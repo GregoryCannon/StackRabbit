@@ -29,17 +29,6 @@ int hasHoleBlockingTetrisReady(unsigned int board[20], int col10Height){
   return false;
 }
 
-/** Gets the number of holes that are holes and not tuck setups*/
-int getNumTrueHoles(float adjustedNumHoles){
-  while (std::abs(adjustedNumHoles - round(adjustedNumHoles)) > 0.001) {
-    adjustedNumHoles -= SEMI_HOLE_PROPORTION;
-  }
-  if (VARIABLE_RANGE_CHECKS_ENABLED && adjustedNumHoles < -0.001){
-    printf("ERROR: detected negative count of true holes %f\n", adjustedNumHoles);
-  }
-  return (int) adjustedNumHoles;
-}
-
 AiMode getAiMode(GameState gameState, int currentMax5TapHeight, int max5TapHeight29) {
   if ((ALWAYS_LINEOUT_29 && gameState.lines > 226) || currentMax5TapHeight < 4 || ALWAYS_LINEOUT) {
     return LINEOUT;
@@ -50,7 +39,7 @@ AiMode getAiMode(GameState gameState, int currentMax5TapHeight, int max5TapHeigh
     }
     return NEAR_KILLSCREEN;
   }
-  if (getNumTrueHoles(gameState.adjustedNumHoles) >= 1) {
+  if (gameState.numTrueHoles >= 1) {
     return DIG;
   }
   // // Optionally play very safe on killscreen

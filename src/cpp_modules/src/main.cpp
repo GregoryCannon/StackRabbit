@@ -40,7 +40,8 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
   GameState startingGameState = {
     /* board= */ {},
     /* surfaceArray= */ {},
-    /* adjustedNumHole= */ 0,
+    /* numTrueHoles */ 0,
+    /* numPartialHoles= */ 0,
     /* lines= */ 0,
     /* level= */ 0
   };
@@ -112,7 +113,9 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
     encodeBoard(secondBoardStr.c_str(), secondBoard);
   }
   getSurfaceArray(startingGameState.board, startingGameState.surfaceArray);
-  startingGameState.adjustedNumHoles = updateSurfaceAndHoles(startingGameState.surfaceArray, startingGameState.board, wellColumn);
+  std::pair<int, float> result = updateSurfaceAndHoles(startingGameState.surfaceArray, startingGameState.board, wellColumn);
+  startingGameState.numTrueHoles = result.first;
+  startingGameState.numPartialHoles = result.second;
 
   // Calculate global context for the 3 possible gravity values
   const PieceRangeContext pieceRangeContextLookup[4] = {
@@ -124,7 +127,9 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
   const EvalContext context = getEvalContext(startingGameState, pieceRangeContextLookup);
 
   // Recalculate holes once we have the eval context
-  startingGameState.adjustedNumHoles = updateSurfaceAndHoles(startingGameState.surfaceArray, startingGameState.board, context.countWellHoles ? -1 : context.wellColumn);
+  pair<int, float> result2 = updateSurfaceAndHoles(startingGameState.surfaceArray, startingGameState.board, context.countWellHoles ? -1 : context.wellColumn);
+  startingGameState.numTrueHoles = result2.first;
+  startingGameState.numPartialHoles = result2.second;
 
   if (LOGGING_ENABLED) {
     printBoard(startingGameState.board);

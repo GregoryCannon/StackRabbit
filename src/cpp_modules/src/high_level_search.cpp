@@ -390,37 +390,48 @@ std::string getLockValueLookupEncoded(GameState gameState, const Piece *firstPie
   searchDepth2(gameState, firstPiece, secondPiece, numSorted, evalContext, possibilityList);
   partiallySortPossibilityList(possibilityList, numSorted, sortedList);
 
-  // Perform playouts on the promising possibilities
-  int i = 0;
-  int numPlayedOut = 0;
-  for (Possibility const& possibility : sortedList) {
-    string lockPosEncoded = encodeLockPosition(possibility.firstPlacement);
-    // Cap the number of times a lock position can be repeated (despite differing second placements)
-    int shouldPlayout = i < numSorted && numPlayedOut < keepTopN && lockValueRepeatMap[lockPosEncoded] < 3;
-    if (PLAYOUT_LOGGING_ENABLED) {
-      printf("\n----%s, repeats %d, willPlay %d\n", lockPosEncoded.c_str(), lockValueRepeatMap[lockPosEncoded], shouldPlayout);
+  // If no playouts, just use the eval
+  if (playoutCount * playoutLength == 0){
+    for (Possibility const& possibility : sortedList) {
+      string lockPosEncoded = encodeLockPosition(possibility.firstPlacement);
+      float overallScore = MAP_OFFSET + possibility.evalScoreInclReward;
+      if (overallScore > lockValueMap[lockPosEncoded]) {
+        lockValueMap[lockPosEncoded] = overallScore;
+      }
     }
-    lockValueRepeatMap[lockPosEncoded] += 1;
+  } else {
+    // Perform playouts on the promising possibilities
+    int i = 0;
+    int numPlayedOut = 0;
+    for (Possibility const& possibility : sortedList) {
+      string lockPosEncoded = encodeLockPosition(possibility.firstPlacement);
+      // Cap the number of times a lock position can be repeated (despite differing second placements)
+      int shouldPlayout = i < numSorted && numPlayedOut < keepTopN && lockValueRepeatMap[lockPosEncoded] < 3;
+      if (PLAYOUT_LOGGING_ENABLED) {
+        printf("\n----%s, repeats %d, willPlay %d\n", lockPosEncoded.c_str(), lockValueRepeatMap[lockPosEncoded], shouldPlayout);
+      }
+      lockValueRepeatMap[lockPosEncoded] += 1;
 
-    float overallScore = MAP_OFFSET + (shouldPlayout
-       ? possibility.immediateReward + getPlayoutScore(possibility.resultingState, playoutCount, playoutLength, pieceRangeContextLookup, secondPiece->index, /* playoutDataList */ NULL)
-       : (SHOULD_PLAY_PERFECT ? 0 : evalContext->weights.deathCoef));
-    
-    if (overallScore > lockValueMap[lockPosEncoded]) {
-      if (PLAYOUT_LOGGING_ENABLED || PLAYOUT_RESULT_LOGGING_ENABLED) {
+      float overallScore = MAP_OFFSET + (shouldPlayout
+         ? possibility.immediateReward + getPlayoutScore(possibility.resultingState, playoutCount, playoutLength, pieceRangeContextLookup, secondPiece->index, /* playoutDataList */ NULL)
+         : (SHOULD_PLAY_PERFECT ? 0 : evalContext->weights.deathCoef));
+      
+      if (overallScore > lockValueMap[lockPosEncoded]) {
+        if (PLAYOUT_LOGGING_ENABLED || PLAYOUT_RESULT_LOGGING_ENABLED) {
+          if (shouldPlayout) {
+            printf("Adding to map: %s %f (%f + %f)\n", lockPosEncoded.c_str(), overallScore - MAP_OFFSET, possibility.immediateReward, overallScore - possibility.immediateReward - MAP_OFFSET);
+          }
+        }
+        lockValueMap[lockPosEncoded] = overallScore;
+      } else if (PLAYOUT_LOGGING_ENABLED || PLAYOUT_RESULT_LOGGING_ENABLED) {
         if (shouldPlayout) {
-          printf("Adding to map: %s %f (%f + %f)\n", lockPosEncoded.c_str(), overallScore - MAP_OFFSET, possibility.immediateReward, overallScore - possibility.immediateReward - MAP_OFFSET);
+          printf("Score of %.1f is worse than existing move %.1f\n", overallScore, lockValueMap[lockPosEncoded]);
         }
       }
-      lockValueMap[lockPosEncoded] = overallScore;
-    } else if (PLAYOUT_LOGGING_ENABLED || PLAYOUT_RESULT_LOGGING_ENABLED) {
+      i++;
       if (shouldPlayout) {
-        printf("Score of %.1f is worse than existing move %.1f\n", overallScore, lockValueMap[lockPosEncoded]);
+        numPlayedOut++;
       }
-    }
-    i++;
-    if (shouldPlayout) {
-      numPlayedOut++;
     }
   }
 
@@ -429,7 +440,7 @@ std::string getLockValueLookupEncoded(GameState gameState, const Piece *firstPie
   // float globalMax = 0; // Only used for perfect play
   for( const auto& n : lockValueMap ) {
     char mapEntryBuf[30];
-    sprintf(mapEntryBuf, "\"%s\":%.2f,", n.first.c_str(), n.second - MAP_OFFSET);
+    snprintf(mapEntryBuf, 30, "\"%s\":%.2f,", n.first.c_str(), n.second - MAP_OFFSET);
     mapEncoded.append(mapEntryBuf);
     // if (SHOULD_PLAY_PERFECT){
     //   globalMax = std::max(globalMax, n.second - MAP_OFFSET);

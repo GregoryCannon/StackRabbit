@@ -16,6 +16,8 @@
 
 #define INITIAL_X 3
 
+#define NO_TUCK_NOTATION '.'
+
 #include <vector>
 
 enum RequestType {
@@ -42,7 +44,8 @@ struct Piece {
 struct GameState {
   unsigned int board[20];  // See board encoding details below
   int surfaceArray[10];
-  float adjustedNumHoles; // A count of how many holes there are, with adjustments for the height of holes.
+  int numTrueHoles; // A count of many hole cells there are (not incl. tuck setups, etc). Triple-high holes do count as 3 holes.
+  float numPartialHoles; // A count of how many semi-holes there are, e.g. tuck setups, covered wells, 
   int lines;
   int level;
 };
