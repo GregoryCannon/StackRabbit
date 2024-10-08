@@ -1,6 +1,7 @@
 #include "main.cpp"
 #include "types.hpp"
 
+#undef NONE
 #include <emscripten/bind.h>
 
 std::string getLockValueLookup(std::string inputStr) {
