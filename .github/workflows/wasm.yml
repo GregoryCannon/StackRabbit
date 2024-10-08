@@ -1,4 +1,4 @@
-name: Build and Release wasmSR
+name: Build and Release wasmRabbit
 
 on:
   push:
@@ -27,14 +27,14 @@ jobs:
       - name: Compile C++ with Emscripten
         run: |
           source ./emsdk/emsdk_env.sh
-          mkdir -p ./build/Release/wasm
-          emcc ./src/cpp_modules/src/wasm.cpp -O3 --bind -lembind -g0 -o ./build/Release/wasm/wasmRabbit.js
+          mkdir -p ./build/wasm
+          emcc ./src/cpp_modules/src/wasm.cpp -O3 --bind -lembind -g0 -o ./build/wasm/wasmRabbit.js
 
       # Step 4: Create a ZIP archive of the compiled files
       - name: Create ZIP archive
         run: |
           mkdir -p dist
-          zip -r dist/wasmRabbit.zip ./build/Release/wasm/*
+          zip -r dist/wasmRabbit.zip ./build/wasm/*
 
       # Step 5: Create a GitHub Release
       - name: Create GitHub Release

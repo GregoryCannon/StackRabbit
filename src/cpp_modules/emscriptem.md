@@ -8,7 +8,7 @@ The emscriptembindings are in the file src/wasm.cpp
 Use this command
 
 ```bash 
-emcc -O3 src/wasm.cpp --bind -lembind -g0 -o stackrabbit.html
+emcc -O3 src/wasm.cpp --bind -lembind -g0 -o wasmRabbit.js
 ```
 
 ## Use in JS
