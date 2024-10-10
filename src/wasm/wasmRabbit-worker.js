@@ -27,18 +27,25 @@ function getStackRabbitArgString(args) {
 		currentPiece,
 		nextPiece,
 		board,
+		playoutLength,
 	} = args;
 
-	return [
+	const fields = [
 		board,
 		level,
 		lines,
 		SR_PIECES_INDEXES[currentPiece],
 		SR_PIECES_INDEXES[nextPiece],
 		inputFrameTimeline,
-		'', // playoutCount?
-		// '', // playoutLength?
-	].join(DELIM);
+		''
+	];
+
+	if (playoutLength) {
+		// always do exhaustive search for a given playout length
+		fields.splice(-1, 0, Math.pow(7, playoutLength), playoutLength);
+	}
+	
+	return fields.join(DELIM);
 }
 
 // supported methods
