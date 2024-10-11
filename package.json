@@ -8,7 +8,7 @@
     "start": "node-gyp build && tsc && node built/src/server/app.js",
     "deploy": "node-gyp build && tsc && pm2 stop all && pm2 start built/src/server/app.js",
     "format": "prettier --write \"src/**/*.+(js|jsx|ts|json|css|md)\"",
-    "cpp_test": "node-gyp build && node built/src/server/cmodules.js",
+    "cpp_test": "node-gyp build && tsc && node built/src/server/cmodules.js",
     "move_test": "tsc && node built/src/server/move_search_test.js"
   },
   "author": "",
