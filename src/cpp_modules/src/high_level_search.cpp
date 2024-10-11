@@ -403,10 +403,11 @@ std::string getLockValueLookupEncoded(GameState gameState, const Piece *firstPie
     // Perform playouts on the promising possibilities
     int i = 0;
     int numPlayedOut = 0;
+    int firstPlacementRepeatCap = floor(LOCK_POSITION_REPEAT_CAP_PROPORTION * keepTopN);
     for (Possibility const& possibility : sortedList) {
       string lockPosEncoded = encodeLockPosition(possibility.firstPlacement);
       // Cap the number of times a lock position can be repeated (despite differing second placements)
-      int shouldPlayout = i < numSorted && numPlayedOut < keepTopN && lockValueRepeatMap[lockPosEncoded] < 3;
+      int shouldPlayout = i < numSorted && numPlayedOut < keepTopN && lockValueRepeatMap[lockPosEncoded] < firstPlacementRepeatCap;
       if (PLAYOUT_LOGGING_ENABLED) {
         printf("\n----%s, repeats %d, willPlay %d\n", lockPosEncoded.c_str(), lockValueRepeatMap[lockPosEncoded], shouldPlayout);
       }

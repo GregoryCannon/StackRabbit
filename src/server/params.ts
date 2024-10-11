@@ -24,6 +24,7 @@ export const DOUBLE_KILLSCREEN_ENABLED = false;
 export const DEBUG_DOUBLE_KS_ALWAYS_ENABLED = false;
 export const CPP_LIVEGAME_PLAYOUT_COUNT = 343;
 export const CPP_LIVEGAME_PLAYOUT_LENGTH = 3;
+export const CPP_LIVEGAME_PRUNING_BREADTH = 10;
 
 // Rarely changed
 export const IS_PAL = false;

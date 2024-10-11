@@ -26,6 +26,7 @@ export function parseUrlArguments(
     lookaheadDepth: 0,
     playoutCount: 49,
     playoutLength: 2,
+    pruningBreadth: 20,
     existingXOffset: 0,
     existingYOffset: 0,
     existingRotation: 0,
@@ -171,6 +172,22 @@ export function parseUrlArguments(
         result.playoutLength = length;
         break;
 
+      case "pruningBreadth":
+        if (!requestType.includes("cpp")) {
+          throw new Error(
+            "Parameter 'pruningBreadth' does not apply to JS queries. Please use lookeaheadDepth instead."
+          );
+        }
+        const breadth = parseInt(value);
+        if (breadth < 0) {
+          throw new Error("Invalid pruning breadth: " + breadth);
+        }
+        if (length > 1156) {
+          throw new Error("Invalid pruning breadth (max is 1156): " + breadth);
+        }
+        result.pruningBreadth = breadth;
+        break;
+
       // These properties are pretty advanced, if you're using them you should know what you're doing
       case "existingXOffset":
         result.existingXOffset = parseInt(value);
@@ -241,5 +258,5 @@ export function getCppEncodedInputString(
   const curPieceIndex = pieceLookup.indexOf(searchState.currentPieceId);
   const nextPieceIndex = pieceLookup.indexOf(searchState.nextPieceId);
   // Includes the final | character at the end due to how the string is parsed (cpp doesn't have an easy split method rip)
-  return `${boardStr}|${searchState.level}|${searchState.lines}|${curPieceIndex}|${nextPieceIndex}|${urlArgs.inputFrameTimeline}|${urlArgs.playoutCount}|${urlArgs.playoutLength}|`;
+  return `${boardStr}|${searchState.level}|${searchState.lines}|${curPieceIndex}|${nextPieceIndex}|${urlArgs.inputFrameTimeline}|${urlArgs.playoutCount}|${urlArgs.playoutLength}|${urlArgs.pruningBreadth}|`;
 }

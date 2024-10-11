@@ -53,7 +53,7 @@ int simulateGame(char const *inputFrameTimeline, int startingLevel, int maxLines
     const EvalContext evalContextRaw = getEvalContext(gameState, pieceRangeContextLookup);
     const EvalContext *evalContext = &evalContextRaw;
 
-    LockLocation bestMove = playOneMove(gameState, &curPiece, NULL, DEPTH_1_PRUNING_BREADTH, playoutCount, playoutLength, evalContext, pieceRangeContextLookup);
+    LockLocation bestMove = playOneMove(gameState, &curPiece, NULL, DEFAULT_PRUNING_BREADTH, playoutCount, playoutLength, evalContext, pieceRangeContextLookup);
     if (bestMove.x == NONE){
       // Agent died, simulated game is complete
       break;

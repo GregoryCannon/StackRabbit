@@ -36,6 +36,7 @@ interface UrlArguments {
   lookaheadDepth?: number; // Only used in Javascript queries
   playoutCount: number; // Only used in C++ queries
   playoutLength: number; // Only used in C++ queries
+  pruningBreadth: number; // Only used in C++ queries
   arrWasReset?: boolean;
   existingXOffset?: number;
   existingYOffset?: number;

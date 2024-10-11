@@ -50,6 +50,7 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
   const Piece *nextPiece = NULL;
   int playoutCount = DEFAULT_PLAYOUT_COUNT;
   int playoutLength = DEFAULT_PLAYOUT_LENGTH;
+  int pruningBreadth = DEFAULT_PRUNING_BREADTH;
   std::string inputFrameTimeline;
 
   // Loop through the other args
@@ -99,6 +100,8 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
     case 6:
       playoutLength = argAsInt;
       break;
+    case 7:
+      pruningBreadth = argAsInt;
     default:
       break;
     }
@@ -139,7 +142,7 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
   // Take the specified action on the input based on the request type
   switch (requestType) {
     case GET_LOCK_VALUE_LOOKUP: {
-      return getLockValueLookupEncoded(startingGameState, curPiece, nextPiece, DEPTH_2_PRUNING_BREADTH, playoutCount, playoutLength, &context, pieceRangeContextLookup);
+      return getLockValueLookupEncoded(startingGameState, curPiece, nextPiece, pruningBreadth, playoutCount, playoutLength, &context, pieceRangeContextLookup);
     }
 
     case GET_TOP_MOVES: {
@@ -153,11 +156,11 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
     }
 
     case RATE_MOVE: {
-      return rateMove(startingGameState, curPiece, nextPiece, secondBoard, DEPTH_2_PRUNING_BREADTH, playoutCount, playoutLength, &context, pieceRangeContextLookup);
+      return rateMove(startingGameState, curPiece, nextPiece, secondBoard, pruningBreadth, playoutCount, playoutLength, &context, pieceRangeContextLookup);
     }
 
     case GET_MOVE: {
-      LockLocation bestMove = playOneMove(startingGameState, curPiece, nextPiece, /* numCandidatesToPlayout */ DEPTH_1_PRUNING_BREADTH, playoutCount, playoutLength, &context, pieceRangeContextLookup);
+      LockLocation bestMove = playOneMove(startingGameState, curPiece, nextPiece, pruningBreadth, playoutCount, playoutLength, &context, pieceRangeContextLookup);
       int xOffset = bestMove.x - 3;
       int rot = bestMove.rotationIndex;
       int yOffset = bestMove.y - curPiece->initialY;
