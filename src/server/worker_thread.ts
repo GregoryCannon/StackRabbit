@@ -21,7 +21,7 @@ function performComputationFinesseCpp(args: WorkerDataArgs): Object {
   const nextPieceIndex = pieceLookup.indexOf(args.newSearchState.nextPieceId);
   const inputFrameTimeline = args.inputFrameTimeline;
   const encodedInputString = `${boardStr}|${args.newSearchState.level}|${args.newSearchState.lines}|${curPieceIndex}|${nextPieceIndex}|${inputFrameTimeline}|${CPP_LIVEGAME_PLAYOUT_COUNT}|${CPP_LIVEGAME_PLAYOUT_LENGTH}`;
-
+  // console.log(args.newSearchState.nextPieceId, encodedInputString);
   const lockPositionValueLookup = JSON.parse(
     cModule.getLockValueLookup(encodedInputString)
   );
