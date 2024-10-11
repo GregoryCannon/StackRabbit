@@ -65,11 +65,17 @@ float playSequence(GameState gameState, const PieceRangeContext pieceRangeContex
       GameState nextState = advanceGameState(gameState, bestMove, evalContext);
       
       if (SHOULD_PLAY_PERFECT){
-        return evalForPerfectPlay(gameState, nextState, bestMove, evalContext);
+        float eval = evalForPerfectPlay(gameState, nextState, bestMove, evalContext);
+        if (trackPlayouts){
+          newPlayoutData.totalScore = totalReward + eval;
+          copyBoard(nextState.board, newPlayoutData.resultingBoard);
+          insertIntoList(newPlayoutData, playoutDataList);
+        }
+        return eval;
       }
       
-      EvalContext contextRaw = *evalContext;
       // In some contexts, override the current aiMode such that the end of a playout is always compared fairly against other playouts
+      EvalContext contextRaw = *evalContext;
       if (originalAiMode == DIG || originalAiMode == STANDARD){
         contextRaw.aiMode = originalAiMode;
       }
@@ -134,6 +140,7 @@ float getPlayoutScore(GameState gameState, int playoutCount, int playoutLength, 
           ? exhaustivePieceSequences + i * EXHAUSTIVE_SEQUENCE_LENGTH // Index into the exhaustive list of possible sequences;
           : canonicalPieceSequences + (pieceOffset + i) * SEQUENCE_LENGTH; // Index into the mega array of randomly-generated piece sequences;
     float resultScore = playSequence(gameState, pieceRangeContextLookup, pieceSequence, playoutLength, playoutDataList);
+    // printf("Did playout with score %f %d\n", resultScore, playoutDataList->size());
     playoutScore += resultScore;
   }
 
