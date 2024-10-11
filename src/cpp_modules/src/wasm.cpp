@@ -4,37 +4,37 @@
 #undef NONE
 #include <emscripten/bind.h>
 
-std::string jsGetLockValueLookup(std::string inputStr) {
+std::string wasmGetLockValueLookup(std::string inputStr) {
     const char* cInputStr = inputStr.c_str();
     return mainProcess(cInputStr, GET_LOCK_VALUE_LOOKUP);
 }
 
-std::string jsGetMove(std::string inputStr) {
+std::string wasmGetMove(std::string inputStr) {
     const char* cInputStr = inputStr.c_str();
     return mainProcess(cInputStr, GET_MOVE);
 }
 
-std::string jsGetTopMoves(std::string inputStr) {
+std::string wasmGetTopMoves(std::string inputStr) {
     const char* cInputStr = inputStr.c_str();
     return mainProcess(cInputStr, GET_TOP_MOVES);
 }
 
-std::string jsGetTopMovesHybrid(std::string inputStr) {
+std::string wasmGetTopMovesHybrid(std::string inputStr) {
     const char* cInputStr = inputStr.c_str();
     return mainProcess(cInputStr, GET_TOP_MOVES_HYBRID);
 }
 
-std::string jsRateMove(std::string inputStr) {
+std::string wasmRateMove(std::string inputStr) {
     const char* cInputStr = inputStr.c_str();
     return mainProcess(cInputStr, RATE_MOVE);
 }
 
 
 EMSCRIPTEN_BINDINGS(my_module) {
-    emscripten::function("getLockValueLookup", &jsGetLockValueLookup);
-    emscripten::function("getMove", &jsGetMove);
-    emscripten::function("getTopMoves", &jsGetTopMoves);
-    emscripten::function("getTopMovesHybrid", &jsGetTopMovesHybrid);
-    emscripten::function("rateMove", &jsRateMove);
+    emscripten::function("getLockValueLookup", &wasmGetLockValueLookup);
+    emscripten::function("getMove", &wasmGetMove);
+    emscripten::function("getTopMoves", &wasmGetTopMoves);
+    emscripten::function("getTopMovesHybrid", &wasmGetTopMovesHybrid);
+    emscripten::function("rateMove", &wasmRateMove);
 }
 
