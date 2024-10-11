@@ -149,33 +149,3 @@ float getPlayoutScore(GameState gameState, int playoutCount, int playoutLength, 
   }
   return playoutCount == 0 ? 0 : (playoutScore / playoutCount);
 }
-
-
-
-
-/*
-   Unused code block for time-based playouts
-
- #include <iostream>
-   using namespace std::chrono;
-
-
-   int numPlayoutsShort = 0;
-   high_resolution_clock::time_point t1 = high_resolution_clock::now();
-   for (int i = 0; i < 1000; i++) {
-   // Do one playout
-   const int *pieceSequence = canonicalPieceSequences + (offset + i) * SEQUENCE_LENGTH;  // Index into the mega array of piece sequences;
-   float playoutScore = playSequence(gameState, pieceRangeContextLookup, pieceSequence, PLAYOUT_LENGTH);
-   shortPlayoutScore += playoutScore;
-   numPlayoutsShort += 1;
-
-   // Check the elapsed time
-   high_resolution_clock::time_point t2 = high_resolution_clock::now();
-   duration<double, std::milli> time_span = t2 - t1;
-
-   if (time_span.count() > PLAYOUT_TIME_LIMIT_MS) {
-    break;
-   }
-   }
-   // printf("    num playouts %d \n", numPlayoutsShort);
- */
