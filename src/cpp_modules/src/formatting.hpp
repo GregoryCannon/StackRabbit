@@ -179,15 +179,17 @@ std::string formatEngineMoveList(list<EngineMoveData> moveList, const Piece *fir
   return output;
 }
 
-std::string formatRateMove(float playerNoAdj, float bestNoAdj, float playerWithAdj, float bestWithAdj){
+std::string formatRateMove(float playerNoAdj, float bestNoAdj, float playerWithAdj, float bestWithAdj, bool hasNb){
   std::string output = "{\"playerMoveNoAdjustment:\"";
   output += std::to_string(playerNoAdj);
   output += ", \"bestMoveNoAdjustment:\"";
   output += std::to_string(bestNoAdj);
-  output += ", \"playerMoveAfterAdjustment:\"";
-  output += std::to_string(playerWithAdj);
-  output += ", \"bestMoveAfterAdjustment\":";
-  output += std::to_string(bestWithAdj);
+  if (hasNb){
+    output += ", \"playerMoveAfterAdjustment:\"";
+    output += std::to_string(playerWithAdj);
+    output += ", \"bestMoveAfterAdjustment\":";
+    output += std::to_string(bestWithAdj);
+  }
   output += "}";
   return output;
 }

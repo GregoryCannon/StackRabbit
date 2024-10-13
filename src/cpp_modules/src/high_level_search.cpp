@@ -214,11 +214,14 @@ std::string rateMove(GameState gameState, const Piece *firstPiece, const Piece *
   list<Possibility> possibilityListD2;
   list<Possibility> sortedListD1; // Does not include player move
   list<Possibility> sortedListD2; // Includes player move
+  bool hasNb = secondPiece != NULL;
 
   // Search depth 1
   searchDepth1(gameState, firstPiece, numCandidatesToPlayout, evalContext, possibilityListD1);
-  searchDepth2(gameState, firstPiece, secondPiece, numCandidatesToPlayout, evalContext, possibilityListD2);
-  if (possibilityListD1.size() == 0 || possibilityListD2.size() == 0){
+  if (hasNb){
+    searchDepth2(gameState, firstPiece, secondPiece, numCandidatesToPlayout, evalContext, possibilityListD2);
+  }
+  if (possibilityListD1.size() == 0 || (hasNb && possibilityListD2.size() == 0)){
     return std::string("Error: no legal moves found");
   }
   
@@ -230,7 +233,9 @@ std::string rateMove(GameState gameState, const Piece *firstPiece, const Piece *
 
   // Sort the rest of the possibilities
   partiallySortPossibilityList(possibilityListD1, numCandidatesToPlayout, sortedListD1);
-  partiallySortPossibilityList(possibilityListD2, 999999, sortedListD2); // Large numCandidatesToPlayout = full sort
+  if (hasNb){
+    partiallySortPossibilityList(possibilityListD2, 999999, sortedListD2); // Large numCandidatesToPlayout = full sort
+  }
 
   float playerValNoAdj = FLOAT_MIN;
   float bestValNoAdj = FLOAT_MIN;
@@ -248,21 +253,23 @@ std::string rateMove(GameState gameState, const Piece *firstPiece, const Piece *
       bestValNoAdj = std::max(playerValNoAdj, bestOtherVal);
     }
 
-    // WITH NB
-    // Find the best NB values, as well as the best NB value that uses the player move for the first move
-    bestValAfterAdj = (*sortedListD2.begin()).evalScoreInclReward;
-    for (auto possibility : sortedListD2){
-      if (lockLocationEquals(possibility.firstPlacement, playerMove.firstPlacement)){
-        playerValAfterAdj = possibility.evalScoreInclReward;
-        break;
+    if (hasNb){
+      // WITH NB
+      // Find the best NB values, as well as the best NB value that uses the player move for the first move
+      bestValAfterAdj = (*sortedListD2.begin()).evalScoreInclReward;
+      for (auto possibility : sortedListD2){
+        if (lockLocationEquals(possibility.firstPlacement, playerMove.firstPlacement)){
+          playerValAfterAdj = possibility.evalScoreInclReward;
+          break;
+        }
       }
     }
   } 
   // PLAYOUTS NEEDED
-  else {    
+  else {
     // NNB Playouts (first on the player move, then on the rest)
     playerValNoAdj = playerMove.immediateReward + getPlayoutScore(playerMove.resultingState, playoutCount, playoutLength, pieceRangeContextLookup, firstPiece->index, /* playoutDataList */ NULL);
-
+    
     bestValNoAdj = playerValNoAdj;
     int numPlayedOut = 0;
     for (auto possibility : sortedListD1){
@@ -275,32 +282,34 @@ std::string rateMove(GameState gameState, const Piece *firstPiece, const Piece *
       }
       numPlayedOut++;
     }
-
-    // NB Playouts
-    bool bestValUnset = true;
-    bestValAfterAdj = FLOAT_MIN;
-    bool playerValUnset = true;
-    playerValAfterAdj = FLOAT_MIN;
-    numPlayedOut = 0;
-    for (auto possibility : sortedListD2){
-      if (numPlayedOut >= numCandidatesToPlayout) {
-        break;
-      }
-      float overallScore = possibility.immediateReward + getPlayoutScore(possibility.resultingState, playoutCount, playoutLength, pieceRangeContextLookup, secondPiece->index, /* playoutDataList */ NULL);
-      if (bestValUnset || overallScore > bestValAfterAdj) {
-        bestValUnset = false;
-        bestValAfterAdj = overallScore;
-      }
-      if (lockLocationEquals(playerMove.firstPlacement, possibility.firstPlacement) 
+    
+    if (hasNb){
+      // NB Playouts
+      bool bestValUnset = true;
+      bestValAfterAdj = FLOAT_MIN;
+      bool playerValUnset = true;
+      playerValAfterAdj = FLOAT_MIN;
+      numPlayedOut = 0;
+      for (auto possibility : sortedListD2){
+        if (numPlayedOut >= numCandidatesToPlayout) {
+          break;
+        }
+        float overallScore = possibility.immediateReward + getPlayoutScore(possibility.resultingState, playoutCount, playoutLength, pieceRangeContextLookup, secondPiece->index, /* playoutDataList */ NULL);
+        if (bestValUnset || overallScore > bestValAfterAdj) {
+          bestValUnset = false;
+          bestValAfterAdj = overallScore;
+        }
+        if (lockLocationEquals(playerMove.firstPlacement, possibility.firstPlacement)
             && (playerValUnset || overallScore > playerValAfterAdj)) {
-        playerValUnset = false;
-        playerValAfterAdj = overallScore;
+          playerValUnset = false;
+          playerValAfterAdj = overallScore;
+        }
+        numPlayedOut++;
       }
-      numPlayedOut++;
     }
   }
 
-  return formatRateMove(playerValNoAdj, bestValNoAdj, playerValAfterAdj, bestValAfterAdj);
+  return formatRateMove(playerValNoAdj, bestValNoAdj, playerValAfterAdj, bestValAfterAdj, hasNb);
 }
 
 /**
