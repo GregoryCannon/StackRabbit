@@ -195,7 +195,7 @@ Possibility findPlayerMove(list<Possibility> possibilityList, unsigned int playe
   for (list<Possibility>::iterator iter=possibilityList.begin(); iter!=possibilityList.end(); iter++) {
     bool boardEqual = true;
     for (int i = 19; i >= 0; i--){
-      if (playerBoardAfter[i] != (*iter).resultingState.board[i]){
+      if (playerBoardAfter[i] != ((*iter).resultingState.board[i] & FULL_ROW)){
         boardEqual = false;
         break;
       }
@@ -224,6 +224,8 @@ std::string rateMove(GameState gameState, const Piece *firstPiece, const Piece *
   if (possibilityListD1.size() == 0 || (hasNb && possibilityListD2.size() == 0)){
     return std::string("Error: no legal moves found");
   }
+
+  printf("numD1poss %d\n", possibilityListD1.size());
   
   // Find the player move (and remove it from the D1 possibility list)
   Possibility playerMove = findPlayerMove(possibilityListD1, playerBoardAfter);
