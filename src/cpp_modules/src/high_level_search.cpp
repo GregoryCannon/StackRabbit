@@ -195,7 +195,7 @@ Possibility findPlayerMove(list<Possibility> possibilityList, unsigned int playe
   for (list<Possibility>::iterator iter=possibilityList.begin(); iter!=possibilityList.end(); iter++) {
     bool boardEqual = true;
     for (int i = 19; i >= 0; i--){
-      int srMoveRow = ((*iter).resultingState.board[i] & FULL_ROW); // Filter for only the cell bits, since the player-provided board hasn't calculated any of the extra stuff
+      unsigned int srMoveRow = ((*iter).resultingState.board[i] & FULL_ROW); // Filter for only the cell bits, since the player-provided board hasn't calculated any of the extra stuff
       if (playerBoardAfter[i] != srMoveRow){
         boardEqual = false;
         break;
