@@ -182,7 +182,7 @@ export function parseUrlArguments(
         if (breadth < 0) {
           throw new Error("Invalid pruning breadth: " + breadth);
         }
-        if (length > 1156) {
+        if (breadth > 1156) {
           throw new Error("Invalid pruning breadth (max is 1156): " + breadth);
         }
         result.pruningBreadth = breadth;
