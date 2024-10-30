@@ -131,7 +131,8 @@ float getPlayoutScore(GameState gameState, int playoutCount, int playoutLength, 
   // as opposed to randomly generated ones.
   bool useExhaustiveSequences = (playoutCount == 7 && playoutLength == 1)
     || (playoutCount == 49 && playoutLength == 2)
-    || (playoutCount == 343 && playoutLength == 3);
+    || (playoutCount == 343 && playoutLength == 3)
+    || (playoutCount == 2401 && playoutLength == 4);
 
   float playoutScore = 0;
   for (int i = 0; i < playoutCount; i++) {
