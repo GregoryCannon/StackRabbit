@@ -46,10 +46,6 @@ export function getAiMode(
   ) {
     return lines >= 229 ? AiMode.NEAR_KILLSCREEN : AiMode.DIG;
   }
-  if (level >= KILLSCREEN_LEVEL && LINE_CAP == NO_LIMIT) {
-    // This is checked after dig mode so that right well killscreen AI can still dig
-    return AiMode.KILLSCREEN_FOR_TETRISES;
-  }
   if (lines >= (linesOutOn29 ? KILLSCREEN_LINES : LINE_CAP) - 12) {
     return AiMode.NEAR_KILLSCREEN;
   }
