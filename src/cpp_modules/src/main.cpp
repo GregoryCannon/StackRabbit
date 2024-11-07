@@ -18,6 +18,7 @@
 #include "high_level_search.cpp"
 #include "piece_rng.cpp"
 // #include "../data/ranks_output.cpp"
+#include "../data/ranks_base_7.cpp"
 
 template<typename ... Args>
 std::string string_format( const std::string& format, Args ... args )

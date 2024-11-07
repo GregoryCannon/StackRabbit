@@ -3,6 +3,7 @@
 #include "eval_context.hpp"
 #include "utils.hpp"
 #include "../data/ranks_output.hpp"
+#include "../data/ranks_base_7.hpp"
 #include <math.h>
 #include <vector>
 using namespace std;
@@ -45,27 +46,33 @@ float calculateFlatness(int surfaceArray[10], int wellColumn) {
 /** Gets the value of a surface. */
 float rateSurface(int surfaceArray[10], const EvalContext *evalContext) {
   int wellColumn = evalContext->wellColumn;
-  if (USE_RANKS) {
+  
+  if (USE_BASE_7_RANKS){
     // Convert the surface array into the custom base-9 encoding
-    int index = 0;
+    int b7index = 0;
     int excessGap = 0;
     for (int i = 0; i < 8; i++) {
       int diff = surfaceArray[i + 1] - surfaceArray[i];
-      int absDiff = abs(diff);
       // Correct for double wells
-      if (i == 7 && wellColumn == 9 && absDiff > 2) {
-        absDiff = 2;
-      } else if (absDiff > 4) {
-        excessGap += absDiff - 4;
-        diff = diff > 0 ? 4 : -4;
+      if (i == 7 && wellColumn == 9 && diff < -2) {
+        diff = -2;
+      } else if (abs(diff) > 3) {
+        excessGap += abs(diff) - 3;
+        diff = diff > 0 ? 3 : -3;
       }
-      index *= 9;
-      index += diff + 4;
+      b7index *= 7;
+      b7index += diff + 3;
     }
+    unsigned long long chunk = surfaceRanksChunked[b7index / 8];
+    unsigned int subIndex = b7index & 0b111;
+    int numShifts = (7 - subIndex) * 8;
+    unsigned int byte = (chunk >> numShifts) & 0xFF;
+    float scaledTo30 = ((float) byte) / 255.0 * 33.8;
     // Make lower ranks more punishing
-    float rawScore = surfaceRanksRaw[index] * 0.1 + (excessGap * evalContext->weights.extremeGapCoef);
-    return rawScore - (70 / max(3.0f, rawScore));
+    float rawScore = scaledTo30 + (excessGap * evalContext->weights.extremeGapCoef);
+    return rawScore + 2 - (70 / max(3.0f, rawScore));
   }
+  
   // If the ranks aren't loaded, use the flatness score
   return calculateFlatness(surfaceArray, wellColumn);
 }
