@@ -39,6 +39,6 @@
 #define LOCK_POSITION_REPEAT_CAP_PROPORTION .25 // Only used for current+next piece search. Refers to the limit on the percent of positions considered that can have the same first move. This increases the diversity of moves considered.
 #define SEMI_HOLE_PROPORTION 0.6f // Value used for things that are sort of like holes but not fully, e.g. unfilled wells while digging
 #define SEQUENCE_LENGTH 20
-#define EXHAUSTIVE_SEQUENCE_LENGTH 3
+#define EXHAUSTIVE_SEQUENCE_LENGTH 4
 
 #endif
