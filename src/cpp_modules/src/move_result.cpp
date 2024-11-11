@@ -86,7 +86,7 @@ float analyzeHole(unsigned int board[20], int r, int c, int excludeHolesColumn, 
       board[r+1] |= TUCK_SETUP_BIT(c);
       board[r+2] |= TUCK_SETUP_BIT(c);
       board[r+3] |= TUCK_SETUP_BIT(c);
-      return 0.65f; // column 9 vits = 1-piece solve
+      return 0.8f; // column 9 vits = 1-piece solve
     }
   }
   if (c == excludeHolesColumn) {
