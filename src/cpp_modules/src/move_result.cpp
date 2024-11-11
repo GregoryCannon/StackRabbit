@@ -76,6 +76,18 @@ float analyzeHole(unsigned int board[20], int r, int c, int excludeHolesColumn, 
       board[r] |= TUCK_SETUP_BIT(c);
       return 0.65f; // Right side tuck, with minimal space = 1-piece solve + spin option.
     }
+    if (c == 8
+        && r <= 16
+        && (board[r] & 0b11) == 0
+        && (board[r+1] & 0b11) == 0
+        && (board[r+2] & 0b11) == 0
+        && (board[r+3] & 0b11) == 0){
+      board[r] |= TUCK_SETUP_BIT(c);
+      board[r+1] |= TUCK_SETUP_BIT(c);
+      board[r+2] |= TUCK_SETUP_BIT(c);
+      board[r+3] |= TUCK_SETUP_BIT(c);
+      return 0.8f; // column 9 vits = 1-piece solve
+    }
   }
   if (c == excludeHolesColumn) {
     if ((board[r] & ALL_HOLE_BITS) == 0){
