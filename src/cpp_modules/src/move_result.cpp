@@ -6,7 +6,7 @@
  * Rates a hole from 0 to 1 based on how bad it is.
  * --Side effect-- marks the hole or tuck setup in the board data structure
  */
-float analyzeHole(unsigned int board[20], int r, int c, int excludeHolesColumn, int surfaceArray[10]){
+float analyzeHole(unsigned int board[20], int r, int c, int excludeHolesColumn, int surfaceArray[10], bool isDigMode){
   // VARIABLE_RANGE_CHECKS_ENABLED
   if (true && (r < 0 || r >= 20)){
     printf("PANIK B, r=%d\n", r);
@@ -151,7 +151,7 @@ std::pair<int, float> getNewSurfaceAndNumNewHoles(int surfaceArray[10],
       }
       if (r < highestBoardCellInCol){
         // Check for new holes
-        float rating = analyzeHole(board, r, c, excludeHolesCol, surfaceArray);
+        float rating = analyzeHole(board, r, c, excludeHolesCol, surfaceArray, evalContext->aiMode == DIG);
         if (rating == 1) {
            // If it's a true hole
           holeWeightStartRow = r - 1;
@@ -193,7 +193,7 @@ std::pair<int, float> getNewSurfaceAndNumNewHoles(int surfaceArray[10],
  * @param excludeHolesColumn - a prespecified column to ignore holes in (usually the well). A value of -1 disables this behavior.
  * @returns the new hole count
  */
-std::pair<int, float> updateSurfaceAndHoles(int surfaceArray[10], unsigned int board[20], int excludeHolesColumn) {
+std::pair<int, float> updateSurfaceAndHoles(int surfaceArray[10], unsigned int board[20], int excludeHolesColumn, bool isDigMode) {
   // Reset hole and tuck setup bits
   for (int i = 0; i < 20; i++) {
     board[i] &= ~ALL_AUXILIARY_BITS;
@@ -223,7 +223,7 @@ std::pair<int, float> updateSurfaceAndHoles(int surfaceArray[10], unsigned int b
     while (r < 20) {
       // Add new holes to the overall count, unless they're in the well
       if (!(board[r] & mask)) {
-        float rating = analyzeHole(board, r, c, excludeHolesColumn, surfaceArray);
+        float rating = analyzeHole(board, r, c, excludeHolesColumn, surfaceArray, isDigMode);
         // Check that it's a hole (1.0) and not a tuck setup (eg. 0.9)
         if (rating == 1){
           lowestHoleInCol = r;
@@ -328,7 +328,7 @@ GameState advanceGameState(GameState gameState, LockPlacement lockPlacement, con
     newState.numPartialHoles += initialResult.second;
   } else {
     // Recalculate the holes and overhangs from scratch
-    std::pair<int, float> recalcResult = updateSurfaceAndHoles(newState.surfaceArray, newState.board, evalContext->countWellHoles ? -1 : evalContext->wellColumn);
+    std::pair<int, float> recalcResult = updateSurfaceAndHoles(newState.surfaceArray, newState.board, evalContext->countWellHoles ? -1 : evalContext->wellColumn, evalContext->aiMode == DIG);
     newState.numTrueHoles = recalcResult.first;
     newState.numPartialHoles = recalcResult.second;
   }
