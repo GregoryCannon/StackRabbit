@@ -4,6 +4,7 @@
 
 /**
  * Rates a hole from 0 to 1 based on how bad it is.
+ * Ignore all but the most permissible of tuck setups while digging.
  * --Side effect-- marks the hole or tuck setup in the board data structure
  */
 float analyzeHole(unsigned int board[20], int r, int c, int excludeHolesColumn, int surfaceArray[10], bool isDigMode){
@@ -19,7 +20,7 @@ float analyzeHole(unsigned int board[20], int r, int c, int excludeHolesColumn, 
         && (surfaceArray[c-3] == surfaceArray[c-2])
         && (surfaceArray[c-4] == surfaceArray[c-3])){
       board[r] |= TUCK_SETUP_BIT(c); // Mark this cell as an overhang cell
-      return 0.2f; // Left side tuck, with ample space = 4+ pieces solve.
+      return 0.2f; // Left side 1-high tuck, with ample space = 4+ pieces solve.
     }
     if (c >= 3 
         && ((board[r] >> (9-c)) & 0b1111) == 0
@@ -27,9 +28,9 @@ float analyzeHole(unsigned int board[20], int r, int c, int excludeHolesColumn, 
         && (surfaceArray[c-2] == surfaceArray[c-1])
         && (surfaceArray[c-3] == surfaceArray[c-2])){
       board[r] |= TUCK_SETUP_BIT(c);
-      return 0.35f; // Left side tuck, with some space = generally 3+ pieces solve.
+      return 0.35f; // Left side 1-high tuck, with some space = generally 3+ pieces solve.
     }
-    if (c >= 3 
+    if (!isDigMode && c >= 3 
         && ((board[r] >> (9-c)) & 0b1111) == 0
         && (20 - surfaceArray[c-1] > r+1)
         && (surfaceArray[c-2] == surfaceArray[c-1])
@@ -37,7 +38,7 @@ float analyzeHole(unsigned int board[20], int r, int c, int excludeHolesColumn, 
       board[r] |= TUCK_SETUP_BIT(c);
       return 0.5f; // Left side tuck raised off the ground, with some space = generally 2 pieces solve.
     }
-    if (c >= 2
+    if (!isDigMode && c >= 2
         && ((board[r] >> (9-c)) & 0b111) == 0
         && (20 - surfaceArray[c-1] >= r+1)
         && (20 - surfaceArray[c-2] >= r+1)){
@@ -51,7 +52,7 @@ float analyzeHole(unsigned int board[20], int r, int c, int excludeHolesColumn, 
         && (surfaceArray[c+3] == surfaceArray[c+2])
         && (surfaceArray[c+4] == surfaceArray[c+3])){
       board[r] |= TUCK_SETUP_BIT(c);
-      return 0.1875; // Right side tuck, with ample space = 4+ piece solve
+      return 0.1875; // Right side 1-high tuck, with ample space = 4+ piece solve
     }
     if (c <= 6 
         && ((board[r] >> (6-c)) & 0b1111) == 0
@@ -59,9 +60,9 @@ float analyzeHole(unsigned int board[20], int r, int c, int excludeHolesColumn, 
         && (surfaceArray[c+2] == surfaceArray[c+1])
         && (surfaceArray[c+3] == surfaceArray[c+2])){
       board[r] |= TUCK_SETUP_BIT(c);
-      return 0.325f; // Right side tuck, with some space = generally 3+ pieces solve.
+      return 0.325f; // Right side 1-high tuck, with some space = generally 3+ pieces solve.
     }
-    if (c <= 6 
+    if (!isDigMode && c <= 6 
         && ((board[r] >> (6-c)) & 0b1111) == 0
         && (20 - surfaceArray[c+1] > r+1)
         && (surfaceArray[c+2] == surfaceArray[c+1])
@@ -69,14 +70,14 @@ float analyzeHole(unsigned int board[20], int r, int c, int excludeHolesColumn, 
       board[r] |= TUCK_SETUP_BIT(c);
       return 0.45f; // Right side tuck raised off the ground, with some space = generally 2 pieces solve.
     }
-    if (c <= 7
+    if (!isDigMode && c <= 7
         && ((board[r] >> (7-c)) & 0b111) == 0
         && (20 - surfaceArray[c+1] >= r+1)
         && (20 - surfaceArray[c+2] >= r+1)){
       board[r] |= TUCK_SETUP_BIT(c);
       return 0.65f; // Right side tuck, with minimal space = 1-piece solve + spin option.
     }
-    if (c == 8
+    if (!isDigMode && c == 8
         && r <= 16
         && (board[r] & 0b11) == 0
         && (board[r+1] & 0b11) == 0
