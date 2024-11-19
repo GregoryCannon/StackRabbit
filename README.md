@@ -56,13 +56,13 @@ Then there are two components of the backend:
    - Open level 19 and let it start!
 
 
-#If Anyone Found An error, please tell me in the issues tab
-   - We may have made some errors, so if you tell us those errors, We will make corrections as soon as possible, Thank You!
+# If Anyone Found An error, please tell me in the issues tab
+  - We may have made some errors, so if you tell us those errors, We will make corrections as soon as possible, Thank You!
 
-##Credits (In contributor join sequence):
-   - Making the AI: [@GregoryCannon](https://github.com/GregoryCannon)
-   - Helping with the AI: [@wikedawsom](https://github.com/wikedawsom)
-   - Making the Tutorial on setting up: [@BenP1236691](https://github.com/BenP1236691)
-   - Bug fixing the TypeScript: [@NguyenQuangMinh0504](https://github.com/NguyenQuangMinh0504)
-   - Compiling StackRabbit into web assembly: [@timotheeg](https://github.com/timotheeg)
-   - Adding column 9 vits: [@fractal161](https://github.com/fractal161)
+# Credits (In contributor join sequence):
+  - Making the AI: [@GregoryCannon](https://github.com/GregoryCannon)
+  - Helping with the AI: [@wikedawsom](https://github.com/wikedawsom)
+  - Making the Tutorial on setting up: [@BenP1236691](https://github.com/BenP1236691)
+  - Bug fixing the TypeScript: [@NguyenQuangMinh0504](https://github.com/NguyenQuangMinh0504)
+  - Compiling StackRabbit into web assembly: [@timotheeg](https://github.com/timotheeg)
+  - Adding column 9 vits: [@fractal161](https://github.com/fractal161)
