@@ -32,6 +32,7 @@ export function getPossibleMoves(
   inputFrameTimeline: string,
   existingRotation: number,
   canFirstFrameShift: boolean,
+  dasCharge: number,
   shouldLog: boolean
 ): Array<Possibility> {
   // If the piece has already fallen off the bottom of the board, there are no legal moves
@@ -63,6 +64,7 @@ export function getPossibleMoves(
     pieceId: currentPieceId,
     existingRotation,
     canFirstFrameShift,
+    dasCharge,
   };
   if (shouldLog)
     logBoard(
@@ -158,7 +160,8 @@ function exploreLegalPlacementsUntilLock(
       _modulus(simState.rotationIndex - simParams.existingRotation, 4),
       simState.x - simParams.initialX,
       simParams.inputFrameTimeline,
-      simParams.canFirstFrameShift ? 0 : simParams.framesAlreadyElapsed
+      simParams.canFirstFrameShift ? 0 : simParams.framesAlreadyElapsed,
+      simState.dasCharge
     );
     let inputSequenceWithWait = inputSequence;
 
@@ -381,7 +384,8 @@ export function getPieceRanges(
   level: number,
   pieceId: PieceId,
   rotationIndex: number,
-  inputFrameTimeline: string
+  inputFrameTimeline: string,
+  dasCharge: number
 ) {
   if (!inputFrameTimeline) {
     throw new Error("Unknown input timeline when checking placement");
@@ -401,6 +405,7 @@ export function getPieceRanges(
     existingRotation: 0,
     inputFrameTimeline,
     canFirstFrameShift: false, // This param is only relevant for adjustments
+    dasCharge,
   };
   return [
     repeatedlyShiftPiece(-1, rotationIndex, simParams, []),
@@ -437,6 +442,7 @@ function repeatedlyShiftPiece(
     frameIndex: framesAlreadyElapsed,
     arrFrameIndex: canFirstFrameShift ? 0 : framesAlreadyElapsed,
     rotationIndex: existingRotation,
+    dasCharge: simParams.dasCharge,
   };
   let rangeCurrent = 0;
 
@@ -554,7 +560,8 @@ export function canDoPlacement(
   pieceId: string,
   rotationIndex: number,
   xOffset: number,
-  inputFrameTimeline: string
+  inputFrameTimeline: string,
+  dasCharge: number = 16
 ) {
   if (!inputFrameTimeline) {
     throw new Error("Unknown input timeline when checking placement");
@@ -574,6 +581,7 @@ export function canDoPlacement(
     existingRotation: 0,
     inputFrameTimeline,
     canFirstFrameShift: false, // This function refers to doing a placement from the start, not starting from an adjustment or anything
+    dasCharge,
   };
   return placementIsLegal(rotationIndex, xOffset, simParams);
 }

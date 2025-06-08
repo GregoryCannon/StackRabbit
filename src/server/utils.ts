@@ -147,6 +147,18 @@ export function formatPossibility(
 const FRAME_WITH_INPUT = "X";
 const FRAME_WAITING = ".";
 
+export function getDasInputFrameTimeline(initialDasCharge: number) {
+  const maxNumFrames = 15 + 6 * 5; // 15 initial delay, then 5 taps * 6 ARR
+  let dasCharge = initialDasCharge;
+  let timeline = "";
+  for (let i = 0; i < maxNumFrames; i++) {
+    // Increment before checking
+    dasCharge = Math.min(dasCharge + 1, 16);
+    timeline += dasCharge == 16 ? "X" : ".";
+  }
+  return timeline;
+}
+
 /** Check whether a given frame is an input frame in the frame timeline.
  * @param frameNum - the index of the current frame (0-INDEXED)!
  */

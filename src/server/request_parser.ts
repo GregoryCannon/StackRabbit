@@ -243,6 +243,8 @@ export function getSearchStateFromUrlArguments(urlArgs): SearchState {
     reactionTime: urlArgs.reactionTime,
     framesAlreadyElapsed: urlArgs.existingFramesElapsed,
     canFirstFrameShift: urlArgs.arrWasReset,
+    dasCharge: 16,
+    dasButtonHeld: "",
   };
 }
 

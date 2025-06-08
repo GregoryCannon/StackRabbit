@@ -1,9 +1,10 @@
 import { getBestMove, getSearchStateAfter, getSortedMoveList } from "./main";
 import { getPossibleMoves } from "./move_search";
-import { IS_DROUGHT_MODE, SHOULD_PUSHDOWN } from "./params";
+import { IS_DAS, IS_DROUGHT_MODE, SHOULD_PUSHDOWN } from "./params";
 import { getPieceProbability } from "./piece_rng";
 import {
   formatPossibility,
+  getDasInputFrameTimeline,
   GetGravity,
   IsGravityDoubled,
   POSSIBLE_NEXT_PIECES,
@@ -109,10 +110,7 @@ export class PreComputeManager {
 
     // Send a response with just the default placement in case the other computation doesn't finish
     const formattedResult = formatPrecomputeResult({}, defaultPlacement);
-    console.log(
-      "Saving partial result",
-      formatPossibility(defaultPlacement)
-    );
+    console.log("Saving partial result", formatPossibility(defaultPlacement));
     onPartialResultCallback(formattedResult);
 
     // Ping all the workers to start evaluating the next piece values
@@ -254,6 +252,7 @@ export class PreComputeManager {
         this.inputFrameTimeline,
         s.existingRotation,
         s.canFirstFrameShift,
+        s.dasCharge,
         /* shouldLog= */ false
       );
 
@@ -444,6 +443,8 @@ export function predictSearchStateAtAdjustmentTime(
   let rotationAtAdjustmentTime = 0;
   let totalActiveFrames = 0;
 
+  let dasCharge = initialState.dasCharge;
+
   // Loop through the frames until adjustment time
   for (let i = 0; i < initialState.reactionTime; i++) {
     if (shouldPerformInputsThisFrame(inputFrameTimeline, i)) {
@@ -454,8 +455,14 @@ export function predictSearchStateAtAdjustmentTime(
     const thisFrameStr = inputSequence[i];
     if (isAnyOf(thisFrameStr, "LEF")) {
       offsetXAtAdjustmentTime--;
+      if (IS_DAS) {
+        dasCharge = dasCharge == 16 ? 10 : 0;
+      }
     } else if (isAnyOf(thisFrameStr, "RIG")) {
       offsetXAtAdjustmentTime++;
+      if (IS_DAS) {
+        dasCharge = dasCharge == 16 ? 10 : 0;
+      }
     }
 
     // Track rotations
@@ -498,6 +505,13 @@ export function predictSearchStateAtAdjustmentTime(
     offsetYAtAdjustmentTime *= 2;
   }
 
+  const dasButtonHeld =
+    inputsUsedByAdjTime == inputsPossibleByAdjTime
+      ? offsetXAtAdjustmentTime < 0
+        ? "L"
+        : "R"
+      : "";
+
   return {
     board: initialState.board,
     currentPieceId: initialState.currentPieceId,
@@ -510,6 +524,8 @@ export function predictSearchStateAtAdjustmentTime(
     framesAlreadyElapsed: initialState.reactionTime,
     reactionTime: initialState.reactionTime,
     canFirstFrameShift: inputsUsedByAdjTime < inputsPossibleByAdjTime,
+    dasCharge,
+    dasButtonHeld,
   };
 }
 
@@ -533,6 +549,8 @@ function testPrediction() {
         existingYOffset: 0,
         existingRotation: 0,
         canFirstFrameShift: false,
+        dasCharge: 16,
+        dasButtonHeld: "",
       },
       "E....E...L...L",
       "X....X...X...X"

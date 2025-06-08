@@ -20,6 +20,7 @@ function legalMovesTest() {
       "X...",
       0,
       false,
+      16,
       false
     );
     const adjustmentPossibilites = getPossibleMoves(
@@ -32,6 +33,7 @@ function legalMovesTest() {
       "X...",
       pieceId == "O" ? 0 : 1,
       false,
+      16,
       false
     );
     if (new Set(possibilites).size !== expectedLength) {
@@ -234,6 +236,7 @@ function lastMinuteRotationsTest() {
       pieceId: "J",
       existingRotation: 0,
       canFirstFrameShift: false,
+      dasCharge: 16,
     }) !== expected1
   ) {
     console.log(`Failed: double rotate J 14 high 29. Expected ${expected1}`);
@@ -253,6 +256,7 @@ function lastMinuteRotationsTest() {
       pieceId: "J",
       existingRotation: 0,
       canFirstFrameShift: false,
+      dasCharge: 16,
     }) !== expected2
   ) {
     console.log(`Failed: double rotate J 15 high 29. Expected ${expected2}`);
@@ -272,6 +276,7 @@ function speedTest(x) {
       "X...",
       0,
       false,
+      /* dasCharge= */ 16,
       false
     );
   }
@@ -351,6 +356,7 @@ function testSingleCase(testCase) {
     "X...",
     rotation,
     false,
+    16,
     false
   );
 }

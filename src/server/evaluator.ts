@@ -906,7 +906,8 @@ export function getValueOfPossibility(
     level,
     "I",
     1,
-    aiParams.INPUT_FRAME_TIMELINE
+    aiParams.INPUT_FRAME_TIMELINE,
+    16 // Assume full DAS for these purposes
   );
   const minReachableX = leftRange + 5;
   const maxReachableX = rightRange + 5;

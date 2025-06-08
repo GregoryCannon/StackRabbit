@@ -1,5 +1,6 @@
 import { getRowsNeedingToBurn } from "./evaluator";
 import { canDoPlacement, placementIsLegal } from "./move_search";
+import { IS_DAS } from "./params";
 import { getSurfaceArrayAndHoles, parseBoard } from "./utils";
 
 const utils = require("./utils");
@@ -125,7 +126,8 @@ export function generateInputSequence(
   rotationIndex,
   xOffset,
   inputFrameTimeline,
-  framesAlreadyElapsed = 0
+  framesAlreadyElapsed,
+  dasCharge
 ) {
   let inputsLeft = xOffset < 0 && Math.abs(xOffset);
   let inputsRight = xOffset > 0 && xOffset;
@@ -180,6 +182,10 @@ export function generateInputSequence(
           rotationsRight--;
         }
       }
+    } else if (IS_DAS && inputsLeft > 0) {
+      inputSequence += "L";
+    } else if (IS_DAS && inputsRight > 0) {
+      inputSequence += "R";
     } else {
       inputSequence += ".";
     }

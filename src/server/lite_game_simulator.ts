@@ -109,6 +109,8 @@ export function simulateGame(
       existingXOffset: 0,
       existingYOffset: 0,
       existingRotation: 0,
+      dasCharge: 16,
+      dasButtonHeld: "",
     };
     const bestMove = getMoveThisStep(
       searchState,

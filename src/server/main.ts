@@ -298,6 +298,7 @@ function searchDepth1(
     aiParams.INPUT_FRAME_TIMELINE,
     searchState.existingRotation,
     searchState.canFirstFrameShift,
+    searchState.dasCharge,
     false
   );
   let pruned = [];
@@ -557,6 +558,8 @@ export function getSearchStateAfter(
     existingYOffset: 0,
     existingRotation: 0,
     canFirstFrameShift: false,
+    dasCharge: possibility.dasChargeAfter,
+    dasButtonHeld: "", // Not applicable since holding L/R doesn't matter between full placements
   };
 }
 

@@ -1,5 +1,6 @@
-IS_MAC = false
+IS_MAC = true
 IS_PAL = false
+IS_DAS = true
 USE_PUSHDOWN = true
 DEBUG_MODE = false
 
@@ -378,12 +379,7 @@ function onFirstFrameOfNewPiece()
   -- If it's the first piece, make an 'adjustment' to do the initial placement
   if isFirstPiece then
     requestAdjustmentAsync()
-  
-  elseif not gameOver and waitingOnAsyncRequest then
-    -- Check in on the result of the previous async request for the inital placement
-    local apiResult = fetchAsyncResult()
-    parsePrecompute(apiResult)
-  end
+
 end
 
 
@@ -451,7 +447,16 @@ function runGameFrame()
   local gamePhaseLastFrame = gamePhase
   gamePhase = memory.readbyte(0x0048)
   -- print("gamePhase" .. gamePhase)
-  if(gamePhase == 1) then
+  if (gamePhase == 8) then
+    -- Last frame of lock delay, look up next piece stuff from server
+    if not gameOver and waitingOnAsyncRequest then
+      -- Check in on the result of the previous async request for the inital placement
+      local apiResult = fetchAsyncResult()
+      parsePrecompute(apiResult)
+    end
+  end
+    
+  elseif(gamePhase == 1) then
     if(gamePhaseLastFrame ~= 1) then
       -- First active frame for piece. This is where board state/input sequence is calculated
       onFirstFrameOfNewPiece()
@@ -470,7 +475,7 @@ function runGameFrame()
     arrFrameIndex = arrFrameIndex + 1
 
   -- Do stuff right when the piece locks.
-  elseif gamePhase >= 2 and gamePhase <= 8 then
+  elseif gamePhase >= 2 and gamePhase < 8 then
     if gamePhaseLastFrame == 1 then
       if not USE_PUSHDOWN and not isFirstPiece and not gameOver and getInputForFrame(arrFrameIndex + 1) ~= "*" then
         print(inputSequence)

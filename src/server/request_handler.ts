@@ -2,11 +2,12 @@ import { engineLookup, engineLookupTopMoves } from "./engine_lookup";
 import { rateSurface } from "./evaluator";
 import { getSearchStateAfter } from "./main";
 import { getPossibleMoves } from "./move_search";
-import { SHOULD_LOG } from "./params";
+import { IS_DAS, SHOULD_LOG } from "./params";
 import { PreComputeManager } from "./precompute";
 import {
   boardEquals,
   formatPossibility,
+  getDasInputFrameTimeline,
   getSurfaceArrayAndHoles,
   logBoard,
 } from "./utils";
@@ -143,7 +144,10 @@ export class RequestHandler {
             200,
           ];
         }
-        const result = await this.handlePrecomputeRequestSync(searchState, urlArgs);
+        const result = await this.handlePrecomputeRequestSync(
+          searchState,
+          urlArgs
+        );
         return [result, 200];
 
       case "version":
@@ -208,12 +212,13 @@ export class RequestHandler {
         urlArgs.inputFrameTimeline,
         searchState.existingRotation,
         searchState.canFirstFrameShift,
+        searchState.dasCharge,
         false
       );
       for (const possibility of possibilityList) {
         if (
           possibility.placement[0] === rotation &&
-          possibility.placement[1] === xOffset && 
+          possibility.placement[1] === xOffset &&
           possibility.placement[2] === yOffset
         ) {
           const possibilityChain: PossibilityChain = {
@@ -405,12 +410,16 @@ export class RequestHandler {
       return;
     }
 
+    const inputFrameTimeline = IS_DAS
+      ? getDasInputFrameTimeline(urlArgs.initialDasCharge)
+      : urlArgs.inputFrameTimeline;
+
     this.preComputeManager.finessePrecompute(
       searchState,
       SHOULD_LOG,
       params.getParams(),
       params.getParamMods(),
-      urlArgs.inputFrameTimeline,
+      inputFrameTimeline,
       function (result) {
         this.partialResult = result;
       }.bind(this),
@@ -423,11 +432,14 @@ export class RequestHandler {
 
   /**
    * Runs a standard precompute request (as for live-games), but returns the result synchronously.
-   * @param searchState 
-   * @param urlArgs 
-   * @returns 
+   * @param searchState
+   * @param urlArgs
+   * @returns
    */
-  async handlePrecomputeRequestSync(searchState: SearchState, urlArgs: UrlArguments) {
+  async handlePrecomputeRequestSync(
+    searchState: SearchState,
+    urlArgs: UrlArguments
+  ) {
     if (!this.preComputeManager) {
       return;
     }
@@ -438,7 +450,7 @@ export class RequestHandler {
 
     this.handlePrecomputeRequest(searchState, urlArgs);
     // Check on the async task for completion every 10 ms
-    while(this.asyncCallInProgress){
+    while (this.asyncCallInProgress) {
       await sleep(10);
     }
     return this.asyncResult;

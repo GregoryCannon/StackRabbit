@@ -22,6 +22,7 @@ interface SimParams {
   existingRotation: number;
   inputFrameTimeline: string;
   canFirstFrameShift: boolean;
+  dasCharge: number;
 }
 
 interface UrlArguments {
@@ -42,6 +43,7 @@ interface UrlArguments {
   existingYOffset?: number;
   existingRotation?: number;
   existingFramesElapsed?: number;
+  initialDasCharge?: number;
 }
 
 /* ----------- Engine Lookup Data Structures ----------- */
@@ -95,6 +97,7 @@ interface SimState {
   frameIndex: number;
   arrFrameIndex: number; // Sometimes differs from overall frame index (during adjustments)
   rotationIndex: number;
+  dasCharge?: number;
 }
 
 interface LegalPlacementSimState extends SimState {
@@ -136,6 +139,7 @@ interface Possibility {
   fastEvalScore?: number;
   evalScore?: number;
   evalExplanation?: string;
+  dasChargeAfter?: number;
 }
 
 interface PossibilityChain extends Possibility {
@@ -173,6 +177,8 @@ interface SearchState {
   existingRotation: number;
   reactionTime: number;
   canFirstFrameShift: boolean;
+  dasCharge: number; // 0 to 16
+  dasButtonHeld: string; // "L", "R", or ""
 }
 
 interface PhantomPlacement {

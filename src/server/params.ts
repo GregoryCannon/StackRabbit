@@ -18,6 +18,8 @@ export const EVALUATION_BREADTH = {
 
 export const SHOULD_LOG = false;
 
+export const IS_DAS = true;
+
 export const IS_DROUGHT_MODE = false;
 export const LINE_CAP = NO_LIMIT;
 export const DOUBLE_KILLSCREEN_ENABLED = false;
