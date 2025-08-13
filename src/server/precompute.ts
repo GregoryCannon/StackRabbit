@@ -109,10 +109,7 @@ export class PreComputeManager {
 
     // Send a response with just the default placement in case the other computation doesn't finish
     const formattedResult = formatPrecomputeResult({}, defaultPlacement);
-    console.log(
-      "Saving partial result",
-      formatPossibility(defaultPlacement)
-    );
+    console.log("Saving partial result", formatPossibility(defaultPlacement));
     onPartialResultCallback(formattedResult);
 
     // Ping all the workers to start evaluating the next piece values
