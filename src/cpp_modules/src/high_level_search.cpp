@@ -292,7 +292,7 @@ std::string rateMove(GameState gameState, const Piece *firstPiece, const Piece *
       playerValAfterAdj = FLOAT_MIN;
       numPlayedOut = 0;
       for (auto possibility : sortedListD2){
-        if (numPlayedOut >= numCandidatesToPlayout) {
+        if (numPlayedOut >= numCandidatesToPlayout && !playerValUnset) {
           break;
         }
         float overallScore = possibility.immediateReward + getPlayoutScore(possibility.resultingState, playoutCount, playoutLength, pieceRangeContextLookup, secondPiece->index, /* playoutDataList */ NULL);
