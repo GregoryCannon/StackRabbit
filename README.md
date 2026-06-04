@@ -22,7 +22,7 @@ Then there are two components of the backend:
 - **Node.js**: [Download here](https://nodejs.org)
 - **FCEUX**: [Download here](https://fceux.com)
 - **Python3**: [Download here](https://python.org)
-- **node-gyp**: Install with `npm i node-gyp nan`
+- **node-gyp & nan**: Install with `npm i node-gyp nan` (Run this AFTER installing node.js And reopening the terminal)
 - **Visual Studio Build Tools**
 
 ## Steps
@@ -44,7 +44,7 @@ Then there are two components of the backend:
    - If the previous command runs without errors, execute `npm start`.
 
 6. **Setup FCEUX**:
-   - Open the FCEUX folder.
+   - Open the FCEUX folder.]
    - Add all `.lua` files (excluding `itn12.lua`, `mime.lua`, and `socket.lua`, put them in `C:/path/to/fceux/lua`) from the [Luasocket repository](https://github.com/lunarmodules/luasocket) to `C:/path/to/fceux/lua/socket/`. (if there is no `lua` folder, create it and the socket folder inside)
 
 7. **Load Tetris ROM**:
@@ -54,3 +54,15 @@ Then there are two components of the backend:
    - In the FCEUX window, go to `File > Lua > New Lua Script Window`.
    - In the new window, browse and run `path/to/stackrabbit/src/fceux/stackrabbit.lua`.
    - Open level 19 and let it start!
+
+
+# If Anyone Found An error, please tell me in the issues tab
+  - We may have made some errors, so if you tell us those errors, We will make corrections as soon as possible, Thank You!
+
+# Credits (In contributor join sequence):
+  - Making the AI: [@GregoryCannon](https://github.com/GregoryCannon)
+  - Helping with the AI: [@wikedawsom](https://github.com/wikedawsom)
+  - Making the Tutorial on setting up: [@BenP1236691](https://github.com/BenP1236691)
+  - Bug fixing the TypeScript: [@NguyenQuangMinh0504](https://github.com/NguyenQuangMinh0504)
+  - Compiling StackRabbit into web assembly: [@timotheeg](https://github.com/timotheeg)
+  - Adding column 9 vits: [@fractal161](https://github.com/fractal161)
