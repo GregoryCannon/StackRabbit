@@ -1,6 +1,5 @@
-IS_MAC = true
+IS_MAC = false
 IS_PAL = false
-IS_DAS = true
 USE_PUSHDOWN = true
 DEBUG_MODE = false
 
@@ -132,7 +131,7 @@ function parsePrecompute(precomputeResult)
   -- Parse the initial placement and queue up those inputs
   if REACTION_TIME_FRAMES > 0 then
     local defaultPlacement = splitString(rows[1], ":")[2]
-    if defaultPlacement == null then
+    if defaultPlacement == nil then
       print("GAME OVER - no default placement")
       gameOver = true
       return
@@ -153,7 +152,7 @@ end
   
 
 -- Make a request that will kick off a longer calculation. Subsequent frames will ping the server again for the result.
-function requestAdjustmentAsync()
+function requestFirstPlacementAsync()
   offsetXAtAdjustmentTime = 0
   rotationAtAdjustmentTime = 0
   canFirstFrameShiftAtAdjustmentTime = true
@@ -161,7 +160,6 @@ function requestAdjustmentAsync()
   -- Convert requests to PAL
   local reqLevel = level
   local reqLines = numLines
-  print("reqLines " .. reqLines)
   if IS_PAL then
     reqLines = numLines + 100
     if reqLevel == 18 then
@@ -170,7 +168,6 @@ function requestAdjustmentAsync()
       reqLevel = 29
     end
   end
-  print("reqLines2 " .. reqLines)
 
   -- Format URL arguments
   local reqStr = "http://localhost:3000/get-move-async?board=" .. getEncodedBoard() .. "&currentPiece=" .. orientToPiece[pcur]
@@ -188,11 +185,10 @@ function requestPrecompute()
   if gameOver then
     return
   end
-  print("requestprecompute")
+  print("requestPrecompute")
   -- Convert requests to PAL
   local reqLevel = stateForNextPiece.level
   local reqLines = stateForNextPiece.lines
-  print("reqLines " .. reqLines)
   if IS_PAL then
     reqLines = numLines + 100
     if reqLevel == 18 then
@@ -232,6 +228,10 @@ function fetchAsyncResult()
     error("RECEIVED BAD RESPONSE CODE:" .. response.code)
     return nil
   end 
+  if (response.data == nil or response.data == '') then
+    error("NO RESPONSE FROM SERVER (is it running?)")
+  end
+
   waitingOnAsyncRequest = false;
   return response.data
 end
@@ -262,13 +262,15 @@ function makeHttpRequest(requestUrl)
 end
 
 function parseGameStateFromResponse(apiResult)
-  if apiResult == "No legal moves" or apiResult == nil then
+  if (apiResult == nil) then
+    error("apiResult was nil")
+  end
+  if apiResult == "No legal moves" then
     return
   end
 
   -- local split = splitString(apiResult, ",|\|")
   local split = splitString(apiResult, "\|")
-  
   if split[3] ~= nil and split[4] ~= nil and split[5] ~= nil then
     stateForNextPiece = { 
       board=split[3], 
@@ -324,7 +326,7 @@ function executeInputs()
 
     local inputsThisFrame = {A=false, B=false, left=false, right=false, up=false, down=false, select=false, start=false}
 
-    if inputSequence == null or arrFrameIndex + 1 > string.len(inputSequence) then
+    if inputSequence == nil or arrFrameIndex + 1 > string.len(inputSequence) then
       -- print("Input sequence null or frame index out of bounds" .. arrFrameIndex)
       -- print(inputSequence)
       joypad.set(1, inputsThisFrame)
@@ -361,24 +363,28 @@ end
 ------------ Game Events  -------------- 
 ------------------------------------]]--
 
-function onFirstFrameOfNewPiece()
-  -- Read values from memory
-  local function bcdToDecimal(a)
-    return 10 * (a - (a % 16)) / 16 + (a % 16)
-  end
+function bcdToDecimal(a)
+  return 10 * (a - (a % 16)) / 16 + (a % 16)
+end
+
+function readFromMemory()
   pcur = memory.readbyte(0x0042) -- Stores current/next pieces before they even appear onscreen
   pnext = memory.readbyte(0x0019)
   numLines = bcdToDecimal(memory.readbyte(0x0051)) * 100 + bcdToDecimal(memory.readbyte(0x0050))
   level = memory.readbyte(0x0044)
-  
-  resetPieceScopedVars()
-  
+end
+
+function onFirstFrameOfNewPiece()  
+  readFromMemory()
+    
   print("--------------------")
   print(orientToPiece[pcur])
 
   -- If it's the first piece, make an 'adjustment' to do the initial placement
   if isFirstPiece then
-    requestAdjustmentAsync()
+    resetPieceScopedVars()
+    requestFirstPlacementAsync()
+  end
 
 end
 
@@ -434,6 +440,10 @@ function runGameFrame()
     return
   end
 
+  if (gameOver) then
+    return
+  end
+
   if gamePhase == 10 then
     -- Quit to menu
     startBtnVal = false;
@@ -447,14 +457,12 @@ function runGameFrame()
   local gamePhaseLastFrame = gamePhase
   gamePhase = memory.readbyte(0x0048)
   -- print("gamePhase" .. gamePhase)
-  if (gamePhase == 8) then
+  if (gamePhase == 8 and waitingOnAsyncRequest) then
+    resetPieceScopedVars()
     -- Last frame of lock delay, look up next piece stuff from server
-    if not gameOver and waitingOnAsyncRequest then
-      -- Check in on the result of the previous async request for the inital placement
-      local apiResult = fetchAsyncResult()
-      parsePrecompute(apiResult)
-    end
-  end
+    local apiResult = fetchAsyncResult()
+    parsePrecompute(apiResult)
+    waitingOnAsyncRequest = false
     
   elseif(gamePhase == 1) then
     if(gamePhaseLastFrame ~= 1) then
