@@ -7,7 +7,6 @@ import { PreComputeManager } from "./precompute";
 import {
   boardEquals,
   formatPossibility,
-  getDasInputFrameTimeline,
   getSurfaceArrayAndHoles,
   logBoard,
 } from "./utils";
@@ -213,6 +212,7 @@ export class RequestHandler {
         searchState.existingRotation,
         searchState.canFirstFrameShift,
         searchState.dasCharge,
+        searchState.dasButtonHeld,
         false
       );
       for (const possibility of possibilityList) {
@@ -410,9 +410,7 @@ export class RequestHandler {
       return;
     }
 
-    const inputFrameTimeline = IS_DAS
-      ? getDasInputFrameTimeline(urlArgs.initialDasCharge)
-      : urlArgs.inputFrameTimeline;
+    const inputFrameTimeline = urlArgs.inputFrameTimeline;
 
     this.preComputeManager.finessePrecompute(
       searchState,

@@ -98,6 +98,7 @@ interface SimState {
   arrFrameIndex: number; // Sometimes differs from overall frame index (during adjustments)
   rotationIndex: number;
   dasCharge?: number;
+  inputSequence: string;
 }
 
 interface LegalPlacementSimState extends SimState {
@@ -178,7 +179,7 @@ interface SearchState {
   reactionTime: number;
   canFirstFrameShift: boolean;
   dasCharge: number; // 0 to 16
-  dasButtonHeld: string; // "L", "R", or ""
+  dasButtonHeld: DasButtonHeld;
 }
 
 interface PhantomPlacement {
@@ -196,6 +197,12 @@ const enum AiMode {
   KILLSCREEN,
   KILLSCREEN_FOR_TETRISES,
   IMMINENT_DEATH,
+}
+
+const enum DasButtonHeld {
+  LEFT,
+  RIGHT,
+  NONE,
 }
 
 /* ----------- Evaluation Parameters ------------- */

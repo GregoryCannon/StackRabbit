@@ -244,7 +244,7 @@ export function getSearchStateFromUrlArguments(urlArgs): SearchState {
     framesAlreadyElapsed: urlArgs.existingFramesElapsed,
     canFirstFrameShift: urlArgs.arrWasReset,
     dasCharge: 16,
-    dasButtonHeld: "",
+    dasButtonHeld: DasButtonHeld.NONE,
   };
 }
 

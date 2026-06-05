@@ -5,7 +5,7 @@ import {
   getPossibleMoves,
   placementIsLegal,
 } from "./move_search";
-import { generateInputFrameTimeline, GetGravity } from "./utils";
+import { generateInputFrameTimeline, GetGravity, logBoard } from "./utils";
 
 function legalMovesTest() {
   const BOARD_3 = getTestBoardWithHeight(3);
@@ -21,6 +21,7 @@ function legalMovesTest() {
       0,
       false,
       16,
+      DasButtonHeld.NONE,
       false
     );
     const adjustmentPossibilites = getPossibleMoves(
@@ -34,6 +35,7 @@ function legalMovesTest() {
       pieceId == "O" ? 0 : 1,
       false,
       16,
+      DasButtonHeld.NONE,
       false
     );
     if (new Set(possibilites).size !== expectedLength) {
@@ -224,40 +226,50 @@ function tapRangeTest() {
 function lastMinuteRotationsTest() {
   let expected1 = true;
   if (
-    placementIsLegal(2, 0, {
-      board: getTestBoardWithHeight(14),
-      initialX: 3,
-      initialY: -1,
-      gravity: GetGravity(29),
-      doubleGravity: false,
-      framesAlreadyElapsed: 0,
-      inputFrameTimeline: "X...",
-      rotationsList: PIECE_LOOKUP["J"][0] as Array<PieceArray>,
-      pieceId: "J",
-      existingRotation: 0,
-      canFirstFrameShift: false,
-      dasCharge: 16,
-    }) !== expected1
+    placementIsLegal(
+      2,
+      0,
+      {
+        board: getTestBoardWithHeight(14),
+        initialX: 3,
+        initialY: -1,
+        gravity: GetGravity(29),
+        doubleGravity: false,
+        framesAlreadyElapsed: 0,
+        inputFrameTimeline: "X...",
+        rotationsList: PIECE_LOOKUP["J"][0] as Array<PieceArray>,
+        pieceId: "J",
+        existingRotation: 0,
+        canFirstFrameShift: false,
+        dasCharge: 16,
+      },
+      /* dasWillReset */ false
+    ) !== expected1
   ) {
     console.log(`Failed: double rotate J 14 high 29. Expected ${expected1}`);
   }
 
   let expected2 = false;
   if (
-    placementIsLegal(2, 0, {
-      board: getTestBoardWithHeight(15),
-      initialX: 3,
-      initialY: -1,
-      gravity: GetGravity(29),
-      doubleGravity: false,
-      framesAlreadyElapsed: 0,
-      inputFrameTimeline: "X...",
-      rotationsList: PIECE_LOOKUP["J"][0] as Array<PieceArray>,
-      pieceId: "J",
-      existingRotation: 0,
-      canFirstFrameShift: false,
-      dasCharge: 16,
-    }) !== expected2
+    placementIsLegal(
+      2,
+      0,
+      {
+        board: getTestBoardWithHeight(15),
+        initialX: 3,
+        initialY: -1,
+        gravity: GetGravity(29),
+        doubleGravity: false,
+        framesAlreadyElapsed: 0,
+        inputFrameTimeline: "X...",
+        rotationsList: PIECE_LOOKUP["J"][0] as Array<PieceArray>,
+        pieceId: "J",
+        existingRotation: 0,
+        canFirstFrameShift: false,
+        dasCharge: 16,
+      },
+      /* dasWillReset */ false
+    ) !== expected2
   ) {
     console.log(`Failed: double rotate J 15 high 29. Expected ${expected2}`);
   }
@@ -277,6 +289,7 @@ function speedTest(x) {
       0,
       false,
       /* dasCharge= */ 16,
+      DasButtonHeld.NONE,
       false
     );
   }
@@ -357,6 +370,7 @@ function testSingleCase(testCase) {
     rotation,
     false,
     16,
+    DasButtonHeld.NONE,
     false
   );
 }
@@ -385,7 +399,27 @@ function generateTestCases() {
 
 // generateTestCases();
 // testNumLegalAdjustments();
-tapRangeTest();
+// tapRangeTest();
 // for (const poss of testSingleCase([-5, 10, 3, 41])) {
 //   console.log(poss.placement);
 // }
+
+const possibleMoves = getPossibleMoves(
+  getTestBoardWithHeight(10),
+  "O",
+  29,
+  0,
+  0,
+  0,
+  "X.",
+  0,
+  false,
+  16,
+  DasButtonHeld.RIGHT,
+  false
+);
+for (const possibility of possibleMoves) {
+  // logBoard(possibility.boardAfter);
+  console.log(possibility.placement);
+}
+console.log(possibleMoves.length);

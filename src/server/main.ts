@@ -299,6 +299,7 @@ function searchDepth1(
     searchState.existingRotation,
     searchState.canFirstFrameShift,
     searchState.dasCharge,
+    searchState.dasButtonHeld,
     false
   );
   let pruned = [];
@@ -559,7 +560,7 @@ export function getSearchStateAfter(
     existingRotation: 0,
     canFirstFrameShift: false,
     dasCharge: possibility.dasChargeAfter,
-    dasButtonHeld: "", // Not applicable since holding L/R doesn't matter between full placements
+    dasButtonHeld: DasButtonHeld.NONE, // Not applicable since holding L/R doesn't matter between full placements
   };
 }
 

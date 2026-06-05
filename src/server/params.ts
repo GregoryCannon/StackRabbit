@@ -18,14 +18,14 @@ export const EVALUATION_BREADTH = {
 
 export const SHOULD_LOG = false;
 
-export const IS_DAS = true;
+export const IS_DAS = false;
 
 export const IS_DROUGHT_MODE = false;
 export const LINE_CAP = NO_LIMIT;
 export const DOUBLE_KILLSCREEN_ENABLED = false;
 export const DEBUG_DOUBLE_KS_ALWAYS_ENABLED = false;
-export const CPP_LIVEGAME_PLAYOUT_COUNT = 49;
-export const CPP_LIVEGAME_PLAYOUT_LENGTH = 2;
+export const CPP_LIVEGAME_PLAYOUT_COUNT = 140;
+export const CPP_LIVEGAME_PLAYOUT_LENGTH = 6;
 export const CPP_LIVEGAME_PRUNING_BREADTH = 10;
 
 // Rarely changed

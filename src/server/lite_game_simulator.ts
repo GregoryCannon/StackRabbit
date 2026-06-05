@@ -97,7 +97,7 @@ export function simulateGame(
     // await sleep(1000);
 
     // Place one piece
-    const searchState = {
+    const searchState: SearchState = {
       board: board,
       currentPieceId,
       nextPieceId,
@@ -110,7 +110,7 @@ export function simulateGame(
       existingYOffset: 0,
       existingRotation: 0,
       dasCharge: 16,
-      dasButtonHeld: "",
+      dasButtonHeld: DasButtonHeld.NONE,
     };
     const bestMove = getMoveThisStep(
       searchState,

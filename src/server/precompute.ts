@@ -4,7 +4,6 @@ import { IS_DAS, IS_DROUGHT_MODE, SHOULD_PUSHDOWN } from "./params";
 import { getPieceProbability } from "./piece_rng";
 import {
   formatPossibility,
-  getDasInputFrameTimeline,
   GetGravity,
   IsGravityDoubled,
   POSSIBLE_NEXT_PIECES,
@@ -253,6 +252,7 @@ export class PreComputeManager {
         s.existingRotation,
         s.canFirstFrameShift,
         s.dasCharge,
+        s.dasButtonHeld,
         /* shouldLog= */ false
       );
 
@@ -443,7 +443,9 @@ export function predictSearchStateAtAdjustmentTime(
   let rotationAtAdjustmentTime = 0;
   let totalActiveFrames = 0;
 
+  // Track the hypothetical DAS charge whether or not it's actually enabled
   let dasCharge = initialState.dasCharge;
+  let dasButtonHeld = DasButtonHeld.NONE;
 
   // Loop through the frames until adjustment time
   for (let i = 0; i < initialState.reactionTime; i++) {
@@ -453,17 +455,24 @@ export function predictSearchStateAtAdjustmentTime(
 
     // Track shifts
     const thisFrameStr = inputSequence[i];
-    if (isAnyOf(thisFrameStr, "LEF")) {
+    const canShiftThisFrame = !IS_DAS || dasCharge >= 15;
+    if (isAnyOf(thisFrameStr, "LEF") && canShiftThisFrame) {
       offsetXAtAdjustmentTime--;
-      if (IS_DAS) {
-        dasCharge = dasCharge == 16 ? 10 : 0;
-      }
-    } else if (isAnyOf(thisFrameStr, "RIG")) {
+      dasCharge = 10;
+      dasButtonHeld = DasButtonHeld.LEFT;
+    } else if (isAnyOf(thisFrameStr, "RIG") && canShiftThisFrame) {
       offsetXAtAdjustmentTime++;
-      if (IS_DAS) {
-        dasCharge = dasCharge == 16 ? 10 : 0;
-      }
+      dasCharge = 10;
+      dasButtonHeld = DasButtonHeld.RIGHT;
+    } else if (dasCharge < 15) {
+      // Charge DAS for next piece
+      dasCharge += 1;
+    } else {
+      // Can't DAS anymore without overshifting
+      dasButtonHeld = DasButtonHeld.NONE;
     }
+
+    // console.log("frame", i, "dasCharge", dasCharge, "input", thisFrameStr);
 
     // Track rotations
     if (isAnyOf(thisFrameStr, "AEI")) {
@@ -505,13 +514,6 @@ export function predictSearchStateAtAdjustmentTime(
     offsetYAtAdjustmentTime *= 2;
   }
 
-  const dasButtonHeld =
-    inputsUsedByAdjTime == inputsPossibleByAdjTime
-      ? offsetXAtAdjustmentTime < 0
-        ? "L"
-        : "R"
-      : "";
-
   return {
     board: initialState.board,
     currentPieceId: initialState.currentPieceId,
@@ -523,13 +525,13 @@ export function predictSearchStateAtAdjustmentTime(
     existingRotation: rotationAtAdjustmentTime,
     framesAlreadyElapsed: initialState.reactionTime,
     reactionTime: initialState.reactionTime,
-    canFirstFrameShift: inputsUsedByAdjTime < inputsPossibleByAdjTime,
+    canFirstFrameShift: inputsUsedByAdjTime < inputsPossibleByAdjTime, // Only used for tap
     dasCharge,
     dasButtonHeld,
   };
 }
 
-function testPrediction() {
+export function testPredictionTap() {
   const boardStr =
     "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
   const board = boardStr
@@ -544,16 +546,45 @@ function testPrediction() {
         level: 18,
         lines: 0,
         framesAlreadyElapsed: 0,
-        reactionTime: 0,
+        reactionTime: 10,
         existingXOffset: 0,
         existingYOffset: 0,
         existingRotation: 0,
         canFirstFrameShift: false,
         dasCharge: 16,
-        dasButtonHeld: "",
+        dasButtonHeld: DasButtonHeld.NONE,
       },
       "E....E...L...L",
       "X....X...X...X"
+    )
+  );
+}
+
+export function testPredictionDas() {
+  const boardStr =
+    "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
+  const board = boardStr
+    .match(/.{1,10}/g) // Select groups of 10 characters
+    .map((rowSerialized) => rowSerialized.split("").map((x) => parseInt(x)));
+  console.log(
+    predictSearchStateAtAdjustmentTime(
+      {
+        board,
+        currentPieceId: "J",
+        nextPieceId: "I",
+        level: 18,
+        lines: 0,
+        framesAlreadyElapsed: 0,
+        reactionTime: 10,
+        existingXOffset: 0,
+        existingYOffset: 0,
+        existingRotation: 0,
+        canFirstFrameShift: false,
+        dasCharge: 16,
+        dasButtonHeld: DasButtonHeld.NONE,
+      },
+      "LLLLLLLLLLLLLLLL",
+      "." // inputFrameTimeline not used for DAS
     )
   );
 }
