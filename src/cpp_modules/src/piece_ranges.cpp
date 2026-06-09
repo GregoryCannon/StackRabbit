@@ -4,8 +4,8 @@ xtable getRangeXTable() {
   xtable table = {};
   for (int p = 0; p < 7; p++) {
     for (int rot = 0; rot < 4; rot++) {
-      for (int x = -3; x <= 8;
-           x++) { // Lowest possible x is -2, highest possible is 7. Then one extra on either side.
+      for (int x = -5; x <= 10;
+           x++) { // Lowest possible x is -2, highest possible is 7. Then three extra on either side for padding (three cells of a long bar potentially)
         int tableX = x + X_BOUNDS_COLLISION_TABLE_OFFSET;
         table[p][rot][tableX] = 0; // No collision by default
         for (int row = 0; row < 4; row++) {

@@ -14,7 +14,7 @@
 #define VARIABLE_RANGE_CHECKS_ENABLED 1
 
 // Game simulation
-#define NUM_SIM_GAMES 1
+#define NUM_SIM_GAMES 10
 
 // How the agent should play
 #define USE_RANKS 0
@@ -22,7 +22,7 @@
 #define CAN_TUCK 1
 #define WELL_COLUMN 9
 #define USE_RIGHT_WELL_FEATURES 1
-#define PLAY_SAFE_PRE_KILLSCREEN 0
+#define PLAY_SAFE_PRE_KILLSCREEN 1
 #define PLAY_SAFE_ON_KILLSCREEN 0
 #define ALWAYS_LINEOUT 0
 #define ALWAYS_LINEOUT_29 0

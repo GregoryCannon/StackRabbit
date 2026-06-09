@@ -5,9 +5,9 @@
 
 using namespace std;
 
-#define X_BOUNDS_COLLISION_TABLE_OFFSET 3
+#define X_BOUNDS_COLLISION_TABLE_OFFSET 5
 
-typedef array<array<array<int, 12>, 4>, 7> xtable;
+typedef array<array<array<int, 16>, 4>, 7> xtable;
 
 extern const xtable X_BOUNDS_COLLISION_TABLE;
 

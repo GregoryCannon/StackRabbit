@@ -238,9 +238,11 @@ char findTuckInput(unsigned int board[20],
                    int availableTuckCols[40],
                    int minTuckYValsByNumPrevInputs[7]) {
   // Do rotations mod 4 or mod 2, depending on the piece (rotation logic skipped for O)
-  int numOrientations = afterTuckState.piece->id == 'O'                    ? 1
-                        : afterTuckState.piece->rowsByRotation[3][0] == NONE ? 2
-                                                                          : 4;
+  int numOrientations = afterTuckState.piece->id == 'O'
+                        ? 1
+                        : afterTuckState.piece->rowsByRotation[3][0] == NONE
+                            ? 2
+                            : 4;
   int rotationModulusMask = numOrientations == 4 ? 3 : 1;
   for (TuckInput tuckInput : TUCK_INPUTS) {
     maybePrint("Trying %c:\n", tuckInput.notation);

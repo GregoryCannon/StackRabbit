@@ -1,25 +1,17 @@
-import { PreComputeManager } from "./precompute";
+import { PreComputeManager, testPredictionDas } from "./precompute";
 import { RequestHandler } from "./request_handler";
 import * as express from "express";
 require("dotenv").config();
 
-const IS_DEPLOY = process.env.DEPLOY == "true";
-console.log("IS_DEPLOY = ", IS_DEPLOY, !IS_DEPLOY);
-const TETRIS_TRAINER_URL = "https://gregorycannon.github.io";
-
 const port = process.env.PORT || 3000;
-const ALLOW_MULTITHREAD = !IS_DEPLOY;
+const ALLOW_MULTITHREAD = true;
 
 function initExpressServer(requestHandler) {
   const app = express();
 
   // Set CORS policy
   app.use((req, res, next) => {
-    res.setHeader(
-      "Access-Control-Allow-Origin",
-      "*"
-      // IS_DEPLOY ? TETRIS_TRAINER_URL : "*"
-    );
+    res.setHeader("Access-Control-Allow-Origin", "*");
     next();
   });
 
