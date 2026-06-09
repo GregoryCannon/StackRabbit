@@ -1,10 +1,9 @@
-import { PreComputeManager, testPredictionDas } from "./precompute";
+import { PreComputeManager } from "./precompute";
 import { RequestHandler } from "./request_handler";
 import * as express from "express";
 require("dotenv").config();
 
 const port = process.env.PORT || 3000;
-const ALLOW_MULTITHREAD = true;
 
 function initExpressServer(requestHandler) {
   const app = express();
@@ -45,16 +44,11 @@ function initExpressServer(requestHandler) {
   console.log("Listening on port", port);
 }
 
-if (ALLOW_MULTITHREAD) {
-  // Create an object to manage the worker threads involved in heavy placement computation
-  const precomputer = new PreComputeManager();
+// Create an object to manage the worker threads involved in heavy placement computation
+const precomputer = new PreComputeManager();
 
-  // Start the server once the precomputer is operational
-  precomputer.initialize(() => {
-    const requestHandler = new RequestHandler(precomputer);
-    initExpressServer(requestHandler);
-  });
-} else {
-  const requestHandler = new RequestHandler(null);
+// Start the server once the precomputer is operational
+precomputer.initialize(() => {
+  const requestHandler = new RequestHandler(precomputer);
   initExpressServer(requestHandler);
-}
+});

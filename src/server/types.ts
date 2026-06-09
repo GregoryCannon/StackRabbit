@@ -6,10 +6,6 @@ type PieceArray = Array<Array<number>>;
 
 type PieceId = "I" | "O" | "L" | "J" | "T" | "S" | "Z" | null;
 
-type SimulatedGameResult = [number, number, number, number]; // score, lines, level, numHoles
-
-type ReachableCols = [number, number, number, number]; // 4 tap left, 4 tap right, 5 tap left, 5 tap right
-
 interface SimParams {
   board: Board;
   initialX: number;
@@ -46,47 +42,6 @@ interface UrlArguments {
   initialDasCharge?: number;
 }
 
-/* ----------- Engine Lookup Data Structures ----------- */
-
-type EngineResult = Array<
-  [
-    /* defaultPlacement: */ PossibilityChain,
-    /* adjustments: */ Array<PossibilityChain>
-  ]
->;
-
-interface FormattedMove {
-  piece: PieceId;
-  placement: Placement;
-  totalValue: number;
-  inputSequence: string;
-  isSpecialMove: boolean;
-}
-
-interface MinimalFormattedMove {
-  placement: Placement;
-  isSpecialMove: boolean;
-  totalValue: string; // String so that it can be rounded to fixed decimal places
-  hypotheticalLines?: Array<HypotheticalLine>;
-  evalExplanation: string;
-  evalScore: string;
-}
-
-interface FormattedAdjustment extends FormattedMove {
-  followUp: FormattedMove;
-}
-
-interface MinimalFormattedAdjustment extends MinimalFormattedMove {
-  followUp: MinimalFormattedMove;
-}
-
-interface FormattedInitialMove extends FormattedMove {
-  adjustments: Array<FormattedAdjustment>;
-}
-
-type EngineTopMoveList = Array<FormattedMove>;
-type EngineMoveListWithAdjustments = Array<FormattedInitialMove>;
-
 /* ----------- Move Search-Related Types ------------ */
 
 type MoveSearchResult = [Array<PossibilityChain>, Array<PossibilityChain>]; // [bestMoves, prunedMoves]
@@ -105,41 +60,17 @@ interface LegalPlacementSimState extends SimState {
   hasAlreadyLocked: boolean;
 }
 
-interface BFSState extends SimState {
-  hasPassedOnInput: boolean;
-  grammarToken: string;
-  inputSequence: string; // Tracks the sequence up to this state
-}
-
 interface DFSState extends SimState {
   inputSequence: string;
-}
-
-interface LiteGameState {
-  board: Board;
-  score: number;
-  lines: number;
-  level: number;
-  numHoles: number;
-  nextTransitionLineCount: number;
-  pieceSequence: Array<PieceId>;
-  pieceIndex: number;
-  gameOver: boolean;
 }
 
 interface Possibility {
   placement: Placement;
   inputSequence: string;
-  surfaceArray: Array<number>;
-  numHoles: number;
-  holeCells: Set<number>;
   numLinesCleared: number;
   boardAfter: Board;
   inputCost: number;
   lockPositionEncoded: string;
-  fastEvalScore?: number;
-  evalScore?: number;
-  evalExplanation?: string;
   dasChargeAfter?: number;
 }
 
@@ -149,21 +80,6 @@ interface PossibilityChain extends Possibility {
   partialValue?: number; // If it has subsequent moves, the value of just the line clears involved in this move
   innerPossibility?: PossibilityChain; // The subsequent move in the chain, or null if this is the end of the chain
   expectedValue?: number; // If hypothetical analysis has been done, the EV of this possibility chain.
-  hypotheticalLines?: Array<HypotheticalLine>;
-}
-
-interface HypotheticalResult {
-  expectedValue: number;
-  lines: Array<HypotheticalLine>;
-  possibilityChain: PossibilityChain;
-}
-
-interface HypotheticalLine {
-  pieceSequence: string;
-  probability: number;
-  moveSequence: Array<Placement>;
-  moveSequenceAsInputs: Array<string>;
-  resultingValue: number;
 }
 
 interface SearchState {
@@ -184,7 +100,7 @@ interface SearchState {
 
 interface PhantomPlacement {
   inputSequence: string;
-  initialPlacement: PossibilityChain;
+  initialPlacement: Possibility;
   adjustmentSearchState: SearchState;
   possibleAdjustmentsLookup?: Array<Possibility>;
 }
@@ -254,8 +170,6 @@ interface ParamMods {
 interface WorkerDataArgs {
   piece: PieceId;
   newSearchState: SearchState;
-  initialAiParams: InitialAiParams;
-  paramMods: ParamMods;
   inputFrameTimeline: string;
 }
 

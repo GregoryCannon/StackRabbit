@@ -1,11 +1,5 @@
-import { getRowsNeedingToBurn } from "./evaluator";
-import { canDoPlacement, placementIsLegal } from "./move_search";
+import { canDoPlacement } from "./move_search";
 import { IS_DAS } from "./params";
-import {
-  getSurfaceArrayAndHoles,
-  parseBoard,
-  shouldPerformInputsThisFrame,
-} from "./utils";
 
 const utils = require("./utils");
 const NUM_COLUMN = utils.NUM_COLUMN;
@@ -185,129 +179,6 @@ export function generateInputSequence(
           rotationsRight--;
         }
       }
-    } else if (IS_DAS && inputsLeft > 0) {
-      inputSequence += "L";
-    } else if (IS_DAS && inputsRight > 0) {
-      inputSequence += "R";
-    } else {
-      inputSequence += ".";
-    }
-  }
-  return inputSequence;
-}
-
-export function generateDasInputSequence(
-  rotationIndex,
-  xOffset,
-  inputFrameTimeline,
-  startingDasCharge
-) {
-  let inputsLeft = xOffset < 0 && Math.abs(xOffset);
-  let inputsRight = xOffset > 0 && xOffset;
-  let rotationsLeft = rotationIndex === 3 && 1;
-  let rotationsRight = rotationIndex < 3 && rotationIndex;
-  let dasCharge = startingDasCharge;
-
-  if (inputsLeft > 0 && inputsRight > 0) {
-    throw new Error("Invalid shift parsing");
-  }
-  if (rotationsLeft > 0 && rotationsRight > 0) {
-    throw new Error("Invalid rotation parsing");
-  }
-
-  let i = 0; // Frame count
-  let inputSequence = "";
-  while (inputsLeft + inputsRight + rotationsLeft + rotationsRight > 0) {
-    const isShiftFrame = dasCharge >= 15;
-    const isRotationFrame = shouldPerformInputsThisFrame(inputFrameTimeline, i);
-
-    if (isShiftFrame && isRotationFrame) {
-      if (inputsLeft > 0) {
-        // Do a left shift, possibly with a rotation
-        if (rotationsRight > 0) {
-          inputSequence += "E";
-          rotationsRight--;
-        } else if (rotationsLeft > 0) {
-          inputSequence += "F";
-          rotationsLeft--;
-        }
-        inputsLeft--;
-      } else if (inputsRight > 0) {
-        // Do a right shift, possibly with a rotation
-        if (rotationsRight > 0) {
-          inputSequence += "I";
-          rotationsRight--;
-        } else if (rotationsLeft > 0) {
-          inputSequence += "G";
-          rotationsLeft--;
-        }
-        inputsRight--;
-      }
-    } else if (isShiftFrame && !isRotationFrame) {
-      if (inputsLeft > 0) {
-        inputSequence += "L";
-        inputsLeft--;
-      } else {
-        inputSequence += "R";
-        inputsRight--;
-      }
-    } else if (isRotationFrame && !isShiftFrame) {
-      // Do a rotation
-      if (rotationsLeft > 0) {
-        inputSequence += "B";
-        rotationsLeft--;
-      } else {
-        inputSequence += "A";
-        rotationsRight--;
-      }
-    } else {
-      // Charge DAS
-      if (inputsLeft > 0) {
-        inputSequence += "l";
-      } else {
-        inputSequence += "r";
-      }
-    }
-
-    if (dasCharge >= 15) {
-      if (inputsLeft > 0) {
-        // Do a left shift, possibly with a rotation
-        if (rotationsRight > 0) {
-          inputSequence += "E";
-          rotationsRight--;
-        } else if (rotationsLeft > 0) {
-          inputSequence += "F";
-          rotationsLeft--;
-        } else {
-          inputSequence += "L";
-        }
-        inputsLeft--;
-      } else if (inputsRight > 0) {
-        // Do a right shift, possibly with a rotation
-        if (rotationsRight > 0) {
-          inputSequence += "I";
-          rotationsRight--;
-        } else if (rotationsLeft > 0) {
-          inputSequence += "G";
-          rotationsLeft--;
-        } else {
-          inputSequence += "R";
-        }
-        inputsRight--;
-      } else {
-        // Do a rotation
-        if (rotationsLeft > 0) {
-          inputSequence += "B";
-          rotationsLeft--;
-        } else {
-          inputSequence += "A";
-          rotationsRight--;
-        }
-      }
-    } else if (IS_DAS && inputsLeft > 0) {
-      inputSequence += "L";
-    } else if (IS_DAS && inputsRight > 0) {
-      inputSequence += "R";
     } else {
       inputSequence += ".";
     }
@@ -640,25 +511,4 @@ export function getTestBoardWithHeight(height: number) {
     );
   }
   return board;
-}
-
-/** Gets the max height that can be cleared, given a level, ARR, delay, and number of taps desired.
- * If no tap cannot be cleared, it returns -1.
- */
-export function calculateTapHeight(level, inputFrameTimeline, numTaps) {
-  let height = 0;
-  while (
-    canDoPlacement(
-      getTestBoardWithHeight(height),
-      level,
-      "I",
-      1,
-      -1 * numTaps,
-      inputFrameTimeline
-    )
-  ) {
-    height++;
-  }
-  height--;
-  return height;
 }

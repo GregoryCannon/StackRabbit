@@ -11,12 +11,36 @@ import { searchForTucksOrSpins } from "./dfs";
 import { CAN_TUCK, IS_DAS } from "./params";
 import {
   GetGravity,
-  getSurfaceArrayAndHoles,
+  getLevelAfterLineClears,
   IsGravityDoubled,
   logBoard,
   NUM_ROW,
   shouldPerformInputsThisFrame,
 } from "./utils";
+
+export function getSearchStateAfter(
+  prevSearchState: SearchState,
+  possibility: Possibility
+): SearchState {
+  const levelAfter = getLevelAfterLineClears(
+    prevSearchState.level,
+    prevSearchState.lines,
+    possibility.numLinesCleared
+  );
+  return {
+    board: possibility.boardAfter,
+    currentPieceId: prevSearchState.nextPieceId,
+    nextPieceId: null,
+    level: levelAfter,
+    lines: prevSearchState.lines + possibility.numLinesCleared,
+    framesAlreadyElapsed: 0,
+    reactionTime: prevSearchState.reactionTime,
+    existingXOffset: 0,
+    existingYOffset: 0,
+    existingRotation: 0,
+    canFirstFrameShift: false,
+  };
+}
 
 /**
  * Generates a list of possible moves, given a board and a piece. It achieves this by
@@ -334,8 +358,6 @@ export function getPossibilityFromSimState(
     simState.x,
     simState.y
   );
-  let [surfaceArray, numHoles, holeCells] = getSurfaceArrayAndHoles(boardAfter);
-
   const numEntryDelayFrames = calculateEntryDelayFrames(simState, simParams);
 
   // Add pre-lineclear ARE frames to the input sequence
@@ -367,9 +389,6 @@ export function getPossibilityFromSimState(
       simState.y - simParams.initialY,
     ],
     inputSequence,
-    surfaceArray,
-    numHoles,
-    holeCells,
     numLinesCleared,
     boardAfter,
     inputCost,

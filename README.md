@@ -22,7 +22,6 @@ Then there are two components of the backend:
 - **Node.js**: [Download here](https://nodejs.org)
 - **FCEUX**: [Download here](https://fceux.com)
 - **Python3**: [Download here](https://python.org)
-- **node-gyp & nan**: Install with `npm i node-gyp nan` (Run this AFTER installing node.js And reopening the terminal)
 - **Visual Studio Build Tools**
 
 ## Steps
@@ -38,7 +37,7 @@ Then there are two components of the backend:
    - Navigate to the folder for Stackrabbit using `cd path/to/stackrabbit`.
 
 4. **Install Dependencies**:
-   - Run `npm i` in the command line.
+   - Run `node install.js` in the command line.
 
 5. **Start the Application**:
    - If the previous command runs without errors, execute `npm start`.
@@ -62,7 +61,7 @@ Then there are two components of the backend:
 # Credits (In contributor join sequence):
   - Making the AI: [@GregoryCannon](https://github.com/GregoryCannon)
   - Helping with the AI: [@wikedawsom](https://github.com/wikedawsom)
-  - Making the Tutorial on setting up: [@BenP1236691](https://github.com/BenP1236691)
+  - Making the Tutorial on setting up: [@BenP1236691](https://github.com/thehindsight)
   - Bug fixing the TypeScript: [@NguyenQuangMinh0504](https://github.com/NguyenQuangMinh0504)
   - Compiling StackRabbit into web assembly: [@timotheeg](https://github.com/timotheeg)
   - Adding column 9 vits: [@fractal161](https://github.com/fractal161)

@@ -1,7 +1,5 @@
-import { getBestMove, getSearchStateAfter, getSortedMoveList } from "./main";
-import { getPossibleMoves } from "./move_search";
-import { IS_DAS, IS_DROUGHT_MODE, SHOULD_PUSHDOWN } from "./params";
-import { getPieceProbability } from "./piece_rng";
+import { getPossibleMoves, getSearchStateAfter } from "./move_search";
+import { IS_DAS, SHOULD_PUSHDOWN } from "./params";
 import {
   formatPossibility,
   GetGravity,
@@ -37,7 +35,6 @@ export class PreComputeManager {
   defaultPlacement: PossibilityChain;
   phantomPlacements: Array<PhantomPlacement>;
   inputFrameTimeline: string;
-  aiParams: InitialAiParams;
   lastSeenPiece: PieceId;
 
   constructor() {
@@ -52,7 +49,6 @@ export class PreComputeManager {
     // Helper variables only used with finesse
     this.phantomPlacements = null;
     this.inputFrameTimeline = null;
-    this.aiParams = null;
     this.lastSeenPiece = null;
 
     this._onMessage = this._onMessage.bind(this);
@@ -77,8 +73,6 @@ export class PreComputeManager {
   finessePrecompute(
     searchState: SearchState,
     shouldLog: boolean,
-    initialAiParams: InitialAiParams,
-    paramMods: ParamMods,
     inputFrameTimeline: string,
     onPartialResultCallback: Function,
     onResultCallback: Function
@@ -88,19 +82,26 @@ export class PreComputeManager {
     this.results = {};
     this.pendingResults = POSSIBLE_NEXT_PIECES.length;
     this.inputFrameTimeline = inputFrameTimeline;
-    this.aiParams = initialAiParams;
     this.lastSeenPiece = searchState.currentPieceId;
 
-    // Get a backup placement, in case computation is slow
-    const [possibleMoves, _] = getSortedMoveList(
-      searchState,
-      shouldLog,
-      initialAiParams,
-      paramMods,
+    const possibleMoves = getPossibleMoves(
+      searchState.board,
+      searchState.currentPieceId,
+      searchState.level,
+      searchState.existingXOffset,
+      searchState.existingYOffset,
+      searchState.framesAlreadyElapsed,
       inputFrameTimeline,
-      /* searchDepth= */ 1,
-      /* hypotheticalSearchDepth= */ 0
-    );
+      searchState.existingRotation,
+      searchState.canFirstFrameShift,
+      shouldLog
+    ).map((x) => {
+      // Also tack on the searchStateAfter parameter
+      const chain = x as PossibilityChain;
+      chain.searchStateAfterMove = getSearchStateAfter(searchState, x);
+      return chain;
+    });
+
     const defaultPlacement = possibleMoves[0] || null;
     if (defaultPlacement === null) {
       onResultCallback("No legal moves");
@@ -109,7 +110,7 @@ export class PreComputeManager {
 
     // Send a response with just the default placement in case the other computation doesn't finish
     const formattedResult = formatPrecomputeResult({}, defaultPlacement);
-    console.log("Saving partial result", formatPossibility(defaultPlacement));
+    console.log("Saving partial result", defaultPlacement.placement);
     onPartialResultCallback(formattedResult);
 
     // Ping all the workers to start evaluating the next piece values
@@ -120,8 +121,6 @@ export class PreComputeManager {
       const argsData: WorkerDataArgs = {
         piece: nextPieceId,
         newSearchState: { ...searchState, nextPieceId },
-        initialAiParams,
-        paramMods,
         inputFrameTimeline,
       };
 
@@ -139,7 +138,7 @@ export class PreComputeManager {
 
   _calculatePhantomPlacements(
     initialSearchState: SearchState,
-    possibleMoves: Array<PossibilityChain>,
+    possibleMoves: Array<Possibility>,
     inputFrameTimeline: string
   ) {
     if (initialSearchState.reactionTime === 0) {
@@ -331,8 +330,7 @@ export class PreComputeManager {
         // Save the adjustment you'd make if this ends up being the highest
         responseObj[pieceId] = maxPossibility;
         totalValue +=
-          maxValue *
-          getPieceProbability(this.lastSeenPiece, pieceId, IS_DROUGHT_MODE);
+          maxValue * getPieceProbability(this.lastSeenPiece, pieceId);
       }
 
       // Check if this is the new best phantom placement
@@ -529,6 +527,35 @@ export function predictSearchStateAtAdjustmentTime(
     dasCharge,
     dasButtonHeld,
   };
+}
+
+/*
+The PRNG of NES Tetris is pretty weird. For example, S bursts are twice as likely as Z bursts, for no good reason.
+Thanks to Adrien Wu and HydrantDude for providing the following lookup tables. They represent the odds of getting 
+each piece, given a particular previous piece. The indexing goes Array[firstPiece][secondPiece]. 
+*/
+function getPieceProbability(current: PieceId, next: PieceId) {
+  const PIECE_INDICES = {
+    T: 0,
+    J: 1,
+    Z: 2,
+    O: 3,
+    S: 4,
+    L: 5,
+    I: 6,
+  };
+  const TRANSITIONS = [
+    [2, 10, 12, 10, 10, 10, 10],
+    [12, 2, 10, 10, 10, 10, 10],
+    [10, 12, 2, 10, 10, 10, 10],
+    [10, 10, 10, 4, 10, 10, 10],
+    [10, 10, 10, 10, 4, 10, 10],
+    [12, 10, 10, 10, 10, 2, 10],
+    [10, 10, 10, 10, 12, 10, 2],
+  ];
+  const index1 = PIECE_INDICES[current];
+  const index2 = PIECE_INDICES[next];
+  return TRANSITIONS[index1][index2] / 64;
 }
 
 export function testPredictionTap() {

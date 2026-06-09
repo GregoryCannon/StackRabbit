@@ -1,7 +1,5 @@
-import { PIECE_LOOKUP } from "../../docs/tetrominoes";
-import { getBoardAndLinesClearedAfterPlacement } from "./board_helper";
-import { DISABLE_LOGGING, LINE_CAP, MAX_CPP_PLAYOUT_MOVES } from "./params";
-import { logBoard, parseBoard } from "./utils";
+import { LINE_CAP, MAX_CPP_PLAYOUT_MOVES } from "./params";
+import { parseBoard } from "./utils";
 
 /**
  * Parses and validates the inputs
@@ -205,20 +203,6 @@ export function parseUrlArguments(
         result.arrWasReset =
           value === "true" || value === "TRUE" || value === "1";
         break;
-    }
-  }
-
-  if (!DISABLE_LOGGING) {
-    logBoard(
-      getBoardAndLinesClearedAfterPlacement(
-        result.board,
-        PIECE_LOOKUP[result.currentPiece][0][result.existingRotation],
-        result.existingXOffset + 3,
-        result.existingYOffset + (result.currentPiece === "I" ? -2 : -1)
-      )[0]
-    );
-    if (result.secondBoard) {
-      logBoard(result.secondBoard);
     }
   }
 
