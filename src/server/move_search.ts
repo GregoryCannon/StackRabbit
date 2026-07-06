@@ -5,7 +5,6 @@ import {
   pieceCollision,
   _modulus,
   _validateIntParam,
-  generateDasInputSequence,
 } from "./board_helper";
 import { searchForTucksOrSpins } from "./dfs";
 import { CAN_TUCK, IS_DAS } from "./params";
@@ -34,6 +33,8 @@ export function getSearchStateAfter(
     level: levelAfter,
     lines: prevSearchState.lines + possibility.numLinesCleared,
     framesAlreadyElapsed: 0,
+    dasCharge: possibility.dasChargeAfter, // DAS is preserved between pieces
+    dasButtonHeld: DasButtonHeld.NONE, // Direction can change during ARE between pieces
     reactionTime: prevSearchState.reactionTime,
     existingXOffset: 0,
     existingYOffset: 0,
@@ -115,7 +116,7 @@ export function getPossibleMoves(
       -1,
       rotationIndex,
       simParams,
-      /* dasWillReset= */ dasButtonHeld == DasButtonHeld.LEFT,
+      /* dasWillReset= */ dasCharge == 0 || dasButtonHeld != DasButtonHeld.LEFT,
       legalPlacementSimStates
     );
   }
@@ -128,7 +129,8 @@ export function getPossibleMoves(
       1,
       rotationIndex,
       simParams,
-      /* dasWillReset= */ dasButtonHeld == DasButtonHeld.RIGHT,
+      /* dasWillReset= */ dasCharge == 0 ||
+        dasButtonHeld != DasButtonHeld.RIGHT,
       legalPlacementSimStates
     );
   }
@@ -151,6 +153,7 @@ export function getPossibleMoves(
 
     for (let xOffset = rangeStart; xOffset <= rangeEnd; xOffset++) {
       const dasWillReset =
+        dasCharge == 0 ||
         (xOffset > 0 && dasButtonHeld != DasButtonHeld.RIGHT) ||
         (xOffset < 0 && dasButtonHeld != DasButtonHeld.LEFT);
       // console.log(
@@ -226,20 +229,6 @@ function exploreLegalPlacementsUntilLock(
       simState.rotationIndex - simParams.existingRotation,
       4
     );
-    const inputSequence = IS_DAS
-      ? generateDasInputSequence(
-          rotIndex,
-          simState.x - simParams.initialX,
-          simParams.inputFrameTimeline,
-          simState.dasCharge
-        )
-      : generateInputSequence(
-          rotIndex,
-          simState.x - simParams.initialX,
-          simParams.inputFrameTimeline,
-          simParams.canFirstFrameShift ? 0 : simParams.framesAlreadyElapsed
-        );
-    let inputSequenceWithWait = inputSequence;
 
     let startedLookingForTuckSpins = false;
     let highestRegisteredY = -1; // Tracks the Y values already registered to avoid duplicates
@@ -253,12 +242,7 @@ function exploreLegalPlacementsUntilLock(
           simState.y
         );
         lockPossibilities.push(
-          getPossibilityFromSimState(
-            simState,
-            simParams,
-            inputSequenceWithWait,
-            /* inputCost= */ 0
-          )
+          getPossibilityFromSimState(simState, simParams, /* inputCost= */ 0)
         );
       };
 
@@ -295,13 +279,12 @@ function exploreLegalPlacementsUntilLock(
       if (startedLookingForTuckSpins && simState.y > highestRegisteredY) {
         potentialTuckSpinStates.push({
           ...simState,
-          inputSequence: inputSequenceWithWait,
         });
         highestRegisteredY = simState.y;
       }
 
       // This kind of acts like an "else", since the paths where an input happened this frame branch off into the dfs file
-      inputSequenceWithWait += ".";
+      simState.inputSequence += ".";
 
       if (isGravityFrame) {
         for (
@@ -327,7 +310,6 @@ function exploreLegalPlacementsUntilLock(
               getPossibilityFromSimState(
                 simState,
                 simParams,
-                inputSequenceWithWait,
                 /* inputCost= */ 0
               )
             );
@@ -348,9 +330,10 @@ function exploreLegalPlacementsUntilLock(
 export function getPossibilityFromSimState(
   simState: SimState,
   simParams: SimParams,
-  inputSequence: string,
   inputCost: number
 ): Possibility {
+  let inputSequence = simState.inputSequence;
+
   // Make a new board with that piece locked in
   const [boardAfter, numLinesCleared] = getBoardAndLinesClearedAfterPlacement(
     simParams.board,
@@ -393,6 +376,7 @@ export function getPossibilityFromSimState(
     boardAfter,
     inputCost,
     lockPositionEncoded,
+    dasChargeAfter: simState.dasCharge,
   };
 }
 
@@ -405,66 +389,6 @@ function calculateEntryDelayFrames(
   const yOffset = simState.y - startingY;
   const lockHeight = NUM_ROW - yOffset;
   return Math.min(18, 10 + Math.floor((lockHeight + 1) / 4) * 2);
-}
-
-/**
- * Calculates how far in each direction a hypothetical piece can be tapped (for each rotation), given the AI's tap speed and
- * the piece's current position.
- *
- * (!!) NB: It performs one rotation for each shift. So if the placement requires 2 rotations, this result will only be valid for
- * placements with abs(xOffset) >= 2.
- */
-function explorePlacementsHorizontally(
-  pieceId: string,
-  simParams: SimParams,
-  dasButtonHeld: DasButtonHeld,
-  legalPlacementSimStates: Array<LegalPlacementSimState>
-) {}
-
-export function getPieceRanges(
-  board: Board,
-  level: number,
-  pieceId: PieceId,
-  rotationIndex: number,
-  inputFrameTimeline: string,
-  dasCharge: number
-) {
-  if (!inputFrameTimeline) {
-    throw new Error("Unknown input timeline when checking placement");
-  }
-  const gravity = GetGravity(level); // 0-indexed, executes on the 0 frame. e.g. 2... 1... 0(shift).. 2... 1... 0(shift)
-  const doubleGravity = IsGravityDoubled(level);
-  const rotationsList = PIECE_LOOKUP[pieceId as string][0];
-  const simParams: SimParams = {
-    board,
-    initialX: 3,
-    initialY: pieceId === "I" ? -2 : -1,
-    framesAlreadyElapsed: 0,
-    gravity,
-    doubleGravity,
-    rotationsList,
-    pieceId,
-    existingRotation: 0,
-    inputFrameTimeline,
-    canFirstFrameShift: false, // This param is only relevant for adjustments
-    dasCharge,
-  };
-  return [
-    repeatedlyShiftPiece(
-      -1,
-      rotationIndex,
-      simParams,
-      /* dasWillReset= */ false,
-      []
-    ),
-    repeatedlyShiftPiece(
-      1,
-      rotationIndex,
-      simParams,
-      /* dasWillReset= */ false,
-      []
-    ),
-  ];
 }
 
 /**
@@ -523,17 +447,22 @@ function repeatedlyShiftPiece(
       inputFrameTimeline,
       simState.arrFrameIndex
     );
+    const rotIncrement = getRotationIncrement(
+      goalRotationIndex,
+      simState.rotationIndex
+    );
+
     const isShiftFrame = IS_DAS
       ? pendingDasReset || simState.dasCharge >= 15
       : isTapInputFrame;
-    const isRotationFrame = isTapInputFrame;
+    const isRotationFrame = isTapInputFrame && rotIncrement !== 0;
     const isGravityFrame = simState.frameIndex % gravity === gravity - 1; // Returns true every Nth frame, where N = gravity
 
     // (These are stored as local variables so that all the checks in the loop finish before action is taken on their values.)
     let addNewPlacement = false;
     let lockAfterThisFrame = false;
 
-    console.log(simState.arrFrameIndex, simState.dasCharge, isShiftFrame);
+    // console.log(simState.arrFrameIndex, simState.dasCharge, isShiftFrame);
     if (isShiftFrame) {
       // Try the shift input, then the rotation input
       const shiftSucceeded = performSimulationShift(
@@ -555,7 +484,7 @@ function repeatedlyShiftPiece(
 
     if (isRotationFrame) {
       const rotationSucceeded = performSimulationRotation(
-        goalRotationIndex,
+        rotIncrement,
         simState,
         board,
         rotationsList
@@ -565,7 +494,14 @@ function repeatedlyShiftPiece(
       }
     }
 
-    // If we just shifted and are in the intended rotation, then this is a legal placement
+    simState.inputSequence += getInputThisFrame(
+      isShiftFrame,
+      isRotationFrame,
+      shiftIncrement,
+      rotIncrement
+    );
+
+    // If we just shifted or rotated and are in the intended rotation, then this is a legal placement
     if (
       legalPlacementSimStates !== null &&
       (isShiftFrame || isRotationFrame) &&
@@ -613,8 +549,6 @@ function repeatedlyShiftPiece(
     // If we previously marked that we reached a legal placement this frame, save this as a legal placement.
     // We do this at the very end such that the whole frame is done processing, and simState is ready for the next frame (e.g. looking for tucks)
     if (addNewPlacement) {
-      console.log("adding sim state");
-      console.log(simState);
       legalPlacementSimStates.push({
         ...simState,
         hasAlreadyLocked: lockAfterThisFrame,
@@ -623,6 +557,70 @@ function repeatedlyShiftPiece(
 
     if (lockAfterThisFrame) {
       return; // Piece would lock in, no further search needed
+    }
+  }
+}
+
+function getInputThisFrame(
+  isShiftFrame: boolean,
+  isRotationFrame: boolean,
+  shiftIncrement: number,
+  rotIncrement: number
+) {
+  if (IS_DAS) {
+    if (!isShiftFrame && !isRotationFrame) {
+      // Keep holding DAS
+      return shiftIncrement === 1 ? "r" : "l";
+    }
+    if (isShiftFrame && !isRotationFrame) {
+      // DAS shift
+      return shiftIncrement === 1 ? "R" : "L";
+    }
+    if (isRotationFrame && !isShiftFrame) {
+      // Rotate while holding DAS
+      return shiftIncrement === 1
+        ? rotIncrement === 1
+          ? "i"
+          : "g" // Hold DAS right + rotate
+        : rotIncrement === 1
+        ? "e"
+        : "f"; // Hold DAS left + rotate
+    }
+    if (isRotationFrame && isShiftFrame) {
+      // Rotate while holding DAS
+      return shiftIncrement === 1
+        ? rotIncrement === 1
+          ? "I"
+          : "G" // Hold DAS right + rotate
+        : rotIncrement === 1
+        ? "E"
+        : "F"; // Hold DAS left + rotate
+    }
+    throw new Error("Failed to calculate input this frame");
+  } else {
+    if (isShiftFrame) {
+      if (shiftIncrement === -1) {
+        // Do a left shift, possibly with a rotation
+        if (isRotationFrame) {
+          return rotIncrement === 1 ? "E" : "F";
+        }
+        return "L";
+      } else {
+        // Do a right shift, possibly with a rotation
+        if (isRotationFrame) {
+          return rotIncrement === 1 ? "I" : "G";
+        }
+        return "R";
+      }
+    } else if (isRotationFrame) {
+      // Do a rotation
+      if (rotIncrement === 1) {
+        return "B";
+      } else {
+        return "A";
+      }
+    } else {
+      return ".";
     }
   }
 }
@@ -693,6 +691,7 @@ export function placementIsLegal(
     arrFrameIndex: canFirstFrameShift ? 0 : framesAlreadyElapsed,
     rotationIndex: existingRotation,
     inputSequence: "",
+    dasCharge: simParams.dasCharge,
   };
   // Tracks if the next shift will be immediate but also reset DAS
   let pendingDasReset = dasWillReset;
@@ -738,6 +737,8 @@ export function placementIsLegal(
       if (!inputSucceeded) {
         return false;
       }
+      simState.dasCharge = pendingDasReset ? 0 : 10; // Update DAS charge after successful shift
+      pendingDasReset = false;
     } else {
       simState.dasCharge++; // Not shifting this frame, increase dasCharge
     }
@@ -803,7 +804,7 @@ export function performSimulationShift(
   simState: SimState,
   board: Board,
   currentRotationPiece: PieceArray
-): boolean {
+): number {
   if (
     pieceCollision(
       board,
@@ -827,22 +828,26 @@ export function performSimulationShift(
   return xIncrement; // Piece moved x cells
 }
 
-function performSimulationRotation(
+function getRotationIncrement(
   goalRotationIndex: number,
+  curRotationIndex: number
+) {
+  // Plan for a rotation if needed
+  if (curRotationIndex === goalRotationIndex) {
+    return 0; // No rotations were applied
+  }
+  return _modulus(curRotationIndex - 1, 4) === goalRotationIndex
+    ? -1 // Left rotation
+    : 1; // Right rotation
+}
+
+function performSimulationRotation(
+  rotIncrement: number,
   simState: SimState,
   board: Board,
   rotationsList: Array<PieceArray>
-): number {
-  // Plan for a rotation if needed
-  if (simState.rotationIndex === goalRotationIndex) {
-    return 0; // No rotations were applied
-  }
-  // const prevRotationIndex = simState.rotationIndex;
-  const rotationDiffNeeded =
-    _modulus(simState.rotationIndex - 1, 4) === goalRotationIndex
-      ? -1 // Left rotation
-      : 1; // Right rotation
-  simState.rotationIndex += rotationDiffNeeded;
+): boolean {
+  simState.rotationIndex += rotIncrement;
   simState.rotationIndex = _modulus(simState.rotationIndex, 4);
 
   if (
@@ -869,9 +874,9 @@ function performSimulationRotation(
     //     simState.y
     //   )[0]
     // );
-    return 0; // 0 rotations were applied
+    return false; // 0 rotations were applied
   }
-  return rotationDiffNeeded;
+  return true;
 }
 
 function debugLog(simState: SimState, simParams: SimParams, reason: string) {

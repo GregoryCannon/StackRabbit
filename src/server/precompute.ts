@@ -94,6 +94,8 @@ export class PreComputeManager {
       inputFrameTimeline,
       searchState.existingRotation,
       searchState.canFirstFrameShift,
+      searchState.dasCharge,
+      searchState.dasButtonHeld,
       shouldLog
     ).map((x) => {
       // Also tack on the searchStateAfter parameter

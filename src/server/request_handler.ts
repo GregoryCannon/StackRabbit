@@ -142,7 +142,6 @@ export class RequestHandler {
    */
   getMoveSync(searchState: SearchState, urlArgs: UrlArguments) {
     console.time("GetMove");
-
     let bestMove;
 
     // Ping the CPP backend

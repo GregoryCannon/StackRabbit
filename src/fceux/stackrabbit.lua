@@ -49,6 +49,7 @@ function resetGameScopedVariables()
   gameOver = false
   pcur = 0
   pnext = 0
+  dasCharge = 0
 end
 resetGameScopedVariables();
 
@@ -58,9 +59,7 @@ function resetPieceScopedVars()
   frameIndex = 0
   arrFrameIndex = 0
   inputSequence = ""
-  shiftsExecuted = 0
-  rotationsExecuted = 0
-  stateForNextPiece = {board=nil, level=nil, lines=nil}
+  stateForNextPiece = {board=nil, level=nil, lines=nil, dasCharge=nil}
 end
 
 --[[--------------------------------------- 
@@ -118,7 +117,8 @@ end
 
 -- Query into the input sequence based on (0-indexed) arrFrameIndex
 function getInputForFrame(index)
-  return string.sub(inputSequence, index + 1, index + 1)
+  -- We transform to uppercase since DAS strings use lowercase to visually indicate non-shift frames where buttons are held
+  return string.upper(string.sub(inputSequence, index + 1, index + 1))
 end
 
 --[[------------------------------------ 
@@ -171,7 +171,7 @@ function requestFirstPlacementAsync()
 
   -- Format URL arguments
   local reqStr = "http://localhost:3000/get-move-async-cpp?board=" .. getEncodedBoard() .. "&currentPiece=" .. orientToPiece[pcur]
-  reqStr = reqStr .. "&nextPiece=" .. orientToPiece[pnext] .. "&level=" .. reqLevel .. "&lines=" .. reqLines .. "&inputFrameTimeline=" .. INPUT_TIMELINE
+  reqStr = reqStr .. "&nextPiece=" .. orientToPiece[pnext] .. "&level=" .. reqLevel .. "&lines=" .. reqLines .. "&inputFrameTimeline=" .. INPUT_TIMELINE .. "&dasCharge=" .. 0
 
   local response = makeHttpRequest(reqStr)
   if response.code ~= 200 then
@@ -189,6 +189,7 @@ function requestPrecompute()
   -- Convert requests to PAL
   local reqLevel = stateForNextPiece.level
   local reqLines = stateForNextPiece.lines
+  local reqDasCharge = stateForNextPiece.dasCharge
   if IS_PAL then
     reqLines = numLines + 100
     if reqLevel == 18 then
@@ -197,7 +198,6 @@ function requestPrecompute()
       reqLevel = 29
     end
   end
-  print("reqLines2 " .. reqLines)
 
   -- Format URL arguments
   if stateForNextPiece == nil or stateForNextPiece.board == nil
@@ -209,7 +209,7 @@ function requestPrecompute()
 
   local reqStr = "http://localhost:3000/precompute?board=" .. stateForNextPiece.board .. "&currentPiece=" .. orientToPiece[pnext]
   reqStr = reqStr .. "&level=" .. stateForNextPiece.level .. "&lines=" .. reqLines .. "&reactionTime="
-  reqStr = reqStr .. REACTION_TIME_FRAMES .. "&inputFrameTimeline=" .. INPUT_TIMELINE
+  reqStr = reqStr .. REACTION_TIME_FRAMES .. "&inputFrameTimeline=" .. INPUT_TIMELINE .. "&dasCharge=" .. reqDasCharge
 
   local response = makeHttpRequest(reqStr)
   if response.code ~= 200 then
@@ -271,12 +271,17 @@ function parseGameStateFromResponse(apiResult)
 
   -- local split = splitString(apiResult, ",|\|")
   local split = splitString(apiResult, "\|")
-  if split[3] ~= nil and split[4] ~= nil and split[5] ~= nil then
-    stateForNextPiece = { 
-      board=split[3], 
-      level=split[4], 
-      lines=split[5] 
-    }
+  if split[3] == nil or split[4] == nil or split[5] == nil or split[6] == nil then
+    error("Failed to parse game state from response")
+  end
+  stateForNextPiece = { 
+    board=split[3], 
+    level=split[4], 
+    lines=split[5],
+    dasCharge=split[6]
+  }
+  if (stateForNextPiece.dasCharge == "undefined") then 
+    error("Undefined das charge")
   end
 end
 
@@ -310,6 +315,7 @@ function calculateInputs(apiResult, isAdjustment)
   -- local split = splitString(apiResult, ",|\|")
   local split = splitString(apiResult, "\|")
   inputSequence = split[2]
+  print(inputSequence)
   if inputSequence == nil or inputSequence == "none" then
     inputSequence = ""
   end
@@ -320,6 +326,16 @@ function calculateInputs(apiResult, isAdjustment)
   end
 end
 
+-- Compacted version of executeInputs specific to pre-arrowing on the DPAD during entry delay for DAS
+function startDasDuringAre()
+  local inputsThisFrame = {A=false, B=false, left=false, right=false, up=false, down=false, select=false, start=false}
+  local firstFrameInput = getInputForFrame(0)
+  inputsThisFrame.left = (thisFrameStr == "L" or thisFrameStr == "E" or thisFrameStr == "F")
+  inputsThisFrame.right = (thisFrameStr == "R" or thisFrameStr == "I" or thisFrameStr == "G")
+  print("during ARE")
+  print(inputsThisFrame)
+  joypad.set(1, inputsThisFrame)
+end
 
 function executeInputs()
   if not gameOver then
@@ -334,7 +350,6 @@ function executeInputs()
     end
 
     local thisFrameStr = getInputForFrame(arrFrameIndex);
-    -- print(arrFrameIndex .. "  " .. thisFrameStr)
     
     inputsThisFrame.down = (thisFrameStr == "D")
     inputsThisFrame.A = (thisFrameStr == "A" or thisFrameStr == "E" or thisFrameStr == "I")
@@ -342,16 +357,10 @@ function executeInputs()
     inputsThisFrame.left = (thisFrameStr == "L" or thisFrameStr == "E" or thisFrameStr == "F")
     inputsThisFrame.right = (thisFrameStr == "R" or thisFrameStr == "I" or thisFrameStr == "G")
 
-    if inputsThisFrame.left then
-      shiftsExecuted = shiftsExecuted - 1
-    elseif inputsThisFrame.right then
-      shiftsExecuted = shiftsExecuted + 1
-    end
-
     -- Debug logs
-    if inputsThisFrame.left or inputsThisFrame.right then
-      print("SHIFT" .. emu.framecount())
-    end
+    -- if inputsThisFrame.left or inputsThisFrame.right then
+    --   print(thisFrameStr .. emu.framecount())
+    -- end
 
     -- Send our computed inputs to the controller
     joypad.set(1, inputsThisFrame)
@@ -463,6 +472,10 @@ function runGameFrame()
     local apiResult = fetchAsyncResult()
     parsePrecompute(apiResult)
     waitingOnAsyncRequest = false
+    if (stateForNextPiece.dasCharge ~= "0") then
+      -- Start holding the Dpad for DAS, unless DAS is fully uncharged
+      startDasDuringAre()
+    end
     
   elseif(gamePhase == 1) then
     if(gamePhaseLastFrame ~= 1) then

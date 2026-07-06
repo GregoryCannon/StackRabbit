@@ -30,7 +30,6 @@ interface UrlArguments {
   lines?: number;
   reactionTime?: number;
   inputFrameTimeline?: string;
-  lookaheadDepth?: number; // Only used in Javascript queries
   playoutCount: number; // Only used in C++ queries
   playoutLength: number; // Only used in C++ queries
   pruningBreadth: number; // Only used in C++ queries
@@ -39,7 +38,7 @@ interface UrlArguments {
   existingYOffset?: number;
   existingRotation?: number;
   existingFramesElapsed?: number;
-  initialDasCharge?: number;
+  dasCharge?: number;
 }
 
 /* ----------- Move Search-Related Types ------------ */
@@ -52,7 +51,7 @@ interface SimState {
   frameIndex: number;
   arrFrameIndex: number; // Sometimes differs from overall frame index (during adjustments)
   rotationIndex: number;
-  dasCharge?: number;
+  dasCharge: number;
   inputSequence: string;
 }
 

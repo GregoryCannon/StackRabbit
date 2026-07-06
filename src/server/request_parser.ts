@@ -21,7 +21,6 @@ export function parseUrlArguments(
     reactionTime: 0,
     inputFrameTimeline: undefined,
     arrWasReset: false,
-    lookaheadDepth: 0,
     playoutCount: 49,
     playoutLength: 2,
     pruningBreadth: 20,
@@ -29,6 +28,7 @@ export function parseUrlArguments(
     existingYOffset: 0,
     existingRotation: 0,
     existingFramesElapsed: 0,
+    dasCharge: -1,
   };
 
   // Query for non-default values
@@ -111,22 +111,6 @@ export function parseUrlArguments(
         result.inputFrameTimeline = value.replace(/-/g, ".");
         break;
 
-      case "lookaheadDepth":
-        if (requestType.includes("cpp")) {
-          throw new Error(
-            "Parameter 'lookaheadDepth' does not apply to C++ queries, please provide values for playoutCount and playoutLength instead."
-          );
-        }
-        const depth = parseInt(value);
-        if (depth < 0) {
-          throw new Error("Invalid lookahead depth: " + depth);
-        }
-        if (depth > 1) {
-          throw new Error("Maximum supported lookahead depth is currently 1.");
-        }
-        result.lookaheadDepth = depth;
-        break;
-
       case "playoutCount":
         if (!requestType.includes("cpp")) {
           throw new Error(
@@ -199,6 +183,9 @@ export function parseUrlArguments(
       case "existingFramesElapsed":
         result.existingFramesElapsed = parseInt(value);
         break;
+      case "dasCharge":
+        result.dasCharge = parseInt(value);
+        break;
       case "arrWasReset":
         result.arrWasReset =
           value === "true" || value === "TRUE" || value === "1";
@@ -227,7 +214,7 @@ export function getSearchStateFromUrlArguments(urlArgs): SearchState {
     reactionTime: urlArgs.reactionTime,
     framesAlreadyElapsed: urlArgs.existingFramesElapsed,
     canFirstFrameShift: urlArgs.arrWasReset,
-    dasCharge: 16,
+    dasCharge: urlArgs.dasCharge,
     dasButtonHeld: DasButtonHeld.NONE,
   };
 }

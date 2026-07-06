@@ -230,7 +230,6 @@ function tryInput(
             getPossibilityFromSimState(
               simState,
               simParams,
-              simState.inputSequence,
               INPUT_COST_LOOKUP[inputChar]
             )
           );
