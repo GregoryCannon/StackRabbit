@@ -2,7 +2,11 @@
  * Based on hellofunc.c (C) 2011 by Steve Litt
  *
  * Command to compile on OSX:
- *    gcc rabbithttp.c -Wall -shared -fPIC -o rabbithttp.so -I/usr/local/include/lua5.1 -llua5.1 -lcurl
+ *    gcc rabbithttp.c -Wall -shared -fPIC -o rabbithttp.so \
+ *      -I/opt/homebrew/include/luajit-2.1 \
+ *      -undefined dynamic_lookup \
+ *      -L/opt/homebrew/lib \
+ *      -lcurl
  *
  * Note the word "rabbithttp" matches the string after the underscore in
  * function luaopen_rabbithttp(). This is a must.
