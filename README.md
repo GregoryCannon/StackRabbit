@@ -11,7 +11,7 @@ Due to the logistics of playing NES Tetris, there are two different clients for 
 
 Then there are two components of the backend:
 
-- `server` contains the primary server, written in Node.js. It handles the request parsing, and the delegation to worker threads. It also contains lots of deprecated AI code, since the initial implmentation was entirely in JS (oops).
+- `server` contains the primary server, written in Node.js. It handles the request parsing, and the delegation to worker threads.
 - `cpp_modules` contains modules that perform the core AI computation at literally 100x the speed of the original JS implementation. The main flow involves a Node server thread sending a game state to the C++ module, which returns the value of each possible move as an encoded JSON map.
 
 
@@ -60,7 +60,6 @@ Then there are two components of the backend:
 
 # Credits (In contributor join sequence):
   - Making the AI: [@GregoryCannon](https://github.com/GregoryCannon)
-  - Helping with the AI: [@wikedawsom](https://github.com/wikedawsom)
   - Making the Tutorial on setting up: [@BenP1236691](https://github.com/thehindsight)
   - Bug fixing the TypeScript: [@NguyenQuangMinh0504](https://github.com/NguyenQuangMinh0504)
   - Compiling StackRabbit into web assembly: [@timotheeg](https://github.com/timotheeg)
