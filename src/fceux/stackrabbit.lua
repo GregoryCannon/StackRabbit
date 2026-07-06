@@ -1,15 +1,21 @@
-IS_MAC = true
+local os = require("os")
+
+-- Manual global config
 IS_PAL = false
 USE_PUSHDOWN = true
 DEBUG_MODE = false
 
-local os = require("os")
+-- OS-dependent config
+-- (We detect mac os based on common directories
+IS_MAC = os.getenv("HOME") and os.getenv("HOME"):match("^/Users") ~= nil
 if (IS_MAC) then
   require("rabbithttp")
 else
   http = require("socket.http")
   require "socket"
 end
+
+-- NOTE: If you are on an Intel mac, please replace "rabbithttp" with "rabbithttp-intelmac" for compatibility.
 
 TIMELINE_2_HZ = "X.............................";
 TIMELINE_6_HZ = "X........";
