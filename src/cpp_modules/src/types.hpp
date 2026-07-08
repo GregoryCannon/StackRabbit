@@ -139,6 +139,7 @@ struct PieceRangeContext {
   int max5TapHeight;
   int maxAccessibleLeft5Surface[10];
   int maxAccessibleRightSurface[10];
+  int maxAccessibleLeftLPieceSurface[10];
 };
 
 /**

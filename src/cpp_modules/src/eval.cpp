@@ -209,11 +209,11 @@ float getLikelyBurnsFactor(int surfaceArray[10], int wellColumn, int maxSafeCol9
  * Assesses whether the surface allows for 5 taps.
  * @returns the multiple of the accessible left penalty that should be applied. That is, 0 if 5 taps are possible, or a float around 1.0 or higher (depending on how many lines would need to clear for the left to be accessible).
  */
-float getInaccessibleLeftFactor(unsigned int board[20], int surfaceArray[10], int const maxAccessibleLeftSurface[10], int wellColumn){
+float getInaccessibleLeftFactor(unsigned int board[20], int surfaceArray[10], int const maxAccessibleLeftSurface[10], int wellColumn, AiMode aiMode){
   // Check if the agent even needs to get a piece left first.
   int highestRowOfCol1 = 19 - surfaceArray[0];
   int needs5TapForDig = board[highestRowOfCol1] & HOLE_WEIGHT_BIT;
-  int needs5TapForBurn = wellColumn == 9 && surfaceArray[0] < surfaceArray[8];
+  int needs5TapForBurn = aiMode != DIG && wellColumn == 9 && surfaceArray[0] < surfaceArray[8];
   int needs5Tap = needs5TapForDig || needs5TapForBurn;
 //  int needs5TapOnKillscreen = (surfaceArray[1] - surfaceArray[0]) > maxAccessibleLeftSurface[0];
 //  int needs5Tap = needs5TapForDig || needs5TapForBurn || needs5TapOnKillscreen;
@@ -448,7 +448,7 @@ float fastEval(GameState gameState,
   float holeWeightFactor = abs(weights.holeWeightCoef) > FLOAT_EPSILON ? weights.holeWeightCoef * getHoleWeightFactor(newState.board, evalContext->wellColumn) : 0;
   float inaccessibleLeftFactor = isKillscreenLineout
               ? 0
-              : (weights.inaccessibleLeftCoef * getInaccessibleLeftFactor(newState.board, newState.surfaceArray, evalContext->pieceRangeContext.maxAccessibleLeft5Surface, evalContext->wellColumn));
+              : (weights.inaccessibleLeftCoef * getInaccessibleLeftFactor(newState.board, newState.surfaceArray, evalContext->pieceRangeContext.maxAccessibleLeft5Surface, evalContext->wellColumn, evalContext->aiMode));
   float inaccessibleRightFactor = isKillscreenLineout
               ? 0
               : (weights.inaccessibleRightCoef * getInaccessibleRightFactor(newState.surfaceArray, evalContext->pieceRangeContext.maxAccessibleRightSurface));

@@ -1,6 +1,3 @@
-import { canDoPlacement } from "./move_search";
-import { IS_DAS } from "./params";
-
 const utils = require("./utils");
 const NUM_COLUMN = utils.NUM_COLUMN;
 const NUM_ROW = utils.NUM_ROW;

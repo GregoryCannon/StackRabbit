@@ -1,10 +1,6 @@
-import { PIECE_LOOKUP } from "../../docs/tetrominoes";
+import { PIECE_LIST, PIECE_LOOKUP } from "../../docs/tetrominoes";
 import { getTestBoardWithHeight } from "./board_helper";
-import {
-  canDoPlacement,
-  getPossibleMoves,
-  placementIsLegal,
-} from "./move_search";
+import { getPossibleMoves, placementIsLegal } from "./move_search";
 import { generateInputFrameTimeline, GetGravity, logBoard } from "./utils";
 
 function legalMovesTest() {
@@ -223,6 +219,34 @@ function tapRangeTest() {
   console.log("Run completed.");
 }
 
+function canDoPlacement(
+  board: Board,
+  level: number,
+  pieceId: PieceId,
+  rotationIndex: number,
+  xOffset: number,
+  inputFrameTimeline: string,
+  dasCharge: number = 16
+) {
+  const possibleMoves = getPossibleMoves(
+    board,
+    pieceId,
+    level,
+    0,
+    0,
+    0,
+    inputFrameTimeline,
+    0,
+    false,
+    false
+  );
+  return (
+    possibleMoves.find(
+      (x) => x.placement[0] == rotationIndex && x.placement[1] == xOffset
+    ) !== undefined
+  );
+}
+
 function lastMinuteRotationsTest() {
   let expected1 = true;
   if (
@@ -399,19 +423,18 @@ function generateTestCases() {
 
 // generateTestCases();
 // testNumLegalAdjustments();
-// tapRangeTest();
-// for (const poss of testSingleCase([-5, 10, 3, 41])) {
-//   console.log(poss.placement);
-// }
 
+
+// ----------------------------
+// MANUAL TEST: ONE PLACEMENT
 const possibleMoves = getPossibleMoves(
   getTestBoardWithHeight(10),
-  "O",
-  29,
+  "L",
+  19,
   0,
   0,
   0,
-  "X.",
+  "X.....",
   0,
   false,
   16,
@@ -421,5 +444,10 @@ const possibleMoves = getPossibleMoves(
 for (const possibility of possibleMoves) {
   // logBoard(possibility.boardAfter);
   console.log(possibility.placement);
+  console.log(possibility.inputSequence);
 }
 console.log(possibleMoves.length);
+
+// ----------------------------
+// UNIT TEST: PIECE RANGES
+tapRangeTest();
