@@ -1,6 +1,7 @@
 local os = require("os")
 
 -- Manual global config
+IS_DAS = false
 IS_PAL = false
 USE_PUSHDOWN = true
 DEBUG_MODE = false
@@ -33,8 +34,8 @@ TIMELINE_30_HZ = "X.";
 
 -- Config constants
 SHOULD_ADJUST = true
-REACTION_TIME_FRAMES = 18
-INPUT_TIMELINE = TIMELINE_30_HZ;
+REACTION_TIME_FRAMES = 24
+INPUT_TIMELINE = TIMELINE_10_HZ;
 SHOULD_RECORD_GAMES = false
 MOVIE_PATH = "C:\\Users\\Greg\\Desktop\\VODs\\" -- Where to store the fm2 VODS (absolute path)
 SCORES_TEXT_PATH = "C:\\Users\\Greg\\Desktop\\sr-test-scores.txt"
@@ -478,7 +479,7 @@ function runGameFrame()
     local apiResult = fetchAsyncResult()
     parsePrecompute(apiResult)
     waitingOnAsyncRequest = false
-    if (stateForNextPiece.dasCharge ~= "0") then
+    if (IS_DAS and stateForNextPiece.dasCharge ~= "0") then
       -- Start holding the Dpad for DAS, unless DAS is fully uncharged
       startDasDuringAre()
     end
