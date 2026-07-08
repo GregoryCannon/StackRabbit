@@ -10,6 +10,7 @@ src/cpp_modules/unused/
 built/
 build/
 src/server/fceux/reference_only/
+*.out
 
 # Media
 *.avi
