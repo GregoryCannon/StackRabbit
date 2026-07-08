@@ -615,9 +615,9 @@ function getInputThisFrame(
     } else if (isRotationFrame) {
       // Do a rotation
       if (rotIncrement === 1) {
-        return "B";
-      } else {
         return "A";
+      } else {
+        return "B";
       }
     } else {
       return ".";
@@ -625,43 +625,11 @@ function getInputThisFrame(
   }
 }
 
-export function canDoPlacement(
-  board: Board,
-  level: number,
-  pieceId: string,
-  rotationIndex: number,
-  xOffset: number,
-  inputFrameTimeline: string,
-  dasCharge: number = 16
-) {
-  if (!inputFrameTimeline) {
-    throw new Error("Unknown input timeline when checking placement");
-  }
-  const gravity = GetGravity(level); // 0-indexed, executes on the 0 frame. e.g. 2... 1... 0(shift).. 2... 1... 0(shift)
-  const doubleGravity = IsGravityDoubled(level);
-  const rotationsList = PIECE_LOOKUP[pieceId][0];
-  const simParams: SimParams = {
-    board,
-    initialX: 3,
-    initialY: pieceId === "I" ? -2 : -1,
-    framesAlreadyElapsed: 0,
-    gravity,
-    doubleGravity,
-    rotationsList,
-    pieceId: pieceId as PieceId,
-    existingRotation: 0,
-    inputFrameTimeline,
-    canFirstFrameShift: false, // This function refers to doing a placement from the start, not starting from an adjustment or anything
-    dasCharge,
-  };
-  return placementIsLegal(
-    rotationIndex,
-    xOffset,
-    simParams,
-    /* dasWillReset */ false
-  );
-}
-
+/**
+ * @VisibleForTesting
+ * Tests if an individual placement is possible without storing any intermediate results.
+ * Used to check placements with more rotations than shifts, since those are a blind spot of the repeatedlyShiftPiece() method.
+ */
 export function placementIsLegal(
   goalRotationIndex: number,
   goalOffsetX: number,
@@ -683,7 +651,11 @@ export function placementIsLegal(
   } = simParams;
 
   // Get initial sim state
-  const shiftIncrement = goalOffsetX < 0 ? -1 : 1;
+  if (Math.abs(goalOffsetX) > 1) {
+    console.log("RIOT!");
+    throw new Error("placementIsLegal called with multiple shifts");
+  }
+  const shiftIncrement = goalOffsetX;
   const simState: SimState = {
     x: initialX,
     y: initialY,
@@ -719,11 +691,18 @@ export function placementIsLegal(
       inputFrameTimeline,
       simState.arrFrameIndex
     );
-
-    const isShiftFrame = IS_DAS
+    const canShiftThisFrame = IS_DAS
       ? simState.dasCharge >= 15
       : tapShouldInputThisFrame;
-    const isRotationFrame = tapShouldInputThisFrame;
+    const rotIncrement = getRotationIncrement(
+      goalRotationIndex,
+      simState.rotationIndex
+    );
+
+    const isShiftFrame =
+      canShiftThisFrame && simState.x != initialX + goalOffsetX;
+    const isRotationFrame =
+      tapShouldInputThisFrame && simState.rotationIndex !== goalRotationIndex;
 
     const isGravityFrame = simState.frameIndex % gravity === gravity - 1; // Returns true every Nth frame, where N = gravity
 
@@ -745,7 +724,7 @@ export function placementIsLegal(
 
     if (isRotationFrame) {
       const inputSucceeded = performSimulationRotation(
-        goalRotationIndex,
+        rotIncrement,
         simState,
         board,
         rotationsList
@@ -754,6 +733,13 @@ export function placementIsLegal(
         return false;
       }
     }
+
+    simState.inputSequence += getInputThisFrame(
+      isShiftFrame,
+      isRotationFrame,
+      shiftIncrement,
+      rotIncrement
+    );
 
     if (isGravityFrame) {
       for (
