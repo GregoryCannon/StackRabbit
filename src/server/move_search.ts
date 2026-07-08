@@ -567,36 +567,6 @@ function repeatedlyShiftPiece(
   }
 }
 
-export function canDoPlacement(
-  board: Board,
-  level: number,
-  pieceId: string,
-  rotationIndex: number,
-  xOffset: number,
-  inputFrameTimeline: string
-) {
-  if (!inputFrameTimeline) {
-    throw new Error("Unknown input timeline when checking placement");
-  }
-  const gravity = GetGravity(level); // 0-indexed, executes on the 0 frame. e.g. 2... 1... 0(shift).. 2... 1... 0(shift)
-  const doubleGravity = IsGravityDoubled(level);
-  const rotationsList = PIECE_LOOKUP[pieceId][0];
-  const simParams: SimParams = {
-    board,
-    initialX: 3,
-    initialY: pieceId === "I" ? -2 : -1,
-    framesAlreadyElapsed: 0,
-    gravity,
-    doubleGravity,
-    rotationsList,
-    pieceId: pieceId as PieceId,
-    existingRotation: 0,
-    inputFrameTimeline,
-    canFirstFrameShift: false, // This function refers to doing a placement from the start, not starting from an adjustment or anything
-  };
-  return placementIsLegal(rotationIndex, xOffset, simParams);
-}
-
 export function placementIsLegal(
   goalRotationIndex: number,
   goalOffsetX: number,
