@@ -57,13 +57,14 @@ const PieceRangeContext getPieceRangeContext(char const *inputFrameTimeline, int
   context.max4TapHeight = 17 - context.yValueOfEachShift[4]; // 17 is the surface height of a square/long bar when y=0
   context.max5TapHeight = 17 - context.yValueOfEachShift[5];
   
-  // Calculate inaccessible left 5-tap surface
   for (int i = 0; i < 10; i++){
     context.maxAccessibleLeft5Surface[i] = 20;
     context.maxAccessibleRightSurface[i] = 20;
+    context.maxAccessibleLeftLPieceSurface[i] = 20;
   }
   unsigned int const *bottomSurface = PIECE_T.bottomSurfaceByRotation[3];
 
+  // Calculate inaccessible left 5-tap surface
   for (int tapIndex = 0; tapIndex < 5; tapIndex++){
     // Superimpose the piece's bottom surface on the inaccessible surface
     for (int i = 0; i < 4; i++) {
@@ -78,6 +79,7 @@ const PieceRangeContext getPieceRangeContext(char const *inputFrameTimeline, int
   }
   context.maxAccessibleLeft5Surface[0] = context.maxAccessibleLeft5Surface[1]; // The 5th shift is the last, so it just needs to resolve before/after (which is at the same Y value)
   
+  // Calculate inaccessible right 4-tap surface
   bottomSurface = PIECE_I.bottomSurfaceByRotation[1];
   for (int tapIndex = 0; tapIndex < 4; tapIndex++){
     // Superimpose the piece's bottom surface on the inaccessible surface
@@ -93,7 +95,23 @@ const PieceRangeContext getPieceRangeContext(char const *inputFrameTimeline, int
   }
   context.maxAccessibleRightSurface[9] = context.maxAccessibleRightSurface[8]; // The 4th shift is the last, so it just needs to resolve before/after (which is at the same Y value)
   
-  // printArray(context.maxAccessibleRightSurface, 10, "MAX RIGHT SURFACE");
+  // Calculate inaccessible left 4-tap surface (for an L piece)
+  bottomSurface = PIECE_L.bottomSurfaceByRotation[0];
+  for (int tapIndex = 0; tapIndex <= 4; tapIndex++){
+    // Superimpose the piece's bottom surface on the inaccessible surface
+    for (int i = 0; i < 4; i++) {
+      if (bottomSurface[i] == NONE){
+        continue;
+      }
+      int xBeforeShift = SPAWN_X - tapIndex;
+      int shiftY = context.yValueOfEachShift[tapIndex + 1];
+      // printf("tap=%d, i=%d, xBefore=%d, yBefore=%d\n", tapIndex, i, xBeforeShift, shiftY);
+      context.maxAccessibleLeftLPieceSurface[xBeforeShift + i] = 19 - bottomSurface[i] - shiftY - PIECE_L.initialY;
+    }
+  }
+  // We actually do all 4 taps manually for this case, since the optimization that would go here doesn't apply to the L piece  
+
+  // printArray(context.maxAccessibleLeftLPieceSurface, 10, "MAX LEFT L PIECE SURFACE");
   
   return context;
 }
