@@ -5,6 +5,7 @@ import {
   CPP_LIVEGAME_PLAYOUT_LENGTH,
   CPP_LIVEGAME_PRUNING_BREADTH,
 } from "./params";
+import { WorkerDataArgs } from "./types";
 const cModule = require("../../../build/Release/cRabbit");
 
 console.timeEnd("loading");

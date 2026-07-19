@@ -1,12 +1,14 @@
-type Board = Array<Array<number>>;
+export type Board = Array<Array<number>>;
 
-type Placement = [number, number, number]; // [numRightRotations, numShifts]
+export type Placement = [number, number, number]; // [numRightRotations, numShifts]
 
-type PieceArray = Array<Array<number>>;
+export type PieceArray = Array<Array<number>>;
 
-type PieceId = "I" | "O" | "L" | "J" | "T" | "S" | "Z" | null;
+export type PieceId = "I" | "O" | "L" | "J" | "T" | "S" | "Z" | null;
 
-interface SimParams {
+export type NonNullPieceId = "I" | "O" | "L" | "J" | "T" | "S" | "Z";
+
+export interface SimParams {
   board: Board;
   initialX: number;
   initialY: number;
@@ -17,11 +19,11 @@ interface SimParams {
   pieceId: PieceId;
   existingRotation: number;
   inputFrameTimeline: string;
-  canFirstFrameShift: boolean;
+  adjustmentState: AdjustmentState;
   dasCharge: number;
 }
 
-interface UrlArguments {
+export interface UrlArguments {
   board: Board;
   secondBoard?: Board;
   currentPiece?: PieceId;
@@ -33,19 +35,14 @@ interface UrlArguments {
   playoutCount: number; // Only used in C++ queries
   playoutLength: number; // Only used in C++ queries
   pruningBreadth: number; // Only used in C++ queries
-  arrWasReset?: boolean;
-  existingXOffset?: number;
-  existingYOffset?: number;
-  existingRotation?: number;
-  existingFramesElapsed?: number;
   dasCharge?: number;
 }
 
 /* ----------- Move Search-Related Types ------------ */
 
-type MoveSearchResult = [Array<PossibilityChain>, Array<PossibilityChain>]; // [bestMoves, prunedMoves]
+export type MoveSearchResult = [Array<PossibilityChain>, Array<PossibilityChain>]; // [bestMoves, prunedMoves]
 
-interface SimState {
+export interface SimState {
   x: number;
   y: number;
   frameIndex: number;
@@ -55,15 +52,20 @@ interface SimState {
   inputSequence: string;
 }
 
-interface LegalPlacementSimState extends SimState {
-  hasAlreadyLocked: boolean;
+export interface AdjustmentSimState extends SimState {
+  adjustmentState: AdjustmentState
 }
 
-interface DFSState extends SimState {
+export interface LegalPlacementSimState extends SimState {
+  hasAlreadyLocked: boolean;
+  adjTimeSimState?: AdjustmentSimState;
+}
+
+export interface DFSState extends SimState {
   inputSequence: string;
 }
 
-interface Possibility {
+export interface Possibility {
   placement: Placement;
   inputSequence: string;
   numLinesCleared: number;
@@ -71,17 +73,15 @@ interface Possibility {
   inputCost: number;
   lockPositionEncoded: string;
   dasChargeAfter?: number;
+  adjTimeSimState?: AdjustmentSimState;
 }
 
-interface PossibilityChain extends Possibility {
+export interface PossibilityChain extends Possibility {
   totalValue: number;
   searchStateAfterMove: SearchState; // The search state after the current move
-  partialValue?: number; // If it has subsequent moves, the value of just the line clears involved in this move
-  innerPossibility?: PossibilityChain; // The subsequent move in the chain, or null if this is the end of the chain
-  expectedValue?: number; // If hypothetical analysis has been done, the EV of this possibility chain.
 }
 
-interface SearchState {
+export interface SearchState {
   board: Board;
   currentPieceId: PieceId;
   nextPieceId: PieceId;
@@ -92,19 +92,18 @@ interface SearchState {
   existingYOffset: number;
   existingRotation: number;
   reactionTime: number;
-  canFirstFrameShift: boolean;
+  adjustmentState: AdjustmentState;
   dasCharge: number; // 0 to 16
-  dasButtonHeld: DasButtonHeld;
 }
 
-interface PhantomPlacement {
+export interface PhantomPlacement {
   inputSequence: string;
-  initialPlacement: Possibility;
-  adjustmentSearchState: SearchState;
+  initialPlacement: PossibilityChain;
+  adjustmentSearchState?: SearchState | null; // Would be null if the default placement has the piece lock before reaction time
   possibleAdjustmentsLookup?: Array<Possibility>;
 }
 
-const enum AiMode {
+export const enum AiMode {
   STANDARD,
   DIG,
   DIG_INTO_KILLSCREEN,
@@ -114,65 +113,41 @@ const enum AiMode {
   IMMINENT_DEATH,
 }
 
-const enum DasButtonHeld {
+export const enum DasButtonHeld {
   LEFT,
   RIGHT,
   NONE,
 }
 
-/* ----------- Evaluation Parameters ------------- */
-
-interface InitialAiParams {
-  AVG_HEIGHT_EXPONENT: number;
-  AVG_HEIGHT_COEF: number;
-  BURN_COEF: number;
-  BURN_COEF_POST: number;
-  COL_10_COEF: number;
-  COL_10_HEIGHT_MULTIPLIER_EXP: number;
-  DEAD_COEF: number;
-  MAX_DIRTY_TETRIS_HEIGHT: number;
-  EXTREME_GAP_COEF: number;
-  BUILT_OUT_LEFT_COEF: number;
-  BUILT_OUT_RIGHT_COEF: number;
-  LOW_LEFT_EXP: number;
-  HOLE_COEF: number;
-  HOLE_WEIGHT_COEF: number;
-  SPIRE_HEIGHT_EXPONENT: number;
-  SPIRE_HEIGHT_COEF: number;
-  UNABLE_TO_BURN_COEF: number;
-  UNABLE_TO_BURN_HEIGHT_EXP: number;
-  HIGH_COL_9_COEF: number;
-  HIGH_COL_9_EXP: number;
-  SURFACE_COEF: number;
-  LEFT_SURFACE_COEF: number;
-  TETRIS_COEF: number;
-  TETRIS_READY_COEF: number;
-  INACCESSIBLE_LEFT_COEF: number;
-  INACCESSIBLE_RIGHT_COEF: number;
+export interface AdjustmentState {
+  readonly isAdjustment: boolean;
+  readonly isArrContinued: boolean;
+  readonly dasButtonHeld: DasButtonHeld;
 }
 
-interface AiParams extends InitialAiParams {
-  INPUT_FRAME_TIMELINE: string;
-  MAX_5_TAP_LOOKUP: Object;
-  MAX_4_TAP_LOOKUP: Object;
-  BURN_QUOTA?: number; // Can optionally have a limit to the number of burns
-}
+export const INITIAL_PLACEMENT = {
+  isAdjustment: false,
+  isArrContinued: false,
+  dasButtonHeld: DasButtonHeld.NONE
+} as const satisfies AdjustmentState;
 
-interface ParamMods {
-  DIG: any;
-  NEAR_KILLSCREEN: any;
-  KILLSCREEN: any;
+export function getAdjustmentState(isArrContinued: boolean, dasButtonHeld: DasButtonHeld) {
+  return {
+    isAdjustment: true,
+    isArrContinued,
+    dasButtonHeld,
+  } as const satisfies AdjustmentState;
 }
 
 /* ------------ Messages for Worker Threads ------------ */
 
-interface WorkerDataArgs {
+export interface WorkerDataArgs {
   piece: PieceId;
   newSearchState: SearchState;
   inputFrameTimeline: string;
 }
 
-interface WorkerResponse {
+export interface WorkerResponse {
   type: string;
   piece?: PieceId;
   result?: PossibilityChain;

@@ -1,12 +1,12 @@
 import { getPossibleMoves, getSearchStateAfter } from "./move_search";
-import { IS_DAS, SHOULD_LOG } from "./params";
 import { PreComputeManager } from "./precompute";
-import { formatPossibility } from "./utils";
 import {
-  parseUrlArguments,
-  getSearchStateFromUrlArguments,
   getCppEncodedInputString,
+  getSearchStateFromUrlArguments,
+  parseUrlArguments,
 } from "./request_parser";
+import { INITIAL_PLACEMENT, PossibilityChain, SearchState, UrlArguments } from "./types";
+import { formatPossibility } from "./utils";
 const cModule = require("../../../build/Release/cRabbit");
 
 function sleep(ms) {
@@ -18,12 +18,12 @@ function sleep(ms) {
 export class RequestHandler {
   preComputeManager: PreComputeManager;
   asyncCallInProgress: boolean;
-  asyncResult: string;
+  asyncResult: string | null;
   partialResult: any;
   partialResultsUsed: number;
   computationsFinished: number;
 
-  constructor(precomputeManager) {
+  constructor(precomputeManager: PreComputeManager) {
     this.preComputeManager = precomputeManager;
     this.asyncCallInProgress = false;
     this.asyncResult = null;
@@ -112,7 +112,7 @@ export class RequestHandler {
       default:
         return [
           "Please specify the request type, e.g. 'get-move' or 'rate-move'. Received: " +
-            requestType,
+          requestType,
           200,
         ];
     }
@@ -160,10 +160,8 @@ export class RequestHandler {
       searchState.framesAlreadyElapsed,
       urlArgs.inputFrameTimeline,
       searchState.existingRotation,
-      searchState.canFirstFrameShift,
+      INITIAL_PLACEMENT,
       searchState.dasCharge,
-      searchState.dasButtonHeld,
-      false
     );
     for (const possibility of possibilityList) {
       if (
@@ -183,7 +181,13 @@ export class RequestHandler {
 
     console.timeEnd("GetMove");
     if (!bestMove) {
-      return "No legal moves";
+      if (xOffset > 999999) {
+        // Truly no legal moves, CPP didn't find any. (Not sure why it returns bignumber in that case but it is what it is)
+        return "No legal moves D";
+      } else {
+        // CPP found a move but JS couldn't match it
+        return "Frontend movesearch failed to match to " + result
+      }
     }
     return formatPossibility(bestMove);
   }
@@ -220,7 +224,6 @@ export class RequestHandler {
 
     this.preComputeManager.finessePrecompute(
       searchState,
-      SHOULD_LOG,
       urlArgs.inputFrameTimeline,
       function (result) {
         this.partialResult = result;

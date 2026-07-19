@@ -1,4 +1,5 @@
-import { LINE_CAP, MAX_CPP_PLAYOUT_MOVES } from "./params";
+import { IS_DAS, LINE_CAP, MAX_CPP_PLAYOUT_MOVES } from "./params";
+import { INITIAL_PLACEMENT, PieceId, SearchState, UrlArguments } from "./types";
 import { parseBoard } from "./utils";
 
 /**
@@ -20,14 +21,9 @@ export function parseUrlArguments(
     lines: undefined,
     reactionTime: 0,
     inputFrameTimeline: undefined,
-    arrWasReset: false,
     playoutCount: 49,
     playoutLength: 2,
     pruningBreadth: 20,
-    existingXOffset: 0,
-    existingYOffset: 0,
-    existingRotation: 0,
-    existingFramesElapsed: 0,
     dasCharge: -1,
   };
 
@@ -74,7 +70,7 @@ export function parseUrlArguments(
         if (level < 18) {
           throw new Error(
             "Currently only 18, 19, and 29 starts are supported by StackRabbit. Requested: " +
-              value
+            value
           );
         }
         result.level = level;
@@ -112,19 +108,13 @@ export function parseUrlArguments(
         break;
 
       case "playoutCount":
-        if (!requestType.includes("cpp")) {
-          throw new Error(
-            "Parameter 'playoutCount' does not apply to JS queries. Please use lookeaheadDepth instead."
-          );
-        }
         const count = parseInt(value);
         if (count < 0) {
           throw new Error("Invalid playout count: " + count);
         }
         if (count * result.playoutLength > MAX_CPP_PLAYOUT_MOVES) {
           throw new Error(
-            `Playout volume exceeds the current limit of ${MAX_CPP_PLAYOUT_MOVES} moves. Current volume (count * length): ${
-              count * result.playoutLength
+            `Playout volume exceeds the current limit of ${MAX_CPP_PLAYOUT_MOVES} moves. Current volume (count * length): ${count * result.playoutLength
             }"`
           );
         }
@@ -132,11 +122,6 @@ export function parseUrlArguments(
         break;
 
       case "playoutLength":
-        if (!requestType.includes("cpp")) {
-          throw new Error(
-            "Parameter 'playoutLength' does not apply to JS queries. Please use lookeaheadDepth instead."
-          );
-        }
         const length = parseInt(value);
         if (length < 0) {
           throw new Error("Invalid playout length: " + length);
@@ -146,8 +131,7 @@ export function parseUrlArguments(
         }
         if (result.playoutCount * length > MAX_CPP_PLAYOUT_MOVES) {
           throw new Error(
-            `Playout volume exceeds the current limit of ${MAX_CPP_PLAYOUT_MOVES} moves. Current volume (count * length): ${
-              length * result.playoutCount
+            `Playout volume exceeds the current limit of ${MAX_CPP_PLAYOUT_MOVES} moves. Current volume (count * length): ${length * result.playoutCount
             }"`
           );
         }
@@ -155,40 +139,18 @@ export function parseUrlArguments(
         break;
 
       case "pruningBreadth":
-        if (!requestType.includes("cpp")) {
-          throw new Error(
-            "Parameter 'pruningBreadth' does not apply to JS queries. Please use lookeaheadDepth instead."
-          );
-        }
         const breadth = parseInt(value);
         if (breadth < 0) {
           throw new Error("Invalid pruning breadth: " + breadth);
         }
         if (breadth > 1156) {
-          throw new Error("Invalid pruning breadth (max is 1156): " + breadth);
+          throw new Error("Invalid pruning breadth (max is 1156): " + breadth); // 34 placements x 34 placements
         }
         result.pruningBreadth = breadth;
         break;
 
-      // These properties are pretty advanced, if you're using them you should know what you're doing
-      case "existingXOffset":
-        result.existingXOffset = parseInt(value);
-        break;
-      case "existingYOffset":
-        result.existingYOffset = parseInt(value);
-        break;
-      case "existingRotation":
-        result.existingRotation = parseInt(value);
-        break;
-      case "existingFramesElapsed":
-        result.existingFramesElapsed = parseInt(value);
-        break;
       case "dasCharge":
         result.dasCharge = parseInt(value);
-        break;
-      case "arrWasReset":
-        result.arrWasReset =
-          value === "true" || value === "TRUE" || value === "1";
         break;
     }
   }
@@ -201,21 +163,20 @@ export function parseUrlArguments(
   return result;
 }
 
-export function getSearchStateFromUrlArguments(urlArgs): SearchState {
+export function getSearchStateFromUrlArguments(urlArgs: UrlArguments): SearchState {
   return {
     board: urlArgs.board,
     currentPieceId: urlArgs.currentPiece,
     nextPieceId: urlArgs.nextPiece,
     level: urlArgs.level,
     lines: urlArgs.lines,
-    existingXOffset: urlArgs.existingXOffset,
-    existingYOffset: urlArgs.existingYOffset,
-    existingRotation: urlArgs.existingRotation,
+    existingXOffset: 0,
+    existingYOffset: 0,
+    existingRotation: 0,
     reactionTime: urlArgs.reactionTime,
-    framesAlreadyElapsed: urlArgs.existingFramesElapsed,
-    canFirstFrameShift: urlArgs.arrWasReset,
+    framesAlreadyElapsed: 0,
     dasCharge: urlArgs.dasCharge,
-    dasButtonHeld: DasButtonHeld.NONE,
+    adjustmentState: INITIAL_PLACEMENT
   };
 }
 
@@ -230,6 +191,8 @@ export function getCppEncodedInputString(
   const pieceLookup = ["I", "O", "L", "J", "T", "S", "Z"];
   const curPieceIndex = pieceLookup.indexOf(searchState.currentPieceId);
   const nextPieceIndex = pieceLookup.indexOf(searchState.nextPieceId);
+  // If DAS, tell the CPP backend we're an 10 Hz tapper 
+  const effInputFrameTimeline = IS_DAS ? "X....." : urlArgs.inputFrameTimeline;
   // Includes the final | character at the end due to how the string is parsed (cpp doesn't have an easy split method rip)
-  return `${boardStr}|${searchState.level}|${searchState.lines}|${curPieceIndex}|${nextPieceIndex}|${urlArgs.inputFrameTimeline}|${urlArgs.playoutCount}|${urlArgs.playoutLength}|${urlArgs.pruningBreadth}|`;
+  return `${boardStr}|${searchState.level}|${searchState.lines}|${curPieceIndex}|${nextPieceIndex}|${effInputFrameTimeline}|${urlArgs.playoutCount}|${urlArgs.playoutLength}|${urlArgs.pruningBreadth}|`;
 }

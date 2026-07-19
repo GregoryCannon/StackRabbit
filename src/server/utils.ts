@@ -1,11 +1,10 @@
+import { getSearchStateAfter } from "./move_search";
 import {
-  CAN_TUCK,
   DEBUG_DOUBLE_KS_ALWAYS_ENABLED,
   DOUBLE_KILLSCREEN_ENABLED,
-  IS_PAL,
-  WELL_COLUMN,
+  IS_PAL
 } from "./params";
-let performance = null;
+import { Board, PieceId, Possibility, PossibilityChain, SearchState } from "./types";
 
 export const NUM_ROW = 20;
 export const NUM_COLUMN = 10;
@@ -118,12 +117,50 @@ export function pushDown(inputString: string) {
   return preLock;
 }
 
+export function toPossibilityChain(
+  possibility: Possibility,
+  searchState: SearchState
+): PossibilityChain {
+  const chain = possibility as PossibilityChain;
+  chain.searchStateAfterMove = getSearchStateAfter(searchState, possibility);
+  return chain;
+}
+
+export function formatDefaultPossibility(
+  possibility: PossibilityChain,
+  reactionTime = 9999
+) {
+  if (possibility == null) {
+    return "No legal moves E";
+  }
+  const seq = possibility.inputSequence || "none";
+  const sliceIndex = possibility.inputSequence.includes("_") ? reactionTime + 1 : reactionTime;
+  return (
+    possibility.placement[0] +
+    "," +
+    possibility.placement[1] +
+    "," +
+    possibility.placement[2] +
+    "|" +
+    (`${seq.slice(0, sliceIndex)}~~${seq.slice(sliceIndex)}`) +
+    "|" +
+    possibility.boardAfter.map((row) => row.join("")).join("") +
+    "|" +
+    possibility.searchStateAfterMove.level +
+    "|" +
+    possibility.searchStateAfterMove.lines +
+    "|" +
+    possibility.searchStateAfterMove.dasCharge
+  );
+}
+
+
 export function formatPossibility(
   possibility: PossibilityChain,
   shouldPushDown = false
 ) {
   if (possibility == null) {
-    return "No legal moves";
+    return "No legal moves F";
   }
   return (
     possibility.placement[0] +
@@ -261,7 +298,7 @@ export function parseBoard(boardStr: string): Board {
     } else {
       throw new Error(
         "Invalid compressed board. Must contain 20 rows, but found: " +
-          newBoard.length
+        newBoard.length
       );
     }
   }
@@ -337,38 +374,4 @@ export function cloneBoard(board) {
     newBoard.push(newRow);
   }
   return newBoard;
-}
-
-const performanceCounts = {};
-const performanceTotals = {};
-const performanceStartTimes = {};
-const startupWait = 2;
-
-export function startTiming(id: string) {
-  // Load this dynamically so the web UI doesn't need to require it
-  if (performance == null) {
-    performance = require("perf_hooks").performance;
-  }
-  performanceStartTimes[id] = performance.now();
-  if (!performanceCounts[id]) {
-    performanceCounts[id] = 0;
-    performanceTotals[id] = 0;
-  }
-}
-
-export function stopTiming(id, repeats) {
-  // Get the time first thing for accuracy
-  const endTime = performance.now();
-
-  if (!performanceStartTimes.hasOwnProperty(id)) {
-    throw new Error("Tried to stop timer that didn't exist");
-  }
-  performanceCounts[id] += 1;
-  if (performanceCounts[id] > startupWait) {
-    performanceTotals[id] += endTime - performanceStartTimes[id];
-    const avgTime =
-      performanceTotals[id] / (performanceCounts[id] - startupWait) / repeats -
-      0.0072 / repeats;
-    console.log(id, avgTime.toFixed(4), (avgTime * 34).toFixed(4));
-  }
 }

@@ -1,11 +1,11 @@
 import { getPossibleMoves, getSearchStateAfter } from "./move_search";
-import { IS_DAS, SHOULD_PUSHDOWN } from "./params";
+import { IS_DAS, LOSS_DAS_PENALTY, SHOULD_PUSHDOWN } from "./params";
+import { INITIAL_PLACEMENT, PhantomPlacement, PieceId, Possibility, PossibilityChain, SearchState, WorkerDataArgs, WorkerResponse } from "./types";
 import {
+  formatDefaultPossibility,
   formatPossibility,
-  GetGravity,
-  IsGravityDoubled,
   POSSIBLE_NEXT_PIECES,
-  shouldPerformInputsThisFrame,
+  toPossibilityChain
 } from "./utils";
 
 const child_process = require("child_process");
@@ -29,12 +29,14 @@ export class PreComputeManager {
   workers: any[];
   pendingResults: number;
   workersStillLoading: number;
-  onResultCallback: Function;
-  onReadyCallback: Function;
+  onResultCallback: Function | null;
+  onReadyCallback: Function | null;
   results: {};
-  defaultPlacement: PossibilityChain;
-  phantomPlacements: Array<PhantomPlacement>;
-  inputFrameTimeline: string;
+  defaultPlacement: PossibilityChain | null;
+  phantomPlacements: Array<PhantomPlacement> | null;
+  minSafeDasChargeLookup: Map<string, number>;
+  inputFrameTimeline: string | null;
+  reactionTime: number | null;
   lastSeenPiece: PieceId;
 
   constructor() {
@@ -48,7 +50,10 @@ export class PreComputeManager {
     this.results = {};
     // Helper variables only used with finesse
     this.phantomPlacements = null;
+    this.defaultPlacement = null;
+    this.minSafeDasChargeLookup = new Map();
     this.inputFrameTimeline = null;
+    this.reactionTime = null;
     this.lastSeenPiece = null;
 
     this._onMessage = this._onMessage.bind(this);
@@ -72,7 +77,6 @@ export class PreComputeManager {
 
   finessePrecompute(
     searchState: SearchState,
-    shouldLog: boolean,
     inputFrameTimeline: string,
     onPartialResultCallback: Function,
     onResultCallback: Function
@@ -82,7 +86,9 @@ export class PreComputeManager {
     this.results = {};
     this.pendingResults = POSSIBLE_NEXT_PIECES.length;
     this.inputFrameTimeline = inputFrameTimeline;
+    this.reactionTime = searchState.reactionTime;
     this.lastSeenPiece = searchState.currentPieceId;
+    this.minSafeDasChargeLookup = new Map();
 
     const possibleMoves = getPossibleMoves(
       searchState.board,
@@ -93,25 +99,19 @@ export class PreComputeManager {
       searchState.framesAlreadyElapsed,
       inputFrameTimeline,
       searchState.existingRotation,
-      searchState.canFirstFrameShift,
+      INITIAL_PLACEMENT,
       searchState.dasCharge,
-      searchState.dasButtonHeld,
-      shouldLog
-    ).map((x) => {
-      // Also tack on the searchStateAfter parameter
-      const chain = x as PossibilityChain;
-      chain.searchStateAfterMove = getSearchStateAfter(searchState, x);
-      return chain;
-    });
+      searchState.reactionTime
+    ).map((x) => toPossibilityChain(x, searchState));
 
     const defaultPlacement = possibleMoves[0] || null;
     if (defaultPlacement === null) {
-      onResultCallback("No legal moves");
+      onResultCallback("No legal moves A");
       return;
     }
 
     // Send a response with just the default placement in case the other computation doesn't finish
-    const formattedResult = formatPrecomputeResult({}, defaultPlacement);
+    const formattedResult = formatPrecomputeResult({}, defaultPlacement, 999);
     console.log("Saving partial result", defaultPlacement.placement);
     onPartialResultCallback(formattedResult);
 
@@ -133,7 +133,6 @@ export class PreComputeManager {
     this._calculatePhantomPlacements(
       searchState,
       possibleMoves,
-      inputFrameTimeline
     );
     this._precompileAdjustmentMoves();
   }
@@ -141,7 +140,6 @@ export class PreComputeManager {
   _calculatePhantomPlacements(
     initialSearchState: SearchState,
     possibleMoves: Array<Possibility>,
-    inputFrameTimeline: string
   ) {
     if (initialSearchState.reactionTime === 0) {
       this.phantomPlacements = [
@@ -162,6 +160,59 @@ export class PreComputeManager {
       (a, b) => countInputs(a.placement) - countInputs(b.placement)
     );
 
+    console.log("Num possible moves:", possibleMoves.length);
+
+    console.time("SAFEDAS");
+    // Calculate minimum safe DAS charges for each possible lock location
+    for (const possibility of possibleMoves) {
+      const ssa = getSearchStateAfter(initialSearchState, possibility)
+      ssa.currentPieceId = "T" // Generally representative of the hardest placements
+
+      const countMovesAtDasCharge = (dasCharge: number) => {
+        return getPossibleMoves(ssa.board, ssa.currentPieceId, ssa.level, 0, 0, 0, this.inputFrameTimeline, 0, INITIAL_PLACEMENT, dasCharge).length
+      }
+
+      let minSafeDasCharge = 15;
+      const baseline = countMovesAtDasCharge(15);
+      const increment = (ssa.level == 18) ? 3 : 2 // The true values tend to increment in multiples of the gravity, so we can increment by that while searching.
+
+      if (countMovesAtDasCharge(0) == baseline) {
+        minSafeDasCharge = 0;
+      } else {
+        for (let dasCharge = 15 - increment + 1; dasCharge >= 0; dasCharge -= increment) {
+          if (countMovesAtDasCharge(dasCharge) == baseline) {
+            minSafeDasCharge = dasCharge
+          } else {
+            break;
+          }
+        }
+      }
+
+      this.minSafeDasChargeLookup.set(possibility.lockPositionEncoded, minSafeDasCharge);
+    }
+    console.timeEnd("SAFEDAS");
+
+
+    // const baseline = countMovesAtDasCharge(15);
+
+    //   if (countMovesAtDasCharge(0) == baseline) {
+    //     this.minSafeDasChargeLookup.set(possibility.lockPositionEncoded, 0);
+    //   } else {
+    //     // Binary search
+    //     let min = 1;
+    //     let max = 16;
+    //     while (min < max) {
+    //       const median = Math.round((min + max) / 2)
+    //       if (countMovesAtDasCharge(median) == baseline) {
+    //         max = median
+    //       } else {
+    //         min = median + 1
+    //       }
+    //     }
+
+    //     this.minSafeDasChargeLookup.set(possibility.lockPositionEncoded, max);
+    //   }
+
     // Add a new phantom placement if it doesn't overlap an existing one
     for (const possibility of possibleMoves) {
       const newInputSequence = possibility.inputSequence.substr(
@@ -169,18 +220,28 @@ export class PreComputeManager {
         initialSearchState.reactionTime
       );
       if (!seenInputSequences.has(newInputSequence)) {
-        // Predict the state at adjustment time and register the phantom placement
-        const adjSearchState = predictSearchStateAtAdjustmentTime(
-          initialSearchState,
-          newInputSequence,
-          inputFrameTimeline
-        );
+        let adjSearchState: SearchState | null = null;
+        if (possibility.adjTimeSimState) {
+          // Convert the adjSimState to a SearchState
+          const at = possibility.adjTimeSimState
+          const initialX = 3;
+          const initialY = (initialSearchState.currentPieceId == "I" ? -2 : -1);
+          adjSearchState = {
+            ...initialSearchState,
+            framesAlreadyElapsed: at.frameIndex,
+            existingXOffset: at.x - initialX,
+            existingYOffset: at.y - initialY,
+            existingRotation: at.rotationIndex,
+            dasCharge: at.dasCharge,
+            adjustmentState: at.adjustmentState
+          }
+        }
 
         // Add a new phantom placement
         phantomPlacements.push({
           inputSequence: newInputSequence,
-          initialPlacement: possibility,
-          adjustmentSearchState: adjSearchState,
+          initialPlacement: toPossibilityChain(possibility, initialSearchState),
+          adjustmentSearchState: adjSearchState
         });
         seenInputSequences.add(newInputSequence);
       }
@@ -237,6 +298,14 @@ export class PreComputeManager {
         //   phantomPlacement.initialPlacement.inputSequence
         // );
         phantomPlacement.possibleAdjustmentsLookup = [];
+        // console.log("Already did tuck, no adjustments allowed")
+        continue;
+      }
+
+      // If the piece locks in before reaction time, there will be no adjustmentSearchState saved
+      if (!phantomPlacement.adjustmentSearchState) {
+        // console.log("No adj search state, no adjustments possible")
+        phantomPlacement.possibleAdjustmentsLookup = [];
         continue;
       }
 
@@ -251,12 +320,9 @@ export class PreComputeManager {
         s.framesAlreadyElapsed,
         this.inputFrameTimeline,
         s.existingRotation,
-        s.canFirstFrameShift,
+        s.adjustmentState,
         s.dasCharge,
-        s.dasButtonHeld,
-        /* shouldLog= */ false
       );
-
       phantomPlacement.possibleAdjustmentsLookup = possibleAdjs;
     }
     console.timeEnd("Get adjustment moves");
@@ -266,10 +332,9 @@ export class PreComputeManager {
   _compileResponseFinesse() {
     // console.log("STARTING COLLAPSE");
 
-    let overallResponse: string = "No legal moves";
-    // if (this.results['I'].abort){
-    //   return this.onResultCallback(overallResponse);
-    // }
+    console.log(this.minSafeDasChargeLookup);
+
+    let overallResponse: string = "No legal moves B";
 
     console.time("COLLAPSE");
     let bestPhantomPlacementValue = Number.MIN_SAFE_INTEGER;
@@ -280,40 +345,22 @@ export class PreComputeManager {
         // Figure out what adjustment you'd do for that piece
         let maxValue = phantomPlacement.initialPlacement
           ? this.results[pieceId][
-              phantomPlacement.initialPlacement.lockPositionEncoded
-            ]
+          phantomPlacement.initialPlacement.lockPositionEncoded
+          ]
           : Number.MIN_SAFE_INTEGER;
         let maxPossibility: PossibilityChain = null;
         for (const adjPossibility of phantomPlacement.possibleAdjustmentsLookup) {
           // Combine the input cost with the placement value
+          // console.log("basline", phantomPlacement.initialPlacement.placement, phantomPlacement.initialPlacement.adjTimeSimState, phantomPlacement.initialPlacement.inputSequence)
           const value =
-            getAdjustmentInputCost(adjPossibility) +
+            this._getAdjustmentInputCost(adjPossibility, phantomPlacement.adjustmentSearchState, pieceId) +
             this.results[pieceId][adjPossibility.lockPositionEncoded];
           if (
             !this.results[pieceId].hasOwnProperty(
               adjPossibility.lockPositionEncoded
             )
           ) {
-            continue; // TEMPORARY FIX TO STOP CRASHING
-            console.log({
-              ...phantomPlacement.initialPlacement,
-              boardAfter: null,
-            });
-            console.log({ ...adjPossibility, boardAfter: null });
-            console.log(pieceId);
-            console.log(this.results[pieceId]);
-            for (const piece of POSSIBLE_NEXT_PIECES) {
-              console.log(piece);
-              if (!this.results[piece]) {
-                throw new Error("No results for piece:" + piece);
-              }
-              console.log(
-                piece + " " + Object.keys(this.results[piece]).length
-              );
-            }
-            throw new Error(
-              "Unknown lock value: " + adjPossibility.lockPositionEncoded
-            );
+            continue;
           }
           // Check if this is the best adjustment
           if (value >= maxValue) {
@@ -340,7 +387,8 @@ export class PreComputeManager {
       if (phantomPlacementValue > bestPhantomPlacementValue) {
         overallResponse = formatPrecomputeResult(
           responseObj,
-          phantomPlacement.initialPlacement
+          phantomPlacement.initialPlacement,
+          this.reactionTime
         );
         bestPhantomPlacementValue = phantomPlacementValue;
       }
@@ -354,23 +402,58 @@ export class PreComputeManager {
     this.onResultCallback(overallResponse);
   }
 
+  _getAdjustmentInputCost(possibility: Possibility, adjSearchState: SearchState, nextPieceId: PieceId) {
+    const SPINTUCK_COST = -0.3;
+    const SPIN_COST = -0.2;
+    const TUCK_COST = -0.1;
+    const INPUT_COST_LOOKUP = {
+      E: SPINTUCK_COST,
+      F: SPINTUCK_COST,
+      I: SPINTUCK_COST,
+      G: SPINTUCK_COST,
+      L: TUCK_COST,
+      R: TUCK_COST,
+      A: SPIN_COST,
+      B: SPIN_COST,
+      // These are just rotations while holding the DAS buttons
+      e: SPIN_COST,
+      f: SPIN_COST,
+      i: SPIN_COST,
+      g: SPIN_COST,
+    };
+    let adjCost = 0;
+    for (const inputChar of possibility.inputSequence) {
+      adjCost += INPUT_COST_LOOKUP[inputChar] || 0;
+    }
+
+    // console.log(possibility.placement, possibility.inputSequence);
+    // Penalize losing DAS, unless the partial (or no) DAS charge is enough for the next piece to reach its full range anyway.
+    let dasCost = 0
+    if (IS_DAS && possibility.dasChargeAfter !== undefined) {
+      const minSafeDasCharge = this.minSafeDasChargeLookup.get(possibility.lockPositionEncoded) || 15
+      if (minSafeDasCharge === undefined) {
+        throw new Error("Failed to find value in min safe das charge: " + possibility.lockPositionEncoded)
+      }
+      if (possibility.dasChargeAfter < minSafeDasCharge) {
+        dasCost -= LOSS_DAS_PENALTY;
+      }
+    }
+
+    // console.log(possibility.placement, "\t", possibility.dasChargeAfter, "\t", dasCost);
+    return adjCost + possibility.inputCost + dasCost;
+  }
+
   // End of class
 }
 
-function formatPrecomputeResult(results, defaultPlacement) {
-  const defaultFormatted = formatPossibility(
-    defaultPlacement,
-    /* pushDown= */ SHOULD_PUSHDOWN
-  );
-  let resultString = `Default:${
-    defaultPlacement
-      ? formatPossibility(defaultPlacement)
-      : "N/A (0 reaction time)"
-  }`;
+function formatPrecomputeResult(results, defaultPlacement: PossibilityChain, reactionTime: number) {
+  let resultString = `Default:${defaultPlacement
+    ? formatDefaultPossibility(defaultPlacement, reactionTime)
+    : "N/A (0 reaction time)"
+    }`;
   for (const piece of POSSIBLE_NEXT_PIECES) {
     if (results == null) {
-      // If we have no next box info, do the default for everything
-      resultString += `\n${piece}:${defaultFormatted}`;
+      throw new Error("Results were null");
     } else if (!results[piece]) {
       // If we have some results but no moves for this piece
       resultString += `\n${piece}:No legal moves`;
@@ -411,126 +494,6 @@ export function countInputs(placement) {
   return placement[0] + Math.abs(placement[1]);
 }
 
-export function getAdjustmentInputCost(possibility: Possibility) {
-  const SPINTUCK_COST = -0.3;
-  const SPIN_COST = -0.2;
-  const TUCK_COST = -0.1;
-  const INPUT_COST_LOOKUP = {
-    E: SPINTUCK_COST,
-    F: SPINTUCK_COST,
-    I: SPINTUCK_COST,
-    G: SPINTUCK_COST,
-    L: TUCK_COST,
-    R: TUCK_COST,
-    A: SPIN_COST,
-    B: SPIN_COST,
-  };
-  let adjCost = 0;
-  for (const inputChar of possibility.inputSequence) {
-    adjCost += INPUT_COST_LOOKUP[inputChar] || 0;
-  }
-  return adjCost + possibility.inputCost;
-}
-
-export function predictSearchStateAtAdjustmentTime(
-  initialState: SearchState,
-  inputSequence: string,
-  inputFrameTimeline: string
-) {
-  let inputsPossibleByAdjTime = 0;
-  let inputsUsedByAdjTime = 0;
-  let offsetXAtAdjustmentTime = 0;
-  let rotationAtAdjustmentTime = 0;
-  let totalActiveFrames = 0;
-
-  // Track the hypothetical DAS charge whether or not it's actually enabled
-  let dasCharge = initialState.dasCharge;
-  let dasButtonHeld = DasButtonHeld.NONE;
-
-  // Loop through the frames until adjustment time
-  for (let i = 0; i < initialState.reactionTime; i++) {
-    if (shouldPerformInputsThisFrame(inputFrameTimeline, i)) {
-      inputsPossibleByAdjTime++;
-    }
-
-    // Track shifts
-    const thisFrameStr = inputSequence[i];
-    const canShiftThisFrame = !IS_DAS || dasCharge >= 15;
-    if (isAnyOf(thisFrameStr, "LEF") && canShiftThisFrame) {
-      offsetXAtAdjustmentTime--;
-      dasCharge = 10;
-      dasButtonHeld = DasButtonHeld.LEFT;
-    } else if (isAnyOf(thisFrameStr, "RIG") && canShiftThisFrame) {
-      offsetXAtAdjustmentTime++;
-      dasCharge = 10;
-      dasButtonHeld = DasButtonHeld.RIGHT;
-    } else if (dasCharge < 15) {
-      // Charge DAS for next piece
-      dasCharge += 1;
-    } else {
-      // Can't DAS anymore without overshifting
-      dasButtonHeld = DasButtonHeld.NONE;
-    }
-
-    // console.log("frame", i, "dasCharge", dasCharge, "input", thisFrameStr);
-
-    // Track rotations
-    if (isAnyOf(thisFrameStr, "AEI")) {
-      rotationAtAdjustmentTime++;
-    } else if (isAnyOf(thisFrameStr, "BFG")) {
-      rotationAtAdjustmentTime--;
-    }
-
-    // Check for hitting the stack
-    if (isAnyOf(thisFrameStr, "*^")) {
-      break;
-    }
-
-    // Track inputs used
-    if (thisFrameStr !== ".") {
-      inputsUsedByAdjTime++;
-    }
-
-    totalActiveFrames++;
-  }
-
-  // Correct the rotation to be in the modulus
-  let numOrientations;
-  if (initialState.currentPieceId === "O") {
-    numOrientations = 1;
-  } else if (isAnyOf(initialState.currentPieceId, "ISZ")) {
-    numOrientations = 2;
-  } else {
-    numOrientations = 4;
-  }
-  rotationAtAdjustmentTime =
-    (rotationAtAdjustmentTime + numOrientations) % numOrientations;
-
-  // Calculate the y value from gravity
-  let offsetYAtAdjustmentTime = Math.floor(
-    totalActiveFrames / GetGravity(initialState.level)
-  );
-  if (IsGravityDoubled(initialState.level)) {
-    offsetYAtAdjustmentTime *= 2;
-  }
-
-  return {
-    board: initialState.board,
-    currentPieceId: initialState.currentPieceId,
-    nextPieceId: initialState.nextPieceId,
-    level: initialState.level,
-    lines: initialState.lines,
-    existingXOffset: offsetXAtAdjustmentTime,
-    existingYOffset: offsetYAtAdjustmentTime,
-    existingRotation: rotationAtAdjustmentTime,
-    framesAlreadyElapsed: initialState.reactionTime,
-    reactionTime: initialState.reactionTime,
-    canFirstFrameShift: inputsUsedByAdjTime < inputsPossibleByAdjTime, // Only used for tap
-    dasCharge,
-    dasButtonHeld,
-  };
-}
-
 /*
 The PRNG of NES Tetris is pretty weird. For example, S bursts are twice as likely as Z bursts, for no good reason.
 Thanks to Adrien Wu and HydrantDude for providing the following lookup tables. They represent the odds of getting 
@@ -558,62 +521,4 @@ function getPieceProbability(current: PieceId, next: PieceId) {
   const index1 = PIECE_INDICES[current];
   const index2 = PIECE_INDICES[next];
   return TRANSITIONS[index1][index2] / 64;
-}
-
-export function testPredictionTap() {
-  const boardStr =
-    "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
-  const board = boardStr
-    .match(/.{1,10}/g) // Select groups of 10 characters
-    .map((rowSerialized) => rowSerialized.split("").map((x) => parseInt(x)));
-  console.log(
-    predictSearchStateAtAdjustmentTime(
-      {
-        board,
-        currentPieceId: "J",
-        nextPieceId: "I",
-        level: 18,
-        lines: 0,
-        framesAlreadyElapsed: 0,
-        reactionTime: 10,
-        existingXOffset: 0,
-        existingYOffset: 0,
-        existingRotation: 0,
-        canFirstFrameShift: false,
-        dasCharge: 16,
-        dasButtonHeld: DasButtonHeld.NONE,
-      },
-      "E....E...L...L",
-      "X....X...X...X"
-    )
-  );
-}
-
-export function testPredictionDas() {
-  const boardStr =
-    "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
-  const board = boardStr
-    .match(/.{1,10}/g) // Select groups of 10 characters
-    .map((rowSerialized) => rowSerialized.split("").map((x) => parseInt(x)));
-  console.log(
-    predictSearchStateAtAdjustmentTime(
-      {
-        board,
-        currentPieceId: "J",
-        nextPieceId: "I",
-        level: 18,
-        lines: 0,
-        framesAlreadyElapsed: 0,
-        reactionTime: 10,
-        existingXOffset: 0,
-        existingYOffset: 0,
-        existingRotation: 0,
-        canFirstFrameShift: false,
-        dasCharge: 16,
-        dasButtonHeld: DasButtonHeld.NONE,
-      },
-      "LLLLLLLLLLLLLLLL",
-      "." // inputFrameTimeline not used for DAS
-    )
-  );
 }

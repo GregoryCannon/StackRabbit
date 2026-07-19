@@ -1,7 +1,7 @@
-import { PIECE_LIST, PIECE_LOOKUP } from "../../docs/tetrominoes";
 import { getTestBoardWithHeight } from "./board_helper";
-import { getPossibleMoves, placementIsLegal } from "./move_search";
-import { generateInputFrameTimeline, GetGravity, logBoard } from "./utils";
+import { getPossibleMoves } from "./move_search";
+import { Board, INITIAL_PLACEMENT, PieceId } from "./types";
+import { generateInputFrameTimeline } from "./utils";
 
 function legalMovesTest() {
   const BOARD_3 = getTestBoardWithHeight(3);
@@ -15,10 +15,8 @@ function legalMovesTest() {
       0,
       "X...",
       0,
-      false,
+      INITIAL_PLACEMENT,
       16,
-      DasButtonHeld.NONE,
-      false
     );
     const adjustmentPossibilites = getPossibleMoves(
       BOARD_3,
@@ -29,27 +27,26 @@ function legalMovesTest() {
       1,
       "X...",
       pieceId == "O" ? 0 : 1,
-      false,
+      INITIAL_PLACEMENT,
       16,
-      DasButtonHeld.NONE,
-      false
     );
-    if (new Set(possibilites).size !== expectedLength) {
+    if (new Set(possibilites.map(x => JSON.stringify(x))).size !== possibilites.length) {
       console.log(possibilites.map((x) => x.placement));
       throw new Error(`Found duplicate possibilities for ${pieceId} piece`);
     }
     if (possibilites.length !== expectedLength) {
+      console.log(possibilites.map((x) => x.placement));
       throw new Error(
         `Expected ${expectedLength} moves for ${pieceId} piece, instead got ${possibilites.length}`
       );
     }
-    if (new Set(possibilites).size !== expectedLength) {
-      console.log(possibilites.map((x) => x.placement));
+    if (new Set(adjustmentPossibilites).size !== expectedLength) {
+      console.log(adjustmentPossibilites.map((x) => x.placement));
       throw new Error(
         `Found duplicate adjustment possibilities for ${pieceId} piece`
       );
     }
-    if (possibilites.length !== expectedLength) {
+    if (adjustmentPossibilites.length !== expectedLength) {
       throw new Error(
         `Expected ${expectedLength} adjustment moves for ${pieceId} piece, instead got ${possibilites.length}`
       );
@@ -237,8 +234,8 @@ function canDoPlacement(
     0,
     inputFrameTimeline,
     0,
-    false,
-    false
+    INITIAL_PLACEMENT,
+    16,
   );
   return (
     possibleMoves.find(
@@ -247,63 +244,11 @@ function canDoPlacement(
   );
 }
 
-function lastMinuteRotationsTest() {
-  let expected1 = true;
-  if (
-    placementIsLegal(
-      2,
-      0,
-      {
-        board: getTestBoardWithHeight(14),
-        initialX: 3,
-        initialY: -1,
-        gravity: GetGravity(29),
-        doubleGravity: false,
-        framesAlreadyElapsed: 0,
-        inputFrameTimeline: "X...",
-        rotationsList: PIECE_LOOKUP["J"][0] as Array<PieceArray>,
-        pieceId: "J",
-        existingRotation: 0,
-        canFirstFrameShift: false,
-        dasCharge: 16,
-      },
-      /* dasWillReset */ false
-    ) !== expected1
-  ) {
-    console.log(`Failed: double rotate J 14 high 29. Expected ${expected1}`);
-  }
-
-  let expected2 = false;
-  if (
-    placementIsLegal(
-      2,
-      0,
-      {
-        board: getTestBoardWithHeight(15),
-        initialX: 3,
-        initialY: -1,
-        gravity: GetGravity(29),
-        doubleGravity: false,
-        framesAlreadyElapsed: 0,
-        inputFrameTimeline: "X...",
-        rotationsList: PIECE_LOOKUP["J"][0] as Array<PieceArray>,
-        pieceId: "J",
-        existingRotation: 0,
-        canFirstFrameShift: false,
-        dasCharge: 16,
-      },
-      /* dasWillReset */ false
-    ) !== expected2
-  ) {
-    console.log(`Failed: double rotate J 15 high 29. Expected ${expected2}`);
-  }
-}
-
 function speedTest(x) {
   console.time("\nspeedtest");
-  for (let i = 0; i < 10; i++) {
+  for (let i = 0; i < x; i++) {
     getPossibleMoves(
-      getTestBoardWithHeight(x),
+      getTestBoardWithHeight(2),
       "L",
       18,
       0,
@@ -311,10 +256,8 @@ function speedTest(x) {
       0,
       "X...",
       0,
-      false,
-      /* dasCharge= */ 16,
-      DasButtonHeld.NONE,
-      false
+      INITIAL_PLACEMENT,
+      16,
     );
   }
   console.timeEnd("\nspeedtest");
@@ -392,10 +335,8 @@ function testSingleCase(testCase) {
     framesElapsed,
     "X...",
     rotation,
-    false,
+    INITIAL_PLACEMENT,
     16,
-    DasButtonHeld.NONE,
-    false
   );
 }
 
@@ -421,33 +362,36 @@ function generateTestCases() {
   console.log(testCases);
 }
 
-// generateTestCases();
-// testNumLegalAdjustments();
+function manualSinglePlacement() {
+  const possibleMoves = getPossibleMoves(
+    getTestBoardWithHeight(1),
+    "S",
+    19,
+    0,
+    0,
+    0,
+    "X.....",
+    0,
+    INITIAL_PLACEMENT,
+    16,
+  );
+  for (const possibility of possibleMoves) {
+    // logBoard(possibility.boardAfter);
+    console.log(possibility.placement);
+    console.log(possibility.inputSequence);
+  }
+  console.log(possibleMoves.length);
 
-
-// ----------------------------
-// MANUAL TEST: ONE PLACEMENT
-const possibleMoves = getPossibleMoves(
-  getTestBoardWithHeight(10),
-  "L",
-  19,
-  0,
-  0,
-  0,
-  "X.....",
-  0,
-  false,
-  16,
-  DasButtonHeld.RIGHT,
-  false
-);
-for (const possibility of possibleMoves) {
-  // logBoard(possibility.boardAfter);
-  console.log(possibility.placement);
-  console.log(possibility.inputSequence);
 }
-console.log(possibleMoves.length);
 
-// ----------------------------
-// UNIT TEST: PIECE RANGES
-tapRangeTest();
+
+
+// ===========================
+// ENTRY POINT
+// ===========================
+
+manualSinglePlacement();
+// testNumLegalAdjustments();
+// tapRangeTest();
+// legalMovesTest();
+// speedTest(1156);

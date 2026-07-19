@@ -1,10 +1,10 @@
 local os = require("os")
 
 -- Manual global config
-IS_DAS = false
+IS_DAS = true
 IS_PAL = false
 USE_PUSHDOWN = true
-DEBUG_MODE = false
+DEBUG_MODE = true
 
 -- OS-dependent config
 -- (We detect mac os based on common directories
@@ -34,14 +34,14 @@ TIMELINE_30_HZ = "X.";
 
 -- Config constants
 SHOULD_ADJUST = true
-REACTION_TIME_FRAMES = 24
+REACTION_TIME_FRAMES = 18
 INPUT_TIMELINE = TIMELINE_10_HZ;
-SHOULD_RECORD_GAMES = false
+SHOULD_RECORD_GAMES = true
 MOVIE_PATH = "C:\\Users\\Greg\\Desktop\\VODs\\" -- Where to store the fm2 VODS (absolute path)
 SCORES_TEXT_PATH = "C:\\Users\\Greg\\Desktop\\sr-test-scores.txt"
 if IS_MAC then 
-  MOVIE_PATH = "/Users/greg/Documents/AiVods/" 
-  SCORES_PATH = "/Users/greg/Desktop/sr-test-scores.txt"
+  MOVIE_PATH = "/Users/gregcannon/Documents/AiVods/" 
+  SCORES_PATH = "/Users/gregcannon/Desktop/sr-test-scores.txt"
 end
 -- file = io.open(SCORES_PATH, "StackRabbit Game Scores:")
 
@@ -64,7 +64,7 @@ resetGameScopedVariables();
 function resetPieceScopedVars()
   adjustmentLookup = {}
   frameIndex = 0
-  arrFrameIndex = 0
+  inputSequenceIndex = 0
   inputSequence = ""
   stateForNextPiece = {board=nil, level=nil, lines=nil, dasCharge=nil}
 end
@@ -122,7 +122,7 @@ function getEncodedBoard()
   return encodedStr
 end
 
--- Query into the input sequence based on (0-indexed) arrFrameIndex
+-- Query into the input sequence based on (0-indexed) inputSequenceIndex
 function getInputForFrame(index)
   -- We transform to uppercase since DAS strings use lowercase to visually indicate non-shift frames where buttons are held
   return string.upper(string.sub(inputSequence, index + 1, index + 1))
@@ -143,7 +143,7 @@ function parsePrecompute(precomputeResult)
       gameOver = true
       return
     end
-    print("Initial placement: " .. defaultPlacement)
+    -- print("Initial placement: " .. defaultPlacement)
     calculateInputs(defaultPlacement, false)
     parseGameStateFromResponse(defaultPlacement)
   end
@@ -164,21 +164,10 @@ function requestFirstPlacementAsync()
   rotationAtAdjustmentTime = 0
   canFirstFrameShiftAtAdjustmentTime = true
   offsetYAtAdjustmentTime = 0
-  -- Convert requests to PAL
-  local reqLevel = level
-  local reqLines = numLines
-  if IS_PAL then
-    reqLines = numLines + 100
-    if reqLevel == 18 then
-      reqLevel = 19
-    elseif reqLevel == 19 then
-      reqLevel = 29
-    end
-  end
 
   -- Format URL arguments
   local reqStr = "http://localhost:3000/get-move-async-cpp?board=" .. getEncodedBoard() .. "&currentPiece=" .. orientToPiece[pcur]
-  reqStr = reqStr .. "&nextPiece=" .. orientToPiece[pnext] .. "&level=" .. reqLevel .. "&lines=" .. reqLines .. "&inputFrameTimeline=" .. INPUT_TIMELINE .. "&dasCharge=" .. 0
+  reqStr = reqStr .. "&nextPiece=" .. orientToPiece[pnext] .. "&level=" .. level .. "&lines=" .. numLines .. "&inputFrameTimeline=" .. INPUT_TIMELINE .. "&dasCharge=" .. 0
 
   local response = makeHttpRequest(reqStr)
   if response.code ~= 200 then
@@ -192,7 +181,7 @@ function requestPrecompute()
   if gameOver then
     return
   end
-  print("requestPrecompute")
+  print("\n\nrequestPrecompute")
   -- Convert requests to PAL
   local reqLevel = stateForNextPiece.level
   local reqLines = stateForNextPiece.lines
@@ -322,6 +311,12 @@ function calculateInputs(apiResult, isAdjustment)
   -- local split = splitString(apiResult, ",|\|")
   local split = splitString(apiResult, "\|")
   inputSequence = split[2]
+
+  if (IS_DAS and isFirstPiece) then
+    -- Pre-pend a waiting frame so that DAS always starts at 0 for consistency
+    inputSequence = "L.R." .. inputSequence
+  end
+
   print(inputSequence)
   if inputSequence == nil or inputSequence == "none" then
     inputSequence = ""
@@ -329,19 +324,19 @@ function calculateInputs(apiResult, isAdjustment)
 
   -- Reset ARR counter if is an adjustment and can first-frame shift
   if isAdjustment then
-    arrFrameIndex = 0
+    inputSequenceIndex = 0
   end
 end
 
 -- Compacted version of executeInputs specific to pre-arrowing on the DPAD during entry delay for DAS
 function startDasDuringAre()
   local inputsThisFrame = {A=false, B=false, left=false, right=false, up=false, down=false, select=false, start=false}
-  local firstFrameInput = getInputForFrame(0)
-  inputsThisFrame.left = (thisFrameStr == "L" or thisFrameStr == "E" or thisFrameStr == "F")
-  inputsThisFrame.right = (thisFrameStr == "R" or thisFrameStr == "I" or thisFrameStr == "G")
-  print("during ARE")
-  print(inputsThisFrame)
+  local frameStr = getInputForFrame(1) -- Not 0 since that's reserved for the _ marker for DAS during ARE
+  inputsThisFrame.left = (frameStr == "L" or frameStr == "E" or frameStr == "F")
+  inputsThisFrame.right = (frameStr == "R" or frameStr == "I" or frameStr == "G")
+  print("during ARE " .. frameStr)
   joypad.set(1, inputsThisFrame)
+  inputSequenceIndex = 1
 end
 
 function executeInputs()
@@ -349,14 +344,13 @@ function executeInputs()
 
     local inputsThisFrame = {A=false, B=false, left=false, right=false, up=false, down=false, select=false, start=false}
 
-    if inputSequence == nil or arrFrameIndex + 1 > string.len(inputSequence) then
-      -- print("Input sequence null or frame index out of bounds" .. arrFrameIndex)
-      -- print(inputSequence)
+    if inputSequence == nil or inputSequenceIndex + 1 > string.len(inputSequence) then
+      -- print("Input sequence null or frame index out of bounds" .. inputSequenceIndex)
       joypad.set(1, inputsThisFrame)
       return
     end
 
-    local thisFrameStr = getInputForFrame(arrFrameIndex);
+    local thisFrameStr = getInputForFrame(inputSequenceIndex);
     
     inputsThisFrame.down = (thisFrameStr == "D")
     inputsThisFrame.A = (thisFrameStr == "A" or thisFrameStr == "E" or thisFrameStr == "I")
@@ -368,6 +362,7 @@ function executeInputs()
     -- if inputsThisFrame.left or inputsThisFrame.right then
     --   print(thisFrameStr .. emu.framecount())
     -- end
+    -- print(thisFrameStr)
 
     -- Send our computed inputs to the controller
     joypad.set(1, inputsThisFrame)
@@ -384,10 +379,10 @@ function bcdToDecimal(a)
 end
 
 function readFromMemory()
-  pcur = memory.readbyte(0x0042) -- Stores current/next pieces before they even appear onscreen
-  pnext = memory.readbyte(0x0019)
-  numLines = bcdToDecimal(memory.readbyte(0x0051)) * 100 + bcdToDecimal(memory.readbyte(0x0050))
-  level = memory.readbyte(0x0044)
+  pcur = memory.readbyte(0x42) -- Stores current/next pieces before they even appear onscreen
+  pnext = memory.readbyte(0x19)
+  numLines = bcdToDecimal(memory.readbyte(0x51)) * 100 + bcdToDecimal(memory.readbyte(0x50))
+  level = memory.readbyte(0x44)
 end
 
 function onFirstFrameOfNewPiece()  
@@ -414,6 +409,13 @@ function asPieceLocks()
   -- Once the first piece locks, it's not the first piece anymore
   isFirstPiece = false
 
+  -- Check that the real DAS charge equals the expected one for the next piece
+  if (tonumber(stateForNextPiece.dasCharge) ~= memory.readbyte(0x46)) then
+    print("Expected: " .. stateForNextPiece.dasCharge .. "Actual: " .. memory.readbyte(0x46))
+    emu.pause()
+    error("Mis-predicted DAS charge")
+  end
+
   -- If it hasn't already, queue up the next precompute
   if not waitingOnAsyncRequest then
     requestPrecompute();
@@ -426,7 +428,7 @@ function processAdjustment()
   if (adjustmentLookup == {}) then
     error("No adjustment lookup found")
   end
-  print("Time for adjustment " .. frameIndex .. ", " .. arrFrameIndex)
+  print("Time for adjustment " .. frameIndex .. ", " .. inputSequenceIndex)
 
   if isFirstPiece then
     local adjustmentApiResult = fetchAsyncResult()
@@ -460,7 +462,7 @@ function runGameFrame()
     return
   end
 
-  if gamePhase == 10 then
+  if (gamePhase == 10) then
     -- Quit to menu
     startBtnVal = false;
     if emu.framecount() % 10 == 1 then
@@ -473,14 +475,17 @@ function runGameFrame()
   local gamePhaseLastFrame = gamePhase
   gamePhase = memory.readbyte(0x0048)
   -- print("gamePhase" .. gamePhase)
-  if (gamePhase == 8 and waitingOnAsyncRequest) then
-    resetPieceScopedVars()
-    -- Last frame of lock delay, look up next piece stuff from server
-    local apiResult = fetchAsyncResult()
-    parsePrecompute(apiResult)
-    waitingOnAsyncRequest = false
-    if (IS_DAS and stateForNextPiece.dasCharge ~= "0") then
-      -- Start holding the Dpad for DAS, unless DAS is fully uncharged
+  if (gamePhase == 8) then
+    -- Last phase of lock delay, look up next piece stuff from server
+    if (waitingOnAsyncRequest) then
+      resetPieceScopedVars()
+      local apiResult = fetchAsyncResult()
+      parsePrecompute(apiResult)
+      waitingOnAsyncRequest = false
+    end
+    
+    -- Maybe hold the Dpad for DAS
+    if (IS_DAS and getInputForFrame(0) == "_") then
       startDasDuringAre()
     end
     
@@ -500,12 +505,12 @@ function runGameFrame()
     -- Execute input sequence
     executeInputs()
     frameIndex = frameIndex + 1
-    arrFrameIndex = arrFrameIndex + 1
+    inputSequenceIndex = inputSequenceIndex + 1
 
   -- Do stuff right when the piece locks.
   elseif gamePhase >= 2 and gamePhase < 8 then
     if gamePhaseLastFrame == 1 then
-      if not USE_PUSHDOWN and not isFirstPiece and not gameOver and getInputForFrame(arrFrameIndex + 1) ~= "*" then
+      if not USE_PUSHDOWN and not isFirstPiece and not gameOver and getInputForFrame(inputSequenceIndex + 1) ~= "*" then
         print(inputSequence)
         if (DEBUG_MODE) then
           error("Server mistimed lock delay")

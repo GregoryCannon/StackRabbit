@@ -1,11 +1,10 @@
 import {
-  getBoardAndLinesClearedAfterPlacement,
   pieceCollision,
   _modulus,
   _validateIntParam,
 } from "./board_helper";
 import { getPossibilityFromSimState } from "./move_search";
-import { logBoard } from "./utils";
+import { DFSState, Possibility, PossibilityChain, SimParams, SimState } from "./types";
 
 const SPINTUCK_COST = -0.3;
 const SPIN_COST = -0.2;
@@ -228,7 +227,7 @@ function tryInput(
         if (!alreadyFound.has(encodedEndingSpot))
           novelPossibilities.push(
             getPossibilityFromSimState(
-              simState,
+              { ...simState, hasAlreadyLocked: true },
               simParams,
               INPUT_COST_LOOKUP[inputChar]
             )
@@ -254,24 +253,3 @@ function debugLog(simState: SimState, simParams: SimParams, reason: string) {
   //   )[0]
   // );
 }
-
-// function speedTest(x) {
-//   // console.time("\nspeedtest");
-//   for (let i = 0; i < 1; i++) {
-//     getPossibleMovesBfs(
-//       getTestBoardWithHeight(x),
-//       "L",
-//       18,
-//       0,
-//       0,
-//       0,
-//       "X...",
-//       0,
-//       false
-//     );
-//   }
-//   // console.timeEnd("\nspeedtest");
-// }
-// for (let i = 0; i < 30; i++) {
-//   speedTest(0);
-// }
