@@ -43,8 +43,8 @@ export function searchForTucksOrSpins(
   potentialTuckSpinStates: Array<DFSState>,
   simParams: SimParams,
   lockHeightLookup: Map<string, number>
-) {
-  let novelPossibilities = [];
+): Array<PossibilityChain> {
+  let novelPossibilities: Array<PossibilityChain> = [];
   const alreadyFound: Set<string> = new Set();
   // Look in order of ease of input (tucks -> spins -> spintucks)
   novelPossibilities = novelPossibilities.concat(

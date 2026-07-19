@@ -162,35 +162,37 @@ export class PreComputeManager {
 
     console.log("Num possible moves:", possibleMoves.length);
 
-    console.time("SAFEDAS");
-    // Calculate minimum safe DAS charges for each possible lock location
-    for (const possibility of possibleMoves) {
-      const ssa = getSearchStateAfter(initialSearchState, possibility)
-      ssa.currentPieceId = "T" // Generally representative of the hardest placements
+    if (IS_DAS) {
+      console.time("SAFEDAS");
+      // Calculate minimum safe DAS charges for each possible lock location
+      for (const possibility of possibleMoves) {
+        const ssa = getSearchStateAfter(initialSearchState, possibility)
+        ssa.currentPieceId = "T" // Generally representative of the hardest placements
 
-      const countMovesAtDasCharge = (dasCharge: number) => {
-        return getPossibleMoves(ssa.board, ssa.currentPieceId, ssa.level, 0, 0, 0, this.inputFrameTimeline, 0, INITIAL_PLACEMENT, dasCharge).length
-      }
+        const countMovesAtDasCharge = (dasCharge: number) => {
+          return getPossibleMoves(ssa.board, ssa.currentPieceId, ssa.level, 0, 0, 0, this.inputFrameTimeline, 0, INITIAL_PLACEMENT, dasCharge).length
+        }
 
-      let minSafeDasCharge = 15;
-      const baseline = countMovesAtDasCharge(15);
-      const increment = (ssa.level == 18) ? 3 : 2 // The true values tend to increment in multiples of the gravity, so we can increment by that while searching.
+        let minSafeDasCharge = 15;
+        const baseline = countMovesAtDasCharge(15);
+        const increment = (ssa.level == 18) ? 3 : 2 // The true values tend to increment in multiples of the gravity, so we can increment by that while searching.
 
-      if (countMovesAtDasCharge(0) == baseline) {
-        minSafeDasCharge = 0;
-      } else {
-        for (let dasCharge = 15 - increment + 1; dasCharge >= 0; dasCharge -= increment) {
-          if (countMovesAtDasCharge(dasCharge) == baseline) {
-            minSafeDasCharge = dasCharge
-          } else {
-            break;
+        if (countMovesAtDasCharge(0) == baseline) {
+          minSafeDasCharge = 0;
+        } else {
+          for (let dasCharge = 15 - increment + 1; dasCharge >= 0; dasCharge -= increment) {
+            if (countMovesAtDasCharge(dasCharge) == baseline) {
+              minSafeDasCharge = dasCharge
+            } else {
+              break;
+            }
           }
         }
-      }
 
-      this.minSafeDasChargeLookup.set(possibility.lockPositionEncoded, minSafeDasCharge);
+        this.minSafeDasChargeLookup.set(possibility.lockPositionEncoded, minSafeDasCharge);
+      }
+      console.timeEnd("SAFEDAS");
     }
-    console.timeEnd("SAFEDAS");
 
 
     // const baseline = countMovesAtDasCharge(15);
