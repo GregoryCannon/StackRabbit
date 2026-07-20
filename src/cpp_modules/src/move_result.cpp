@@ -84,7 +84,7 @@ float analyzeHole(unsigned int board[20], int r, int c, int excludeHolesColumn, 
     }
     if (rating < 1.0f) {
       if (isDigMode) {
-        return (1 + rating) / 2.0f; // Average the rating closer to 1 since tucks are bad while digging
+        return (2 + rating) / 3.0f; // Average the rating closer to 1 since tucks are bad while digging
       } else {
         return rating;
       }
