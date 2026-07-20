@@ -1,5 +1,5 @@
 import { getPossibleMoves, getSearchStateAfter } from "./move_search";
-import { IS_DAS, LOSS_DAS_PENALTY, SHOULD_PUSHDOWN } from "./params";
+import { LOSS_DAS_PENALTY, SHOULD_PUSHDOWN } from "./params";
 import { INITIAL_PLACEMENT, PhantomPlacement, PieceId, Possibility, PossibilityChain, SearchState, WorkerDataArgs, WorkerResponse } from "./types";
 import {
   formatDefaultPossibility,
@@ -37,6 +37,7 @@ export class PreComputeManager {
   minSafeDasChargeLookup: Map<string, number>;
   inputFrameTimeline: string | null;
   reactionTime: number | null;
+  useDAS: boolean | null;
   lastSeenPiece: PieceId;
 
   constructor() {
@@ -54,6 +55,7 @@ export class PreComputeManager {
     this.minSafeDasChargeLookup = new Map();
     this.inputFrameTimeline = null;
     this.reactionTime = null;
+    this.useDAS = null;
     this.lastSeenPiece = null;
 
     this._onMessage = this._onMessage.bind(this);
@@ -88,6 +90,7 @@ export class PreComputeManager {
     this.inputFrameTimeline = inputFrameTimeline;
     this.reactionTime = searchState.reactionTime;
     this.lastSeenPiece = searchState.currentPieceId;
+    this.useDAS = searchState.dasCharge !== -1
     this.minSafeDasChargeLookup = new Map();
 
     const possibleMoves = getPossibleMoves(
@@ -147,6 +150,7 @@ export class PreComputeManager {
           inputSequence: "",
           initialPlacement: null,
           adjustmentSearchState: initialSearchState,
+          possibleAdjustments: []
         },
       ];
       return;
@@ -160,9 +164,7 @@ export class PreComputeManager {
       (a, b) => countInputs(a.placement) - countInputs(b.placement)
     );
 
-    console.log("Num possible moves:", possibleMoves.length);
-
-    if (IS_DAS) {
+    if (this.useDAS) {
       console.time("SAFEDAS");
       // Calculate minimum safe DAS charges for each possible lock location
       for (const possibility of possibleMoves) {
@@ -243,7 +245,8 @@ export class PreComputeManager {
         phantomPlacements.push({
           inputSequence: newInputSequence,
           initialPlacement: toPossibilityChain(possibility, initialSearchState),
-          adjustmentSearchState: adjSearchState
+          adjustmentSearchState: adjSearchState,
+          possibleAdjustments: []
         });
         seenInputSequences.add(newInputSequence);
       }
@@ -295,19 +298,15 @@ export class PreComputeManager {
           )
         )
       ) {
-        // console.log(
-        //   "NO ADJUSTMENTS, already did tuck",
-        //   phantomPlacement.initialPlacement.inputSequence
-        // );
-        phantomPlacement.possibleAdjustmentsLookup = [];
-        // console.log("Already did tuck, no adjustments allowed")
+        phantomPlacement.possibleAdjustments = [];
+        console.log("Already did tuck, no adjustments allowed")
         continue;
       }
 
       // If the piece locks in before reaction time, there will be no adjustmentSearchState saved
       if (!phantomPlacement.adjustmentSearchState) {
-        // console.log("No adj search state, no adjustments possible")
-        phantomPlacement.possibleAdjustmentsLookup = [];
+        console.log("No adj search state, no adjustments possible")
+        phantomPlacement.possibleAdjustments = [];
         continue;
       }
 
@@ -325,7 +324,7 @@ export class PreComputeManager {
         s.adjustmentState,
         s.dasCharge,
       );
-      phantomPlacement.possibleAdjustmentsLookup = possibleAdjs;
+      phantomPlacement.possibleAdjustments = possibleAdjs;
     }
     console.timeEnd("Get adjustment moves");
     // console.log("DONE PRECOMPILE ADJ");
@@ -345,36 +344,43 @@ export class PreComputeManager {
       const responseObj = {};
       for (const pieceId of POSSIBLE_NEXT_PIECES) {
         // Figure out what adjustment you'd do for that piece
-        let maxValue = phantomPlacement.initialPlacement
-          ? this.results[pieceId][
-          phantomPlacement.initialPlacement.lockPositionEncoded
-          ]
-          : Number.MIN_SAFE_INTEGER;
+        let maxValue = Number.MIN_SAFE_INTEGER;
         let maxPossibility: PossibilityChain = null;
-        for (const adjPossibility of phantomPlacement.possibleAdjustmentsLookup) {
-          // Combine the input cost with the placement value
-          // console.log("basline", phantomPlacement.initialPlacement.placement, phantomPlacement.initialPlacement.adjTimeSimState, phantomPlacement.initialPlacement.inputSequence)
-          const value =
-            this._getAdjustmentInputCost(adjPossibility, phantomPlacement.adjustmentSearchState, pieceId) +
-            this.results[pieceId][adjPossibility.lockPositionEncoded];
-          if (
-            !this.results[pieceId].hasOwnProperty(
-              adjPossibility.lockPositionEncoded
-            )
-          ) {
-            continue;
-          }
-          // Check if this is the best adjustment
-          if (value >= maxValue) {
-            maxValue = value;
-            maxPossibility = {
-              ...adjPossibility,
-              searchStateAfterMove: getSearchStateAfter(
-                phantomPlacement.adjustmentSearchState,
-                adjPossibility
-              ),
-              totalValue: null, // Not used, only converted types so that searchStateAfter property exists
-            };
+
+        // If there's no possible adjustments (piece locks too quickly), just consider the default placement
+        if (phantomPlacement.possibleAdjustments.length == 0) {
+          maxValue = this.results[pieceId][phantomPlacement.initialPlacement.lockPositionEncoded]
+            + phantomPlacement.initialPlacement.inputCost
+          maxPossibility = phantomPlacement.initialPlacement
+        }
+
+        else {
+          // Otherwise, check all the adjustments to get the max value from this phantom placement
+          for (const adjPossibility of phantomPlacement.possibleAdjustments) {
+            // Combine the input cost with the placement value
+            // console.log("basline", phantomPlacement.initialPlacement.placement, phantomPlacement.initialPlacement.adjTimeSimState, phantomPlacement.initialPlacement.inputSequence)
+            const value =
+              this._getAdjustmentInputCost(adjPossibility, phantomPlacement.adjustmentSearchState, pieceId)
+              + this.results[pieceId][adjPossibility.lockPositionEncoded];
+            if (
+              !this.results[pieceId].hasOwnProperty(
+                adjPossibility.lockPositionEncoded
+              )
+            ) {
+              continue;
+            }
+            // Check if this is the best adjustment
+            if (value >= maxValue) {
+              maxValue = value;
+              maxPossibility = {
+                ...adjPossibility,
+                searchStateAfterMove: getSearchStateAfter(
+                  phantomPlacement.adjustmentSearchState,
+                  adjPossibility
+                ),
+                totalValue: null, // Not used, only converted types so that searchStateAfter property exists
+              };
+            }
           }
         }
 
@@ -431,7 +437,7 @@ export class PreComputeManager {
     // console.log(possibility.placement, possibility.inputSequence);
     // Penalize losing DAS, unless the partial (or no) DAS charge is enough for the next piece to reach its full range anyway.
     let dasCost = 0
-    if (IS_DAS && possibility.dasChargeAfter !== undefined) {
+    if (this.useDAS && possibility.dasChargeAfter !== undefined) {
       const minSafeDasCharge = this.minSafeDasChargeLookup.get(possibility.lockPositionEncoded) || 15
       if (minSafeDasCharge === undefined) {
         throw new Error("Failed to find value in min safe das charge: " + possibility.lockPositionEncoded)
@@ -458,7 +464,7 @@ function formatPrecomputeResult(results, defaultPlacement: PossibilityChain, rea
       throw new Error("Results were null");
     } else if (!results[piece]) {
       // If we have some results but no moves for this piece
-      resultString += `\n${piece}:No legal moves`;
+      resultString += `\n${piece}:No legal moves C`;
     } else {
       // Otherwise, add the real result
       resultString += `\n${piece}:${formatPossibility(

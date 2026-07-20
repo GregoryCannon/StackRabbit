@@ -1,4 +1,4 @@
-import { IS_DAS, LINE_CAP, MAX_CPP_PLAYOUT_MOVES } from "./params";
+import { LINE_CAP, MAX_CPP_PLAYOUT_MOVES } from "./params";
 import { INITIAL_PLACEMENT, PieceId, SearchState, UrlArguments } from "./types";
 import { parseBoard } from "./utils";
 
@@ -191,8 +191,9 @@ export function getCppEncodedInputString(
   const pieceLookup = ["I", "O", "L", "J", "T", "S", "Z"];
   const curPieceIndex = pieceLookup.indexOf(searchState.currentPieceId);
   const nextPieceIndex = pieceLookup.indexOf(searchState.nextPieceId);
+  const useDAS = urlArgs.dasCharge !== -1
   // If DAS, tell the CPP backend we're an 10 Hz tapper 
-  const effInputFrameTimeline = IS_DAS ? "X....." : urlArgs.inputFrameTimeline;
+  const effInputFrameTimeline = useDAS ? "X....." : urlArgs.inputFrameTimeline;
   // Includes the final | character at the end due to how the string is parsed (cpp doesn't have an easy split method rip)
   return `${boardStr}|${searchState.level}|${searchState.lines}|${curPieceIndex}|${nextPieceIndex}|${effInputFrameTimeline}|${urlArgs.playoutCount}|${urlArgs.playoutLength}|${urlArgs.pruningBreadth}|`;
 }

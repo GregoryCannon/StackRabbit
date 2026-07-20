@@ -35,6 +35,7 @@ export interface UrlArguments {
   playoutCount: number; // Only used in C++ queries
   playoutLength: number; // Only used in C++ queries
   pruningBreadth: number; // Only used in C++ queries
+  useDAS?: boolean;
   dasCharge?: number;
 }
 
@@ -59,10 +60,6 @@ export interface AdjustmentSimState extends SimState {
 export interface LegalPlacementSimState extends SimState {
   hasAlreadyLocked: boolean;
   adjTimeSimState?: AdjustmentSimState;
-}
-
-export interface DFSState extends SimState {
-  inputSequence: string;
 }
 
 export interface Possibility {
@@ -100,7 +97,7 @@ export interface PhantomPlacement {
   inputSequence: string;
   initialPlacement: PossibilityChain;
   adjustmentSearchState?: SearchState | null; // Would be null if the default placement has the piece lock before reaction time
-  possibleAdjustmentsLookup?: Array<Possibility>;
+  possibleAdjustments: Array<Possibility>;
 }
 
 export const enum AiMode {

@@ -1,10 +1,9 @@
 import {
-  pieceCollision,
   _modulus,
-  _validateIntParam,
+  pieceCollision
 } from "./board_helper";
 import { getPossibilityFromSimState } from "./move_search";
-import { DFSState, Possibility, PossibilityChain, SimParams, SimState } from "./types";
+import { INITIAL_PLACEMENT, LegalPlacementSimState, Possibility, PossibilityChain, SimParams, SimState } from "./types";
 
 const SPINTUCK_COST = -0.3;
 const SPIN_COST = -0.2;
@@ -40,7 +39,7 @@ const ROTATION_LOOKUP = {
 };
 
 export function searchForTucksOrSpins(
-  potentialTuckSpinStates: Array<DFSState>,
+  potentialTuckSpinStates: Array<LegalPlacementSimState>,
   simParams: SimParams,
   lockHeightLookup: Map<string, number>
 ): Array<PossibilityChain> {
@@ -96,7 +95,7 @@ const POSSIBLE_INPUT_LOOKUP = {
 };
 
 function searchForTucksOrSpinsInternal(
-  potentialTuckSpinStates: Array<DFSState>,
+  potentialTuckSpinStates: Array<LegalPlacementSimState>,
   simParams: SimParams,
   lockHeightLookup: Map<string, number>,
   alreadyFound: Set<string>,
@@ -154,7 +153,7 @@ function tryInput(
   inputChar: string,
   newX: number,
   newRotationIndex: number,
-  parentSimState: DFSState,
+  parentSimState: SimState,
   simParams: SimParams,
   alreadyFound: Set<string>,
   novelPossibilities: Array<Possibility>
@@ -224,7 +223,7 @@ function tryInput(
         // Piece locked into the stack, so add it if it hasn't been seen before!
         const encodedEndingSpot =
           simState.x + "|" + simState.y + "|" + simState.rotationIndex;
-        if (!alreadyFound.has(encodedEndingSpot))
+        if (!alreadyFound.has(encodedEndingSpot)) {
           novelPossibilities.push(
             getPossibilityFromSimState(
               { ...simState, hasAlreadyLocked: true },
@@ -232,6 +231,7 @@ function tryInput(
               INPUT_COST_LOOKUP[inputChar]
             )
           );
+        }
         alreadyFound.add(encodedEndingSpot);
         return;
       }

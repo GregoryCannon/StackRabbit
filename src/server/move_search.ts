@@ -6,15 +6,14 @@ import {
   pieceCollision
 } from "./board_helper";
 import { searchForTucksOrSpins } from "./dfs";
-import { CAN_TUCK, IS_DAS } from "./params";
-import { AdjustmentState, Board, DasButtonHeld, DFSState, getAdjustmentState, INITIAL_PLACEMENT, LegalPlacementSimState, NonNullPieceId, PieceArray, PieceId, Possibility, SearchState, SimParams, SimState } from "./types";
+import { CAN_TUCK } from "./params";
+import { AdjustmentState, Board, DasButtonHeld, getAdjustmentState, INITIAL_PLACEMENT, LegalPlacementSimState, PieceArray, PieceId, Possibility, SearchState, SimParams, SimState } from "./types";
 import {
   GetGravity,
   getLevelAfterLineClears,
   IsGravityDoubled,
-  logBoard,
   NUM_ROW,
-  shouldPerformInputsThisFrame,
+  shouldPerformInputsThisFrame
 } from "./utils";
 
 export function getSearchStateAfter(
@@ -76,6 +75,7 @@ export function getPossibleMoves(
   const gravity = GetGravity(level);
   const doubleGravity = IsGravityDoubled(level);
   const rotationsList = PIECE_LOOKUP[currentPieceId][0] as Array<PieceArray>;
+  const useDAS = dasCharge !== -1
 
   const simParams: SimParams = {
     board: startingBoard,
@@ -96,8 +96,10 @@ export function getPossibleMoves(
 
   // If the DAS charge when a piece spawns is <= 5, it's better to not hold DAS during ARE
   // and get the first frame shift. Otherwise, it's better to use the existing charge.
-  const dasWillResetLeft = dasCharge <= 5 || adjustmentState.isAdjustment && adjustmentState.dasButtonHeld != DasButtonHeld.LEFT
-  const dasWillResetRight = dasCharge <= 5 || adjustmentState.isAdjustment && adjustmentState.dasButtonHeld != DasButtonHeld.RIGHT
+  const dasWillResetLeft = useDAS && dasCharge <= 5 || (adjustmentState.isAdjustment
+    && adjustmentState.dasButtonHeld != DasButtonHeld.LEFT)
+  const dasWillResetRight = useDAS && dasCharge <= 5 || (adjustmentState.isAdjustment
+    && adjustmentState.dasButtonHeld != DasButtonHeld.RIGHT)
 
   // Loop over the range and validate the moves with more rotations than shifts
   const numRotationsForPiece = rotationsList.length;
@@ -119,9 +121,10 @@ export function getPossibleMoves(
         rotationIndex,
         xOffset,
         simParams,
+        useDAS,
         dasWillReset,
         legalPlacementSimStates,
-        reactionTime
+        reactionTime,
       );
     }
   }
@@ -129,7 +132,7 @@ export function getPossibleMoves(
   // console.log("legalplcaementsimstates");
   // console.log(legalPlacementSimStates);
 
-  deDupeSortedList(legalPlacementSimStates);
+  deDupeSortedList(legalPlacementSimStates, useDAS);
 
   const [
     basicPossibilities,
@@ -155,10 +158,6 @@ export function getPossibleMoves(
 }
 
 function deDupeLockPossibilities(list: Array<Possibility>) {
-  function eq(a: Possibility, b: Possibility) {
-    return a.lockPositionEncoded == b.lockPositionEncoded
-  }
-
   for (let i = 0; i + 1 < list.length; i++) {
     if (list[i].lockPositionEncoded == list[i + 1].lockPositionEncoded) {
       // Remove the first element (worse DAS charge)
@@ -167,7 +166,7 @@ function deDupeLockPossibilities(list: Array<Possibility>) {
   }
 }
 
-function deDupeSortedList(legalPlacementSimStates: Array<SimState>) {
+function deDupeSortedList(legalPlacementSimStates: Array<SimState>, useDAS: boolean) {
   function getKey(a: SimState) {
     return `${a.rotationIndex}|${a.x}|}`
   }
@@ -192,7 +191,7 @@ function deDupeSortedList(legalPlacementSimStates: Array<SimState>) {
     legalPlacementSimStates.push(list[0])
 
     // If we're using DAS, we may wait some frames for DAS to charge more
-    if (IS_DAS && list.length >= 2) {
+    if (useDAS && list.length >= 2) {
       legalPlacementSimStates.push(list[list.length - 1])
     }
   }
@@ -215,18 +214,14 @@ function deDupeSortedList(legalPlacementSimStates: Array<SimState>) {
 function exploreLegalPlacementsUntilLock(
   legalPlacementSimStates: Array<LegalPlacementSimState>,
   simParams: SimParams
-): [Array<Possibility>, Map<string, number>, Array<DFSState>] {
+): [Array<Possibility>, Map<string, number>, Array<LegalPlacementSimState>] {
   const lockPossibilities = [];
   const lockHeightLookup: Map<string, number> = new Map();
-  const potentialTuckSpinStates: Array<DFSState> = [];
+  const potentialTuckSpinStates: Array<LegalPlacementSimState> = [];
 
   for (const simState of legalPlacementSimStates) {
     const currentRotationPiece =
       simParams.rotationsList[simState.rotationIndex];
-    const rotIndex = _modulus(
-      simState.rotationIndex - simParams.existingRotation,
-      4
-    );
 
     let startedLookingForTuckSpins = false;
     let highestRegisteredY = -1; // Tracks the Y values already registered to avoid duplicates
@@ -403,7 +398,8 @@ function getInputThisFrame(
   willHoldDasButtonThisFrame: boolean,
   willRotateThisFrame: boolean,
   shiftIncrement: number,
-  rotIncrement: number
+  rotIncrement: number,
+  useDAS: boolean,
 ): string {
   let effRotIncrement = willRotateThisFrame ? rotIncrement : 0;
   // DAS holds the button continuously, hypertap only presses the button on the shift frames
@@ -417,7 +413,7 @@ function getInputThisFrame(
 
   // We use a lowercase letter to indicate an input where DAS is being held but there's no shift.
   // This is purely visual for debugging purposes, and the Lua script will turn it back to uppercase for execution.
-  if (IS_DAS && shiftIncrement !== 0 && !willShiftThisFrame) {
+  if (useDAS && shiftIncrement !== 0 && !willShiftThisFrame) {
     return inputThisFrame.toLowerCase();
   }
 
@@ -478,6 +474,7 @@ export function tryPlacement(
   goalRotationIndex: number,
   goalOffsetX: number,
   simParams: SimParams,
+  useDAS: boolean,
   dasWillReset: boolean,
   legalPlacementSimStates: Array<LegalPlacementSimState>,
   reactionTime: number
@@ -494,7 +491,7 @@ export function tryPlacement(
     adjustmentState,
   } = simParams;
 
-  const holdDASduringARE = !adjustmentState.isAdjustment && !dasWillReset && goalOffsetX != 0
+  const holdDASduringARE = useDAS && !adjustmentState.isAdjustment && !dasWillReset && goalOffsetX != 0
 
   // Get initial sim state
   const simState: SimState = {
@@ -525,8 +522,7 @@ export function tryPlacement(
     return;
   }
 
-  // Tracks if the next shift will be immediate but also reset DAS
-  let pendingDasReset = dasWillReset;
+  let pendingDasReset = dasWillReset; // Tracks if the next shift will be immediate but also reset DAS
   let dasButtonHeld = DasButtonHeld.NONE
   let adjTimeSimState;
   let foundPlacement = false;
@@ -540,12 +536,12 @@ export function tryPlacement(
       inputFrameTimeline,
       simState.arrFrameIndex
     );
-    const canShiftThisFrame = IS_DAS
+    const canShiftThisFrame = useDAS
       ? (simState.dasCharge >= 15 || pendingDasReset)
       : tapShouldInputThisFrame;
     const willShiftThisFrame =
       canShiftThisFrame && simState.x != initialX + goalOffsetX;
-    const willHoldDasButtonThisFrame = IS_DAS &&
+    const willHoldDasButtonThisFrame = useDAS &&
       (
         simState.x != initialX + goalOffsetX || // Has shifts remaining
         (dasButtonHeld != DasButtonHeld.NONE && simState.dasCharge < 15) // Is already holding an arrow and can keep holding it for bonus DAS charge
@@ -555,7 +551,6 @@ export function tryPlacement(
     const isGravityFrame = simState.frameIndex % gravity === gravity - 1; // Returns true every Nth frame, where N = gravity
 
     // (These are stored as local variables so that all the checks in the loop finish before action is taken on their values.)
-    let addNewPlacement = false;
     let lockAfterThisFrame = false;
 
     if (willShiftThisFrame && simState.x !== initialX + goalOffsetX) {
@@ -568,7 +563,7 @@ export function tryPlacement(
       if (!inputSucceeded) {
         return;
       }
-      if (IS_DAS) {
+      if (useDAS) {
         simState.dasCharge = pendingDasReset ? 0 : 10; // Update DAS charge after successful shift
         pendingDasReset = false;
       }
@@ -593,7 +588,8 @@ export function tryPlacement(
       willHoldDasButtonThisFrame,
       willRotateThisFrame,
       shiftIncrement,
-      rotIncrement
+      rotIncrement,
+      useDAS
     );
     simState.inputSequence += thisFrameStr
 
@@ -608,8 +604,8 @@ export function tryPlacement(
 
     // Track the ARR input counts
     const didArrInputThisFrame =
-      (IS_DAS && "ABEFIG".includes(thisFrameStr.toUpperCase())) ||
-      (!IS_DAS && thisFrameStr !== ".")
+      (useDAS && "ABEFIG".includes(thisFrameStr.toUpperCase())) ||
+      (!useDAS && thisFrameStr !== ".")
     if (tapShouldInputThisFrame && !didArrInputThisFrame) {
       arrFrameVoluntarilyMissed = true;
     }
@@ -671,7 +667,7 @@ export function tryPlacement(
       break;
     }
     // Quit if we have no reason to keep looking
-    doneChargingDas = !IS_DAS || simState.dasCharge >= 15
+    doneChargingDas = !useDAS || simState.dasCharge >= 15
     if (doneChargingDas && foundPlacement && adjTimeSimState !== undefined) {
       break;
     }

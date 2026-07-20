@@ -1,10 +1,11 @@
 local os = require("os")
 
 -- Manual global config
-IS_DAS = true
+USE_DAS = false
 IS_PAL = false
 USE_PUSHDOWN = true
 DEBUG_MODE = true
+SHOULD_RECORD_GAMES = false
 
 -- OS-dependent config
 -- (We detect mac os based on common directories
@@ -36,7 +37,6 @@ TIMELINE_30_HZ = "X.";
 SHOULD_ADJUST = true
 REACTION_TIME_FRAMES = 18
 INPUT_TIMELINE = TIMELINE_10_HZ;
-SHOULD_RECORD_GAMES = true
 MOVIE_PATH = "C:\\Users\\Greg\\Desktop\\VODs\\" -- Where to store the fm2 VODS (absolute path)
 SCORES_TEXT_PATH = "C:\\Users\\Greg\\Desktop\\sr-test-scores.txt"
 if IS_MAC then 
@@ -143,7 +143,7 @@ function parsePrecompute(precomputeResult)
       gameOver = true
       return
     end
-    -- print("Initial placement: " .. defaultPlacement)
+    print("Initial placement: " .. defaultPlacement)
     calculateInputs(defaultPlacement, false)
     parseGameStateFromResponse(defaultPlacement)
   end
@@ -166,8 +166,13 @@ function requestFirstPlacementAsync()
   offsetYAtAdjustmentTime = 0
 
   -- Format URL arguments
+  local reqDasCharge = -1
+  if (USE_DAS) then
+    reqDasCharge = 0
+  end
   local reqStr = "http://localhost:3000/get-move-async-cpp?board=" .. getEncodedBoard() .. "&currentPiece=" .. orientToPiece[pcur]
-  reqStr = reqStr .. "&nextPiece=" .. orientToPiece[pnext] .. "&level=" .. level .. "&lines=" .. numLines .. "&inputFrameTimeline=" .. INPUT_TIMELINE .. "&dasCharge=" .. 0
+  reqStr = reqStr .. "&nextPiece=" .. orientToPiece[pnext] .. "&level=" .. level .. "&lines=" .. numLines .. "&inputFrameTimeline=" 
+  reqStr = reqStr .. INPUT_TIMELINE .. "&dasCharge=" .. reqDasCharge
 
   local response = makeHttpRequest(reqStr)
   if response.code ~= 200 then
@@ -312,12 +317,11 @@ function calculateInputs(apiResult, isAdjustment)
   local split = splitString(apiResult, "\|")
   inputSequence = split[2]
 
-  if (IS_DAS and isFirstPiece) then
+  if (USE_DAS and isFirstPiece) then
     -- Pre-pend a waiting frame so that DAS always starts at 0 for consistency
     inputSequence = "L.R." .. inputSequence
   end
 
-  print(inputSequence)
   if inputSequence == nil or inputSequence == "none" then
     inputSequence = ""
   end
@@ -359,9 +363,6 @@ function executeInputs()
     inputsThisFrame.right = (thisFrameStr == "R" or thisFrameStr == "I" or thisFrameStr == "G")
 
     -- Debug logs
-    -- if inputsThisFrame.left or inputsThisFrame.right then
-    --   print(thisFrameStr .. emu.framecount())
-    -- end
     -- print(thisFrameStr)
 
     -- Send our computed inputs to the controller
@@ -388,9 +389,6 @@ end
 function onFirstFrameOfNewPiece()  
   readFromMemory()
     
-  print("--------------------")
-  print(orientToPiece[pcur])
-
   -- If it's the first piece, make an 'adjustment' to do the initial placement
   if isFirstPiece then
     resetPieceScopedVars()
@@ -410,7 +408,8 @@ function asPieceLocks()
   isFirstPiece = false
 
   -- Check that the real DAS charge equals the expected one for the next piece
-  if (tonumber(stateForNextPiece.dasCharge) ~= memory.readbyte(0x46)) then
+  local dasCharge = tonumber(stateForNextPiece.dasCharge)
+  if (dasCharge ~= -1 and dasCharge ~= memory.readbyte(0x46)) then
     print("Expected: " .. stateForNextPiece.dasCharge .. "Actual: " .. memory.readbyte(0x46))
     emu.pause()
     error("Mis-predicted DAS charge")
@@ -428,7 +427,6 @@ function processAdjustment()
   if (adjustmentLookup == {}) then
     error("No adjustment lookup found")
   end
-  print("Time for adjustment " .. frameIndex .. ", " .. inputSequenceIndex)
 
   if isFirstPiece then
     local adjustmentApiResult = fetchAsyncResult()
@@ -439,6 +437,8 @@ function processAdjustment()
     calculateInputs(adjustmentApiResult, true)
     parseGameStateFromResponse(adjustmentApiResult)
   end 
+
+  print("Time for adjustment " .. inputSequence)
 end
 
 function onGameOver()
@@ -478,6 +478,7 @@ function runGameFrame()
   if (gamePhase == 8) then
     -- Last phase of lock delay, look up next piece stuff from server
     if (waitingOnAsyncRequest) then
+      print("\n------ " .. orientToPiece[pnext] .. " ------")
       resetPieceScopedVars()
       local apiResult = fetchAsyncResult()
       parsePrecompute(apiResult)
@@ -485,10 +486,10 @@ function runGameFrame()
     end
     
     -- Maybe hold the Dpad for DAS
-    if (IS_DAS and getInputForFrame(0) == "_") then
+    if (USE_DAS and getInputForFrame(0) == "_") then
       startDasDuringAre()
     end
-    
+
   elseif(gamePhase == 1) then
     if(gamePhaseLastFrame ~= 1) then
       -- First active frame for piece. This is where board state/input sequence is calculated
@@ -511,7 +512,6 @@ function runGameFrame()
   elseif gamePhase >= 2 and gamePhase < 8 then
     if gamePhaseLastFrame == 1 then
       if not USE_PUSHDOWN and not isFirstPiece and not gameOver and getInputForFrame(inputSequenceIndex + 1) ~= "*" then
-        print(inputSequence)
         if (DEBUG_MODE) then
           error("Server mistimed lock delay")
         end
@@ -519,9 +519,13 @@ function runGameFrame()
       asPieceLocks()
       return
     end
+
     -- If the agent is mistaken about the board state, crash immediately so I can debug it
-    if gamePhase == 8 and not gameOver and getEncodedBoard() ~= stateForNextPiece.board then
+    if gamePhase == 6 and not gameOver and getEncodedBoard() ~= stateForNextPiece.board then
       if (DEBUG_MODE) then
+        emu.pause()
+        print(getEncodedBoard())
+        print(stateForNextPiece.board)
         error("Divergence")
       end
     end
