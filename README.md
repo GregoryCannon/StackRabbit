@@ -64,3 +64,4 @@ Then there are two components of the backend:
   - Bug fixing the TypeScript: [@NguyenQuangMinh0504](https://github.com/NguyenQuangMinh0504)
   - Compiling StackRabbit into web assembly: [@timotheeg](https://github.com/timotheeg)
   - Adding column 9 vits: [@fractal161](https://github.com/fractal161)
+  - Updating nan to support Node.js 22+ [@Zaimatsu](https://github.com/Zaimatsu)
