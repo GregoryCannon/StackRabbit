@@ -15,10 +15,19 @@ export const WELL_COLUMN = 9; // 0-indexed
 export const CAN_TUCK = true;
 export const SHOULD_PUSHDOWN = false;
 export const MAX_CPP_PLAYOUT_MOVES = 9604;
+export const DAS_SLOW_TAP_TIMELINE = "X......." // 7.5 Hz slowtapping
 
 // Calculated automatically
 export const IS_NON_RIGHT_WELL = WELL_COLUMN !== 9;
 export const KILLSCREEN_LINES = IS_PAL ? 130 : 230;
 export const KILLSCREEN_LEVEL = IS_PAL ? 19 : 29;
 
-export const LOSS_DAS_PENALTY = 200;
+export const LOSS_DAS_PENALTY = 20;
+
+// var tempLoggingOn = false;
+// export function isTempLoggingOn() {
+//       return tempLoggingOn;
+// }
+// export function setTempLoggingOn(value: boolean) {
+//       tempLoggingOn = value;
+// }

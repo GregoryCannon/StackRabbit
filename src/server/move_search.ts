@@ -6,12 +6,13 @@ import {
   pieceCollision
 } from "./board_helper";
 import { searchForTucksOrSpins } from "./dfs";
-import { CAN_TUCK } from "./params";
+import { CAN_TUCK, DAS_SLOW_TAP_TIMELINE } from "./params";
 import { AdjustmentState, Board, DasButtonHeld, getAdjustmentState, INITIAL_PLACEMENT, LegalPlacementSimState, PieceArray, PieceId, Possibility, SearchState, SimParams, SimState } from "./types";
 import {
   GetGravity,
   getLevelAfterLineClears,
   IsGravityDoubled,
+  logBoard,
   NUM_ROW,
   shouldPerformInputsThisFrame
 } from "./utils";
@@ -129,10 +130,17 @@ export function getPossibleMoves(
     }
   }
 
-  // console.log("legalplcaementsimstates");
-  // console.log(legalPlacementSimStates);
+  // if (adjustmentState == INITIAL_PLACEMENT) {
+  //   console.log("legalplcaementsimstates");
+  //   legalPlacementSimStates.forEach(x => console.log(x.inputSequence + "  " + x.adjTimeSimState));
+  // }
 
   deDupeSortedList(legalPlacementSimStates, useDAS);
+
+  // if (adjustmentState == INITIAL_PLACEMENT) {
+  //   console.log("\n\n\nlegalplcaementsimstates");
+  //   legalPlacementSimStates.forEach(x => console.log(x.inputSequence + "  " + x.adjTimeSimState));
+  // }
 
   const [
     basicPossibilities,
@@ -144,6 +152,13 @@ export function getPossibleMoves(
     return basicPossibilities;
   }
 
+  // if (adjustmentState == INITIAL_PLACEMENT) {
+  //   console.log("\npotential tuck spin states");
+  //   potentialTuckSpinStates.forEach(x => {
+  //     console.log(x.inputSequence, x.adjTimeSimState != null)
+  //   })
+  // }
+
   const tuckSpinPossibilites = searchForTucksOrSpins(
     potentialTuckSpinStates,
     simParams,
@@ -152,8 +167,12 @@ export function getPossibleMoves(
 
   deDupeLockPossibilities(basicPossibilities);
 
-  // console.log("tuckspins");
-  // console.log(tuckSpinPossibilites);
+  // if (adjustmentState == INITIAL_PLACEMENT) {
+  //   console.log("basics");
+  //   console.log(basicPossibilities);
+  //   console.log("tuckspins");
+  //   console.log(tuckSpinPossibilites);
+  // }
   return basicPossibilities.concat(tuckSpinPossibilites);
 }
 
@@ -166,9 +185,9 @@ function deDupeLockPossibilities(list: Array<Possibility>) {
   }
 }
 
-function deDupeSortedList(legalPlacementSimStates: Array<SimState>, useDAS: boolean) {
-  function getKey(a: SimState) {
-    return `${a.rotationIndex}|${a.x}|}`
+function deDupeSortedList(legalPlacementSimStates: Array<LegalPlacementSimState>, useDAS: boolean) {
+  function getKey(a: LegalPlacementSimState) {
+    return `${a.rotationIndex}|${a.x}`
   }
   // Fill the map
   let dupeMap = new Map();
@@ -190,8 +209,8 @@ function deDupeSortedList(legalPlacementSimStates: Array<SimState>, useDAS: bool
     // Unconditionally add the first time we got to the position
     legalPlacementSimStates.push(list[0])
 
-    // If we're using DAS, we may wait some frames for DAS to charge more
-    if (useDAS && list.length >= 2) {
+    // Unconditionally add the last time we saved that position (this includes waiting for adjTimeSimState to calculate, or charging DAS)
+    if (list.length >= 2) {
       legalPlacementSimStates.push(list[list.length - 1])
     }
   }
@@ -218,6 +237,7 @@ function exploreLegalPlacementsUntilLock(
   const lockPossibilities = [];
   const lockHeightLookup: Map<string, number> = new Map();
   const potentialTuckSpinStates: Array<LegalPlacementSimState> = [];
+  const useDAS = simParams.dasCharge !== -1;
 
   for (const simState of legalPlacementSimStates) {
     const currentRotationPiece =
@@ -258,13 +278,12 @@ function exploreLegalPlacementsUntilLock(
         simState.frameIndex % simParams.gravity === simParams.gravity - 1; // Returns true every Nth frame, where N = gravity
 
       // Start looking for tucks/spins as soon as it's allowed to submit inputs
-      if (
-        !startedLookingForTuckSpins &&
-        shouldPerformInputsThisFrame(
-          simParams.inputFrameTimeline,
-          simState.arrFrameIndex
-        )
-      ) {
+      const fullInputSequence = simParams.adjustmentState.preAdjInputSequence + simState.inputSequence
+      const readyForInputs = useDAS
+        ? readyForTuckInputsDas(fullInputSequence, simParams.inputFrameTimeline)
+        : shouldPerformInputsThisFrame(simParams.inputFrameTimeline, simState.arrFrameIndex);
+      // console.log(fullInputSequence, "isready", readyForInputs);
+      if (!startedLookingForTuckSpins && readyForInputs) {
         startedLookingForTuckSpins = true;
       }
 
@@ -318,6 +337,51 @@ function exploreLegalPlacementsUntilLock(
   }
 
   return [lockPossibilities, lockHeightLookup, potentialTuckSpinStates];
+}
+
+export function readyForTuckInputsDas(inputSequence: string, inputFrameTimeline: string) {
+  // Check the frames since the last input at all
+  let framesSinceLastInput = 0;
+  for (let i = inputSequence.length - 1; i >= 0; i -= 1) {
+    if (inputSequence.charAt(i) == ".") {
+      framesSinceLastInput += 1;
+    } else {
+      break;
+    }
+  }
+
+  // Check if the Dpad had a button_down event in the last N frames (where N is the DAS slowtap ARR)
+  const arrowDownLookup = {
+    "L": -1,
+    "E": -1,
+    "F": -1,
+    "R": 1,
+    "I": 1,
+    "G": 1,
+    "l": -1,
+    "e": -1,
+    "f": -1,
+    "r": 1,
+    "i": 1,
+    "g": 1
+  }
+  let didStartHoldingDpad = false;
+  const slowTapWaitFrames = DAS_SLOW_TAP_TIMELINE.length - 1
+  for (let i = Math.max(1, inputSequence.length - slowTapWaitFrames); i < inputSequence.length; i++) {
+    const lastFr = arrowDownLookup[inputSequence.charAt(i - 1)];
+    const thisFr = arrowDownLookup[inputSequence.charAt(i)];
+
+    if (thisFr && lastFr != thisFr) {
+      didStartHoldingDpad = true;
+    }
+    // console.log(inputSequence, i, lastFr, thisFr, didStartHoldingDpad);
+  }
+
+  const minFramesWait = inputFrameTimeline.length - 1; // E.g. a timeline of X... = 3 frames waiting between inputs
+
+  // console.log("RFID", inputSequence, framesSinceLastInput, minFramesWait);
+
+  return !didStartHoldingDpad && framesSinceLastInput >= minFramesWait;
 }
 
 export function getPossibilityFromSimState(
@@ -524,9 +588,8 @@ export function tryPlacement(
 
   let pendingDasReset = dasWillReset; // Tracks if the next shift will be immediate but also reset DAS
   let dasButtonHeld = DasButtonHeld.NONE
-  let adjTimeSimState;
+  let adjTimeSimState = null;
   let foundPlacement = false;
-  let doneChargingDas = false;
   let arrFrameVoluntarilyMissed = false;
   while (true) {
     // Run a simulated 'frame' of gravity, shifting, and collision checking
@@ -643,18 +706,15 @@ export function tryPlacement(
     if (simState.frameIndex == reactionTime && !lockAfterThisFrame) {
       adjTimeSimState = {
         ...simState,
-        adjustmentState: getAdjustmentState(!arrFrameVoluntarilyMissed, dasButtonHeld)
+        adjustmentState: getAdjustmentState(!arrFrameVoluntarilyMissed, dasButtonHeld, simState.inputSequence)
       }
     }
 
     foundPlacement = simState.rotationIndex === goalRotationIndex && simState.x === initialX + goalOffsetX
     if (
-      // If we found the intended placement, and ...
-      foundPlacement &&
-      // ... if this is not an adjustment itself, attempt to wait until adjTimeSimState is calculated, unless the piece locks before that.
-      (simParams.adjustmentState.isAdjustment || adjTimeSimState != null || lockAfterThisFrame)
+      // If we found the intended placement, then add it! (we de-dupe later)
+      foundPlacement
     ) {
-      // Then add it!
       legalPlacementSimStates.push({
         ...simState,
         hasAlreadyLocked: lockAfterThisFrame,
@@ -666,11 +726,23 @@ export function tryPlacement(
     if (lockAfterThisFrame) {
       break;
     }
-    // Quit if we have no reason to keep looking
-    doneChargingDas = !useDAS || simState.dasCharge >= 15
-    if (doneChargingDas && foundPlacement && adjTimeSimState !== undefined) {
+
+    // Wait to calculate adjTimeSimState, unless this itself is an adjustment, or reactionTime doesn't apply
+    const doneWaitingForAdjustment = adjTimeSimState != null || simParams.adjustmentState.isAdjustment || reactionTime <= 0
+    // Wait to charge DAS
+    const canKeepHoldingDpadForMoreDAS = useDAS && simState.dasCharge < 15 && dasButtonHeld != DasButtonHeld.NONE
+    // If there's no reason to keep looking, quit the loop
+    if (!canKeepHoldingDpadForMoreDAS && doneWaitingForAdjustment && foundPlacement) {
+      // if (goalRotationIndex == 1 && goalOffsetX == 0) {
+      //   console.log("quitting at frame", simState.frameIndex);
+      // }
       break;
     }
+    // else {
+    //   if (goalRotationIndex == 1 && goalOffsetX == 0) {
+    //     console.log("Continuing at frame", simState.frameIndex, doneWaitingForAdjustment, !canKeepHoldingDpadForMoreDAS, foundPlacement);
+    //   }
+    // }
   }
 }
 
@@ -765,3 +837,6 @@ function debugLog(simState: SimState, simParams: SimParams, reason: string) {
   //   )[0]
   // );
 }
+
+
+console.log(readyForTuckInputsDas("_IrrrrrRrrrrrRrrrrrA..", "X.."));

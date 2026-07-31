@@ -4,6 +4,8 @@ import { INITIAL_PLACEMENT, PhantomPlacement, PieceId, Possibility, PossibilityC
 import {
   formatDefaultPossibility,
   formatPossibility,
+  getDasEquivalentInputTimeline,
+  logBoard,
   POSSIBLE_NEXT_PIECES,
   toPossibilityChain
 } from "./utils";
@@ -122,11 +124,12 @@ export class PreComputeManager {
     console.time("WORKER PHASE");
     for (let i = 0; i < POSSIBLE_NEXT_PIECES.length; i++) {
       const nextPieceId = POSSIBLE_NEXT_PIECES[i];
+      const effInputFrameTimeline = this.useDAS ? getDasEquivalentInputTimeline(inputFrameTimeline) : inputFrameTimeline;
 
       const argsData: WorkerDataArgs = {
         piece: nextPieceId,
         newSearchState: { ...searchState, nextPieceId },
-        inputFrameTimeline,
+        inputFrameTimeline: effInputFrameTimeline,
       };
 
       this.workers[THREAD_ASSIGNMENT[nextPieceId]].send(argsData);
@@ -195,27 +198,6 @@ export class PreComputeManager {
       }
       console.timeEnd("SAFEDAS");
     }
-
-
-    // const baseline = countMovesAtDasCharge(15);
-
-    //   if (countMovesAtDasCharge(0) == baseline) {
-    //     this.minSafeDasChargeLookup.set(possibility.lockPositionEncoded, 0);
-    //   } else {
-    //     // Binary search
-    //     let min = 1;
-    //     let max = 16;
-    //     while (min < max) {
-    //       const median = Math.round((min + max) / 2)
-    //       if (countMovesAtDasCharge(median) == baseline) {
-    //         max = median
-    //       } else {
-    //         min = median + 1
-    //       }
-    //     }
-
-    //     this.minSafeDasChargeLookup.set(possibility.lockPositionEncoded, max);
-    //   }
 
     // Add a new phantom placement if it doesn't overlap an existing one
     for (const possibility of possibleMoves) {
@@ -288,24 +270,11 @@ export class PreComputeManager {
   _precompileAdjustmentMoves() {
     console.time("Get adjustment moves");
     for (const phantomPlacement of this.phantomPlacements) {
-      // If it's already done a tuck or spin, it can't do any more inputs
-      if (
-        phantomPlacement.initialPlacement &&
-        phantomPlacement.initialPlacement.inputCost !== 0 &&
-        !hasInputs(
-          phantomPlacement.initialPlacement.inputSequence.slice(
-            phantomPlacement.adjustmentSearchState.reactionTime
-          )
-        )
-      ) {
-        phantomPlacement.possibleAdjustments = [];
-        console.log("Already did tuck, no adjustments allowed")
-        continue;
-      }
-
-      // If the piece locks in before reaction time, there will be no adjustmentSearchState saved
+      // If the piece locks in before reaction time, or if a tuck was performed before reaction time,
+      // then there will be no adjustmentSearchState saved
       if (!phantomPlacement.adjustmentSearchState) {
-        console.log("No adj search state, no adjustments possible")
+        // console.log("No adj search state, no adjustments possible for phantom placement: ", phantomPlacement)
+        // logBoard(phantomPlacement.initialPlacement.boardAfter);
         phantomPlacement.possibleAdjustments = [];
         continue;
       }
@@ -351,14 +320,13 @@ export class PreComputeManager {
         if (phantomPlacement.possibleAdjustments.length == 0) {
           maxValue = this.results[pieceId][phantomPlacement.initialPlacement.lockPositionEncoded]
             + phantomPlacement.initialPlacement.inputCost
-          maxPossibility = phantomPlacement.initialPlacement
+          maxPossibility = null
         }
 
         else {
           // Otherwise, check all the adjustments to get the max value from this phantom placement
           for (const adjPossibility of phantomPlacement.possibleAdjustments) {
             // Combine the input cost with the placement value
-            // console.log("basline", phantomPlacement.initialPlacement.placement, phantomPlacement.initialPlacement.adjTimeSimState, phantomPlacement.initialPlacement.inputSequence)
             const value =
               this._getAdjustmentInputCost(adjPossibility, phantomPlacement.adjustmentSearchState, pieceId)
               + this.results[pieceId][adjPossibility.lockPositionEncoded];
@@ -367,10 +335,14 @@ export class PreComputeManager {
                 adjPossibility.lockPositionEncoded
               )
             ) {
+              console.log("CONTINUING!!!", adjPossibility.lockPositionEncoded);
               continue;
             }
             // Check if this is the best adjustment
             if (value >= maxValue) {
+              // if (phantomPlacement.initialPlacement.lockPositionEncoded == "1|1|12" && pieceId == "I") {
+              //   console.log("New best", adjPossibility.inputSequence, value);
+              // }
               maxValue = value;
               maxPossibility = {
                 ...adjPossibility,
@@ -380,6 +352,10 @@ export class PreComputeManager {
                 ),
                 totalValue: null, // Not used, only converted types so that searchStateAfter property exists
               };
+            } else {
+              // if (phantomPlacement.initialPlacement.lockPositionEncoded == "1|1|12" && pieceId == "I") {
+              //   console.log("Worse.  ", adjPossibility.inputSequence, value);
+              // }
             }
           }
         }
@@ -437,13 +413,14 @@ export class PreComputeManager {
     // console.log(possibility.placement, possibility.inputSequence);
     // Penalize losing DAS, unless the partial (or no) DAS charge is enough for the next piece to reach its full range anyway.
     let dasCost = 0
-    if (this.useDAS && possibility.dasChargeAfter !== undefined) {
-      const minSafeDasCharge = this.minSafeDasChargeLookup.get(possibility.lockPositionEncoded) || 15
+    const charge = possibility.dasChargeAfter
+    if (this.useDAS && charge !== undefined) {
+      const minSafeDasCharge = this.minSafeDasChargeLookup.get(possibility.lockPositionEncoded)
       if (minSafeDasCharge === undefined) {
-        throw new Error("Failed to find value in min safe das charge: " + possibility.lockPositionEncoded)
+        // throw new Error("Failed to find value in min safe das charge: " + possibility.lockPositionEncoded)
       }
-      if (possibility.dasChargeAfter < minSafeDasCharge) {
-        dasCost -= LOSS_DAS_PENALTY;
+      if (charge < minSafeDasCharge) {
+        dasCost -= charge < 10 ? LOSS_DAS_PENALTY : -8;
       }
     }
 
@@ -455,16 +432,28 @@ export class PreComputeManager {
 }
 
 function formatPrecomputeResult(results, defaultPlacement: PossibilityChain, reactionTime: number) {
+  if (results == null) {
+    throw new Error("Tried to format null results");
+  }
+
   let resultString = `Default:${defaultPlacement
     ? formatDefaultPossibility(defaultPlacement, reactionTime)
     : "N/A (0 reaction time)"
     }`;
   for (const piece of POSSIBLE_NEXT_PIECES) {
-    if (results == null) {
-      throw new Error("Results were null");
-    } else if (!results[piece]) {
-      // If we have some results but no moves for this piece
-      resultString += `\n${piece}:No legal moves C`;
+    if (!results[piece]) {
+      /* If it's a very rare case where we have a tuck sequence that takes place after reaction time, but 
+         the move search algo doesn't find it via the normal phanotmplacement + adjustment pathways, send 
+         a special marker for the agent to just keep playing out the default move.
+         
+         This can happen if the default move search keeps holding the dpad to charge DAS, but there's a tuck
+         that would require the agent to let off the dpad to reset the self-imposed "input cooldown".
+         */
+      if (defaultPlacement.inputSequence.length > reactionTime) {
+        resultString += `\n${piece}:continue`;
+      } else {
+        resultString += `\n${piece}:No legal moves C`;
+      }
     } else {
       // Otherwise, add the real result
       resultString += `\n${piece}:${formatPossibility(
