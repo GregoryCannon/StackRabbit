@@ -81,7 +81,15 @@ float analyzeHole(unsigned int board[20], int r, int c, int excludeHolesColumn, 
       board[r+2] |= TUCK_SETUP_BIT(c);
       board[r+3] |= TUCK_SETUP_BIT(c);
       rating = 0.8f; // column 9 vits = 1-piece solve
+    } else if (c <= 7
+        && ((board[r] >> (7-c)) & 0b111) == 0){
+      board[r] |= TUCK_SETUP_BIT(c);
+      rating = 0.95f; // High score due to being a catchall for dubious setups like Z spintuck setup or linespin 
+      // that should only ever be done with that piece in the next box. However, if we don't label it as a tuck 
+      // setup cell, then the move search won't even be able to find the tuck!
     }
+
+
     if (rating < 1.0f) {
       if (isDigMode) {
         return (2 + rating) / 3.0f; // Average the rating closer to 1 since tucks are bad while digging
@@ -164,7 +172,7 @@ std::pair<int, float> getNewSurfaceAndNumNewHoles(int surfaceArray[10],
       }
       if (r < highestBoardCellInCol){
         // Check for new holes
-        float rating = analyzeHole(board, r, c, excludeHolesCol, surfaceArray, evalContext->aiMode == DIG);
+        float rating = analyzeHole(board, r, c, excludeHolesCol, newSurface, evalContext->aiMode == DIG);
         if (rating == 1) {
            // If it's a true hole
           holeWeightStartRow = r - 1;
