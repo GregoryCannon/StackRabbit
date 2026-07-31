@@ -120,19 +120,22 @@ export interface AdjustmentState {
   readonly isAdjustment: boolean;
   readonly isArrContinued: boolean;
   readonly dasButtonHeld: DasButtonHeld;
+  readonly preAdjInputSequence: string;
 }
 
 export const INITIAL_PLACEMENT = {
   isAdjustment: false,
   isArrContinued: false,
-  dasButtonHeld: DasButtonHeld.NONE
+  dasButtonHeld: DasButtonHeld.NONE,
+  preAdjInputSequence: ""
 } as const satisfies AdjustmentState;
 
-export function getAdjustmentState(isArrContinued: boolean, dasButtonHeld: DasButtonHeld) {
+export function getAdjustmentState(isArrContinued: boolean, dasButtonHeld: DasButtonHeld, inputSequence: string) {
   return {
     isAdjustment: true,
     isArrContinued,
     dasButtonHeld,
+    preAdjInputSequence: inputSequence
   } as const satisfies AdjustmentState;
 }
 

@@ -1,7 +1,7 @@
 import { getTestBoardWithHeight } from "./board_helper";
 import { getPossibleMoves } from "./move_search";
 import { Board, INITIAL_PLACEMENT, PieceId } from "./types";
-import { generateInputFrameTimeline } from "./utils";
+import { generateInputFrameTimeline, parseBoard } from "./utils";
 
 function legalMovesTest() {
   const BOARD_3 = getTestBoardWithHeight(3);
@@ -364,21 +364,22 @@ function generateTestCases() {
 
 function manualSinglePlacement() {
   const possibleMoves = getPossibleMoves(
-    getTestBoardWithHeight(1),
-    "S",
+    // getTestBoardWithHeight(1),
+    parseBoard("00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000000011100110000111111011111111101111111110111111111"),
+    "L",
     19,
     0,
     0,
     0,
-    "X.....",
+    "X..",
     0,
     INITIAL_PLACEMENT,
-    16,
+    15,
   );
   for (const possibility of possibleMoves) {
     // logBoard(possibility.boardAfter);
-    console.log(possibility.placement);
-    console.log(possibility.inputSequence);
+    // console.log(possibility.placement);
+    // console.log(possibility.inputSequence);
   }
   console.log(possibleMoves.length);
 

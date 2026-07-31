@@ -1,11 +1,11 @@
 local os = require("os")
 
 -- Manual global config
-USE_DAS = false
+USE_DAS = true -- When playing DAS, use the regular INPUT_TIMELINE to choose the level of quicktaps. 20Hz+ = 8 high quicktap, 12Hz+ = 7 high quicktap
 IS_PAL = false
 USE_PUSHDOWN = true
 DEBUG_MODE = true
-SHOULD_RECORD_GAMES = false
+SHOULD_RECORD_GAMES = true
 
 -- OS-dependent config
 -- (We detect mac os based on common directories
@@ -36,7 +36,7 @@ TIMELINE_30_HZ = "X.";
 -- Config constants
 SHOULD_ADJUST = true
 REACTION_TIME_FRAMES = 18
-INPUT_TIMELINE = TIMELINE_10_HZ;
+INPUT_TIMELINE = TIMELINE_20_HZ;
 MOVIE_PATH = "C:\\Users\\Greg\\Desktop\\VODs\\" -- Where to store the fm2 VODS (absolute path)
 SCORES_TEXT_PATH = "C:\\Users\\Greg\\Desktop\\sr-test-scores.txt"
 if IS_MAC then 
@@ -266,7 +266,7 @@ function parseGameStateFromResponse(apiResult)
   if (apiResult == nil) then
     error("apiResult was nil")
   end
-  if apiResult == "No legal moves" then
+  if apiResult == "No legal moves C" or apiResult == "continue" then
     return
   end
 
@@ -303,7 +303,7 @@ end
 ------------------------------------]]--
 
 function calculateInputs(apiResult, isAdjustment)
-  if apiResult == "No legal moves" or apiResult == nil then
+  if apiResult == "No legal moves C" or apiResult == nil then
     if REACTION_TIME_FRAMES == 0 then
       -- Game is over when there is no placement for a new piece
       print("GAME OVER: No adjustment")
@@ -312,10 +312,18 @@ function calculateInputs(apiResult, isAdjustment)
     return
   end
 
+  -- If the backend signals us to just keep going with the default placement, then return with no change to inputSequence.
+  if (isAdjustment and apiResult == "continue") then
+    return
+  end
+
   -- Parse the shifts and rotations from the API result
   -- local split = splitString(apiResult, ",|\|")
   local split = splitString(apiResult, "\|")
   inputSequence = split[2]
+
+  -- Filter out the tildes that signify where reaction time resolves
+  inputSequence = string.gsub(inputSequence, "~", "")
 
   if (USE_DAS and isFirstPiece) then
     -- Pre-pend a waiting frame so that DAS always starts at 0 for consistency

@@ -306,7 +306,7 @@ export function parseBoard(boardStr: string): Board {
   // Otherwise, handle raw boards of 1s and 0s
   if (boardStr.length !== 200) {
     throw new Error(
-      "Invalid board, must be 200 characters in length (20 rows of 10, listed top to bottom). e.g. 00000000001000000001..."
+      "Invalid board, must be 200 characters in length (20 rows of 10, listed top to bottom). e.g. 00000000001000000001...  (Actual length was:) " + boardStr.length
     );
   }
   return boardStr
@@ -374,4 +374,20 @@ export function cloneBoard(board) {
     newBoard.push(newRow);
   }
   return newBoard;
+}
+
+export function getDasEquivalentInputTimeline(quickTapInputTimeline: string): string {
+  // How many frames the button is de-pressed while doing a quicktap. (Frame perfect would be 1.)
+  const quickTapDelay = quickTapInputTimeline.length - 1
+  if (quickTapDelay <= 2) {
+    // Hits 8 high left quicktap, which means it acts like "12 hz" or so.
+    // We timeline it like this so that it, like DAS, does the slower shifts first (and potentially hanging on the stack)
+    return "X.....X.....X..X....."
+  }
+  if (quickTapDelay <= 4) {
+    // Acts like "11 Hz"
+    return "X.....X.....X...X....."
+  }
+  // Otherwise, use 10 Hz
+  return "X....."
 }
