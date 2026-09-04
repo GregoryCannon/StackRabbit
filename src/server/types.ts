@@ -69,7 +69,7 @@ export interface Possibility {
   boardAfter: Board;
   inputCost: number;
   lockPositionEncoded: string;
-  dasChargeAfter?: number;
+  dasChargeAfter: number;
   adjTimeSimState?: AdjustmentSimState;
 }
 

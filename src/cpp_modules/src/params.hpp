@@ -5,9 +5,9 @@
 #include "types.hpp"
 
 const FastEvalWeights MAIN_WEIGHTS = {
-  /* avgHeightCoef= */ PLAY_SAFE_PRE_KILLSCREEN ? -10 : -9,
+  /* avgHeightCoef= */ PLAY_SAFE_PRE_KILLSCREEN ? -10 : -8,
   /* builtOutLeftCoef= */ 2,
-  /* burnCoef= */ PLAY_SAFE_PRE_KILLSCREEN ? -9 : -12,
+  /* burnCoef= */ PLAY_SAFE_PRE_KILLSCREEN ? -9 : -18,
   /* coveredWellCoef= */ -10,
   /* col9Coef= */ -3,
   /* deathCoef= */ -3000,
@@ -112,7 +112,7 @@ const FastEvalWeights DIRTY_NEAR_KILLSCREEN_WEIGHTS = {
   MAIN_WEIGHTS.holeWeightCoef,
   /* inaccessibleLeftCoef= */ 0,
   /* inaccessibleRightCoef= */ 0,
-  /* tetrisCoef= */ 500,
+  /* tetrisCoef= */ 1000,
   MAIN_WEIGHTS.tetrisReadyCoef,
   MAIN_WEIGHTS.surfaceCoef,
   MAIN_WEIGHTS.surfaceLeftCoef,

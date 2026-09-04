@@ -20,7 +20,7 @@
  board | level | lines | curPiece | nextPiece | inputTimeline
  */
 
-char const * testInput = "00000000000000000000000000000000000000000000000000000000000000000000000001000000000111110000011111000001111100001111111000111111100111111110111111111011111111101111111110111111111011111111101111111110|19|200|1|0|X.....|";
+char const * testInput = "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000011111100001111110101111011110111101111011110111101111101111111110111111111011111111101111111110111|19|200|0|6|X.....X.....X..X.....|";
 
 int runGames(){
   std::vector<int> scores;
@@ -38,8 +38,8 @@ int runGames(){
 }
 
 int main(int argc, const char * argv[]) {
-  // printf("%s\n", mainProcess(testInput, GET_LOCK_VALUE_LOOKUP).c_str());
-  printf("%s\n", mainProcess(testInput, GET_MOVE).c_str());
+  printf("%s\n", mainProcess(testInput, GET_LOCK_VALUE_LOOKUP_DAS).c_str());
+  // printf("%s\n", mainProcess(testInput, GET_MOVE).c_str());
 //  runGames();
   
   // testAdjustments();

@@ -85,7 +85,7 @@ int searchDepth1(GameState gameState, const Piece *firstPiece, int keepTopN, con
 /** Searches 2-ply from a starting state, and performs a fast eval on each of the resulting states. 
  * @returns an UNSORTED list of evaluated possibilities
  */
-int searchDepth2(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int keepTopN, const EvalContext *evalContext, OUT list<Possibility> &possibilityList){
+int searchDepth2(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int keepTopN, int secondPieceDelay, const EvalContext *evalContext, OUT list<Possibility> &possibilityList){
 
   // Get the placements of the first piece
   vector<LockPlacement> firstLockPlacements;
@@ -108,9 +108,24 @@ int searchDepth2(GameState gameState, const Piece *firstPiece, const Piece *seco
 
     float firstMoveReward = getLineClearFactor(afterFirstMove.lines - gameState.lines, evalContext->weights, evalContext->shouldRewardLineClears);
 
+    // Apply the second piece delay, if there is any
+    std::string effInputTimeline = std::string("");
+    if (secondPieceDelay > 0){
+      for (int i = 0; i < secondPieceDelay; i++){
+        effInputTimeline.append(".");
+      }
+      // 57 frames is an upper bound on how long a piece can be on screen. We have to fully extend the timeline so it doesn't repeat and make the agent do this delay again.
+      // Calculation: 19 cells dropped (long bar flat) * 3 frames/gravity (level 18)
+      while (effInputTimeline.length() < 57){
+        effInputTimeline.append(evalContext->pieceRangeContext.inputFrameTimeline);
+      }
+    } else {
+      effInputTimeline = evalContext->pieceRangeContext.inputFrameTimeline;
+    }
+
     // Get the placements of the second piece
     vector<LockPlacement> secondLockPlacements;
-    moveSearch(afterFirstMove, secondPiece, evalContext->pieceRangeContext.inputFrameTimeline, secondLockPlacements);
+    moveSearch(afterFirstMove, secondPiece, effInputTimeline.c_str(), secondLockPlacements);
 
     for (auto secondPlacement : secondLockPlacements) {
       GameState resultingState = advanceGameState(afterFirstMove, secondPlacement, evalContext);
@@ -146,7 +161,7 @@ LockLocation playOneMove(GameState gameState, const Piece *firstPiece, const Pie
     searchDepth1(gameState, firstPiece, numCandidatesToPlayout, evalContext, possibilityList);
     lastSeenPiece = firstPiece;
   } else {
-    searchDepth2(gameState, firstPiece, secondPiece, numCandidatesToPlayout, evalContext, possibilityList);
+    searchDepth2(gameState, firstPiece, secondPiece, numCandidatesToPlayout, /* secondPieceDelay= */ 0, evalContext, possibilityList);
     lastSeenPiece = secondPiece;
   }
 
@@ -220,7 +235,7 @@ std::string rateMove(GameState gameState, const Piece *firstPiece, const Piece *
   // Search depth 1
   searchDepth1(gameState, firstPiece, numCandidatesToPlayout, evalContext, possibilityListD1);
   if (hasNb){
-    searchDepth2(gameState, firstPiece, secondPiece, numCandidatesToPlayout, evalContext, possibilityListD2);
+    searchDepth2(gameState, firstPiece, secondPiece, numCandidatesToPlayout, /* secondPieceDelay= */ 0, evalContext, possibilityListD2);
   }
   if (possibilityListD1.size() == 0 || (hasNb && possibilityListD2.size() == 0)){
     return std::string("Error: no legal moves found");
@@ -333,7 +348,7 @@ std::string getTopMoveList(GameState gameState, const Piece *firstPiece, const P
     searchDepth1(gameState, firstPiece, numSorted, evalContext, possibilityList);
     lastSeenPiece = firstPiece;
   } else {
-    searchDepth2(gameState, firstPiece, secondPiece, numSorted, evalContext, possibilityList);
+    searchDepth2(gameState, firstPiece, secondPiece, numSorted, /* secondPieceDelay= */ 0, evalContext, possibilityList);
     lastSeenPiece = secondPiece;
   }
 
@@ -381,12 +396,11 @@ std::string getTopMoveList(GameState gameState, const Piece *firstPiece, const P
   return formatEngineMoveList(sortedList, firstPiece, secondPiece);
 }
 
-
-
 /** Calculates the valuation of every possible terminal position for a given piece on a given board, and stores it in a map.
  * @param keepTopN - How many possibilities to evaluate via a full set of playouts, as opposed to just the eval function.
+ * @param secondPieceDelay - A very particular parameter that's usually 0 and only used to help simulate the loss of DAS while placing the first piece.
  */
-std::string getLockValueLookupEncoded(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int keepTopN, int playoutCount, int playoutLength, const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3]){
+unordered_map<string, float> getLockValueLookup(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int keepTopN, int playoutCount, int playoutLength, int secondPieceDelay, const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3]){
   unordered_map<string, float> lockValueMap;
   unordered_map<string, int> lockValueRepeatMap;
 
@@ -397,15 +411,15 @@ std::string getLockValueLookupEncoded(GameState gameState, const Piece *firstPie
   // Get the list of evaluated possibilities
   list<Possibility> possibilityList;
   list<Possibility> sortedList;
-  searchDepth2(gameState, firstPiece, secondPiece, numSorted, evalContext, possibilityList);
+  searchDepth2(gameState, firstPiece, secondPiece, numSorted, secondPieceDelay, evalContext, possibilityList);
   partiallySortPossibilityList(possibilityList, numSorted, sortedList);
 
   // If no playouts, just use the eval
   if (playoutCount * playoutLength == 0){
     for (Possibility const& possibility : sortedList) {
       string lockPosEncoded = encodeLockPosition(possibility.firstPlacement);
-      float overallScore = MAP_OFFSET + possibility.evalScoreInclReward;
-      if (overallScore > lockValueMap[lockPosEncoded]) {
+      float overallScore = possibility.evalScoreInclReward;
+      if (lockValueMap.count(lockPosEncoded) == 0 || overallScore > lockValueMap[lockPosEncoded]) {
         lockValueMap[lockPosEncoded] = overallScore;
       }
     }
@@ -423,14 +437,14 @@ std::string getLockValueLookupEncoded(GameState gameState, const Piece *firstPie
       }
       lockValueRepeatMap[lockPosEncoded] += 1;
 
-      float overallScore = MAP_OFFSET + (shouldPlayout
+      float overallScore = (shouldPlayout
          ? possibility.immediateReward + getPlayoutScore(possibility.resultingState, playoutCount, playoutLength, pieceRangeContextLookup, secondPiece->index, /* playoutDataList */ NULL)
          : (SHOULD_PLAY_PERFECT ? 0 : evalContext->weights.deathCoef));
       
-      if (overallScore > lockValueMap[lockPosEncoded]) {
+      if (lockValueMap.count(lockPosEncoded) == 0 || overallScore > lockValueMap[lockPosEncoded]) {
         if (PLAYOUT_LOGGING_ENABLED || PLAYOUT_RESULT_LOGGING_ENABLED) {
           if (shouldPlayout) {
-            printf("Adding to map: %s %f (%f + %f)\n", lockPosEncoded.c_str(), overallScore - MAP_OFFSET, possibility.immediateReward, overallScore - possibility.immediateReward - MAP_OFFSET);
+            printf("Adding to map: %s %f (%f + %f)\n", lockPosEncoded.c_str(), overallScore, possibility.immediateReward, overallScore - possibility.immediateReward);
           }
         }
         lockValueMap[lockPosEncoded] = overallScore;
@@ -445,27 +459,91 @@ std::string getLockValueLookupEncoded(GameState gameState, const Piece *firstPie
       }
     }
   }
+  
+  return lockValueMap;
+}
 
+std::string encodeMapToJSON(unordered_map<string, float> map){
   // Encode lookup to JSON
   std::string mapEncoded = std::string("{");
   // float globalMax = 0; // Only used for perfect play
-  for( const auto& n : lockValueMap ) {
+  for( const auto& n : map ) {
     char mapEntryBuf[30];
-    snprintf(mapEntryBuf, 30, "\"%s\":%.2f,", n.first.c_str(), n.second - MAP_OFFSET);
+    snprintf(mapEntryBuf, 30, "\"%s\":%.2f,", n.first.c_str(), n.second);
     mapEncoded.append(mapEntryBuf);
     // if (SHOULD_PLAY_PERFECT){
-    //   globalMax = std::max(globalMax, n.second - MAP_OFFSET);
+    //   globalMax = std::max(globalMax, n.second);
     // }
   }
   // if (SHOULD_PLAY_PERFECT && globalMax < FLOAT_EPSILON){
   //   return "{\"abort\": true}";
   // }
-  if (lockValueMap.size() > 0) {
+  if (map.size() > 0) {
     mapEncoded.pop_back(); // Remove the last comma
   }
   mapEncoded.append("}");
   return mapEncoded;
 }
+
+/** Calculates the valuation of every possible terminal position for a given piece on a given board, and stores it in a map.
+ * @param keepTopN - How many possibilities to evaluate via a full set of playouts, as opposed to just the eval function.
+ */
+std::string getLockValueLookupEncoded(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int keepTopN, int playoutCount, int playoutLength, const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3]){
+  unordered_map<string, float> lockValueMap = getLockValueLookup(gameState, firstPiece, secondPiece, keepTopN, playoutCount, playoutLength, /* secondPieceDelay= */ 0, evalContext, pieceRangeContextLookup);
+  return encodeMapToJSON(lockValueMap);
+}
+
+std::string getLockValueLookupDas(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int keepTopN, int playoutCount, int playoutLength, const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3]){
+  // First, do multiple shallow searches at low depth to check if having partial or no DAS charge clearly misses the best placement
+  // E.g. if the first placement is a tuck setup and the second placement resolves it (very common pattern), the second piece needs enough DAS charge to be able to actually do the tuck.
+  // Alternatively, if the first placement is resolving a tuck setup, and the best second placement is something not DAS-intensive, then there should be no penalty.
+  unordered_map<string, float> shallowMapFullCharge = getLockValueLookup(
+    gameState, firstPiece, secondPiece, keepTopN, /* playoutCount= */ 0, /* playoutLength= */ 0, 
+    /* secondPieceDelay= */ 0, evalContext, pieceRangeContextLookup
+  );
+
+  // A DAS charge of 10 (partial charge) is equivalent to waiting 5 frames before the first shift
+  unordered_map<string, float> shallowMapPartialCharge = getLockValueLookup(
+    gameState, firstPiece, secondPiece, keepTopN, /* playoutCount= */ 0, /* playoutLength= */ 0, 
+    /* secondPieceDelay= */ 5, evalContext, pieceRangeContextLookup
+  );
+  
+  // A DAS charge of 5 is equivalent to 10 frame wait before the first shift. It's also the worst possible DAS charge, since even with 0 charge you can 
+  // just first-frame tap without holding during ARE, and it ends up being exactly equivalent:
+  // Charge < 5 : shift->0  1  2  3   4  5  6  7  8  9    10
+  // Charge = 5:   6       7  8  9  10 11 12 13 14 15 shift->10
+  unordered_map<string, float> shallowMapMinCharge = getLockValueLookup(
+    gameState, firstPiece, secondPiece, keepTopN, /* playoutCount= */ 0, /* playoutLength= */ 0, 
+    /* secondPieceDelay= */ 10, evalContext, pieceRangeContextLookup
+  );
+
+  // Replace the raw value maps with maps of the penalty relative to the best placement (as negative numbers)
+  for (const auto& pair : shallowMapFullCharge) {
+    string key = pair.first;
+    float value = pair.second;
+    float penaltyPartial = shallowMapPartialCharge.at(key) - value;
+    float penaltyMin = shallowMapMinCharge.at(key) - value;
+    shallowMapPartialCharge[key] = penaltyPartial;
+    shallowMapMinCharge[key] = penaltyMin;
+  }
+
+
+  // Then, do one deep search to see what the actual best move is, irrespective of DAS
+  unordered_map<string, float> deepValue = getLockValueLookup(
+    gameState, firstPiece, secondPiece, keepTopN, playoutCount, playoutLength, /* secondPieceDelay= */ 0, evalContext, pieceRangeContextLookup
+  );
+  
+  // Compile result as array of JSONs
+  std::string resultStr = std::string("[\n");
+  resultStr.append(encodeMapToJSON(shallowMapPartialCharge));
+  resultStr.append(",\n");
+  resultStr.append(encodeMapToJSON(shallowMapMinCharge));
+  resultStr.append(",\n");
+  resultStr.append(encodeMapToJSON(deepValue));
+  resultStr.append("\n]");
+  return resultStr;
+}
+
 
 
 // void evaluatePossibilitiesWithPlayouts(int timeoutMs){

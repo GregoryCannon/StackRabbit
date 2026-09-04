@@ -10,12 +10,12 @@ export const CPP_LIVEGAME_PLAYOUT_LENGTH = 5;
 export const CPP_LIVEGAME_PRUNING_BREADTH = 10;
 
 // Rarely changed
+export const CAN_TUCK = true;
+export const DAS_SLOW_TAP_TIMELINE = "X......." // 7.5 Hz slowtapping
 export const IS_PAL = false;
 export const WELL_COLUMN = 9; // 0-indexed
-export const CAN_TUCK = true;
 export const SHOULD_PUSHDOWN = false;
-export const MAX_CPP_PLAYOUT_MOVES = 9604;
-export const DAS_SLOW_TAP_TIMELINE = "X......." // 7.5 Hz slowtapping
+export const MAX_CPP_PLAYOUT_MOVES = 9604; // 4 * 7^4, i.e. a fully exhastive depth 4 search
 
 // Calculated automatically
 export const USE_RANKS = true;
