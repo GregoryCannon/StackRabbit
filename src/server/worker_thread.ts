@@ -22,13 +22,16 @@ function performComputationFinesseCpp(args: WorkerDataArgs): Object {
   const curPieceIndex = pieceLookup.indexOf(args.newSearchState.currentPieceId);
   const nextPieceIndex = pieceLookup.indexOf(args.newSearchState.nextPieceId);
   const inputFrameTimeline = args.inputFrameTimeline;
+  const useDAS = args.newSearchState.dasCharge != -1
+
   const encodedInputString = `${boardStr}|${args.newSearchState.level}|${args.newSearchState.lines}|${curPieceIndex}|${nextPieceIndex}|${inputFrameTimeline}|${CPP_LIVEGAME_PLAYOUT_COUNT}|${CPP_LIVEGAME_PLAYOUT_LENGTH}|${CPP_LIVEGAME_PRUNING_BREADTH}|`;
-  // console.log(args.newSearchState.nextPieceId, encodedInputString);
-  const lockPositionValueLookup = JSON.parse(
-    cModule.getLockValueLookup(encodedInputString)
+  const result = JSON.parse(
+    useDAS
+      ? cModule.getLockValueLookupDas(encodedInputString)
+      : cModule.getLockValueLookup(encodedInputString)
   );
   console.timeEnd(args.piece);
-  return lockPositionValueLookup;
+  return result;
 }
 
 process.on("message", (args: WorkerDataArgs) => {

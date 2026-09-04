@@ -29,7 +29,7 @@ const THREAD_ASSIGNMENT = {
  * */
 export class PreComputeManager {
   workers: any[];
-  pendingResults: number;
+  numResultsPending: number;
   workersStillLoading: number;
   onResultCallback: Function | null;
   onReadyCallback: Function | null;
@@ -44,7 +44,7 @@ export class PreComputeManager {
 
   constructor() {
     this.workers = [];
-    this.pendingResults = 0;
+    this.numResultsPending = 0;
     this.workersStillLoading = 0;
     // Callbacks to notify parent
     this.onResultCallback = null;
@@ -88,7 +88,7 @@ export class PreComputeManager {
     console.time("FINESSE PRECOMPUTE");
     this.onResultCallback = onResultCallback;
     this.results = {};
-    this.pendingResults = POSSIBLE_NEXT_PIECES.length;
+    this.numResultsPending = POSSIBLE_NEXT_PIECES.length;
     this.inputFrameTimeline = inputFrameTimeline;
     this.reactionTime = searchState.reactionTime;
     this.lastSeenPiece = searchState.currentPieceId;
@@ -167,37 +167,7 @@ export class PreComputeManager {
       (a, b) => countInputs(a.placement) - countInputs(b.placement)
     );
 
-    if (this.useDAS) {
-      console.time("SAFEDAS");
-      // Calculate minimum safe DAS charges for each possible lock location
-      for (const possibility of possibleMoves) {
-        const ssa = getSearchStateAfter(initialSearchState, possibility)
-        ssa.currentPieceId = "T" // Generally representative of the hardest placements
 
-        const countMovesAtDasCharge = (dasCharge: number) => {
-          return getPossibleMoves(ssa.board, ssa.currentPieceId, ssa.level, 0, 0, 0, this.inputFrameTimeline, 0, INITIAL_PLACEMENT, dasCharge).length
-        }
-
-        let minSafeDasCharge = 15;
-        const baseline = countMovesAtDasCharge(15);
-        const increment = (ssa.level == 18) ? 3 : 2 // The true values tend to increment in multiples of the gravity, so we can increment by that while searching.
-
-        if (countMovesAtDasCharge(0) == baseline) {
-          minSafeDasCharge = 0;
-        } else {
-          for (let dasCharge = 15 - increment + 1; dasCharge >= 0; dasCharge -= increment) {
-            if (countMovesAtDasCharge(dasCharge) == baseline) {
-              minSafeDasCharge = dasCharge
-            } else {
-              break;
-            }
-          }
-        }
-
-        this.minSafeDasChargeLookup.set(possibility.lockPositionEncoded, minSafeDasCharge);
-      }
-      console.timeEnd("SAFEDAS");
-    }
 
     // Add a new phantom placement if it doesn't overlap an existing one
     for (const possibility of possibleMoves) {
@@ -252,9 +222,9 @@ export class PreComputeManager {
       case "result":
         // Save the partial result
         this.results[message.piece] = message.result;
-        this.pendingResults--;
+        this.numResultsPending--;
         // If all results are in, compile them and send back to parent
-        if (this.pendingResults == 0) {
+        if (this.numResultsPending == 0) {
           console.timeEnd("WORKER PHASE");
           this._compileResponseFinesse();
         }
@@ -306,6 +276,8 @@ export class PreComputeManager {
 
     let overallResponse: string = "No legal moves B";
 
+    console.log(this.results["O"]);
+
     console.time("COLLAPSE");
     let bestPhantomPlacementValue = Number.MIN_SAFE_INTEGER;
     for (const phantomPlacement of this.phantomPlacements) {
@@ -314,34 +286,45 @@ export class PreComputeManager {
       for (const pieceId of POSSIBLE_NEXT_PIECES) {
         // Figure out what adjustment you'd do for that piece
         let maxValue = Number.MIN_SAFE_INTEGER;
-        let maxPossibility: PossibilityChain = null;
+        let maxPossibility: PossibilityChain | null = null;
+        let lockValueLookup;
+        let partialDasPenaltyLookup = new Map()
+        let minDasPenaltyLookup = new Map();
+        if (this.useDAS) {
+          const [partialPenalty, minPenalty, lockValueLookupEncoded] = this.results[pieceId];
+          lockValueLookup = lockValueLookupEncoded
+          partialDasPenaltyLookup = new Map(Object.entries(partialPenalty));
+          minDasPenaltyLookup = new Map(Object.entries(minPenalty));
+        } else {
+          lockValueLookup = this.results[pieceId];
+        }
 
         // If there's no possible adjustments (piece locks too quickly), just consider the default placement
         if (phantomPlacement.possibleAdjustments.length == 0) {
-          maxValue = this.results[pieceId][phantomPlacement.initialPlacement.lockPositionEncoded]
-            + phantomPlacement.initialPlacement.inputCost
+          const placement = phantomPlacement.initialPlacement
+          maxValue = lockValueLookup[placement.lockPositionEncoded]
+            + placement.inputCost
+            + getDasPenalty(this.useDAS || false, placement.dasChargeAfter, placement.lockPositionEncoded, partialDasPenaltyLookup, minDasPenaltyLookup)
           maxPossibility = null
         }
 
         else {
           // Otherwise, check all the adjustments to get the max value from this phantom placement
           for (const adjPossibility of phantomPlacement.possibleAdjustments) {
-            // Combine the input cost with the placement value
-            const value =
-              this._getAdjustmentInputCost(adjPossibility, phantomPlacement.adjustmentSearchState, pieceId)
-              + this.results[pieceId][adjPossibility.lockPositionEncoded];
-            if (
-              !this.results[pieceId].hasOwnProperty(
-                adjPossibility.lockPositionEncoded
-              )
-            ) {
+            if (!lockValueLookup.hasOwnProperty(adjPossibility.lockPositionEncoded)) {
               console.log("CONTINUING!!!", adjPossibility.lockPositionEncoded);
               continue;
             }
+
+            // Combine the input cost with the placement value
+            const value = lockValueLookup[adjPossibility.lockPositionEncoded]
+              + this._getAdjustmentInputCost(adjPossibility)
+              + getDasPenalty(this.useDAS || false, adjPossibility.dasChargeAfter, adjPossibility.lockPositionEncoded, partialDasPenaltyLookup, minDasPenaltyLookup);
+
             // Check if this is the best adjustment
             if (value >= maxValue) {
-              // if (phantomPlacement.initialPlacement.lockPositionEncoded == "1|1|12" && pieceId == "I") {
-              //   console.log("New best", adjPossibility.inputSequence, value);
+              // if (pieceId == "O") {
+              //   console.log("New best", phantomPlacement.initialPlacement.placement, adjPossibility.placement, value);
               // }
               maxValue = value;
               maxPossibility = {
@@ -386,7 +369,7 @@ export class PreComputeManager {
     this.onResultCallback(overallResponse);
   }
 
-  _getAdjustmentInputCost(possibility: Possibility, adjSearchState: SearchState, nextPieceId: PieceId) {
+  _getAdjustmentInputCost(possibility: Possibility) {
     const SPINTUCK_COST = -0.3;
     const SPIN_COST = -0.2;
     const TUCK_COST = -0.1;
@@ -410,25 +393,28 @@ export class PreComputeManager {
       adjCost += INPUT_COST_LOOKUP[inputChar] || 0;
     }
 
-    // console.log(possibility.placement, possibility.inputSequence);
-    // Penalize losing DAS, unless the partial (or no) DAS charge is enough for the next piece to reach its full range anyway.
-    let dasCost = 0
-    const charge = possibility.dasChargeAfter
-    if (this.useDAS && charge !== undefined) {
-      const minSafeDasCharge = this.minSafeDasChargeLookup.get(possibility.lockPositionEncoded)
-      if (minSafeDasCharge === undefined) {
-        // throw new Error("Failed to find value in min safe das charge: " + possibility.lockPositionEncoded)
-      }
-      if (charge < minSafeDasCharge) {
-        dasCost -= charge < 10 ? LOSS_DAS_PENALTY : -8;
-      }
-    }
-
-    // console.log(possibility.placement, "\t", possibility.dasChargeAfter, "\t", dasCost);
-    return adjCost + possibility.inputCost + dasCost;
+    return adjCost + possibility.inputCost;
   }
 
   // End of class
+}
+
+function getDasPenalty(useDas: boolean, dasCharge: number, lockPosEncoded: string, partialDasPenaltyLookup: Map<string, number>, minDasPenaltyLookup: Map<string, number>) {
+  if (!useDas) {
+    return 0;
+  }
+  if (!partialDasPenaltyLookup?.has(lockPosEncoded) || !minDasPenaltyLookup?.has(lockPosEncoded)) {
+    return 0;
+    // throw new Error("Missing value in das penalty lookup: " + lockPosEncoded);
+  }
+
+  if (dasCharge >= 15) {
+    return 0
+  }
+  if (dasCharge >= 10) {
+    return partialDasPenaltyLookup?.get(lockPosEncoded)
+  }
+  return minDasPenaltyLookup.get(lockPosEncoded)
 }
 
 function formatPrecomputeResult(results, defaultPlacement: PossibilityChain, reactionTime: number) {

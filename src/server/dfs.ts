@@ -3,7 +3,7 @@ import {
   getBoardAndLinesClearedAfterPlacement,
   pieceCollision
 } from "./board_helper";
-import { getPossibilityFromSimState, readyForTuckInputsDas } from "./move_search";
+import { findWallCharge, getPossibilityFromSimState, readyForTuckInputsDas } from "./move_search";
 import { Board, LegalPlacementSimState, Possibility, PossibilityChain, SimParams, SimState } from "./types";
 import { logBoard } from "./utils";
 
@@ -219,7 +219,7 @@ function tryInput(
           newInput = wallChargeInput.toLowerCase();
           simState.dasCharge++;
         } else if (readyForInputs) {
-          const wallCharge = findWallCharge(simState, simParams, newRotationIndex);
+          const wallCharge = findWallCharge(simState, simParams);
           if (wallCharge != null) {
             newInput = wallCharge;
             simState.dasCharge = 16;
@@ -264,26 +264,6 @@ function tryInput(
     }
     simState.frameIndex += 1;
   }
-}
-
-function findWallCharge(simState: SimState, simParams: SimParams, newRotationIndex: number): string | null {
-  if (pieceCollision(
-    simParams.board,
-    simState.x - 1,
-    simState.y,
-    simParams.rotationsList[newRotationIndex]
-  )) {
-    return "l"; // Lowercase to indicate that the piece won't actually shift
-  }
-  if (pieceCollision(
-    simParams.board,
-    simState.x + 1,
-    simState.y,
-    simParams.rotationsList[newRotationIndex]
-  )) {
-    return "r"; // // Lowercase to indicate that the piece won't actually shift
-  }
-  return null;
 }
 
 function debugLog(simState: SimState, simParams: SimParams, reason: string) {

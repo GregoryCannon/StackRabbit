@@ -147,6 +147,10 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
       return getLockValueLookupEncoded(startingGameState, curPiece, nextPiece, pruningBreadth, playoutCount, playoutLength, &context, pieceRangeContextLookup);
     }
 
+    case GET_LOCK_VALUE_LOOKUP_DAS: {
+      return getLockValueLookupDas(startingGameState, curPiece, nextPiece, pruningBreadth, playoutCount, playoutLength, &context, pieceRangeContextLookup);
+    }
+
     case GET_TOP_MOVES: {
       return getTopMoveList(startingGameState, curPiece, nextPiece, NUM_TOP_ENGINE_MOVES, playoutCount, playoutLength, &context, pieceRangeContextLookup);
     }

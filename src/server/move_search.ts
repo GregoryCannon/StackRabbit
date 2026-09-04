@@ -295,8 +295,19 @@ function exploreLegalPlacementsUntilLock(
         highestRegisteredY = simState.y;
       }
 
-      // This kind of acts like an "else", since the paths where an input happened this frame branch off into the dfs file
-      simState.inputSequence += ".";
+      // Maybe look for wallcharges
+      let wallCharge = null;
+      if (useDAS && simState.dasCharge < 16 && startedLookingForTuckSpins) {
+        wallCharge = findWallCharge(simState, simParams)
+      }
+
+      if (wallCharge != null) {
+        simState.inputSequence += wallCharge;
+        simState.dasCharge = 16;
+      } else {
+        // This kind of acts like an "else", since the paths where an input happened this frame branch off into the dfs file
+        simState.inputSequence += ".";
+      }
 
       if (isGravityFrame) {
         for (
@@ -483,51 +494,6 @@ function getInputThisFrame(
 
   return inputThisFrame;
 }
-
-// export function canDoFullRange(
-//   searchState: SearchState,
-//   inputFrameTimeline: string,
-//   dasCharge: number
-// ) {
-//   const pieceId = searchState.currentPieceId as NonNullPieceId
-//   const simParams: SimParams = {
-//     board: searchState.board,
-//     initialX: 3,
-//     initialY: (searchState.currentPieceId == "I" ? -2 : -1),
-//     pieceId: searchState.currentPieceId,
-//     framesAlreadyElapsed: 0,
-//     gravity: GetGravity(searchState.level),
-//     rotationsList: PIECE_LOOKUP[pieceId][0] as Array<PieceArray>,
-//     existingRotation: 0,
-//     adjustmentState: INITIAL_PLACEMENT,
-//     doubleGravity: IsGravityDoubled(searchState.level),
-//     inputFrameTimeline,
-//     dasCharge
-//   }
-
-//   // The hardest placements in each direction for each piece
-//   const LEFT_PLACEMENTS = {
-//     I: [1, -5],
-//     O: [0, -4],
-//     L: [3, -5],
-//     J: [3, -5],
-//     T: [3, -5],
-//     S: [1, -5],
-//     Z: [1, -5]
-//   }
-//   const RIGHT_PLACEMENTS = {
-//     I: [1, 4],
-//     O: [0, 4],
-//     L: [1, 4],
-//     J: [1, 4],
-//     T: [1, 4],
-//     S: [0, 3],
-//     Z: [0, 3]
-//   }
-
-//   let [goalRotationIndex, goalOffsetX] = LEFT_PLACEMENTS[pieceId]
-//   const canLeft = tryPlacement()
-// }
 
 /**
  * @VisibleForTesting
@@ -838,5 +804,24 @@ function debugLog(simState: SimState, simParams: SimParams, reason: string) {
   // );
 }
 
+export function findWallCharge(simState: SimState, simParams: SimParams): string | null {
+  if (pieceCollision(
+    simParams.board,
+    simState.x - 1,
+    simState.y,
+    simParams.rotationsList[simState.rotationIndex]
+  )) {
+    return "l"; // Lowercase to indicate that the piece won't actually shift
+  }
+  if (pieceCollision(
+    simParams.board,
+    simState.x + 1,
+    simState.y,
+    simParams.rotationsList[simState.rotationIndex]
+  )) {
+    return "r"; // // Lowercase to indicate that the piece won't actually shift
+  }
+  return null;
+}
 
 console.log(readyForTuckInputsDas("_IrrrrrRrrrrrRrrrrrA..", "X.."));
