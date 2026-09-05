@@ -111,6 +111,25 @@ void printStats(std::vector<int>& data) {
     std::cout << std::fixed << std::setprecision(0) << "Average: " << mean << "\t+/-: " << margin_of_error << "\t(stdev: " << stdev << ")\n";
 }
 
+void simulateGames(int numGames, char const *inputFrameTimeline, int startingLevel, int maxLines, int shouldAdjust, int reactionTime, int playoutCount, int playoutLength, OUT std::vector<int> &scores){
+  printf("Starting game simulations...\n");
+
+  auto time_start = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+  std::cout.imbue(std::locale("en_US.UTF-8"));
+
+
+  for (int i = 0; i < numGames; i++) {
+    vector<int> result = simulateGame(inputFrameTimeline, startingLevel, maxLines, /* shouldAdjust= */ false, /* reactionTime */ 21, playoutCount, playoutLength);
+    scores.push_back(result[0]);
+    std::cout << i << ": " << result[0] << "Lines: " << result[1] << std::endl;
+  }
+
+  auto time_end = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+  printf("Time elapsed: %lld seconds\n", (time_end - time_start)/1000);
+
+  printStats(scores);
+}
+
 void simulateGames(int numGames, char const *inputFrameTimeline, int startingLevel, int maxLines, int playoutCount, int playoutLength, OUT std::vector<int> &scores){
   printf("Starting game simulations...\n");
 
