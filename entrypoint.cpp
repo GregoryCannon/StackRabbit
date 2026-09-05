@@ -26,23 +26,17 @@ char const * testInput = "000000000000000000000000000000000000000000000000000000
 
 int runGames(){
   std::vector<int> scores;
-  int numGames = NUM_SIM_GAMES;
-  int playoutCount = 50;
-  int playoutLength = 2;
-  simulateGames(numGames, "X..", 29, /* maxLines= */ -1, /* shouldAdjust= */ 0, /* reactionTime= */ 0, playoutCount, playoutLength, scores);
-  int total = 0;
-  for (int i : scores){
-    printf("%d\n", i);
-    total += i;
-  }
-  printf("\n\nAverage: %d\n", total / numGames);
+  int numGames = 10;
+  int playoutCount = 100;
+  int playoutLength = 5;
+  simulateGames(numGames, "X.....", 18, /* maxLines= */ 230, /* shouldAdjust= */ 0, /* reactionTime= */ 0, playoutCount, playoutLength, scores);
   return 0;
 }
 
 int main(int argc, const char * argv[]) {
-//   printf("%s\n", mainProcess(testInput, GET_LOCK_VALUE_LOOKUP).c_str());
-  printf("%s\n", mainProcess(testInput, GET_MOVE).c_str());
-//  runGames();
+  // printf("%s\n", mainProcess(testInput, GET_LOCK_VALUE_LOOKUP).c_str());
+  // printf("%s\n", mainProcess(testInput, GET_MOVE).c_str());
+  runGames();
   
   // testAdjustments();
   return 0;
