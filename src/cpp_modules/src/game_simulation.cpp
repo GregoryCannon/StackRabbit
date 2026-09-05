@@ -1,4 +1,5 @@
 #include "types.hpp"
+#include <iomanip>
 
 const int SCORE_REWARDS[] = {
   0,
@@ -18,7 +19,7 @@ int countInputsBeforeReactionTime(int reactionTime, char const *inputFrameTimeli
   return numInputs;
 }
 
-int simulateGame(char const *inputFrameTimeline, int startingLevel, int maxLines, int shouldAdjust, int reactionTime, int playoutCount, int playoutLength){
+vector<int> simulateGame(char const *inputFrameTimeline, int startingLevel, int maxLines, int shouldAdjust, int reactionTime, int playoutCount, int playoutLength){
   // Init empty data structures
   GameState gameState = {
     /* board= */ {},
@@ -76,14 +77,54 @@ int simulateGame(char const *inputFrameTimeline, int startingLevel, int maxLines
       break;
     }
   }
-  return score;
+  return {score, gameState.lines};
+}
+
+void printStats(std::vector<int>& data) {
+    if (data.empty() || data.size() == 0) return;
+
+    double n = data.size();
+    double mean = std::accumulate(data.begin(), data.end(), 0.0) / n;
+    
+    double sq_sum = 0.0;
+    for (int x : data) sq_sum += (x - mean) * (x - mean);
+    
+    // Uses sample standard deviation (divides by N - 1). For population, use data.size().
+    double stdev = std::sqrt(sq_sum / (n - 1));
+    
+    double ci_lower = mean;
+    double ci_upper = mean;
+    
+    // Common Z-Scores: 90% = 1.645 | 95% = 1.960 | 99% = 2.576
+    const double z_90 = 1.645;
+    const double z_95 = 1.960; 
+    
+    // Calculate standard error: SE = stdev / sqrt(n)
+    double standard_error = stdev / std::sqrt(data.size());
+    
+    // Calculate margin of error
+    double margin_of_error = z_90 * standard_error;
+
+    // Set the locale to the user's environment default (en_US usually utilizes commas)
+    // printf("Average: %.1f\n +/- %.1f (Stdev: %.1f)\n", mean, margin_of_error, stdev);
+    std::cout << std::fixed << std::setprecision(0) << "Average: " << mean << "\t+/-: " << margin_of_error << "\t(stdev: " << stdev << ")\n";
 }
 
 void simulateGames(int numGames, char const *inputFrameTimeline, int startingLevel, int maxLines, int shouldAdjust, int reactionTime, int playoutCount, int playoutLength, OUT std::vector<int> &scores){
-  printf("Starting game simulations...");
+  printf("Starting game simulations...\n");
+
+  auto time_start = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+  std::cout.imbue(std::locale("en_US.UTF-8"));
+
+
   for (int i = 0; i < numGames; i++) {
-    int score = simulateGame(inputFrameTimeline, startingLevel, maxLines, /* shouldAdjust= */ false, /* reactionTime */ 21, playoutCount, playoutLength);
-    scores.push_back(score);
-    printf("%d: %d\n", i, score);
+    vector<int> result = simulateGame(inputFrameTimeline, startingLevel, maxLines, /* shouldAdjust= */ false, /* reactionTime */ 21, playoutCount, playoutLength);
+    scores.push_back(result[0]);
+    std::cout << i << ": " << result[0] << "Lines: " << result[1] << std::endl;
   }
+
+  auto time_end = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+  printf("Time elapsed: %lld seconds\n", (time_end - time_start)/1000);
+
+  printStats(scores);
 }
