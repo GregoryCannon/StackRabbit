@@ -1,5 +1,6 @@
 #include "types.hpp"
 #include <iomanip>
+#include <thread>
 
 const int SCORE_REWARDS[] = {
   0,
@@ -19,7 +20,7 @@ int countInputsBeforeReactionTime(int reactionTime, char const *inputFrameTimeli
   return numInputs;
 }
 
-vector<int> simulateGame(char const *inputFrameTimeline, int startingLevel, int maxLines, int shouldAdjust, int reactionTime, int playoutCount, int playoutLength){
+vector<int> simulateGame(char const *inputFrameTimeline, int startingLevel, int maxLines, int playoutCount, int playoutLength){
   // Init empty data structures
   GameState gameState = {
     /* board= */ {},
@@ -110,15 +111,13 @@ void printStats(std::vector<int>& data) {
     std::cout << std::fixed << std::setprecision(0) << "Average: " << mean << "\t+/-: " << margin_of_error << "\t(stdev: " << stdev << ")\n";
 }
 
-void simulateGames(int numGames, char const *inputFrameTimeline, int startingLevel, int maxLines, int shouldAdjust, int reactionTime, int playoutCount, int playoutLength, OUT std::vector<int> &scores){
+void simulateGames(int numGames, char const *inputFrameTimeline, int startingLevel, int maxLines, int playoutCount, int playoutLength, OUT std::vector<int> &scores){
   printf("Starting game simulations...\n");
 
   auto time_start = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-  std::cout.imbue(std::locale("en_US.UTF-8"));
-
 
   for (int i = 0; i < numGames; i++) {
-    vector<int> result = simulateGame(inputFrameTimeline, startingLevel, maxLines, /* shouldAdjust= */ false, /* reactionTime */ 21, playoutCount, playoutLength);
+    vector<int> result = simulateGame(inputFrameTimeline, startingLevel, maxLines, playoutCount, playoutLength);
     scores.push_back(result[0]);
     std::cout << i << ": " << result[0] << "Lines: " << result[1] << std::endl;
   }
@@ -127,4 +126,68 @@ void simulateGames(int numGames, char const *inputFrameTimeline, int startingLev
   printf("Time elapsed: %lld seconds\n", (time_end - time_start)/1000);
 
   printStats(scores);
+}
+
+// (Thanks Gemini)
+void simulateGamesThreaded(int numGames, const char* inputFrameTimeline, int startingLevel, int maxLines, int playoutCount, int playoutLength, OUT std::vector<int>& scores, OUT std::vector<int>& lines) {
+    auto time_start = std::chrono::steady_clock::now();
+
+    scores.resize(numGames);
+    lines.resize(numGames);
+    
+    // 2. Create an atomic counter that all threads can safely modify
+    std::atomic<int> gamesCompleted{0}; 
+
+    unsigned int numThreads = std::thread::hardware_concurrency();
+    if (numThreads == 0) numThreads = 4;
+    // numThreads = 4;
+    std::cout << "Starting game simulations on " << numThreads << " threads...\n";
+    
+    std::vector<std::thread> threads;
+    int chunkSize = std::ceil((double)numGames / numThreads);
+
+    // 3. Update the worker to increment the counter
+    auto worker = [&](int startIdx, int endIdx) {
+        for (int i = startIdx; i < endIdx; ++i) {
+            std::vector<int> result = simulateGame(inputFrameTimeline, startingLevel, maxLines, playoutCount, playoutLength);
+            scores[i] = result[0]; 
+            lines[i] = result[1];
+            gamesCompleted++; // Safely increments without locks
+        }
+    };
+
+    for (unsigned int i = 0; i < numThreads; ++i) {
+        int startIdx = i * chunkSize;
+        int endIdx = std::min(startIdx + chunkSize, numGames);
+        
+        if (startIdx < endIdx) {
+            threads.push_back(std::thread(worker, startIdx, endIdx));
+        }
+    }
+
+    // 4. Main thread tracks progress while workers do the heavy lifting
+    while (gamesCompleted < numGames) {
+        // \r brings the cursor back to the start of the line, creating an updating effect
+        std::cout << "\rSimulating: " << gamesCompleted << " / " << numGames 
+                  << " (" << (gamesCompleted * 100 / numGames) << "%)" << std::flush;
+                  
+        // Sleep for 100ms so we don't spam the CPU
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    
+    // Print the final 100% state and move to a new line
+    std::cout << "\rSimulating: " << numGames << " / " << numGames << " (100%)\n";
+
+    for (auto& t : threads) {
+        if (t.joinable()) {
+            t.join();
+        }
+    }
+
+    auto time_end = std::chrono::steady_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(time_end - time_start).count();
+    
+    std::cout << "Time elapsed: " << duration / 1000.0 << " seconds\n";
+
+    printStats(scores);
 }
