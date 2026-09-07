@@ -25,11 +25,17 @@
 char const * testInput = "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100100000010011100111000111111110111111111110111111101111111|19|85|4|-1|X.....|";
 
 int runGames(){
+  std::cout.imbue(std::locale("en_US.UTF-8")); // Allow for commas in printed numbers
   std::vector<int> scores;
-  int numGames = 10;
-  int playoutCount = 100;
-  int playoutLength = 5;
-  simulateGames(numGames, "X.....", 18, /* maxLines= */ 230, /* shouldAdjust= */ 0, /* reactionTime= */ 0, playoutCount, playoutLength, scores);
+  std::vector<int> lines;
+  int numGames = 100;
+  int playoutCount = 7;
+  int playoutLength = 1;
+  simulateGamesThreaded(numGames, "X.....", 19, /* maxLines= */ 230, playoutCount, playoutLength, scores, lines);
+
+  for (int i = 0; i < numGames; i++){
+    printf("Game %d: %d points, %d lines\n", i, scores[i], lines[i]);
+  }
   return 0;
 }
 
