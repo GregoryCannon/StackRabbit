@@ -24,15 +24,14 @@ char const * testInput = "000000000000000000000000000000000000000000000000000000
 
 int runGames(){
   std::cout.imbue(std::locale("en_US.UTF-8")); // Allow for commas in printed numbers
-  std::vector<int> scores;
-  std::vector<int> lines;
+  std::vector<std::pair<int, int>> games;
   int numGames = 100;
-  int playoutCount = 7;
+  int playoutCount = 0;
   int playoutLength = 1;
-  simulateGamesThreaded(numGames, "X.....", 19, /* maxLines= */ 230, playoutCount, playoutLength, scores, lines);
+  simulateGamesThreaded(numGames, "X.....", 19, /* maxLines= */ 230, playoutCount, playoutLength, games);
 
   for (int i = 0; i < numGames; i++){
-    printf("Game %d: %d points, %d lines\n", i, scores[i], lines[i]);
+    printf("Game %d: %d points, %d lines\n", i, games[i].first, games[i].second);
   }
   return 0;
 }

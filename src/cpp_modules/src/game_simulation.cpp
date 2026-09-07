@@ -1,6 +1,7 @@
 #include "types.hpp"
 #include <iomanip>
 #include <thread>
+#include <utility>
 
 const int SCORE_REWARDS[] = {
   0,
@@ -81,59 +82,62 @@ vector<int> simulateGame(char const *inputFrameTimeline, int startingLevel, int 
   return {score, gameState.lines};
 }
 
-void printStats(std::vector<int>& data) {
-    if (data.empty() || data.size() == 0) return;
+void printStats(const std::vector<std::pair<int, int>>& games) {
+    if (games.empty()) return;
 
-    double n = data.size();
-    double mean = std::accumulate(data.begin(), data.end(), 0.0) / n;
+    double n = games.size();
+    double sum = 0.0;
+    for (const auto& game : games) {
+        sum += game.first;
+    }
+    double mean = sum / n;
     
     double sq_sum = 0.0;
-    for (int x : data) sq_sum += (x - mean) * (x - mean);
-    
-    // Uses sample standard deviation (divides by N - 1). For population, use data.size().
+    for (const auto& game : games) {
+        sq_sum += (game.first - mean) * (game.first - mean);
+    }
     double stdev = std::sqrt(sq_sum / (n - 1));
-    
-    double ci_lower = mean;
-    double ci_upper = mean;
+  
     
     // Common Z-Scores: 90% = 1.645 | 95% = 1.960 | 99% = 2.576
     const double z_90 = 1.645;
     const double z_95 = 1.960; 
     
     // Calculate standard error: SE = stdev / sqrt(n)
-    double standard_error = stdev / std::sqrt(data.size());
+    double standard_error = stdev / std::sqrt(games.size());
     
     // Calculate margin of error
     double margin_of_error = z_90 * standard_error;
+    double ci_lower = mean - margin_of_error;
+    double ci_upper = mean + margin_of_error;
 
     // Set the locale to the user's environment default (en_US usually utilizes commas)
     // printf("Average: %.1f\n +/- %.1f (Stdev: %.1f)\n", mean, margin_of_error, stdev);
-    std::cout << std::fixed << std::setprecision(0) << "Average: " << mean << "\t+/-: " << margin_of_error << "\t(stdev: " << stdev << ")\n";
+    std::cout << std::fixed << std::setprecision(0) << "Average: " << mean << "\t+/-: " << margin_of_error << " (" << ci_lower << " - " << ci_upper << ")\t(stdev: " << stdev << ")\n";
 }
 
-void simulateGames(int numGames, char const *inputFrameTimeline, int startingLevel, int maxLines, int playoutCount, int playoutLength, OUT std::vector<int> &scores){
+void simulateGames(int numGames, char const *inputFrameTimeline, int startingLevel, int maxLines, int playoutCount, int playoutLength, OUT std::vector<std::pair<int, int>> &games){
   printf("Starting game simulations...\n");
 
   auto time_start = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
   for (int i = 0; i < numGames; i++) {
     vector<int> result = simulateGame(inputFrameTimeline, startingLevel, maxLines, playoutCount, playoutLength);
-    scores.push_back(result[0]);
+    games.push_back({result[0], result[1]});
     std::cout << i << ": " << result[0] << "Lines: " << result[1] << std::endl;
   }
 
   auto time_end = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
   printf("Time elapsed: %lld seconds\n", (time_end - time_start)/1000);
 
-  printStats(scores);
+  printStats(games);
 }
 
 // (Thanks Gemini)
-void simulateGamesThreaded(int numGames, const char* inputFrameTimeline, int startingLevel, int maxLines, int playoutCount, int playoutLength, OUT std::vector<int>& scores, OUT std::vector<int>& lines) {
+void simulateGamesThreaded(int numGames, const char* inputFrameTimeline, int startingLevel, int maxLines, int playoutCount, int playoutLength, OUT std::vector<std::pair<int, int>>& games) {
     auto time_start = std::chrono::steady_clock::now();
 
-    scores.resize(numGames);
-    lines.resize(numGames);
+    games.resize(numGames);
     
     // 2. Create an atomic counter that all threads can safely modify
     std::atomic<int> gamesCompleted{0}; 
@@ -150,8 +154,7 @@ void simulateGamesThreaded(int numGames, const char* inputFrameTimeline, int sta
     auto worker = [&](int startIdx, int endIdx) {
         for (int i = startIdx; i < endIdx; ++i) {
             std::vector<int> result = simulateGame(inputFrameTimeline, startingLevel, maxLines, playoutCount, playoutLength);
-            scores[i] = result[0]; 
-            lines[i] = result[1];
+            games[i] = {result[0], result[1]};
             gamesCompleted++; // Safely increments without locks
         }
     };
@@ -189,5 +192,5 @@ void simulateGamesThreaded(int numGames, const char* inputFrameTimeline, int sta
     
     std::cout << "Time elapsed: " << duration / 1000.0 << " seconds\n";
 
-    printStats(scores);
+    printStats(games);
 }
