@@ -119,7 +119,24 @@ std::string formatPlayout(PlayoutData playoutData){
   return output;
 }
 
-/** 
+/** Escapes a string for safe embedding in JSON output. */
+inline std::string escapeJsonString(const std::string &input){
+  std::string output;
+  output.reserve(input.size());
+  for (char c : input) {
+    switch (c) {
+      case '"': output += "\\\""; break;
+      case '\\': output += "\\\\"; break;
+      case '\n': output += "\\n"; break;
+      case '\r': output += "\\r"; break;
+      case '\t': output += "\\t"; break;
+      default: output += c; break;
+    }
+  }
+  return output;
+}
+
+/**
  * Formats a list of engine moves, for use in the "engine-movelist-cpp" API request.
  * The format is JSON-like, as follows:
  * "[
@@ -128,6 +145,7 @@ std::string formatPlayout(PlayoutData playoutData){
  *     secondPlacement: [1, 4, 20],
  *     playoutScore: 31.587,
  *     shallowEvalScore: 28.44,
+ *     evalExplanation: "surface=12.34;hole=-50.00", // Only present when non-empty
  *   },
  *   { ... },
  *   { ... },
@@ -154,6 +172,14 @@ std::string formatEngineMoveList(list<EngineMoveData> moveList, const Piece *fir
     output += ", \"resultingBoard\":\"";
     output += move.resultingBoard;
     output += "\"";
+
+    // Include the eval factor breakdown when available (only populated for
+    // GET_TOP_MOVES / GET_TOP_MOVES_HYBRID requests to avoid overhead elsewhere).
+    if (!move.evalExplanation.empty()) {
+      output += ", \"evalExplanation\":\"";
+      output += escapeJsonString(move.evalExplanation);
+      output += "\"";
+    }
 
     output += ", \"playout1\":";
     output += formatPlayout(move.playout1);

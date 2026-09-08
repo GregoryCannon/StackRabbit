@@ -19,6 +19,7 @@
 #define NO_TUCK_NOTATION '.'
 
 #include <vector>
+#include <string>
 
 enum RequestType {
   GET_LOCK_VALUE_LOOKUP, // Gets a map of all the values for all possible places where the current piece could lock.
@@ -29,6 +30,13 @@ enum RequestType {
   GET_MOVE, // Gets a single best move for a given scenario, using full playouts. Supports with or without next box.
   GET_MOVE_AB_TEST // Compares the result of GET_MOVE between the set of main weights and test weights.
 };
+
+// Whether a request type needs per-move eval explanations.
+// Only GET_TOP_MOVES, GET_TOP_MOVES_HYBRID, and GET_MOVE_AB_TEST populate
+// evalExplanation; all other request types skip the extra std::string work.
+inline bool needExplanation(RequestType req) {
+  return req == GET_TOP_MOVES || req == GET_TOP_MOVES_HYBRID || req == GET_MOVE_AB_TEST;
+}
 
 struct Piece {
   char id;
@@ -166,6 +174,7 @@ struct Possibility {
   GameState resultingState;
   float evalScoreInclReward;
   float immediateReward;
+  std::string evalExplanation; // Non-zero factor breakdown; only populated when explanations are requested
 };
 
 /** A data model for one playout within a series of such playouts*/
@@ -190,6 +199,7 @@ struct EngineMoveData {
   PlayoutData playout5; // 33 %ile
   PlayoutData playout6; // 16 %ile
   PlayoutData playout7; // Worst case
+  std::string evalExplanation; // Concatenated non‑zero factor contributions
 };
 
 #endif

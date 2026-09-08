@@ -56,8 +56,10 @@ void partiallySortPossibilityList(list<Possibility> &possibilityList, int keepTo
 
 /** Searches 1-ply from a starting state, and performs an eval on each resulting state.
  * @returns an UNSORTED list of evaluated possibilities
+ * @param generateExplanation - when true, captures a per-move evalExplanation string
+ *   (only used by GET_TOP_MOVES / GET_TOP_MOVES_HYBRID / GET_MOVE_AB_TEST paths).
  */
-int searchDepth1(GameState gameState, const Piece *firstPiece, int keepTopN, const EvalContext *evalContext, OUT list<Possibility> &possibilityList){
+int searchDepth1(GameState gameState, const Piece *firstPiece, int keepTopN, const EvalContext *evalContext, OUT list<Possibility> &possibilityList, bool generateExplanation = false){
   vector<LockPlacement> firstLockPlacements;
   moveSearch(gameState, firstPiece, evalContext->pieceRangeContext.inputFrameTimeline, firstLockPlacements);
   for (auto it = begin(firstLockPlacements); it != end(firstLockPlacements); ++it) {
@@ -68,14 +70,18 @@ int searchDepth1(GameState gameState, const Piece *firstPiece, int keepTopN, con
       continue; // While playing perfect, ignore any placements that burn lines
     }
     float reward = getLineClearFactor(resultingState.lines - gameState.lines, evalContext->weights, evalContext->shouldRewardLineClears);
-    float evalScoreInclReward = fastEval(gameState, resultingState, firstPlacement, evalContext);
+    // Only allocate an explanation string when the caller requested it, to avoid overhead otherwise.
+    std::string explanation;
+    std::string *explanationPtr = generateExplanation ? &explanation : nullptr;
+    float evalScoreInclReward = fastEval(gameState, resultingState, firstPlacement, evalContext, explanationPtr);
 
     Possibility newPossibility = {
       { firstPlacement.x, firstPlacement.y, firstPlacement.rotationIndex },
       NULL_LOCK_LOCATION,
       resultingState,
       evalScoreInclReward,
-      reward
+      reward,
+      explanation
     };
     possibilityList.push_back(newPossibility);
   }
@@ -84,8 +90,10 @@ int searchDepth1(GameState gameState, const Piece *firstPiece, int keepTopN, con
 
 /** Searches 2-ply from a starting state, and performs a fast eval on each of the resulting states. 
  * @returns an UNSORTED list of evaluated possibilities
+ * @param generateExplanation - when true, captures a per-move evalExplanation string
+ *   (only used by GET_TOP_MOVES / GET_TOP_MOVES_HYBRID / GET_MOVE_AB_TEST paths).
  */
-int searchDepth2(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int keepTopN, int secondPieceDelay, const EvalContext *evalContext, OUT list<Possibility> &possibilityList){
+int searchDepth2(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int keepTopN, int secondPieceDelay, const EvalContext *evalContext, OUT list<Possibility> &possibilityList, bool generateExplanation = false){
 
   // Get the placements of the first piece
   vector<LockPlacement> firstLockPlacements;
@@ -132,7 +140,10 @@ int searchDepth2(GameState gameState, const Piece *firstPiece, const Piece *seco
       if (SHOULD_PLAY_PERFECT && ((resultingState.lines - afterFirstMove.lines) % 4) != 0) {
         continue; // While playing perfect, ignore any placements that burn lines
       }
-      float evalScore = firstMoveReward + fastEval(afterFirstMove, resultingState, secondPlacement, evalContext);
+      // Only allocate an explanation string when the caller requested it, to avoid overhead otherwise.
+      std::string explanation;
+      std::string *explanationPtr = generateExplanation ? &explanation : nullptr;
+      float evalScore = firstMoveReward + fastEval(afterFirstMove, resultingState, secondPlacement, evalContext, explanationPtr);
       float secondMoveReward = getLineClearFactor(resultingState.lines - afterFirstMove.lines, evalContext->weights, evalContext->shouldRewardLineClears);
 
       Possibility newPossibility = {
@@ -140,7 +151,8 @@ int searchDepth2(GameState gameState, const Piece *firstPiece, const Piece *seco
         { secondPlacement.x, secondPlacement.y, secondPlacement.rotationIndex },
         resultingState,
         evalScore,
-        firstMoveReward + secondMoveReward
+        firstMoveReward + secondMoveReward,
+        explanation
       };
 
       possibilityList.push_back(newPossibility);
@@ -149,34 +161,48 @@ int searchDepth2(GameState gameState, const Piece *firstPiece, const Piece *seco
   return (int) possibilityList.size();
 }
 
-/** Plays one move from a given state, with or without knowledge of the next box.*/
-LockLocation playOneMove(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int numCandidatesToPlayout, int playoutCount, int playoutLength, const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3]){
+/** Plays one move from a given state, with or without knowledge of the next box.
+ * @param outExplanation - optional output for the chosen move's eval explanation.
+ *   When non-null, explanations are captured during search (used by GET_MOVE_AB_TEST);
+ *   when null, no explanation strings are allocated.
+ */
+LockLocation playOneMove(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int numCandidatesToPlayout, int playoutCount, int playoutLength, const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3], std::string *outExplanation){
   // Get the list of evaluated possibilities
   list<Possibility> possibilityList;
   list<Possibility> sortedList;
+  // Only capture explanations when the caller asked for them (AB-test path).
+  bool generateExplanation = (outExplanation != nullptr);
   
   // Search depth either 1 or 2 depending on whether a next piece was provided
   const Piece *lastSeenPiece;
   if (secondPiece == NULL){
-    searchDepth1(gameState, firstPiece, numCandidatesToPlayout, evalContext, possibilityList);
+    searchDepth1(gameState, firstPiece, numCandidatesToPlayout, evalContext, possibilityList, generateExplanation);
     lastSeenPiece = firstPiece;
   } else {
-    searchDepth2(gameState, firstPiece, secondPiece, numCandidatesToPlayout, /* secondPieceDelay= */ 0, evalContext, possibilityList);
+    searchDepth2(gameState, firstPiece, secondPiece, numCandidatesToPlayout, /* secondPieceDelay= */ 0, evalContext, possibilityList, generateExplanation);
     lastSeenPiece = secondPiece;
   }
 
   if (possibilityList.size() == 0){
+    if (outExplanation != nullptr) {
+      *outExplanation = "";
+    }
     return NULL_LOCK_LOCATION; // Return an invalid lock location to indicate the agent has topped out
   }
   partiallySortPossibilityList(possibilityList, numCandidatesToPlayout, sortedList);
 
   if (playoutCount * playoutLength == 0){
     // Return the first element in the preliminary sorted list
-    return (*sortedList.begin()).firstPlacement;
+    const Possibility &best = *sortedList.begin();
+    if (outExplanation != nullptr) {
+      *outExplanation = best.evalExplanation;
+    }
+    return best.firstPlacement;
   }
 
   LockLocation bestLockLocation = {NONE, NONE, NONE};
   float bestPossibilityScore = FLOAT_MIN;
+  std::string bestExplanation;
   int numPlayedOut = 0;
   for (auto possibility : sortedList){
     if (numPlayedOut >= numCandidatesToPlayout) {
@@ -190,13 +216,20 @@ LockLocation playOneMove(GameState gameState, const Piece *firstPiece, const Pie
     if (bestLockLocation.x == NONE || overallScore > bestPossibilityScore) {
       bestLockLocation = possibility.firstPlacement;
       bestPossibilityScore = overallScore;
+      bestExplanation = possibility.evalExplanation;
     }
     numPlayedOut++;
   }
 
   if (SHOULD_PLAY_PERFECT && bestPossibilityScore < 0.0001){
     // Game is over
+    if (outExplanation != nullptr) {
+      *outExplanation = "";
+    }
     return {NONE, NONE, NONE};
+  }
+  if (outExplanation != nullptr) {
+    *outExplanation = bestExplanation;
   }
   return bestLockLocation;
 }
@@ -330,8 +363,11 @@ std::string rateMove(GameState gameState, const Piece *firstPiece, const Piece *
 
 /**
  * Gets a list of the top moves, formatted as a JSON string. (See formatting.hpp for exact format details).
+ * @param generateExplanation - when true, each EngineMoveData includes an evalExplanation
+ *   string (used by GET_TOP_MOVES / GET_TOP_MOVES_HYBRID); when false, no explanation
+ *   strings are allocated.
  */
-std::string getTopMoveList(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int keepTopN, int playoutCount, int playoutLength, const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3]){
+std::string getTopMoveList(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int keepTopN, int playoutCount, int playoutLength, const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3], bool generateExplanation){
   // Keep a running list of the top X possibilities as the move search is happening.
   // Keep twice as many as we'll eventually need, since some duplicates may be removed before playouts start
   int numSorted = keepTopN * 2;
@@ -345,10 +381,10 @@ std::string getTopMoveList(GameState gameState, const Piece *firstPiece, const P
   // Search depth either 1 or 2 depending on whether a next piece was provided
   const Piece *lastSeenPiece;
   if (secondPiece == NULL){
-    searchDepth1(gameState, firstPiece, numSorted, evalContext, possibilityList);
+    searchDepth1(gameState, firstPiece, numSorted, evalContext, possibilityList, generateExplanation);
     lastSeenPiece = firstPiece;
   } else {
-    searchDepth2(gameState, firstPiece, secondPiece, numSorted, /* secondPieceDelay= */ 0, evalContext, possibilityList);
+    searchDepth2(gameState, firstPiece, secondPiece, numSorted, /* secondPieceDelay= */ 0, evalContext, possibilityList, generateExplanation);
     lastSeenPiece = secondPiece;
   }
 
@@ -388,6 +424,7 @@ std::string getTopMoveList(GameState gameState, const Piece *firstPiece, const P
       /* playout5 (33 %ile case) */ playoutDataList.at(len * 2 / 3),
       /* playout6 (16 %ile case) */ playoutDataList.at(len * 5 / 6),
       /* playout7 (worst case) */ playoutDataList.at(len - 1),
+      /* evalExplanation */ generateExplanation ? possibility.evalExplanation : std::string(""),
     };
     insertIntoList(newMoveData, sortedList);
     numAdded++;

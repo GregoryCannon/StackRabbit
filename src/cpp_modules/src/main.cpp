@@ -152,12 +152,14 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
     }
 
     case GET_TOP_MOVES: {
-      return getTopMoveList(startingGameState, curPiece, nextPiece, NUM_TOP_ENGINE_MOVES, playoutCount, playoutLength, &context, pieceRangeContextLookup);
+      // needExplanation(GET_TOP_MOVES) is true, so per-move evalExplanation strings are populated.
+      return getTopMoveList(startingGameState, curPiece, nextPiece, NUM_TOP_ENGINE_MOVES, playoutCount, playoutLength, &context, pieceRangeContextLookup, needExplanation(GET_TOP_MOVES));
     }
 
     case GET_TOP_MOVES_HYBRID: {
-      std::string nnbResult = getTopMoveList(startingGameState, curPiece, /* nextPiece= */ NULL, NUM_TOP_ENGINE_MOVES, playoutCount, playoutLength, &context, pieceRangeContextLookup);
-      std::string nbResult = getTopMoveList(startingGameState, curPiece, nextPiece, NUM_TOP_ENGINE_MOVES, playoutCount, playoutLength, &context, pieceRangeContextLookup);
+      // needExplanation(GET_TOP_MOVES_HYBRID) is true, so both lists include evalExplanation.
+      std::string nnbResult = getTopMoveList(startingGameState, curPiece, /* nextPiece= */ NULL, NUM_TOP_ENGINE_MOVES, playoutCount, playoutLength, &context, pieceRangeContextLookup, needExplanation(GET_TOP_MOVES_HYBRID));
+      std::string nbResult = getTopMoveList(startingGameState, curPiece, nextPiece, NUM_TOP_ENGINE_MOVES, playoutCount, playoutLength, &context, pieceRangeContextLookup, needExplanation(GET_TOP_MOVES_HYBRID));
       return "{\"noNextBox\":" + nnbResult + ", \"nextBox\":" + nbResult + "}";
     }
 
@@ -177,22 +179,33 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
     }
 
     case GET_MOVE_AB_TEST: {
-      LockLocation bestMove = playOneMove(startingGameState, curPiece, nextPiece, pruningBreadth, playoutCount, playoutLength, &context, pieceRangeContextLookup);
+      // needExplanation(GET_MOVE_AB_TEST) is true, so capture explanations for both weight sets.
+      // Passing nullptr (as GET_MOVE does) would skip the extra std::string work.
+      std::string explanationMain;
+      std::string explanationTest;
+      std::string *mainPtr = needExplanation(GET_MOVE_AB_TEST) ? &explanationMain : nullptr;
+      std::string *testPtr = needExplanation(GET_MOVE_AB_TEST) ? &explanationTest : nullptr;
+      LockLocation bestMove = playOneMove(startingGameState, curPiece, nextPiece, pruningBreadth, playoutCount, playoutLength, &context, pieceRangeContextLookup, mainPtr);
       int xOffset = bestMove.x - 3;
       int rot = bestMove.rotationIndex;
       int yOffset = bestMove.y - curPiece->initialY;
 
       const EvalContext contextTest = getEvalContext(startingGameState, pieceRangeContextLookup, /* useTestWeights= */ true);
-      LockLocation bestMoveTest = playOneMove(startingGameState, curPiece, nextPiece, pruningBreadth, playoutCount, playoutLength, &contextTest, pieceRangeContextLookup);
+      LockLocation bestMoveTest = playOneMove(startingGameState, curPiece, nextPiece, pruningBreadth, playoutCount, playoutLength, &contextTest, pieceRangeContextLookup, testPtr);
       int xOffsetTest = bestMoveTest.x - 3;
       int rotTest = bestMoveTest.rotationIndex;
       int yOffsetTest = bestMoveTest.y - curPiece->initialY;
 
+      // Escape for safe JSON embedding (explanations are ;-separated "name=value" pairs).
+      std::string escMain = escapeJsonString(explanationMain);
+      std::string escTest = escapeJsonString(explanationTest);
+      // Extra array element keeps [0]=agree/disagree, [1]=main, [2]=test backward-compatible
+      // with the existing JS consumer while exposing both explanations.
       bool agree = xOffset == xOffsetTest && rot == rotTest && yOffset == yOffsetTest;
       if (agree){
         return string_format("[\"agree\", [%d, %d, %d]]", rot, xOffset, yOffset);
       } else {
-        return string_format("[\"disagree\", [%d, %d, %d], [%d, %d, %d]]", rot, xOffset, yOffset, rotTest, xOffsetTest, yOffsetTest);
+        return string_format("[\"disagree\", [%d, %d, %d], [%d, %d, %d], {\n\"explanationMain\":\"%s\", \n\"explanationTest\":\"%s\"}]", rot, xOffset, yOffset, rotTest, xOffsetTest, yOffsetTest, escMain.c_str(), escTest.c_str());
       }
     }
 
@@ -202,11 +215,3 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
   }
 }
 
-// int main(){
-//   printf("Starting...\n");
-//   std::string result = mainProcess("0000000000000000000000000000000000000000000000000000000000000000001110000000111000000011110000"
-//               "0111110000011110000011111100011101110011101110001111111000111111100111111110011111111001111111"
-//               "101111111110|18|2|5|0|X...|");
-//   printf("%s\n", result.c_str());
-//   printf("Done!\n");
-// }

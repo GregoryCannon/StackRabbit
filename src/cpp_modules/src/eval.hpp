@@ -2,10 +2,11 @@
 #define EVAL
 
 #include <vector>
+#include <string>
 #include "types.hpp"
 
 float getLineClearFactor(int numLinesCleared, FastEvalWeights weights, int shouldRewardLineClears);
 
-float fastEval(GameState gameState, GameState newState, LockPlacement lockPlacement, const EvalContext *evalContext);
+float fastEval(GameState gameState, GameState newState, LockPlacement lockPlacement, const EvalContext *evalContext, std::string *outExplanation = nullptr);
 
 #endif

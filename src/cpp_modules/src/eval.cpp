@@ -6,6 +6,8 @@
 #include "../data/ranks_base_7.hpp"
 #include <math.h>
 #include <vector>
+#include <string>
+#include <cstdio>
 using namespace std;
 
 /**
@@ -430,7 +432,8 @@ float evalForPerfectPlay(GameState gameState,
 float fastEval(GameState gameState,
                GameState newState,
                LockPlacement lockPlacement,
-               const EvalContext *evalContext) {
+               const EvalContext *evalContext,
+               std::string *outExplanation) {
   if (SHOULD_PLAY_PERFECT) {
     return evalForPerfectPlay(gameState, newState, lockPlacement, evalContext);
   }
@@ -468,6 +471,40 @@ float fastEval(GameState gameState,
 
   float total = surfaceFactor + surfaceLeftFactor + avgHeightFactor + lineClearFactor + holeFactor + holeWeightFactor + guaranteedBurnsFactor + likelyBurnsFactor + inaccessibleLeftFactor + inaccessibleRightFactor + coveredWellFactor + highCol9Factor + tetrisReadyFactor + builtOutLeftFactor + unableToBurnFactor;
   total = max(weights.deathCoef, total); // Can't be worse than death
+
+  // Build a human-readable explanation of the non-zero eval factors.
+  // Only runs when the caller passes a non-null outExplanation pointer, so
+  // other request types avoid the std::string allocation overhead.
+  if (outExplanation != nullptr) {
+    std::string explanation;
+    // Helper that appends "name=value;" for factors whose magnitude is significant.
+    auto addFactor = [&](const char *name, float value) {
+      if (fabs(value) > FLOAT_EPSILON) {
+        char buf[64];
+        snprintf(buf, sizeof(buf), "%s=%.2f;", name, value);
+        explanation += buf;
+      }
+    };
+    addFactor("surface", surfaceFactor);
+    addFactor("surfaceLeft", surfaceLeftFactor);
+    addFactor("avgHeight", avgHeightFactor);
+    addFactor("lineClear", lineClearFactor);
+    addFactor("hole", holeFactor);
+    addFactor("holeWeight", holeWeightFactor);
+    addFactor("guaranteedBurns", guaranteedBurnsFactor);
+    addFactor("likelyBurns", likelyBurnsFactor);
+    addFactor("inaccessibleLeft", inaccessibleLeftFactor);
+    addFactor("inaccessibleRight", inaccessibleRightFactor);
+    addFactor("coveredWell", coveredWellFactor);
+    addFactor("highCol9", highCol9Factor);
+    addFactor("tetrisReady", tetrisReadyFactor);
+    addFactor("builtOutLeft", builtOutLeftFactor);
+    addFactor("unableToBurn", unableToBurnFactor);
+    if (!explanation.empty() && explanation.back() == ';') {
+      explanation.pop_back(); // Remove trailing separator
+    }
+    *outExplanation = explanation;
+  }
 
   // Logging
   if (LOGGING_ENABLED) {
