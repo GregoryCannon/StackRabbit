@@ -8,6 +8,7 @@
     "cpp_test": "node-gyp build && tsc && node built/src/server/cmodules.js",
     "move_test": "tsc && node built/src/server/move_search_test.js",
     "cpp_main": "g++ entrypoint.cpp && ./a.out",
+    "cpp_benchmark": "g++ benchmark.cpp && ./a.out",
     "wasm_build": "em++ -O3 src/cpp_modules/src/wasm.cpp --bind -lembind -g0 -o wasmRabbit.js"
   },
   "author": "",
