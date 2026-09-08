@@ -4,6 +4,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <random>
+#include <list>
 #include "./config.hpp"
 
 // Shifts a variable X by Y places, either left or right depending on the sign

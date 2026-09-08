@@ -36,7 +36,7 @@ std::string string_format( const std::string& format, Args ... args )
 }
 
 std::string mainProcess(char const *inputStr, RequestType requestType) {
-  maybePrint("Input string %s\n", inputStr);
+  maybePrint("Input string %s, requestType %d\n", inputStr, requestType);
 
   // Init empty data structures
   GameState startingGameState = {
@@ -129,7 +129,7 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
     getPieceRangeContext(inputFrameTimeline.c_str(), 2, /* gravityDoubled= */ false),
     getPieceRangeContext(inputFrameTimeline.c_str(), 3, /* gravityDoubled= */ false),
   };
-  const EvalContext context = getEvalContext(startingGameState, pieceRangeContextLookup);
+  const EvalContext context = getEvalContext(startingGameState, pieceRangeContextLookup, /* useTestWeights= */ false);
 
   // Recalculate holes once we have the eval context
   pair<int, float> result2 = updateSurfaceAndHoles(startingGameState.surfaceArray, startingGameState.board, context.countWellHoles ? -1 : context.wellColumn, context.aiMode == DIG);
@@ -174,6 +174,26 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
       // int debugSequence[SEQUENCE_LENGTH] = {curPiece->index};
       // playSequence(startingGameState, pieceRangeContextLookup, debugSequence, /* playoutLength= */ 1);
       // return "Debug playout complete.";
+    }
+
+    case GET_MOVE_AB_TEST: {
+      LockLocation bestMove = playOneMove(startingGameState, curPiece, nextPiece, pruningBreadth, playoutCount, playoutLength, &context, pieceRangeContextLookup);
+      int xOffset = bestMove.x - 3;
+      int rot = bestMove.rotationIndex;
+      int yOffset = bestMove.y - curPiece->initialY;
+
+      const EvalContext contextTest = getEvalContext(startingGameState, pieceRangeContextLookup, /* useTestWeights= */ true);
+      LockLocation bestMoveTest = playOneMove(startingGameState, curPiece, nextPiece, pruningBreadth, playoutCount, playoutLength, &contextTest, pieceRangeContextLookup);
+      int xOffsetTest = bestMoveTest.x - 3;
+      int rotTest = bestMoveTest.rotationIndex;
+      int yOffsetTest = bestMoveTest.y - curPiece->initialY;
+
+      bool agree = xOffset == xOffsetTest && rot == rotTest && yOffset == yOffsetTest;
+      if (agree){
+        return string_format("[\"agree\", [%d, %d, %d]]", rot, xOffset, yOffset);
+      } else {
+        return string_format("[\"disagree\", [%d, %d, %d], [%d, %d, %d]]", rot, xOffset, yOffset, rotTest, xOffsetTest, yOffsetTest);
+      }
     }
 
     default: {

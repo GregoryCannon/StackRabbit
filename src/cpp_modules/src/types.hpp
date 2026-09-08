@@ -26,7 +26,8 @@ enum RequestType {
   GET_TOP_MOVES, // Gets a list of the top moves, using full playouts. Supports with or without next box.
   GET_TOP_MOVES_HYBRID, // Gets a list of the top moves *BOTH* with and without next box.
   RATE_MOVE, // Compares a player move to the best move, and gives the score for both, with and without next box.
-  GET_MOVE // Gets a single best move for a given scenario, using full playouts. Supports with or without next box.
+  GET_MOVE, // Gets a single best move for a given scenario, using full playouts. Supports with or without next box.
+  GET_MOVE_AB_TEST // Compares the result of GET_MOVE between the set of main weights and test weights.
 };
 
 struct Piece {

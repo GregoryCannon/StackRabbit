@@ -31,7 +31,7 @@ LockPlacement pickLockPlacement(GameState gameState,
  */
 float playSequence(GameState gameState, const PieceRangeContext pieceRangeContextLookup[3], const int pieceSequence[SEQUENCE_LENGTH], int playoutLength, OUT vector<PlayoutData> *playoutDataList) {
   // Note down the original AI mode to prevent the AI from putting itself in alternate modes to affect the valuations
-  AiMode originalAiMode = getEvalContext(gameState, pieceRangeContextLookup).aiMode;
+  AiMode originalAiMode = getEvalContext(gameState, pieceRangeContextLookup, /* useTestWeights= */ false).aiMode;
   
   PlayoutData newPlayoutData;
   const bool trackPlayouts = TRACK_PLAYOUT_DETAILS && playoutDataList != NULL;
@@ -39,9 +39,9 @@ float playSequence(GameState gameState, const PieceRangeContext pieceRangeContex
   float totalReward = 0;
   for (int i = 0; i < playoutLength; i++) {
     // Figure out modes and eval context
-    const EvalContext evalContextRaw = getEvalContext(gameState, pieceRangeContextLookup);
+    const EvalContext evalContextRaw = getEvalContext(gameState, pieceRangeContextLookup, /* useTestWeights= */ false);
     const EvalContext *evalContext = &evalContextRaw;
-    FastEvalWeights weights = getWeights(evalContext->aiMode);
+    FastEvalWeights weights = getWeights(evalContext->aiMode, /* useTestWeights= */ false);
 
     // Get the lock placements
     std::vector<LockPlacement> lockPlacements;
@@ -105,7 +105,7 @@ float playSequence(GameState gameState, const PieceRangeContext pieceRangeContex
         return 0; // 0% chance of continuing perfect
       }
     } else {
-      FastEvalWeights rewardWeights = evalContext->aiMode == DIG ? getWeights(STANDARD) : weights; // When the AI is digging, still deduct from the overall value of the sequence at standard amounts
+      FastEvalWeights rewardWeights = evalContext->aiMode == DIG ? getWeights(STANDARD, /* useTestWeights= */ false) : weights; // When the AI is digging, still deduct from the overall value of the sequence at standard amounts
       totalReward += getLineClearFactor(gameState.lines - oldLines, rewardWeights, evalContext->shouldRewardLineClears);
       if (PLAYOUT_LOGGING_ENABLED) {
         printBoard(gameState.board);

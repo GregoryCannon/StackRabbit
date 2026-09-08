@@ -49,7 +49,7 @@ AiMode getAiMode(GameState gameState, int currentMax5TapHeight, int max5TapHeigh
   return STANDARD;
 }
 
-const EvalContext getEvalContext(GameState gameState, const PieceRangeContext pieceRangeContextLookup[]){
+const EvalContext getEvalContext(GameState gameState, const PieceRangeContext pieceRangeContextLookup[], bool useTestWeights){
   EvalContext context = {};
 
   // Copy the piece range context from the global lookup
@@ -62,7 +62,7 @@ const EvalContext getEvalContext(GameState gameState, const PieceRangeContext pi
   // Set the mode
   AiMode aiMode = getAiMode(gameState, context.pieceRangeContext.max5TapHeight, pieceRangeContextLookup[0].max5TapHeight);
   context.aiMode = aiMode;
-  context.weights = getWeights(context.aiMode);
+  context.weights = getWeights(context.aiMode, useTestWeights);
 
   // Set the scare heights
   if (aiMode == LINEOUT) {

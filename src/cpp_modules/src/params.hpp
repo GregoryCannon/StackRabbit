@@ -26,7 +26,7 @@ const FastEvalWeights MAIN_WEIGHTS = {
 const FastEvalWeights TEST_WEIGHTS = {
   /* avgHeightCoef= */ PLAY_SAFE_PRE_KILLSCREEN ? -10 : -8,
   /* builtOutLeftCoef= */ 1,
-  /* burnCoef= */ PLAY_SAFE_PRE_KILLSCREEN ? -9 : -18,
+  /* burnCoef= */ -6,
   /* coveredWellCoef= */ -10,
   /* col9Coef= */ -3,
   /* deathCoef= */ -3000,
@@ -159,7 +159,7 @@ const FastEvalWeights LINEOUT_WEIGHTS = {
   MAIN_WEIGHTS.unableToBurnCoef
 };
 
-FastEvalWeights getWeights(AiMode mode){
+FastEvalWeights getWeights(AiMode mode, bool useTestWeights){
   if (SHOULD_PLAY_PERFECT){
     return PLAY_PERFECT_WEIGHTS;
   }
@@ -173,7 +173,7 @@ FastEvalWeights getWeights(AiMode mode){
     case LINEOUT:
       return LINEOUT_WEIGHTS;
     case STANDARD:
-      return MAIN_WEIGHTS;
+      return useTestWeights ? TEST_WEIGHTS : MAIN_WEIGHTS;
     default:
       printf("Unknown AI Mode");
       return {};

@@ -79,6 +79,9 @@ export class RequestHandler {
       case "get-move-cpp":
         return [this.getMoveSync(searchState, urlArgs), 200];
 
+      case "get-move-ab-test":
+        return [this.getMoveAbTest(searchState, urlArgs), 200];
+
       case "get-move-async-cpp":
         return this._wrapAsync(() => this.getMoveSync(searchState, urlArgs));
 
@@ -190,6 +193,74 @@ export class RequestHandler {
       }
     }
     return formatPossibility(bestMove);
+  }
+
+  /**
+   * Synchronously choose the best placement, with no next box and no search.
+   * @returns {string} the API response
+   */
+  getMoveAbTest(searchState: SearchState, urlArgs: UrlArguments) {
+    console.time("GetMoveAbTest");
+    let bestMove;
+
+    // Ping the CPP backend
+    const encodedInputString = getCppEncodedInputString(searchState, urlArgs);
+    const resultRaw = cModule.getMoveAbTest(encodedInputString);
+    const resultParsed = JSON.parse(resultRaw);
+    console.log("RESULT: ABTEST ", resultParsed);
+
+    // Parse the result
+    const doesAgree = resultParsed[0] === "agree";
+    const [rotation, xOffset, yOffset] = resultParsed[1];
+    const testPlacement = resultParsed[2] || "";
+
+    // Format it using Javascript stuff
+    let possibilityList = getPossibleMoves(
+      searchState.board,
+      searchState.currentPieceId,
+      searchState.level,
+      searchState.existingXOffset,
+      searchState.existingYOffset,
+      searchState.framesAlreadyElapsed,
+      urlArgs.inputFrameTimeline,
+      searchState.existingRotation,
+      INITIAL_PLACEMENT,
+      searchState.dasCharge,
+    );
+    for (const possibility of possibilityList) {
+      if (
+        possibility.placement[0] === rotation &&
+        possibility.placement[1] === xOffset &&
+        possibility.placement[2] === yOffset
+      ) {
+        const possibilityChain: PossibilityChain = {
+          totalValue: -1,
+          searchStateAfterMove: getSearchStateAfter(searchState, possibility),
+          ...possibility,
+        };
+        bestMove = possibilityChain;
+        break;
+      }
+    }
+
+    console.timeEnd("GetMoveAbTest");
+    if (!bestMove) {
+      if (xOffset > 999999) {
+        // Truly no legal moves, CPP didn't find any. (Not sure why it returns bignumber in that case but it is what it is)
+        return "No legal moves D";
+      } else {
+        // CPP found a move but JS couldn't match it
+        return "Frontend movesearch failed to match to " + resultParsed
+      }
+    }
+
+    const mainResult = formatPossibility(bestMove);
+
+    if (doesAgree) {
+      return `["agree", "${mainResult}"]`
+    } else {
+      return `["disagree", "${mainResult}", "${testPlacement}"]`
+    }
   }
 
   handleCppLookupTopMoves(searchState: SearchState, urlArgs: UrlArguments) {

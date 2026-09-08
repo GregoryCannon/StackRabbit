@@ -53,7 +53,7 @@ vector<int> simulateGame(char const *inputFrameTimeline, int startingLevel, int 
     nextPiece = getRandomPiece(curPiece);
 
     // Figure out modes and eval context
-    const EvalContext evalContextRaw = getEvalContext(gameState, pieceRangeContextLookup);
+    const EvalContext evalContextRaw = getEvalContext(gameState, pieceRangeContextLookup, /* useTestWeights= */ false);
     const EvalContext *evalContext = &evalContextRaw;
 
     LockLocation bestMove = playOneMove(gameState, &curPiece, NULL, DEFAULT_PRUNING_BREADTH, playoutCount, playoutLength, evalContext, pieceRangeContextLookup);
