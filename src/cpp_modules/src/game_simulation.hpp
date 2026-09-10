@@ -1,2 +1,13 @@
+#ifndef GAME_SIMULATION
+#define GAME_SIMULATION
 
-void simulateGames(int numGames, int startingLevel, char const *inputFrameTimeline, int reactionTime, int playoutCount, int playoutLength);
+#include "types.hpp"
+#include <utility>
+
+std::vector<int> simulateGame(char const *inputFrameTimeline, int startingLevel, int maxLines, int playoutCount, int playoutLength, bool useTestWeights);
+
+void simulateGames(int numGames, char const *inputFrameTimeline, int startingLevel, int maxLines, int playoutCount, int playoutLength, bool useTestWeights, OUT std::vector<std::pair<int, int>> &games);
+
+void simulateGamesThreaded(int numGames, char const *inputFrameTimeline, int startingLevel, int maxLines, int playoutCount, int playoutLength, bool useTestWeights, OUT std::vector<std::pair<int, int>> &games);
+
+#endif

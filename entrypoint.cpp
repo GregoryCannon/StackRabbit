@@ -25,20 +25,27 @@ char const * testInput = "000000000000000000000000000000000000000000000000000000
 int runGames(){
   std::cout.imbue(std::locale("en_US.UTF-8")); // Allow for commas in printed numbers
   std::vector<std::pair<int, int>> games;
-  int numGames = 100;
+  int numGames = 10000;
   int playoutCount = 0;
   int playoutLength = 1;
-  simulateGamesThreaded(numGames, "X.....", 19, /* maxLines= */ 230, playoutCount, playoutLength, games);
 
-  for (int i = 0; i < numGames; i++){
-    printf("Game %d: %d points, %d lines\n", i, games[i].first, games[i].second);
-  }
+  // Games with main weights
+  printf("\n----- MAIN WEIGHTS ------\n");
+  simulateGamesThreaded(numGames, "X.....", 19, /* maxLines= */ 100, playoutCount, playoutLength, /* useTestWeights= */ false, games);
+
+  // Games with test weights
+  printf("\n----- TEST WEIGHTS ------\n");
+  simulateGamesThreaded(numGames, "X.....", 19, /* maxLines= */ 100, playoutCount, playoutLength, /* useTestWeights= */ true, games);
+
+  // for (int i = 0; i < numGames; i++){
+  //   printf("Game %d: %d points, %d lines\n", i, games[i].first, games[i].second);
+  // }
   return 0;
 }
 
 int main(int argc, const char * argv[]) {
   // printf("%s\n", mainProcess(testInput, GET_LOCK_VALUE_LOOKUP).c_str());
-  // printf("%s\n", mainProcess(testInput, GET_MOVE).c_str());
+  // printf("%s\n", mainProcess(testInput, GET_MOVE_AB_TEST).c_str());
   runGames();
   
   // testAdjustments();

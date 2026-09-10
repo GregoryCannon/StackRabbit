@@ -34,7 +34,7 @@ float playSequence(GameState gameState, const PieceRangeContext pieceRangeContex
   AiMode originalAiMode = getEvalContext(gameState, pieceRangeContextLookup, /* useTestWeights= */ false).aiMode;
   
   PlayoutData newPlayoutData;
-  const bool trackPlayouts = TRACK_PLAYOUT_DETAILS && playoutDataList != NULL;
+  const bool trackPlayouts = COMPILE_FOR_ENGINE && playoutDataList != NULL;
 
   float totalReward = 0;
   for (int i = 0; i < playoutLength; i++) {
@@ -135,18 +135,38 @@ float getPlayoutScore(GameState gameState, int playoutCount, int playoutLength, 
     || (playoutCount == 2401 && playoutLength == 4);
 
   float playoutScore = 0;
+  vector<float> playoutScores;
   for (int i = 0; i < playoutCount; i++) {
     // Do one playout
     const int *pieceSequence = useExhaustiveSequences 
           ? exhaustivePieceSequences + i * EXHAUSTIVE_SEQUENCE_LENGTH // Index into the exhaustive list of possible sequences;
           : canonicalPieceSequences + (pieceOffset + i) * SEQUENCE_LENGTH; // Index into the mega array of randomly-generated piece sequences;
     float resultScore = playSequence(gameState, pieceRangeContextLookup, pieceSequence, playoutLength, playoutDataList);
-    // printf("Did playout with score %f %d\n", resultScore, playoutDataList->size());
+    playoutScores.push_back(resultScore);
     playoutScore += resultScore;
   }
 
   if (PLAYOUT_RESULT_LOGGING_ENABLED) {
-    printf("PlayoutScore %.1f\n", playoutScore / playoutCount);
+    float mean = playoutScore / playoutCount;
+    printf("PlayoutScore %.1f\n", mean);
+
+    if (playoutCount > 1) {
+      // Calculate standard deviation
+      float variance = 0;
+      for (int i = 0; i < playoutCount; i++) {
+        float diff = playoutScores[i] - mean;
+        variance += diff * diff;
+      }
+      variance /= (playoutCount - 1);
+      float stdDev = sqrt(variance);
+
+      // Calculate 95% confidence interval (using z=1.96 for large samples, or t-distribution approximation for small samples)
+      float tValue = 1.96; // Default for large samples
+      float marginOfError = tValue * (stdDev / sqrt(playoutCount));
+
+      printf("Standard Deviation: %.2f\n", stdDev);
+      printf("95%% Confidence Interval: [%.2f, %.2f]\n", mean - marginOfError, mean + marginOfError);
+    }
   }
   return playoutCount == 0 ? 0 : (playoutScore / playoutCount);
 }

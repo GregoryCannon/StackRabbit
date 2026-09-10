@@ -5,6 +5,8 @@
 #define DOUBLE_KILLSCREEN_ENABLED 0
 #define DEBUG_DOUBLE_KS_ALWAYS_ENABLED 0
 
+#define COMPILE_FOR_ENGINE false
+
 // Logging
 #define LOGGING_ENABLED 0 // Refers to movesearch/eval logging
 #define PLAYOUT_LOGGING_ENABLED 0
@@ -25,11 +27,10 @@
 #define SHOULD_PLAY_PERFECT 0
 
 // Engine API params
-#define NUM_TOP_ENGINE_MOVES 5
+#define NUM_TOP_ENGINE_MOVES 8
 #define DEFAULT_PLAYOUT_COUNT 49
 #define DEFAULT_PLAYOUT_LENGTH 2
 #define DEFAULT_PRUNING_BREADTH 20
-#define TRACK_PLAYOUT_DETAILS true // Can disable for performance reasons
 
 // Logistics of move search and pruning
 #define LOCK_POSITION_REPEAT_CAP_PROPORTION .25 // Only used for current+next piece search. Refers to the limit on the percent of positions considered that can have the same first move. This increases the diversity of moves considered.
