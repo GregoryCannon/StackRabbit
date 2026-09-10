@@ -5,13 +5,13 @@
 #include "types.hpp"
 
 const FastEvalWeights MAIN_WEIGHTS = {
-  /* avgHeightCoef= */ PLAY_SAFE_PRE_KILLSCREEN ? -10 : -8,
-  /* builtOutLeftCoef= */ 2,
+  /* avgHeightCoef= */ -6,
+  /* builtOutLeftCoef= */ 1,
   /* burnCoef= */ PLAY_SAFE_PRE_KILLSCREEN ? -9 : -18,
   /* coveredWellCoef= */ -10,
   /* col9Coef= */ -3,
   /* deathCoef= */ -3000,
-  /* extremeGapCoef= */ -2,
+  /* extremeGapCoef= */ -3,
   /* holeCoef= */ -50,
   /* holeWeightCoef= */ 0,
   /* inaccessibleLeftCoef= */ -30,
@@ -24,13 +24,13 @@ const FastEvalWeights MAIN_WEIGHTS = {
 };
 
 const FastEvalWeights TEST_WEIGHTS = {
-  /* avgHeightCoef= */ PLAY_SAFE_PRE_KILLSCREEN ? -10 : -8,
+  /* avgHeightCoef= */ -6,
   /* builtOutLeftCoef= */ 1,
-  /* burnCoef= */ -6,
+  /* burnCoef= */ PLAY_SAFE_PRE_KILLSCREEN ? -9 : -18,
   /* coveredWellCoef= */ -10,
   /* col9Coef= */ -3,
   /* deathCoef= */ -3000,
-  /* extremeGapCoef= */ -2,
+  /* extremeGapCoef= */ -3,
   /* holeCoef= */ -50,
   /* holeWeightCoef= */ 0,
   /* inaccessibleLeftCoef= */ -30,
