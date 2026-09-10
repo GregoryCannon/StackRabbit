@@ -203,7 +203,7 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
       // with the existing JS consumer while exposing both explanations.
       bool agree = xOffset == xOffsetTest && rot == rotTest && yOffset == yOffsetTest;
       if (agree){
-        return string_format("[\"agree\", [%d, %d, %d]]", rot, xOffset, yOffset);
+        return string_format("[\"agree\", [%d, %d, %d], {\n\"explanationMain\":\"%s\"}]", rot, xOffset, yOffset, escMain.c_str());
       } else {
         return string_format("[\"disagree\", [%d, %d, %d], [%d, %d, %d], {\n\"explanationMain\":\"%s\", \n\"explanationTest\":\"%s\"}]", rot, xOffset, yOffset, rotTest, xOffsetTest, yOffsetTest, escMain.c_str(), escTest.c_str());
       }

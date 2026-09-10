@@ -3,19 +3,6 @@
 #include <algorithm>
 #include "config.hpp"
 
-// Unused
-//const EvalContext DEBUG_CONTEXT = {
-//  /* aiMode= */ STANDARD,
-//  /* fastEvalWeights= */ MAIN_WEIGHTS,
-//  /* pieceRangeContext= */ {},
-//  /* countWellHoles= */ false,
-//  /* maxDirtyTetrisHeight= */ 1,
-//  /* maxSafeCol9Height= */ 6,
-//  /* scareHeight= */ 5,
-//  /* shouldRewardLineClears= */ false,
-//  /* wellColumn= */ 9,
-//};
-
 int hasHoleBlockingTetrisReady(unsigned int board[20], int col10Height){
   if (col10Height > 16) {
     return 0;
