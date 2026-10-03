@@ -9,7 +9,7 @@
     "move_test": "tsc && node built/src/server/move_search_test.js",
     "cpp_main": "g++ entrypoint.cpp && ./a.out",
     "cpp_benchmark": "g++ benchmark.cpp && ./a.out",
-    "wasm_build": "em++ -O3 src/cpp_modules/src/wasm.cpp --bind -lembind -g0 -o _compiledWasmRabbit.js"
+    "wasm_build": "em++ -O3 src/cpp_modules/src/wasm.cpp --bind -lembind -g0 -o _compiledWasmRabbit.js -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=64MB -sMAXIMUM_MEMORY=2GB"
   },
   "author": "",
   "license": "ISC",

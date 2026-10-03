@@ -34,7 +34,7 @@ float playSequence(GameState gameState, const PieceRangeContext pieceRangeContex
   AiMode originalAiMode = getEvalContext(gameState, pieceRangeContextLookup, /* useTestWeights= */ false).aiMode;
   
   PlayoutData newPlayoutData;
-  const bool trackPlayouts = COMPILE_FOR_ENGINE && playoutDataList != NULL;
+  const bool trackPlayouts = playoutDataList != NULL;
 
   float totalReward = 0;
   for (int i = 0; i < playoutLength; i++) {

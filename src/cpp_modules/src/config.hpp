@@ -5,8 +5,6 @@
 #define DOUBLE_KILLSCREEN_ENABLED 0
 #define DEBUG_DOUBLE_KS_ALWAYS_ENABLED 0
 
-#define COMPILE_FOR_ENGINE false
-
 // Logging
 #define LOGGING_ENABLED 0 // Refers to movesearch/eval logging
 #define PLAYOUT_LOGGING_ENABLED 0
