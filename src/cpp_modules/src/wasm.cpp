@@ -1,3 +1,7 @@
+/**
+ * FOR MORE CONTEXT, SEE src/wasm/README.md
+ */
+
 #include "main.cpp"
 #include "types.hpp"
 

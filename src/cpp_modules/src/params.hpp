@@ -7,7 +7,7 @@
 const FastEvalWeights MAIN_WEIGHTS = {
   /* avgHeightCoef= */ -6,
   /* builtOutLeftCoef= */ 1,
-  /* burnCoef= */ PLAY_SAFE_PRE_KILLSCREEN ? -9 : -18,
+  /* burnCoef= */ PLAY_SAFE ? -9 : -15,
   /* coveredWellCoef= */ -10,
   /* col9Coef= */ -3,
   /* deathCoef= */ -3000,
@@ -20,14 +20,14 @@ const FastEvalWeights MAIN_WEIGHTS = {
   /* tetrisReadyCoef= */ 6,
   /* surfaceCoef= */ 1,
   /* surfaceLeft= */ 0,
-  /* unableToBurnCoef= */ -0.5
+  /* unableToBurnCoef= */ -0.6
 };
 
 const FastEvalWeights TEST_WEIGHTS = {
   /* avgHeightCoef= */ -6,
   /* builtOutLeftCoef= */ 1,
-  /* burnCoef= */ PLAY_SAFE_PRE_KILLSCREEN ? -9 : -18,
-  /* coveredWellCoef= */ -10,
+  /* burnCoef= */ PLAY_SAFE ? -9 : -15,
+  /* coveredWellCoef= */ -12,
   /* col9Coef= */ -3,
   /* deathCoef= */ -3000,
   /* extremeGapCoef= */ -3,
@@ -39,7 +39,7 @@ const FastEvalWeights TEST_WEIGHTS = {
   /* tetrisReadyCoef= */ 6,
   /* surfaceCoef= */ 1,
   /* surfaceLeft= */ 0,
-  /* unableToBurnCoef= */ -0.5
+  /* unableToBurnCoef= */ -0.6
 };
 
 // No weights apply here, all are automatically set to 0
