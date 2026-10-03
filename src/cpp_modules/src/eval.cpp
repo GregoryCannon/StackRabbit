@@ -101,7 +101,8 @@ float getBuiltOutLeftFactor(int surfaceArray[10], unsigned int board[20], float 
     return 0;
   }
   float heightRatio = max(1.0f, avgHeight) / max(2.0f, scareHeight);
-  float heightDiff = 0.5 * (surfaceArray[0] - avgHeight) + 0.5 * (surfaceArray[0] - surfaceArray[1]);
+  // float heightDiff = 0.5 * (surfaceArray[0] - avgHeight) + 0.5 * (surfaceArray[0] - surfaceArray[1]);
+  float heightDiff = (surfaceArray[0] - avgHeight);
 
   // Handle low left cases first
   if (heightDiff < 0) {
@@ -211,7 +212,7 @@ float getLikelyBurnsFactor(int surfaceArray[10], int wellColumn, int maxSafeCol9
  * Assesses whether the surface allows for 5 taps.
  * @returns the multiple of the accessible left penalty that should be applied. That is, 0 if 5 taps are possible, or a float around 1.0 or higher (depending on how many lines would need to clear for the left to be accessible).
  */
-float getInaccessibleLeftFactor(unsigned int board[20], int surfaceArray[10], int const maxAccessibleLeftSurface[10], int wellColumn, AiMode aiMode){
+float getInaccessibleLeftFactor(unsigned int board[20], int surfaceArray[10], int const maxAccessibleLeft5Surface[10], int const maxAccessibleLeftLPieceSurface[10], int wellColumn, AiMode aiMode){
   // Check if the agent even needs to get a piece left first.
   int highestRowOfCol1 = 19 - surfaceArray[0];
   int needs5TapForDig = board[highestRowOfCol1] & HOLE_WEIGHT_BIT;
@@ -220,6 +221,7 @@ float getInaccessibleLeftFactor(unsigned int board[20], int surfaceArray[10], in
 //  int needs5TapOnKillscreen = (surfaceArray[1] - surfaceArray[0]) > maxAccessibleLeftSurface[0];
 //  int needs5Tap = needs5TapForDig || needs5TapForBurn || needs5TapOnKillscreen;
 
+  // This factor is added to stop the malicious compliance of tossing some random piece left while making a hole to technically have a "built out left"
   int hasHoleInLeft = false;
   for (int r = highestRowOfCol1 + 1; r < highestRowOfCol1 + 4; r++) {
     if (board[r] & (HOLE_BIT(0) | HOLE_BIT(1) | HOLE_BIT(2))) {
@@ -228,17 +230,27 @@ float getInaccessibleLeftFactor(unsigned int board[20], int surfaceArray[10], in
     }
   }
 
-  // TODO: check for L left 4 taps using the maxAccessibleLeftLPieceSurface
+  if (surfaceArray[0] == surfaceArray[1] - 1 && surfaceArray[1] == surfaceArray[2]){
+    bool canTapLPieceLeft = true;
+    for (int i = 0; i < 7; i++) {  // col 7 is the furthest right the L piece ever is on the board when tapped left flat
+      if (surfaceArray[i] > maxAccessibleLeftLPieceSurface[i]) {
+        canTapLPieceLeft = false;
+      }
+    }
+    if (canTapLPieceLeft){
+      return 0;
+    }
+  }
 
   // If the left is built out higher than the max 5 tap height, and there's no pressing need to get a piece there anyway, this factor doesn't matter
-  if (surfaceArray[0] > maxAccessibleLeftSurface[0] && surfaceArray[0] >= surfaceArray[1] && !needs5Tap && !hasHoleInLeft) {
+  if (surfaceArray[0] > maxAccessibleLeft5Surface[0] && surfaceArray[0] >= surfaceArray[1] && !needs5Tap && !hasHoleInLeft) {
     return 0;
   }
 
   int highestAbove = 0;
   for (int i = 0; i < 7; i++) {  // col 7 is the furthest right a 5 tap piece is on the board when tapped left
-    if (surfaceArray[i] > maxAccessibleLeftSurface[i]) {
-      highestAbove = std::max(highestAbove, surfaceArray[i] - maxAccessibleLeftSurface[i]);
+    if (surfaceArray[i] > maxAccessibleLeft5Surface[i]) {
+      highestAbove = std::max(highestAbove, surfaceArray[i] - maxAccessibleLeft5Surface[i]);
     }
   }
   return highestAbove == 0 ? 0 : (1.0 + 0.2 * highestAbove * highestAbove);
@@ -453,7 +465,7 @@ float fastEval(GameState gameState,
   float holeWeightFactor = abs(weights.holeWeightCoef) > FLOAT_EPSILON ? weights.holeWeightCoef * getHoleWeightFactor(newState.board, evalContext->wellColumn) : 0;
   float inaccessibleLeftFactor = isKillscreenLineout
               ? 0
-              : (weights.inaccessibleLeftCoef * getInaccessibleLeftFactor(newState.board, newState.surfaceArray, evalContext->pieceRangeContext.maxAccessibleLeft5Surface, evalContext->wellColumn, evalContext->aiMode));
+              : (weights.inaccessibleLeftCoef * getInaccessibleLeftFactor(newState.board, newState.surfaceArray, evalContext->pieceRangeContext.maxAccessibleLeft5Surface, evalContext->pieceRangeContext.maxAccessibleLeftLPieceSurface,  evalContext->wellColumn, evalContext->aiMode));
   float inaccessibleRightFactor = isKillscreenLineout
               ? 0
               : (weights.inaccessibleRightCoef * getInaccessibleRightFactor(newState.surfaceArray, evalContext->pieceRangeContext.maxAccessibleRightSurface));
