@@ -25,8 +25,8 @@
 
 // Engine API params
 #define NUM_TOP_ENGINE_MOVES 8
-#define DEFAULT_PLAYOUT_COUNT 49
-#define DEFAULT_PLAYOUT_LENGTH 2
+#define DEFAULT_PLAYOUT_COUNT 343
+#define DEFAULT_PLAYOUT_LENGTH 3
 #define DEFAULT_PRUNING_BREADTH 20
 
 // Logistics of move search and pruning

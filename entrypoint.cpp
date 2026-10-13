@@ -20,7 +20,7 @@
  board | level | lines | curPiece | nextPiece | inputTimeline
  */
 
-char const * testInput = "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000011111100001111110101111011110111101111011110111101111101111111110111111111011111111101111111110111|19|200|0|6|X.....X.....X..X.....|";
+char const * testInput = "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010000010001100111011110011111111101111111110111111111011111111101111111110|19|200|5|-1|X.....X.....X..X.....|";
 
 int runGames(){
   std::cout.imbue(std::locale("en_US.UTF-8")); // Allow for commas in printed numbers
@@ -46,7 +46,8 @@ int runGames(){
 int main(int argc, const char * argv[]) {
   // printf("%s\n", mainProcess(testInput, GET_LOCK_VALUE_LOOKUP).c_str());
   // printf("%s\n", mainProcess(testInput, GET_MOVE_AB_TEST).c_str());
-  runGames();
+  printf("%s\n", mainProcess(testInput, GET_MOVE).c_str());
+  // runGames();
   
   // testAdjustments();
   return 0;
