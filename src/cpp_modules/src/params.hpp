@@ -112,7 +112,7 @@ const FastEvalWeights NEAR_KILLSCREEN_WEIGHTS = {
   MAIN_WEIGHTS.holeWeightCoef,
   MAIN_WEIGHTS.inaccessibleLeftCoef,
   MAIN_WEIGHTS.inaccessibleRightCoef,
-  /* tetrisCoef= */ 500,
+  /* tetrisCoef= */ 100,
   MAIN_WEIGHTS.tetrisReadyCoef,
   MAIN_WEIGHTS.surfaceCoef,
   MAIN_WEIGHTS.surfaceLeftCoef,
