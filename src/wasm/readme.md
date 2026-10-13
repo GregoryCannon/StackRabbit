@@ -9,10 +9,10 @@ The emscriptembindings are in the file src/wasm.cpp
 1. Run the terminal command
     > npm run wasm_build 
 2. That creates two output files:
-    -  _compiledWasmRabbit.js
-        This file serves as the "glue" between WASM and callers, giving method signatures and such
-    -  _compiledWasmRabbit.wasm
-        This is the actual binary compiled from the SR C++ code
+    -  compiledWasmRabbit.js
+        This file serves as the "glue" between WASM and callers, giving method signatures and such.
+    -  compiledWasmRabbit.wasm
+        This is the actual binary compiled from the SR C++ code.
 
 3. Copy those two files into the desired frontend (for example, the test client in this folder)
 
