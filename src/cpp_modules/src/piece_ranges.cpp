@@ -97,7 +97,7 @@ const PieceRangeContext getPieceRangeContext(char const *inputFrameTimeline, int
   
   // Calculate inaccessible left 4-tap surface (for an L piece)
   bottomSurface = PIECE_L.bottomSurfaceByRotation[0];
-  for (int tapIndex = 0; tapIndex <= 4; tapIndex++){
+  for (int tapIndex = 0; tapIndex < 4; tapIndex++){
     // Superimpose the piece's bottom surface on the inaccessible surface
     for (int i = 0; i < 4; i++) {
       if (bottomSurface[i] == NONE){
@@ -109,7 +109,23 @@ const PieceRangeContext getPieceRangeContext(char const *inputFrameTimeline, int
       context.maxAccessibleLeftLPieceSurface[xBeforeShift + i] = 19 - bottomSurface[i] - shiftY - PIECE_L.initialY;
     }
   }
-  // We actually do all 4 taps manually for this case, since the optimization that would go here doesn't apply to the L piece  
+  context.maxAccessibleLeftLPieceSurface[2] = context.maxAccessibleLeftLPieceSurface[3] - 1;
+  context.maxAccessibleLeftLPieceSurface[1] = context.maxAccessibleLeftLPieceSurface[3] - 1;
+  context.maxAccessibleLeftLPieceSurface[0] = context.maxAccessibleLeftLPieceSurface[3] - 2;
+  /* 
+  ^^^ We hardcode the last shift since it's weird. Imagine it's right before the 4th shift:
+      o o o x
+      o   * x
+      x x x x
+    x x x x x
+    x x x x x
+
+  The cell with a * was just stored as col 4 (maxAccSurface[3]). Based on this cell, we know cols 1-3 deterministically.
+  Cols 2 and 3 must be equal, and must be less than col 4. If hypothetically c2 == c3 == c4, then the piece would have 
+  collided in col2 one row higher than the row with * in it. Therefore the highest c2 and c3 can be is one less than c4. 
+  
+  Then, because of the shape of the L piece, we know c1 is one lower than c2.
+  */
 
   // printArray(context.maxAccessibleLeftLPieceSurface, 10, "MAX LEFT L PIECE SURFACE");
   
