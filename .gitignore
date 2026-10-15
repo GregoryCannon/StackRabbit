@@ -11,8 +11,8 @@ built/
 build/
 src/server/fceux/reference_only/
 *.out
-_compiledWasmRabbit.js
-_compiledWasmRabbit.wasm
+compiledWasmRabbit.js
+compiledWasmRabbit.wasm
 
 # Media
 *.avi
