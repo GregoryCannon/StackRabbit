@@ -243,7 +243,7 @@ float getInaccessibleLeftFactor(unsigned int board[20], int surfaceArray[10], in
   }
 
   // If the left is built out higher than the max 5 tap height, and there's no pressing need to get a piece there anyway, this factor doesn't matter
-  if (surfaceArray[0] > maxAccessibleLeft5Surface[0] && surfaceArray[0] >= surfaceArray[1] && !needs5Tap && !hasHoleInLeft) {
+  if (surfaceArray[0] > maxAccessibleLeft5Surface[0] && !needs5Tap && !hasHoleInLeft) {
     return 0;
   }
 
