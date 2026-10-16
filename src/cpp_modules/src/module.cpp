@@ -11,7 +11,8 @@ NAN_METHOD(GetLockValueLookupDas) {
   if (maybeStr.ToLocal(&inputStrNan) == false) {
     Nan::ThrowError("Error converting first argument to string");
   }
-  char const * inputStr = *Nan::Utf8String(inputStrNan);
+  Nan::Utf8String utf8Value(inputStrNan);
+  char const * inputStr = *utf8Value;
 
   std::string result = mainProcess(inputStr, GET_LOCK_VALUE_LOOKUP_DAS);
 
@@ -25,7 +26,8 @@ NAN_METHOD(GetLockValueLookup) {
   if (maybeStr.ToLocal(&inputStrNan) == false) {
     Nan::ThrowError("Error converting first argument to string");
   }
-  char const * inputStr = *Nan::Utf8String(inputStrNan);
+  Nan::Utf8String utf8Value(inputStrNan);
+  char const * inputStr = *utf8Value;
 
   std::string result = mainProcess(inputStr, GET_LOCK_VALUE_LOOKUP);
 
@@ -39,7 +41,8 @@ NAN_METHOD(GetMove) {
   if (maybeStr.ToLocal(&inputStrNan) == false) {
     Nan::ThrowError("Error converting first argument to string");
   }
-  char const * inputStr = *Nan::Utf8String(inputStrNan);
+  Nan::Utf8String utf8Value(inputStrNan);
+  char const * inputStr = *utf8Value;
 
   std::string result = mainProcess(inputStr, GET_MOVE);
 
@@ -53,7 +56,8 @@ NAN_METHOD(GetMoveAbTest) {
   if (maybeStr.ToLocal(&inputStrNan) == false) {
     Nan::ThrowError("Error converting first argument to string");
   }
-  char const * inputStr = *Nan::Utf8String(inputStrNan);
+  Nan::Utf8String utf8Value(inputStrNan);
+  char const * inputStr = *utf8Value;
 
   std::string result = mainProcess(inputStr, GET_MOVE_AB_TEST);
 
@@ -67,7 +71,8 @@ NAN_METHOD(GetTopMoves) {
   if (maybeStr.ToLocal(&inputStrNan) == false) {
     Nan::ThrowError("Error converting first argument to string");
   }
-  char const * inputStr = *Nan::Utf8String(inputStrNan);
+  Nan::Utf8String utf8Value(inputStrNan);
+  char const * inputStr = *utf8Value;
 
   std::string result = mainProcess(inputStr, GET_TOP_MOVES);
 
@@ -81,7 +86,8 @@ NAN_METHOD(GetTopMovesHybrid) {
   if (maybeStr.ToLocal(&inputStrNan) == false) {
     Nan::ThrowError("Error converting first argument to string");
   }
-  char const * inputStr = *Nan::Utf8String(inputStrNan);
+  Nan::Utf8String utf8Value(inputStrNan);
+  char const * inputStr = *utf8Value;
 
   std::string result = mainProcess(inputStr, GET_TOP_MOVES_HYBRID);
 
@@ -95,7 +101,8 @@ NAN_METHOD(RateMove) {
   if (maybeStr.ToLocal(&inputStrNan) == false) {
     Nan::ThrowError("Error converting first argument to string");
   }
-  char const * inputStr = *Nan::Utf8String(inputStrNan);
+  Nan::Utf8String utf8Value(inputStrNan);
+  char const * inputStr = *utf8Value;
 
   std::string result = mainProcess(inputStr, RATE_MOVE);
 
