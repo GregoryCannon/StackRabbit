@@ -1,7 +1,20 @@
 #include "types.hpp"
+#include "utils.hpp"
+#include "config.hpp"
+#include "piece_ranges.hpp"
+#include "eval_context.hpp"
+#include "high_level_search.hpp"
+#include "move_result.hpp"
+#include "piece_rng.hpp"
+#include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <cmath>
 #include <iomanip>
+#include <iostream>
 #include <thread>
 #include <utility>
+#include <vector>
 
 const int SCORE_REWARDS[] = {
   0,
@@ -21,7 +34,7 @@ int countInputsBeforeReactionTime(int reactionTime, char const *inputFrameTimeli
   return numInputs;
 }
 
-vector<int> simulateGame(char const *inputFrameTimeline, int startingLevel, int maxLines, int playoutCount, int playoutLength, bool useTestWeights){
+std::vector<int> simulateGame(char const *inputFrameTimeline, int startingLevel, int maxLines, int playoutCount, int playoutLength, bool useTestWeights){
   // Init empty data structures
   GameState gameState = {
     /* board= */ {},
@@ -147,7 +160,7 @@ void simulateGames(int numGames, char const *inputFrameTimeline, int startingLev
   auto time_start = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
   for (int i = 0; i < numGames; i++) {
-    vector<int> result = simulateGame(inputFrameTimeline, startingLevel, maxLines, playoutCount, playoutLength, useTestWeights);
+    std::vector<int> result = simulateGame(inputFrameTimeline, startingLevel, maxLines, playoutCount, playoutLength, useTestWeights);
     games.push_back({result[0], result[1]});
     std::cout << i << ": " << result[0] << "Lines: " << result[1] << std::endl;
   }
