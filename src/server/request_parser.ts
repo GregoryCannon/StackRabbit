@@ -37,7 +37,7 @@ export function parseUrlArguments(
         break;
 
       case "secondBoard":
-        if (requestType.includes("rate-move")) {
+        if (requestType.includes("rate-move") || requestType.includes("engine-movelist")) {
           result.secondBoard = parseBoard(value);
         } else {
           console.log(

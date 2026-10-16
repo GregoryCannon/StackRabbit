@@ -30,8 +30,15 @@ function getStackRabbitArgString(args) {
     ? SR_PIECES_INDEXES[args.nextPiece]
     : -1;
 
+  // Optional second board (player's resulting board), e.g. for getTopMoves to
+  // guarantee the player's move shows up even if it's outside the top N.
+  // Formats as follows: board1|board2|rest.
+  const boardPrefix = args.secondBoard
+    ? args.board + DELIM + args.secondBoard
+    : args.board;
+
   const fieldsToJoin = [
-    args.board,
+    boardPrefix,
     args.level,
     args.lines,
     currentPieceIndex,
@@ -63,9 +70,6 @@ const API = {
     return JSON.parse(rawRes);
   },
   rateMove: (args) => {
-    // dirty trick to account for second board
-    args.board += DELIM + args.secondBoard;
-
     const rawRes = Module.rateMove(getStackRabbitArgString(args));
     return JSON.parse(rawRes);
   },

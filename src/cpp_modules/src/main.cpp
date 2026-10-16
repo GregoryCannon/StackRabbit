@@ -47,7 +47,7 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
     /* lines= */ 0,
     /* level= */ 0
   };
-  unsigned int secondBoard[20];
+  unsigned int secondBoard[20] = {};
   const Piece *curPiece = NULL;
   const Piece *nextPiece = NULL;
   int playoutCount = DEFAULT_PLAYOUT_COUNT;
@@ -58,10 +58,32 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
   // Loop through the other args
   std::string nonBoardInputString;
   std::string secondBoardStr;
-  if (requestType == RATE_MOVE){
-    // Rate move requests have two boards;
-    secondBoardStr = std::string(inputStr + 201);
+  // Detect an optional second board: board1 (200 chars of 0/1) + '|' + board2 (200 chars of 0/1) + '|' + rest.
+  // RATE_MOVE always has two boards; GET_TOP_MOVES / GET_TOP_MOVES_HYBRID may optionally include one.
+  bool hasSecondBoard = false;
+  {
+    std::string inputStrStd(inputStr);
+    if (inputStrStd.length() > 402 && inputStrStd[200] == '|' && inputStrStd[401] == '|') {
+      hasSecondBoard = true;
+      for (int i = 0; i < 200; i++) {
+        if (inputStr[i] != '0' && inputStr[i] != '1') { hasSecondBoard = false; break; }
+      }
+      if (hasSecondBoard) {
+        for (int i = 0; i < 200; i++) {
+          if (inputStr[201 + i] != '0' && inputStr[201 + i] != '1') { hasSecondBoard = false; break; }
+        }
+      }
+    }
+  }
+  if (hasSecondBoard){
+    // Requests with two boards (RATE_MOVE always; GET_TOP_MOVES / GET_TOP_MOVES_HYBRID optionally).
+    secondBoardStr = std::string(inputStr + 201, 200);
     nonBoardInputString = std::string(inputStr + 402); // board1 + delim + board2 + delim
+  } else if (requestType == RATE_MOVE){
+    // Legacy fallback: RATE_MOVE without a detectable second board (invalid request).
+    // Preserve old slicing so behavior stays "player move not found" rather than OOB.
+    secondBoardStr = std::string(inputStr + 201);
+    nonBoardInputString = std::string(inputStr + 402);
   } else {
     nonBoardInputString = std::string(inputStr + 201); // 201 = the length of the board string + 1 for the delimiter
   }
@@ -153,13 +175,16 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
 
     case GET_TOP_MOVES: {
       // needExplanation(GET_TOP_MOVES) is true, so per-move evalExplanation strings are populated.
-      return getTopMoveList(startingGameState, curPiece, nextPiece, NUM_TOP_ENGINE_MOVES, playoutCount, playoutLength, &context, pieceRangeContextLookup, needExplanation(GET_TOP_MOVES));
+      // Optionally includes the player's move (from secondBoard) even if it wouldn't otherwise make the top N.
+      unsigned int *playerBoard = secondBoardStr.length() > 0 ? secondBoard : nullptr;
+      return getTopMoveList(startingGameState, curPiece, nextPiece, NUM_TOP_ENGINE_MOVES, playoutCount, playoutLength, &context, pieceRangeContextLookup, needExplanation(GET_TOP_MOVES), playerBoard);
     }
 
     case GET_TOP_MOVES_HYBRID: {
       // needExplanation(GET_TOP_MOVES_HYBRID) is true, so both lists include evalExplanation.
-      std::string nnbResult = getTopMoveList(startingGameState, curPiece, /* nextPiece= */ NULL, NUM_TOP_ENGINE_MOVES, playoutCount, playoutLength, &context, pieceRangeContextLookup, needExplanation(GET_TOP_MOVES_HYBRID));
-      std::string nbResult = getTopMoveList(startingGameState, curPiece, nextPiece, NUM_TOP_ENGINE_MOVES, playoutCount, playoutLength, &context, pieceRangeContextLookup, needExplanation(GET_TOP_MOVES_HYBRID));
+      unsigned int *playerBoardHybrid = secondBoardStr.length() > 0 ? secondBoard : nullptr;
+      std::string nnbResult = getTopMoveList(startingGameState, curPiece, /* nextPiece= */ NULL, NUM_TOP_ENGINE_MOVES, playoutCount, playoutLength, &context, pieceRangeContextLookup, needExplanation(GET_TOP_MOVES_HYBRID), playerBoardHybrid);
+      std::string nbResult = getTopMoveList(startingGameState, curPiece, nextPiece, NUM_TOP_ENGINE_MOVES, playoutCount, playoutLength, &context, pieceRangeContextLookup, needExplanation(GET_TOP_MOVES_HYBRID), playerBoardHybrid);
       return "{\"noNextBox\":" + nnbResult + ", \"nextBox\":" + nbResult + "}";
     }
 
