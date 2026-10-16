@@ -65,9 +65,8 @@ int exploreHorizontally(unsigned int board[20],
                         int goalRotationIndex,
                         char const *inputFrameTimeline,
                         int gravity,
-                        bool gravityDoubled,
-                        vector<SimState> &legalPlacements,
-                        int availableTuckCols[40]) {
+                         bool gravityDoubled,
+                         vector<SimState> &legalPlacements) {
   int rangeCurrent = 0;
   debugPrint("Exploring horizontally, inc=%d maxmin=%d goalRot=%d\n", shiftIncrement, maxOrMinX, goalRotationIndex);
 
@@ -164,9 +163,8 @@ void explorePlacementsNearSpawn(unsigned int board[20],
                                 int goalRotationIndex,
                                 char const *inputFrameTimeline,
                                 int gravity,
-                                bool gravityDoubled,
-                                vector<SimState> &legalPlacements,
-                                int availableTuckCols[40]) {
+                                 bool gravityDoubled,
+                                 vector<SimState> &legalPlacements) {
   int rotationDifference = abs(goalRotationIndex - simState.rotationIndex);
   /* The goal placement is in the blind spot of the main algorithm if there are more rotations than shifts.
    Therefore, for double rotations, the X could be anywhere from -1 to 1. For single rotations, they would always be in place. */
@@ -183,8 +181,7 @@ void explorePlacementsNearSpawn(unsigned int board[20],
                         inputFrameTimeline,
                         gravity,
                         gravityDoubled,
-                        legalPlacements,
-                        availableTuckCols);
+                        legalPlacements);
   }
 }
 
@@ -193,7 +190,6 @@ void explorePlacementsNearSpawn(unsigned int board[20],
  * (!!) Doesn't allow for tucks.
  */
 void getLockPlacementsFast(vector<SimState> &legalPlacements,
-                           unsigned int board[20],
                            int surfaceArray[10],
                            OUT int availableTuckCols[40],
                            OUT vector<LockPlacement> &lockPlacements) {
@@ -390,8 +386,7 @@ int moveSearchInternal(GameState gameState,
                         inputFrameTimeline,
                         gravity,
                         gravityDoubled,
-                        legalMidairPlacements,
-                        availableTuckCols);
+                        legalMidairPlacements);
     exploreHorizontally(gameState.board,
                         spawnState,
                         1,
@@ -400,8 +395,7 @@ int moveSearchInternal(GameState gameState,
                         inputFrameTimeline,
                         gravity,
                         gravityDoubled,
-                        legalMidairPlacements,
-                        availableTuckCols);
+                        legalMidairPlacements);
     // Then double check for some we missed near spawn
     explorePlacementsNearSpawn(gameState.board,
                                spawnState,
@@ -409,13 +403,12 @@ int moveSearchInternal(GameState gameState,
                                inputFrameTimeline,
                                gravity,
                                gravityDoubled,
-                               legalMidairPlacements,
-                               availableTuckCols);
+                               legalMidairPlacements);
   }
 
   // Let the pieces fall until they lock
   getLockPlacementsFast(
-    legalMidairPlacements, gameState.board, gameState.surfaceArray, availableTuckCols, lockPlacements);
+    legalMidairPlacements, gameState.surfaceArray, availableTuckCols, lockPlacements);
 
   // Search for tucks
   if (CAN_TUCK) {

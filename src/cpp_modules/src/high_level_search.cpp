@@ -59,7 +59,7 @@ void partiallySortPossibilityList(list<Possibility> &possibilityList, int keepTo
  * @param generateExplanation - when true, captures a per-move evalExplanation string
  *   (only used by GET_TOP_MOVES / GET_TOP_MOVES_HYBRID / GET_MOVE_AB_TEST paths).
  */
-int searchDepth1(GameState gameState, const Piece *firstPiece, int keepTopN, const EvalContext *evalContext, OUT list<Possibility> &possibilityList, bool generateExplanation = false){
+int searchDepth1(GameState gameState, const Piece *firstPiece, const EvalContext *evalContext, OUT list<Possibility> &possibilityList, bool generateExplanation = false){
   vector<LockPlacement> firstLockPlacements;
   moveSearch(gameState, firstPiece, evalContext->pieceRangeContext.inputFrameTimeline, firstLockPlacements);
   for (auto it = begin(firstLockPlacements); it != end(firstLockPlacements); ++it) {
@@ -93,7 +93,7 @@ int searchDepth1(GameState gameState, const Piece *firstPiece, int keepTopN, con
  * @param generateExplanation - when true, captures a per-move evalExplanation string
  *   (only used by GET_TOP_MOVES / GET_TOP_MOVES_HYBRID / GET_MOVE_AB_TEST paths).
  */
-int searchDepth2(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int keepTopN, int secondPieceDelay, const EvalContext *evalContext, OUT list<Possibility> &possibilityList, bool generateExplanation = false){
+int searchDepth2(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int secondPieceDelay, const EvalContext *evalContext, OUT list<Possibility> &possibilityList, bool generateExplanation = false){
 
   // Get the placements of the first piece
   vector<LockPlacement> firstLockPlacements;
@@ -176,10 +176,10 @@ LockLocation playOneMove(GameState gameState, const Piece *firstPiece, const Pie
   // Search depth either 1 or 2 depending on whether a next piece was provided
   const Piece *lastSeenPiece;
   if (secondPiece == NULL){
-    searchDepth1(gameState, firstPiece, numCandidatesToPlayout, evalContext, possibilityList, generateExplanation);
+    searchDepth1(gameState, firstPiece, evalContext, possibilityList, generateExplanation);
     lastSeenPiece = firstPiece;
   } else {
-    searchDepth2(gameState, firstPiece, secondPiece, numCandidatesToPlayout, /* secondPieceDelay= */ 0, evalContext, possibilityList, generateExplanation);
+    searchDepth2(gameState, firstPiece, secondPiece, /* secondPieceDelay= */ 0, evalContext, possibilityList, generateExplanation);
     lastSeenPiece = secondPiece;
   }
 
@@ -266,9 +266,9 @@ std::string rateMove(GameState gameState, const Piece *firstPiece, const Piece *
   bool hasNb = secondPiece != NULL;
 
   // Search depth 1
-  searchDepth1(gameState, firstPiece, numCandidatesToPlayout, evalContext, possibilityListD1);
+  searchDepth1(gameState, firstPiece, evalContext, possibilityListD1);
   if (hasNb){
-    searchDepth2(gameState, firstPiece, secondPiece, numCandidatesToPlayout, /* secondPieceDelay= */ 0, evalContext, possibilityListD2);
+    searchDepth2(gameState, firstPiece, secondPiece, /* secondPieceDelay= */ 0, evalContext, possibilityListD2);
   }
   if (possibilityListD1.size() == 0 || (hasNb && possibilityListD2.size() == 0)){
     return std::string("Error: no legal moves found");
@@ -381,10 +381,10 @@ std::string getTopMoveList(GameState gameState, const Piece *firstPiece, const P
   // Search depth either 1 or 2 depending on whether a next piece was provided
   const Piece *lastSeenPiece;
   if (secondPiece == NULL){
-    searchDepth1(gameState, firstPiece, numSorted, evalContext, possibilityList, generateExplanation);
+    searchDepth1(gameState, firstPiece, evalContext, possibilityList, generateExplanation);
     lastSeenPiece = firstPiece;
   } else {
-    searchDepth2(gameState, firstPiece, secondPiece, numSorted, /* secondPieceDelay= */ 0, evalContext, possibilityList, generateExplanation);
+    searchDepth2(gameState, firstPiece, secondPiece, /* secondPieceDelay= */ 0, evalContext, possibilityList, generateExplanation);
     lastSeenPiece = secondPiece;
   }
 
@@ -448,7 +448,7 @@ unordered_map<string, float> getLockValueLookup(GameState gameState, const Piece
   // Get the list of evaluated possibilities
   list<Possibility> possibilityList;
   list<Possibility> sortedList;
-  searchDepth2(gameState, firstPiece, secondPiece, numSorted, secondPieceDelay, evalContext, possibilityList);
+  searchDepth2(gameState, firstPiece, secondPiece, secondPieceDelay, evalContext, possibilityList);
   partiallySortPossibilityList(possibilityList, numSorted, sortedList);
 
   // If no playouts, just use the eval

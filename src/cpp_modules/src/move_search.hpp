@@ -5,7 +5,7 @@
 #include "utils.hpp"
 #include <vector>
 
-int moveSearch(GameState gameState, const Piece *piece, char const *inputFrameTimeline, OUT std::vector<LockPlacement> &lockPlacements, OUT int availableTuckCols[40]);
+int moveSearch(GameState gameState, const Piece *piece, char const *inputFrameTimeline, OUT std::vector<LockPlacement> &lockPlacements);
 
 int adjustmentSearch(GameState gameState,
                      const Piece *piece,
