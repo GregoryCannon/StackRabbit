@@ -2,6 +2,7 @@
 #include "eval.hpp"
 #include "utils.hpp"
 #include "params.hpp"
+#include <algorithm>
 #include "../data/canonical_sequences.hpp"
 
 using namespace std;
@@ -123,10 +124,17 @@ float getPlayoutScore(GameState gameState, int playoutCount, int playoutLength, 
   //   return 0;
   // }
 
-  // Index into the sequences based on the last known piece given by the in-game randomizer.
-  // The piece RNG is dependent on the previous piece, we will then have 1000 sequences with accurate RNG given the last known piece
-  int pieceOffset = 1000 + firstPieceIndex * 1000;
-  
+  // Clamp playout counts to the batch size. Historically, counts over the old 1000-sequence
+  // batches read past the end of the sequence data and corrupted memory (e.g. playouts>3000
+  // with a T last-piece crashed the wasm build); the clamp makes large requests deterministic.
+  playoutCount = std::min(playoutCount, CANONICAL_SEQUENCE_BATCH_SIZE);
+
+  // Sequence batching based on the last known piece given by the in-game randomizer.
+  // See canonical_sequences.hpp for the batch layout and the online-validated NES table.
+  const int *lastPieceSequences = firstPieceIndex < 0
+    ? correctedSequencesNoLastPieceKnown
+    : canonicalPieceSequencesForLastPiece[firstPieceIndex];
+	
   // Special case: if the playout count is equal to the full count of possible sequences at the requested length, use the exahustive sequence list,
   // as opposed to randomly generated ones.
   bool useExhaustiveSequences = (playoutCount == 7 && playoutLength == 1)
@@ -140,7 +148,7 @@ float getPlayoutScore(GameState gameState, int playoutCount, int playoutLength, 
     // Do one playout
     const int *pieceSequence = useExhaustiveSequences 
           ? exhaustivePieceSequences + i * EXHAUSTIVE_SEQUENCE_LENGTH // Index into the exhaustive list of possible sequences;
-          : canonicalPieceSequences + (pieceOffset + i) * SEQUENCE_LENGTH; // Index into the mega array of randomly-generated piece sequences;
+          : lastPieceSequences + i * SEQUENCE_LENGTH; // Index into the batch for this last-known piece;
     float resultScore = playSequence(gameState, pieceRangeContextLookup, pieceSequence, playoutLength, playoutDataList);
     playoutScores.push_back(resultScore);
     playoutScore += resultScore;

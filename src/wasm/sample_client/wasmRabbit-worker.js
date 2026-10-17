@@ -98,4 +98,4 @@ function workerInit() {
   self.onmessage = handle_message;
 }
 
-importScripts("./_compiledWasmRabbit.js");
+importScripts("./compiledWasmRabbit.js");
