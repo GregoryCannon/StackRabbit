@@ -124,15 +124,13 @@ float getPlayoutScore(GameState gameState, int playoutCount, int playoutLength, 
   //   return 0;
   // }
 
-  // Clamp playout counts to the batch size. Historically, counts over the old 1000-sequence
-  // batches read past the end of the sequence data and corrupted memory (e.g. playouts>3000
-  // with a T last-piece crashed the wasm build); the clamp makes large requests deterministic.
+  // Clamp playout counts to the batch size, so large requests don't overflow the sequences array.
   playoutCount = std::min(playoutCount, CANONICAL_SEQUENCE_BATCH_SIZE);
 
   // Sequence batching based on the last known piece given by the in-game randomizer.
   // See canonical_sequences.hpp for the batch layout and the online-validated NES table.
   const int *lastPieceSequences = firstPieceIndex < 0
-    ? correctedSequencesNoLastPieceKnown
+    ? canonicalSequencesNoLastPieceKnown
     : canonicalPieceSequencesForLastPiece[firstPieceIndex];
 	
   // Special case: if the playout count is equal to the full count of possible sequences at the requested length, use the exahustive sequence list,

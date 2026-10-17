@@ -9,6 +9,7 @@
 // I have to include the C++ files here due to a complication of node-gyp. Consider this the equivalent
 // of listing all the C++ sources in the makefile (Node-gyp seems to only work with 1 source rn).
 #include "../data/tetrominoes.cpp"
+#include "../data/canonical_sequences.cpp"
 #include "eval.cpp"
 #include "eval_context.cpp"
 #include "move_result.cpp"

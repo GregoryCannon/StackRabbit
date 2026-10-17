@@ -36,6 +36,7 @@
 #define SEMI_HOLE_PROPORTION 0.6f // Value used for things that are sort of like holes but not fully, e.g. unfilled wells while digging
 #define SEQUENCE_LENGTH 20
 #define EXHAUSTIVE_SEQUENCE_LENGTH 4
+#define EXHAUSTIVE_SEQUENCE_COUNT 2401 // All 7^4 piece sequences of length 4, lexicographically ordered (their prefixes serve as the exhaustive lists for playout lengths 1-4).
 #define CANONICAL_SEQUENCE_BATCH_SIZE 8000 // Rows per canonical piece-sequence batch (see canonical_sequences.hpp). Playout counts get clamped to this.
 
 #endif
