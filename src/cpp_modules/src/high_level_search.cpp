@@ -429,7 +429,6 @@ std::string getTopMoveList(GameState gameState, const Piece *firstPiece, const P
   // Keep a running list of the top X possibilities as the move search is happening.
   // Keep twice as many as we'll eventually need, since some duplicates may be removed before playouts start
   int numSorted = keepTopN * 2;
-  printf("SecondPiece %p %d\n", secondPiece, secondPiece == NULL);
 
   // Get the list of evaluated possibilities
   list<Possibility> possibilityList;
