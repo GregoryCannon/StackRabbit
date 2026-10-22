@@ -200,6 +200,7 @@ struct EngineMoveData {
   PlayoutData playout6; // 16 %ile
   PlayoutData playout7; // Worst case
   std::string evalExplanation; // Concatenated non‑zero factor contributions
+  bool isPlayerMove; // True when this move matches the player's move (from playerBoardAfter)
 };
 
 #endif

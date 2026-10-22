@@ -29,7 +29,8 @@
 #define DEFAULT_PRUNING_BREADTH 12
 
 // Engine API params
-#define NUM_TOP_ENGINE_MOVES 8
+#define NUM_ENGINE_MOVES 8
+#define NUM_ENGINE_MOVES_ADJUSTMENTS 3
 
 // Logistics of move search and pruning
 #define LOCK_POSITION_REPEAT_CAP_PROPORTION .25 // Only used for current+next piece search. Refers to the limit on the percent of positions considered that can have the same first move. This increases the diversity of moves considered.

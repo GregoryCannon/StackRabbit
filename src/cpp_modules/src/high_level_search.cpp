@@ -354,26 +354,26 @@ std::string rateMove(GameState gameState, const Piece *firstPiece, const Piece *
     
     if (hasNb){
       // NB Playouts
-      bool bestValUnset = true;
       bestValAfterAdj = FLOAT_MIN;
-      bool playerValUnset = true;
       playerValAfterAdj = FLOAT_MIN;
       numPlayedOut = 0;
+      // Play out the top `numCandidatesToPlayout` continuations, plus any continuations
+      // whose first placement matches the player's (the sorted list is fully scanned
+      // to find them, but scanning without playouts is cheap). The player's move can
+      // rank arbitrarily low in this list, so it must never gate early termination.
       for (auto possibility : sortedListD2){
-        if (numPlayedOut >= numCandidatesToPlayout && !playerValUnset) {
-          break;
+        bool inTopSet = numPlayedOut < numCandidatesToPlayout;
+        bool isPlayerSibling = lockLocationEquals(playerMove.firstPlacement, possibility.firstPlacement);
+        if (inTopSet || isPlayerSibling){
+          float overallScore = possibility.immediateReward + getPlayoutScore(possibility.resultingState, playoutCount, playoutLength, pieceRangeContextLookup, secondPiece->index, /* playoutDataList */ NULL);
+          if (overallScore > bestValAfterAdj) {
+            bestValAfterAdj = overallScore;
+          }
+          if (isPlayerSibling && overallScore > playerValAfterAdj) {
+            playerValAfterAdj = overallScore;
+          }
+          numPlayedOut++;
         }
-        float overallScore = possibility.immediateReward + getPlayoutScore(possibility.resultingState, playoutCount, playoutLength, pieceRangeContextLookup, secondPiece->index, /* playoutDataList */ NULL);
-        if (bestValUnset || overallScore > bestValAfterAdj) {
-          bestValUnset = false;
-          bestValAfterAdj = overallScore;
-        }
-        if (lockLocationEquals(playerMove.firstPlacement, possibility.firstPlacement)
-            && (playerValUnset || overallScore > playerValAfterAdj)) {
-          playerValUnset = false;
-          playerValAfterAdj = overallScore;
-        }
-        numPlayedOut++;
       }
     }
   }
@@ -386,7 +386,7 @@ std::string rateMove(GameState gameState, const Piece *firstPiece, const Piece *
  * sorted move list (ordered by playout score).
  * @returns true if the move had legal playouts and was added, false otherwise.
  */
-bool playoutAndInsert(Possibility const& possibility, int playoutCount, int playoutLength, const PieceRangeContext pieceRangeContextLookup[3], int lastSeenPieceIndex, bool generateExplanation, OUT list<EngineMoveData> &sortedList){
+bool playoutAndInsert(Possibility const& possibility, int playoutCount, int playoutLength, const PieceRangeContext pieceRangeContextLookup[3], int lastSeenPieceIndex, bool generateExplanation, bool isPlayerMove, OUT list<EngineMoveData> &sortedList){
   vector<PlayoutData> playoutDataList = {};
   float overallScore = possibility.immediateReward
         + getPlayoutScore(possibility.resultingState, playoutCount, playoutLength, pieceRangeContextLookup, lastSeenPieceIndex, &playoutDataList);
@@ -411,6 +411,7 @@ bool playoutAndInsert(Possibility const& possibility, int playoutCount, int play
     /* playout6 (16 %ile case) */ playoutDataList.at(len * 5 / 6),
     /* playout7 (worst case) */ playoutDataList.at(len - 1),
     /* evalExplanation */ generateExplanation ? possibility.evalExplanation : std::string(""),
+    /* isPlayerMove */ isPlayerMove,
   };
   insertIntoList(newMoveData, sortedList);
   return true;
@@ -424,6 +425,7 @@ bool playoutAndInsert(Possibility const& possibility, int playoutCount, int play
  * @param playerBoardAfter - optional board resulting from the player's move (i.e. secondBoard).
  *   When provided, the returned list is guaranteed to include the player's move
  *   (appended in sorted order, usually last) even if it wouldn't otherwise make the top N.
+ *   Included moves have isPlayerMove set to true in EngineMoveData and in the JSON output.
  */
 std::string getTopMoveList(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int keepTopN, int playoutCount, int playoutLength, const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3], bool generateExplanation, unsigned int *playerBoardAfter){
   // Keep a running list of the top X possibilities as the move search is happening.
@@ -457,7 +459,7 @@ std::string getTopMoveList(GameState gameState, const Piece *firstPiece, const P
       break;
     }
     // printf("Doing playout for: %s %s\n", encodeLockPosition(possibility.firstPlacement).c_str(), encodeLockPosition(possibility.secondPlacement).c_str());
-    if (playoutAndInsert(possibility, playoutCount, playoutLength, pieceRangeContextLookup, lastSeenPiece->index, generateExplanation, sortedList)){
+    if (playoutAndInsert(possibility, playoutCount, playoutLength, pieceRangeContextLookup, lastSeenPiece->index, generateExplanation, /* isPlayerMove= */ false, sortedList)){
       numAdded++;
     }
   }
@@ -508,7 +510,7 @@ std::string getTopMoveList(GameState gameState, const Piece *firstPiece, const P
       }
       // If the player move wasn't already played out, do the playouts now
       if (!playerMoveInTopN) {
-        playoutAndInsert(playerPossibility, playoutCount, playoutLength, pieceRangeContextLookup, lastSeenPiece->index, generateExplanation, sortedList);
+        playoutAndInsert(playerPossibility, playoutCount, playoutLength, pieceRangeContextLookup, lastSeenPiece->index, generateExplanation, /* isPlayerMove= */ true, sortedList);
       }
     }
   }

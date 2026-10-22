@@ -181,6 +181,11 @@ std::string formatEngineMoveList(list<EngineMoveData> moveList, const Piece *fir
       output += "\"";
     }
 
+    // Only present when true (i.e. when a player board was supplied and this move matched it)
+    if (move.isPlayerMove) {
+      output += ", \"isPlayerMove\":true";
+    }
+
     output += ", \"playout1\":";
     output += formatPlayout(move.playout1);
     output += ", \"playout2\":";

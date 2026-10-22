@@ -178,14 +178,14 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
       // needExplanation(GET_TOP_MOVES) is true, so per-move evalExplanation strings are populated.
       // Optionally includes the player's move (from secondBoard) even if it wouldn't otherwise make the top N.
       unsigned int *playerBoard = secondBoardStr.length() > 0 ? secondBoard : nullptr;
-      return getTopMoveList(startingGameState, curPiece, nextPiece, NUM_TOP_ENGINE_MOVES, playoutCount, playoutLength, &context, pieceRangeContextLookup, needExplanation(GET_TOP_MOVES), playerBoard);
+      return getTopMoveList(startingGameState, curPiece, nextPiece, NUM_ENGINE_MOVES, playoutCount, playoutLength, &context, pieceRangeContextLookup, needExplanation(GET_TOP_MOVES), playerBoard);
     }
 
     case GET_TOP_MOVES_HYBRID: {
       // needExplanation(GET_TOP_MOVES_HYBRID) is true, so both lists include evalExplanation.
       unsigned int *playerBoardHybrid = secondBoardStr.length() > 0 ? secondBoard : nullptr;
-      std::string nnbResult = getTopMoveList(startingGameState, curPiece, /* nextPiece= */ NULL, NUM_TOP_ENGINE_MOVES, playoutCount, playoutLength, &context, pieceRangeContextLookup, needExplanation(GET_TOP_MOVES_HYBRID), playerBoardHybrid);
-      std::string nbResult = getTopMoveList(startingGameState, curPiece, nextPiece, NUM_TOP_ENGINE_MOVES, playoutCount, playoutLength, &context, pieceRangeContextLookup, needExplanation(GET_TOP_MOVES_HYBRID), playerBoardHybrid);
+      std::string nnbResult = getTopMoveList(startingGameState, curPiece, /* nextPiece= */ NULL, NUM_ENGINE_MOVES, playoutCount, playoutLength, &context, pieceRangeContextLookup, needExplanation(GET_TOP_MOVES_HYBRID), playerBoardHybrid);
+      std::string nbResult = getTopMoveList(startingGameState, curPiece, nextPiece, NUM_ENGINE_MOVES_ADJUSTMENTS, playoutCount, playoutLength, &context, pieceRangeContextLookup, needExplanation(GET_TOP_MOVES_HYBRID), playerBoardHybrid);
       return "{\"noNextBox\":" + nnbResult + ", \"nextBox\":" + nbResult + "}";
     }
 
