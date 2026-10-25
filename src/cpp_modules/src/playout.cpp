@@ -3,6 +3,7 @@
 #include "utils.hpp"
 #include "params.hpp"
 #include <algorithm>
+#include "piece_rng.hpp"
 #include "../data/canonical_sequences.hpp"
 
 using namespace std;
@@ -28,13 +29,15 @@ LockPlacement pickLockPlacement(GameState gameState,
 
 /**
  * Plays out a starting state N moves into the future.
+ * @param weight - probability weight of this piece sequence, recorded on the playout data
  * @returns the total value of the playout (intermediate rewards + eval of the final board)
  */
-float playSequence(GameState gameState, const PieceRangeContext pieceRangeContextLookup[3], const int pieceSequence[SEQUENCE_LENGTH], int playoutLength, OUT vector<PlayoutData> *playoutDataList) {
+float playSequence(GameState gameState, const PieceRangeContext pieceRangeContextLookup[3], const int pieceSequence[SEQUENCE_LENGTH], int playoutLength, float weight, OUT vector<PlayoutData> *playoutDataList) {
   // Note down the original AI mode to prevent the AI from putting itself in alternate modes to affect the valuations
   AiMode originalAiMode = getEvalContext(gameState, pieceRangeContextLookup, /* useTestWeights= */ false).aiMode;
   
   PlayoutData newPlayoutData;
+  newPlayoutData.weight = weight;
   const bool trackPlayouts = playoutDataList != NULL;
 
   float totalReward = 0;
@@ -141,15 +144,23 @@ float getPlayoutScore(GameState gameState, int playoutCount, int playoutLength, 
     || (playoutCount == 2401 && playoutLength == 4);
 
   float playoutScore = 0;
+  // The exhaustive list contains every sequence once, so weight each by how likely the NES randomizer
+  // is to produce it after the last known piece (repeats are rare). Sampled sequences are already
+  // NES-distributed, so they keep equal weights.
+  float weightedPlayoutScore = 0;
+  float totalWeight = 0;
   vector<float> playoutScores;
   for (int i = 0; i < playoutCount; i++) {
     // Do one playout
     const int *pieceSequence = useExhaustiveSequences 
           ? exhaustivePieceSequences + i * EXHAUSTIVE_SEQUENCE_LENGTH // Index into the exhaustive list of possible sequences;
           : lastPieceSequences + i * SEQUENCE_LENGTH; // Index into the batch for this last-known piece;
-    float resultScore = playSequence(gameState, pieceRangeContextLookup, pieceSequence, playoutLength, playoutDataList);
+    float weight = useExhaustiveSequences ? getSequenceProbability(pieceSequence, playoutLength, firstPieceIndex) : 1.0f;
+    float resultScore = playSequence(gameState, pieceRangeContextLookup, pieceSequence, playoutLength, weight, playoutDataList);
     playoutScores.push_back(resultScore);
     playoutScore += resultScore;
+    weightedPlayoutScore += weight * resultScore;
+    totalWeight += weight;
   }
 
   if (PLAYOUT_RESULT_LOGGING_ENABLED) {
@@ -173,6 +184,9 @@ float getPlayoutScore(GameState gameState, int playoutCount, int playoutLength, 
       printf("Standard Deviation: %.2f\n", stdDev);
       printf("95%% Confidence Interval: [%.2f, %.2f]\n", mean - marginOfError, mean + marginOfError);
     }
+  }
+  if (useExhaustiveSequences && totalWeight > 0) {
+    return weightedPlayoutScore / totalWeight;
   }
   return playoutCount == 0 ? 0 : (playoutScore / playoutCount);
 }
