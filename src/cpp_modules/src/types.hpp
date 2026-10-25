@@ -180,6 +180,7 @@ struct Possibility {
 /** A data model for one playout within a series of such playouts*/
 struct PlayoutData {
   float totalScore;
+  float weight; // Probability weight of the piece sequence (1 for sampled sequences, which are already NES-distributed)
   std::vector<LockLocation> placements;
   std::string pieceSequence;
   unsigned int resultingBoard[20];

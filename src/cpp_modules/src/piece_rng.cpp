@@ -29,3 +29,16 @@ Piece getRandomPiece(Piece previousPiece) {
   // Never reaches here since cumulative probability is always == 64;
   return {};
 }
+
+float getSequenceProbability(const int *pieceSequence, int length, int lastPieceIndex) {
+  float probability = 1.0f;
+  int prevTableIndex = lastPieceIndex < 0 ? -1 : pieceIndexToTableIndex[lastPieceIndex];
+  for (int i = 0; i < length; i++) {
+    int tableIndex = pieceIndexToTableIndex[pieceSequence[i]];
+    probability *= prevTableIndex < 0
+      ? 1.0f / 7
+      : transitionProbability[prevTableIndex][tableIndex] / 64.0f;
+    prevTableIndex = tableIndex;
+  }
+  return probability;
+}

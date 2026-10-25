@@ -382,6 +382,32 @@ std::string rateMove(GameState gameState, const Piece *firstPiece, const Piece *
 }
 
 /**
+ * Index of the playout at the given fraction (numerator / denominator) of the way from best to worst,
+ * by cumulative sequence probability. With equal weights this is exactly len * numerator / denominator.
+ */
+int getPercentileIndex(vector<PlayoutData> const& playoutDataList, int numerator, int denominator){
+  int len = (int) playoutDataList.size();
+  bool equalWeights = true;
+  float totalWeight = 0;
+  for (auto const& playout : playoutDataList) {
+    equalWeights = equalWeights && playout.weight == playoutDataList.front().weight;
+    totalWeight += playout.weight;
+  }
+  if (equalWeights) {
+    return len * numerator / denominator;
+  }
+  float target = totalWeight * numerator / denominator;
+  float cumulativeWeight = 0;
+  for (int i = 0; i < len; i++) {
+    cumulativeWeight += playoutDataList[i].weight;
+    if (cumulativeWeight > target) {
+      return i;
+    }
+  }
+  return len - 1;
+}
+
+/**
  * Runs full playouts for a single possibility and inserts the result into the
  * sorted move list (ordered by playout score).
  * @returns true if the move had legal playouts and was added, false otherwise.
@@ -404,11 +430,11 @@ bool playoutAndInsert(Possibility const& possibility, int playoutCount, int play
     /* shallowEvalScore */ possibility.evalScoreInclReward,
     /* resultingBoard */ formatBoard(possibility.resultingState.board),
     /* playout1 (best case) */ playoutDataList.at(0),
-    /* playout2 (83 %ile case) */ playoutDataList.at(len / 6), // Fractions are "backwards" because moves are ordered best (100%ile) to worst (0%ile).
-    /* playout3 (66 %ile case) */ playoutDataList.at(len / 3),
-    /* playout4 (median case) */ playoutDataList.at(len / 2),
-    /* playout5 (33 %ile case) */ playoutDataList.at(len * 2 / 3),
-    /* playout6 (16 %ile case) */ playoutDataList.at(len * 5 / 6),
+    /* playout2 (83 %ile case) */ playoutDataList.at(getPercentileIndex(playoutDataList, 1, 6)), // Fractions are "backwards" because moves are ordered best (100%ile) to worst (0%ile).
+    /* playout3 (66 %ile case) */ playoutDataList.at(getPercentileIndex(playoutDataList, 1, 3)),
+    /* playout4 (median case) */ playoutDataList.at(getPercentileIndex(playoutDataList, 1, 2)),
+    /* playout5 (33 %ile case) */ playoutDataList.at(getPercentileIndex(playoutDataList, 2, 3)),
+    /* playout6 (16 %ile case) */ playoutDataList.at(getPercentileIndex(playoutDataList, 5, 6)),
     /* playout7 (worst case) */ playoutDataList.at(len - 1),
     /* evalExplanation */ generateExplanation ? possibility.evalExplanation : std::string(""),
     /* isPlayerMove */ isPlayerMove,
