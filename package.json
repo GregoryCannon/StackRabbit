@@ -9,7 +9,8 @@
     "move_test": "tsc && node built/src/server/move_search_test.js",
     "cpp_main": "g++ entrypoint.cpp && ./a.out",
     "cpp_benchmark": "g++ benchmark.cpp && ./a.out",
-    "wasm_build": "em++ -O3 src/cpp_modules/src/wasm.cpp --bind -lembind -g0 -o compiledWasmRabbit.js -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=64MB -sMAXIMUM_MEMORY=2GB"
+    "wasm_build": "em++ -O3 src/cpp_modules/src/wasm.cpp --bind -lembind -g0 -o compiledWasmRabbit.js -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=64MB -sMAXIMUM_MEMORY=2GB",
+    "wasm_build_trainer": "npm run wasm_build && cp -f compiledWasmRabbit.js compiledWasmRabbit.wasm /Users/gregcannon/Documents/TetrisTrainer/docs/wasm/"
   },
   "author": "",
   "license": "ISC",
