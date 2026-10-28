@@ -249,6 +249,10 @@ std::pair<int, float> updateSurfaceAndHoles(int surfaceArray[10], unsigned int b
         if (rating == 1){
           lowestHoleInCol = r;
           numTrueHoles += 1;
+        } else if (numPartialHoles > 3){
+          // If we already have too many tuck setups, start counting them as holes to discourage setting up more and more stacked tuck setups.
+          // They're still marked as overhang cells in analyzeHole so SR will still find the tucks. But we'll still punish the eval like a hole.
+          numPartialHoles += 1;
         } else {
           numPartialHoles += rating;
         }

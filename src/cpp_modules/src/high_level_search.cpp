@@ -502,8 +502,9 @@ std::string getTopMoveList(GameState gameState, const Piece *firstPiece, const P
     if (foundPlayer) {
       // Check if the player move is already in the top N.
       bool playerMoveInTopN = false;
-      for (auto const& move : sortedList) {
+      for (auto &move : sortedList) {
         if (lockLocationEquals(move.firstPlacement, playerPossibility.firstPlacement)) {
+          move.isPlayerMove = true;
           playerMoveInTopN = true;
           break;
         }
