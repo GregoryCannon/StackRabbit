@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node-gyp build && tsc && node built/src/server/app.js",
     "cpp_test": "node-gyp build && tsc && node built/src/server/cmodules.js",
+    "cpp_test_unit": "g++ src/cpp_modules/tests/stackrabbit_test.cpp -o build/cpp_unit_tests && ./build/cpp_unit_tests",
     "move_test": "tsc && node built/src/server/move_search_test.js",
     "cpp_main": "g++ entrypoint.cpp && ./a.out",
     "cpp_benchmark": "g++ benchmark.cpp && ./a.out",
