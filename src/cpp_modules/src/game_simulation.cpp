@@ -34,7 +34,7 @@ int countInputsBeforeReactionTime(int reactionTime, char const *inputFrameTimeli
   return numInputs;
 }
 
-std::vector<int> simulateGame(char const *inputFrameTimeline, int startingLevel, int maxLines, int playoutCount, int playoutLength, bool useTestWeights){
+std::vector<int> simulateGame(char const *inputFrameTimeline, int startingLevel, int maxLines, int playoutCount, int playoutLength, bool useTestWeights, AggressionLevel aggressionLevel){
   // Init empty data structures
   GameState gameState = {
     /* board= */ {},
@@ -66,7 +66,7 @@ std::vector<int> simulateGame(char const *inputFrameTimeline, int startingLevel,
     nextPiece = getRandomPiece(curPiece);
 
     // Figure out modes and eval context
-    const EvalContext evalContextRaw = getEvalContext(gameState, pieceRangeContextLookup, useTestWeights);
+    const EvalContext evalContextRaw = getEvalContext(gameState, pieceRangeContextLookup, useTestWeights, aggressionLevel);
     const EvalContext *evalContext = &evalContextRaw;
 
     LockLocation bestMove = playOneMove(gameState, &curPiece, NULL, DEFAULT_PRUNING_BREADTH, playoutCount, playoutLength, evalContext, pieceRangeContextLookup);
@@ -154,13 +154,13 @@ void printStats(const std::vector<std::pair<int, int>>& games, int maxLines) {
     std::cout << std::setprecision(0) << "Average score of non-killscreen games: " << nonKillscreenAvg << std::endl;
 }
 
-void simulateGames(int numGames, char const *inputFrameTimeline, int startingLevel, int maxLines, int playoutCount, int playoutLength, bool useTestWeights, OUT std::vector<std::pair<int, int>> &games){
+void simulateGames(int numGames, char const *inputFrameTimeline, int startingLevel, int maxLines, int playoutCount, int playoutLength, bool useTestWeights, AggressionLevel aggressionLevel, OUT std::vector<std::pair<int, int>> &games){
   printf("Starting game simulations...\n");
 
   auto time_start = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
   for (int i = 0; i < numGames; i++) {
-    std::vector<int> result = simulateGame(inputFrameTimeline, startingLevel, maxLines, playoutCount, playoutLength, useTestWeights);
+    std::vector<int> result = simulateGame(inputFrameTimeline, startingLevel, maxLines, playoutCount, playoutLength, useTestWeights, aggressionLevel);
     games.push_back({result[0], result[1]});
     std::cout << i << ": " << result[0] << "Lines: " << result[1] << std::endl;
   }
@@ -172,7 +172,7 @@ void simulateGames(int numGames, char const *inputFrameTimeline, int startingLev
 }
 
 // (Thanks Gemini)
-void simulateGamesThreaded(int numGames, const char* inputFrameTimeline, int startingLevel, int maxLines, int playoutCount, int playoutLength, bool useTestWeights, OUT std::vector<std::pair<int, int>>& games) {
+void simulateGamesThreaded(int numGames, const char* inputFrameTimeline, int startingLevel, int maxLines, int playoutCount, int playoutLength, bool useTestWeights, AggressionLevel aggressionLevel, OUT std::vector<std::pair<int, int>>& games) {
     auto time_start = std::chrono::steady_clock::now();
 
     games.resize(numGames);
@@ -191,7 +191,7 @@ void simulateGamesThreaded(int numGames, const char* inputFrameTimeline, int sta
     // 3. Update the worker to increment the counter
     auto worker = [&](int startIdx, int endIdx) {
         for (int i = startIdx; i < endIdx; ++i) {
-            std::vector<int> result = simulateGame(inputFrameTimeline, startingLevel, maxLines, playoutCount, playoutLength, useTestWeights);
+            std::vector<int> result = simulateGame(inputFrameTimeline, startingLevel, maxLines, playoutCount, playoutLength, useTestWeights, aggressionLevel);
             games[i] = {result[0], result[1]};
             gamesCompleted++; // Safely increments without locks
         }

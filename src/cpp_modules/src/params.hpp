@@ -4,10 +4,27 @@
 #include "config.hpp"
 #include "types.hpp"
 
+/**
+ * The burnCoef from the aggression level input parameter, which overrides
+ * the value in MAIN_WEIGHTS-derived weight sets.
+ */
+float getAggressionBurnCoef(AggressionLevel aggressionLevel){
+  switch (aggressionLevel) {
+    case SAFE:
+      return -9;
+    case AGGRO:
+      return -15;
+    case HYPER:
+      return -25;
+    default:
+      return -9;
+  }
+}
+
 const FastEvalWeights MAIN_WEIGHTS = {
   /* avgHeightCoef= */ -6,
   /* builtOutLeftCoef= */ 1,
-  /* burnCoef= */ PLAY_SAFE ? -9 : -20,
+  /* burnCoef= */ -9,
   /* coveredWellCoef= */ -10,
   /* col9Coef= */ -3,
   /* deathCoef= */ -3000,
@@ -26,7 +43,7 @@ const FastEvalWeights MAIN_WEIGHTS = {
 const FastEvalWeights TEST_WEIGHTS = {
   /* avgHeightCoef= */ -6,
   /* builtOutLeftCoef= */ 1,
-  /* burnCoef= */ PLAY_SAFE ? -9 : -15,
+  /* burnCoef= */ -9,
   /* coveredWellCoef= */ -12,
   /* col9Coef= */ -3,
   /* deathCoef= */ -3000,
@@ -61,25 +78,6 @@ const FastEvalWeights PLAY_PERFECT_WEIGHTS = {
   /* surfaceLeft= */ 0,
   /* unableToBurnCoef= */ 0
 };
-
-// const FastEvalWeights SAFE_WEIGHTS = {
-//   MAIN_WEIGHTS.avgHeightCoef,
-//   MAIN_WEIGHTS.builtOutLeftCoef,
-//   /* burnCoef= */ -6,
-//   MAIN_WEIGHTS.coveredWellCoef,
-//   MAIN_WEIGHTS.col9Coef,
-//   MAIN_WEIGHTS.deathCoef,
-//   MAIN_WEIGHTS.extremeGapCoef,
-//   MAIN_WEIGHTS.holeCoef,
-//   MAIN_WEIGHTS.holeWeightCoef,
-//   MAIN_WEIGHTS.inaccessibleLeftCoef,
-//   MAIN_WEIGHTS.inaccessibleRightCoef,
-//   MAIN_WEIGHTS.tetrisCoef,
-//   MAIN_WEIGHTS.tetrisReadyCoef,
-//   MAIN_WEIGHTS.surfaceCoef,
-//   MAIN_WEIGHTS.surfaceLeftCoef,
-//   MAIN_WEIGHTS.unableToBurnCoef
-// };
 
 const FastEvalWeights DIG_WEIGHTS = {
   MAIN_WEIGHTS.avgHeightCoef,
@@ -156,28 +154,39 @@ const FastEvalWeights LINEOUT_WEIGHTS = {
   MAIN_WEIGHTS.tetrisReadyCoef,
   MAIN_WEIGHTS.surfaceCoef,
   /* surfaceLeft= */ 40,
-  MAIN_WEIGHTS.unableToBurnCoef
+  /* unableToBurnCoef= */ 0,
 };
 
-FastEvalWeights getWeights(AiMode mode, bool useTestWeights){
+FastEvalWeights getWeights(AiMode mode, bool useTestWeights, AggressionLevel aggressionLevel){
   if (SHOULD_PLAY_PERFECT){
     return PLAY_PERFECT_WEIGHTS;
   }
+  FastEvalWeights weights;
   switch (mode) {
     case DIG:
-      return DIG_WEIGHTS;
+      weights = DIG_WEIGHTS;
+      break;
     case NEAR_KILLSCREEN:
-      return NEAR_KILLSCREEN_WEIGHTS;
+      weights = NEAR_KILLSCREEN_WEIGHTS;
+      break;
     case DIRTY_NEAR_KILLSCREEN:
-      return DIRTY_NEAR_KILLSCREEN_WEIGHTS;
+      weights = DIRTY_NEAR_KILLSCREEN_WEIGHTS;
+      break;
     case LINEOUT:
-      return LINEOUT_WEIGHTS;
+      weights = LINEOUT_WEIGHTS;
+      break;
     case STANDARD:
-      return useTestWeights ? TEST_WEIGHTS : MAIN_WEIGHTS;
+      weights = useTestWeights ? TEST_WEIGHTS : MAIN_WEIGHTS;
+      break;
     default:
       printf("Unknown AI Mode");
       return {};
   }
+  // The aggression level parameter overrides the burnCoef of all MAIN_WEIGHTS-derived sets
+  if (mode == STANDARD || mode == NEAR_KILLSCREEN || mode == DIRTY_NEAR_KILLSCREEN){
+    weights.burnCoef = getAggressionBurnCoef(aggressionLevel);
+  }
+  return weights;
 }
 
 

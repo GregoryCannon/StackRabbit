@@ -1,6 +1,8 @@
 import { LINE_CAP, MAX_CPP_PLAYOUT_MOVES } from "./params";
-import { INITIAL_PLACEMENT, PieceId, SearchState, UrlArguments } from "./types";
+import { INITIAL_PLACEMENT, PieceId, AggressionLevel, SearchState, UrlArguments } from "./types";
 import { getDasEquivalentInputTimeline, parseBoard } from "./utils";
+
+const AGGRESSION_LEVELS: AggressionLevel[] = ["safe", "aggro", "hyper"];
 
 /**
  * Parses and validates the inputs
@@ -24,6 +26,7 @@ export function parseUrlArguments(
     playoutCount: 49,
     playoutLength: 2,
     pruningBreadth: 20,
+    aggressionLevel: "safe",
     dasCharge: -1,
   };
 
@@ -149,6 +152,19 @@ export function parseUrlArguments(
         result.pruningBreadth = breadth;
         break;
 
+      case "aggressionLevel":
+        if (!value) {
+          throw new Error("Missing value for aggressionLevel parameter");
+        }
+        const style = value.toLowerCase();
+        if (!AGGRESSION_LEVELS.includes(style as AggressionLevel)) {
+          throw new Error(
+            "Invalid aggression level (expected safe, aggro, or hyper): " + value
+          );
+        }
+        result.aggressionLevel = style as AggressionLevel;
+        break;
+
       case "dasCharge":
         result.dasCharge = parseInt(value);
         break;
@@ -195,5 +211,5 @@ export function getCppEncodedInputString(
   // If DAS, tell the CPP backend we're a 10-12 Hz tapper 
   const effInputFrameTimeline = useDAS ? getDasEquivalentInputTimeline(urlArgs.inputFrameTimeline) : urlArgs.inputFrameTimeline;
   // Includes the final | character at the end due to how the string is parsed (cpp doesn't have an easy split method rip)
-  return `${boardStr}|${searchState.level}|${searchState.lines}|${curPieceIndex}|${nextPieceIndex}|${effInputFrameTimeline}|${urlArgs.playoutCount}|${urlArgs.playoutLength}|${urlArgs.pruningBreadth}|`;
+  return `${boardStr}|${searchState.level}|${searchState.lines}|${curPieceIndex}|${nextPieceIndex}|${effInputFrameTimeline}|${urlArgs.playoutCount}|${urlArgs.playoutLength}|${urlArgs.pruningBreadth}|${urlArgs.aggressionLevel}|`;
 }

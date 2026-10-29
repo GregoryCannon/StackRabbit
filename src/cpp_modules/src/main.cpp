@@ -55,6 +55,7 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
   int playoutLength = DEFAULT_PLAYOUT_LENGTH;
   int pruningBreadth = DEFAULT_PRUNING_BREADTH;
   std::string inputFrameTimeline;
+  AggressionLevel aggressionLevel = SAFE;
 
   // Loop through the other args
   std::string nonBoardInputString;
@@ -127,6 +128,17 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
       break;
     case 7:
       pruningBreadth = argAsInt;
+      break;
+    case 8:
+      // Play style: "safe", "aggro", or "hyper" (defaults to safe)
+      if (arg == "aggro"){
+        aggressionLevel = AGGRO;
+      } else if (arg == "hyper"){
+        aggressionLevel = HYPER;
+      } else {
+        aggressionLevel = SAFE;
+      }
+      break;
     default:
       break;
     }
@@ -152,7 +164,7 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
     getPieceRangeContext(inputFrameTimeline.c_str(), 2, /* gravityDoubled= */ false),
     getPieceRangeContext(inputFrameTimeline.c_str(), 3, /* gravityDoubled= */ false),
   };
-  const EvalContext context = getEvalContext(startingGameState, pieceRangeContextLookup, /* useTestWeights= */ false);
+  const EvalContext context = getEvalContext(startingGameState, pieceRangeContextLookup, /* useTestWeights= */ false, aggressionLevel);
 
   // Recalculate holes once we have the eval context
   pair<int, float> result2 = updateSurfaceAndHoles(startingGameState.surfaceArray, startingGameState.board, context.countWellHoles ? -1 : context.wellColumn, context.aiMode == DIG);
@@ -216,7 +228,7 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
       int rot = bestMove.rotationIndex;
       int yOffset = bestMove.y - curPiece->initialY;
 
-      const EvalContext contextTest = getEvalContext(startingGameState, pieceRangeContextLookup, /* useTestWeights= */ true);
+      const EvalContext contextTest = getEvalContext(startingGameState, pieceRangeContextLookup, /* useTestWeights= */ true, aggressionLevel);
       LockLocation bestMoveTest = playOneMove(startingGameState, curPiece, nextPiece, pruningBreadth, playoutCount, playoutLength, &contextTest, pieceRangeContextLookup, testPtr);
       int xOffsetTest = bestMoveTest.x - 3;
       int rotTest = bestMoveTest.rotationIndex;

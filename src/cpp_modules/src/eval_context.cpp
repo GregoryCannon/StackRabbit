@@ -29,14 +29,10 @@ AiMode getAiMode(GameState gameState, int currentMax5TapHeight, int max5TapHeigh
   if (gameState.numTrueHoles >= 1) {
     return DIG;
   }
-  // // Optionally play very safe on killscreen
-  // if (PLAY_SAFE_ON_KILLSCREEN && gameState.level >= 29) {
-  //   return SAFE;
-  // }
   return STANDARD;
 }
 
-const EvalContext getEvalContext(GameState gameState, const PieceRangeContext pieceRangeContextLookup[], bool useTestWeights){
+const EvalContext getEvalContext(GameState gameState, const PieceRangeContext pieceRangeContextLookup[], bool useTestWeights, AggressionLevel aggressionLevel){
   EvalContext context = {};
 
   // Copy the piece range context from the global lookup
@@ -49,15 +45,16 @@ const EvalContext getEvalContext(GameState gameState, const PieceRangeContext pi
   // Set the mode
   AiMode aiMode = getAiMode(gameState, context.pieceRangeContext.max5TapHeight, pieceRangeContextLookup[0].max5TapHeight);
   context.aiMode = aiMode;
-  context.weights = getWeights(context.aiMode, useTestWeights);
+  context.aggressionLevel = aggressionLevel;
+  context.weights = getWeights(context.aiMode, useTestWeights, aggressionLevel);
 
   // Set the scare heights
   if (aiMode == LINEOUT) {
     context.scareHeight = 0;
     context.maxSafeCol9 = -1;
   } else {
-    float prelimScareHeight = context.pieceRangeContext.max5TapHeight - (PLAY_SAFE ? 4 : 3);
-    float prelimCol9 = context.pieceRangeContext.max4TapHeight - (PLAY_SAFE ? 6 : 5);
+    float prelimScareHeight = context.pieceRangeContext.max5TapHeight - 3; // formerly 4 if play_safe
+    float prelimCol9 = context.pieceRangeContext.max4TapHeight - 5; // formerly 6 if play_safe
 
     prelimScareHeight = prelimScareHeight * 0.5 + 6 * 0.5;
     prelimCol9 = prelimCol9 * 0.5 + 8 * 0.5;

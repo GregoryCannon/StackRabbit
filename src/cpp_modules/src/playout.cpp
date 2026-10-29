@@ -30,9 +30,9 @@ LockPlacement pickLockPlacement(GameState gameState,
  * Plays out a starting state N moves into the future.
  * @returns the total value of the playout (intermediate rewards + eval of the final board)
  */
-float playSequence(GameState gameState, const PieceRangeContext pieceRangeContextLookup[3], const int pieceSequence[SEQUENCE_LENGTH], int playoutLength, OUT vector<PlayoutData> *playoutDataList) {
+float playSequence(GameState gameState, const PieceRangeContext pieceRangeContextLookup[3], const int pieceSequence[SEQUENCE_LENGTH], int playoutLength, AggressionLevel aggressionLevel, OUT vector<PlayoutData> *playoutDataList) {
   // Note down the original AI mode to prevent the AI from putting itself in alternate modes to affect the valuations
-  AiMode originalAiMode = getEvalContext(gameState, pieceRangeContextLookup, /* useTestWeights= */ false).aiMode;
+  AiMode originalAiMode = getEvalContext(gameState, pieceRangeContextLookup, /* useTestWeights= */ false, aggressionLevel).aiMode;
   
   PlayoutData newPlayoutData;
   const bool trackPlayouts = playoutDataList != NULL;
@@ -40,9 +40,9 @@ float playSequence(GameState gameState, const PieceRangeContext pieceRangeContex
   float totalReward = 0;
   for (int i = 0; i < playoutLength; i++) {
     // Figure out modes and eval context
-    const EvalContext evalContextRaw = getEvalContext(gameState, pieceRangeContextLookup, /* useTestWeights= */ false);
+    const EvalContext evalContextRaw = getEvalContext(gameState, pieceRangeContextLookup, /* useTestWeights= */ false, aggressionLevel);
     const EvalContext *evalContext = &evalContextRaw;
-    FastEvalWeights weights = getWeights(evalContext->aiMode, /* useTestWeights= */ false);
+    FastEvalWeights weights = getWeights(evalContext->aiMode, /* useTestWeights= */ false, aggressionLevel);
 
     // Get the lock placements
     std::vector<LockPlacement> lockPlacements;
@@ -106,7 +106,7 @@ float playSequence(GameState gameState, const PieceRangeContext pieceRangeContex
         return 0; // 0% chance of continuing perfect
       }
     } else {
-      FastEvalWeights rewardWeights = evalContext->aiMode == DIG ? getWeights(STANDARD, /* useTestWeights= */ false) : weights; // When the AI is digging, still deduct from the overall value of the sequence at standard amounts
+      FastEvalWeights rewardWeights = evalContext->aiMode == DIG ? getWeights(STANDARD, /* useTestWeights= */ false, aggressionLevel) : weights; // When the AI is digging, still deduct from the overall value of the sequence at standard amounts
       totalReward += getLineClearFactor(gameState.lines - oldLines, rewardWeights, evalContext->shouldRewardLineClears);
       if (PLAYOUT_LOGGING_ENABLED) {
         printBoard(gameState.board);
@@ -118,7 +118,7 @@ float playSequence(GameState gameState, const PieceRangeContext pieceRangeContex
 }
 
 
-float getPlayoutScore(GameState gameState, int playoutCount, int playoutLength, const PieceRangeContext pieceRangeContextLookup[3], int firstPieceIndex, OUT vector<PlayoutData> *playoutDataList){
+float getPlayoutScore(GameState gameState, int playoutCount, int playoutLength, const PieceRangeContext pieceRangeContextLookup[3], int firstPieceIndex, AggressionLevel aggressionLevel, OUT vector<PlayoutData> *playoutDataList){
   // // Don't perform playouts if logging is enabled
   // if (LOGGING_ENABLED) {
   //   return 0;
@@ -147,7 +147,7 @@ float getPlayoutScore(GameState gameState, int playoutCount, int playoutLength, 
     const int *pieceSequence = useExhaustiveSequences 
           ? exhaustivePieceSequences + i * EXHAUSTIVE_SEQUENCE_LENGTH // Index into the exhaustive list of possible sequences;
           : lastPieceSequences + i * SEQUENCE_LENGTH; // Index into the batch for this last-known piece;
-    float resultScore = playSequence(gameState, pieceRangeContextLookup, pieceSequence, playoutLength, playoutDataList);
+    float resultScore = playSequence(gameState, pieceRangeContextLookup, pieceSequence, playoutLength, aggressionLevel, playoutDataList);
     playoutScores.push_back(resultScore);
     playoutScore += resultScore;
   }

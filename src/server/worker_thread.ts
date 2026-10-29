@@ -24,7 +24,7 @@ function performComputationFinesseCpp(args: WorkerDataArgs): Object {
   const inputFrameTimeline = args.inputFrameTimeline;
   const useDAS = args.newSearchState.dasCharge != -1
 
-  const encodedInputString = `${boardStr}|${args.newSearchState.level}|${args.newSearchState.lines}|${curPieceIndex}|${nextPieceIndex}|${inputFrameTimeline}|${CPP_LIVEGAME_PLAYOUT_COUNT}|${CPP_LIVEGAME_PLAYOUT_LENGTH}|${CPP_LIVEGAME_PRUNING_BREADTH}|`;
+  const encodedInputString = `${boardStr}|${args.newSearchState.level}|${args.newSearchState.lines}|${curPieceIndex}|${nextPieceIndex}|${inputFrameTimeline}|${CPP_LIVEGAME_PLAYOUT_COUNT}|${CPP_LIVEGAME_PLAYOUT_LENGTH}|${CPP_LIVEGAME_PRUNING_BREADTH}|${args.aggressionLevel}|`;
   const result = JSON.parse(
     useDAS
       ? cModule.getLockValueLookupDas(encodedInputString)

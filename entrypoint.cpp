@@ -32,11 +32,11 @@ int runGames(){
 
   // Games with main weights
   printf("\n----- MAIN WEIGHTS ------\n");
-  simulateGamesThreaded(numGames, "X.....", 19, /* maxLines= */ 100, playoutCount, playoutLength, /* useTestWeights= */ false, games);
+  simulateGamesThreaded(numGames, "X.....", 19, /* maxLines= */ 100, playoutCount, playoutLength, /* useTestWeights= */ false, SAFE, games);
 
   // Games with test weights
   printf("\n----- TEST WEIGHTS ------\n");
-  simulateGamesThreaded(numGames, "X.....", 19, /* maxLines= */ 100, playoutCount, playoutLength, /* useTestWeights= */ true, games);
+  simulateGamesThreaded(numGames, "X.....", 19, /* maxLines= */ 100, playoutCount, playoutLength, /* useTestWeights= */ true, SAFE, games);
 
   // for (int i = 0; i < numGames; i++){
   //   printf("Game %d: %d points, %d lines\n", i, games[i].first, games[i].second);

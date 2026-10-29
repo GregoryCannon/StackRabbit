@@ -116,6 +116,16 @@ enum AiMode {
 };
 
 /**
+ * How aggressively the agent values burn potential.
+ * Overrides the burnCoef of MAIN_WEIGHTS-derived weight sets.
+ */
+enum AggressionLevel {
+  SAFE,
+  AGGRO,
+  HYPER,
+};
+
+/**
  * The relative weights of all the eval factors.
  */
 struct FastEvalWeights {
@@ -158,6 +168,7 @@ struct PieceRangeContext {
  */
 struct EvalContext {
   AiMode aiMode;
+  AggressionLevel aggressionLevel;
   FastEvalWeights weights;
   PieceRangeContext pieceRangeContext;
   int countWellHoles;

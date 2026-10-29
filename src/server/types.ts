@@ -23,6 +23,8 @@ export interface SimParams {
   dasCharge: number;
 }
 
+export type AggressionLevel = "safe" | "aggro" | "hyper";
+
 export interface UrlArguments {
   board: Board;
   secondBoard?: Board;
@@ -35,6 +37,7 @@ export interface UrlArguments {
   playoutCount: number; // Only used in C++ queries
   playoutLength: number; // Only used in C++ queries
   pruningBreadth: number; // Only used in C++ queries
+  aggressionLevel?: AggressionLevel; // Only used in C++ queries
   useDAS?: boolean;
   dasCharge?: number;
 }
@@ -145,6 +148,7 @@ export interface WorkerDataArgs {
   piece: PieceId;
   newSearchState: SearchState;
   inputFrameTimeline: string;
+  aggressionLevel: AggressionLevel;
 }
 
 export interface WorkerResponse {

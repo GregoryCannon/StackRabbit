@@ -46,6 +46,8 @@ function getStackRabbitArgString(args) {
     args.inputFrameTimeline,
     playoutCount,
     args.playoutLength,
+    args.pruningBreadth || 12, // 12 = the C++ DEFAULT_PRUNING_BREADTH this client never sent before
+    args.aggressionLevel || "safe",
   ];
 
   return fieldsToJoin.join(DELIM) + DELIM; // The C++ parsing requires an extra delimiter at the end.

@@ -1,6 +1,6 @@
 import { getPossibleMoves, getSearchStateAfter } from "./move_search";
 import { LOSS_DAS_PENALTY, SHOULD_PUSHDOWN } from "./params";
-import { INITIAL_PLACEMENT, PhantomPlacement, PieceId, Possibility, PossibilityChain, SearchState, WorkerDataArgs, WorkerResponse } from "./types";
+import { INITIAL_PLACEMENT, PhantomPlacement, PieceId, Possibility, PossibilityChain, AggressionLevel, SearchState, WorkerDataArgs, WorkerResponse } from "./types";
 import {
   formatDefaultPossibility,
   formatPossibility,
@@ -82,6 +82,7 @@ export class PreComputeManager {
   finessePrecompute(
     searchState: SearchState,
     inputFrameTimeline: string,
+    aggressionLevel: AggressionLevel,
     onPartialResultCallback: Function,
     onResultCallback: Function
   ) {
@@ -130,6 +131,7 @@ export class PreComputeManager {
         piece: nextPieceId,
         newSearchState: { ...searchState, nextPieceId },
         inputFrameTimeline: effInputFrameTimeline,
+        aggressionLevel,
       };
 
       this.workers[THREAD_ASSIGNMENT[nextPieceId]].send(argsData);

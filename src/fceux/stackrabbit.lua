@@ -6,6 +6,7 @@ IS_PAL = false
 USE_PUSHDOWN = true
 DEBUG_MODE = true
 SHOULD_RECORD_GAMES = true
+AGGRESSION_LEVEL = "aggro" -- How much the agent values burning lines: "safe", "aggro", or "hyper"
 
 -- OS-dependent config
 -- (We detect mac os based on common directories
@@ -36,7 +37,7 @@ TIMELINE_30_HZ = "X.";
 -- Config constants
 SHOULD_ADJUST = true
 REACTION_TIME_FRAMES = 18
-INPUT_TIMELINE = TIMELINE_10_HZ;
+INPUT_TIMELINE = TIMELINE_20_HZ;
 MOVIE_PATH = "C:\\Users\\Greg\\Desktop\\VODs\\" -- Where to store the fm2 VODS (absolute path)
 SCORES_TEXT_PATH = "C:\\Users\\Greg\\Desktop\\sr-test-scores.txt"
 if IS_MAC then 
@@ -172,7 +173,7 @@ function requestFirstPlacementAsync()
   end
   local reqStr = "http://localhost:3000/get-move-async-cpp?board=" .. getEncodedBoard() .. "&currentPiece=" .. orientToPiece[pcur]
   reqStr = reqStr .. "&nextPiece=" .. orientToPiece[pnext] .. "&level=" .. level .. "&lines=" .. numLines .. "&inputFrameTimeline=" 
-  reqStr = reqStr .. INPUT_TIMELINE .. "&dasCharge=" .. reqDasCharge
+  reqStr = reqStr .. INPUT_TIMELINE .. "&dasCharge=" .. reqDasCharge .. "&aggressionLevel=" .. AGGRESSION_LEVEL
 
   local response = makeHttpRequest(reqStr)
   if response.code ~= 200 then
@@ -210,7 +211,7 @@ function requestPrecompute()
 
   local reqStr = "http://localhost:3000/precompute?board=" .. stateForNextPiece.board .. "&currentPiece=" .. orientToPiece[pnext]
   reqStr = reqStr .. "&level=" .. stateForNextPiece.level .. "&lines=" .. reqLines .. "&reactionTime="
-  reqStr = reqStr .. REACTION_TIME_FRAMES .. "&inputFrameTimeline=" .. INPUT_TIMELINE .. "&dasCharge=" .. reqDasCharge
+  reqStr = reqStr .. REACTION_TIME_FRAMES .. "&inputFrameTimeline=" .. INPUT_TIMELINE .. "&dasCharge=" .. reqDasCharge .. "&aggressionLevel=" .. AGGRESSION_LEVEL
 
   local response = makeHttpRequest(reqStr)
   if response.code ~= 200 then

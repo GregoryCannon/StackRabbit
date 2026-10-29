@@ -296,6 +296,7 @@ export class RequestHandler {
     this.preComputeManager.finessePrecompute(
       searchState,
       urlArgs.inputFrameTimeline,
+      urlArgs.aggressionLevel,
       function (result) {
         this.partialResult = result;
       }.bind(this),
