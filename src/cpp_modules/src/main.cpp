@@ -60,6 +60,13 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
   // Loop through the other args
   std::string nonBoardInputString;
   std::string secondBoardStr;
+  // The board must occupy at least the first 200 characters plus the delimiter;
+  // anything shorter is a malformed request and the slicing below would read
+  // past the end of the buffer.
+  if (strlen(inputStr) < 201) {
+    return "Error: invalid board string (expected 200 characters of 0/1).";
+  }
+
   // Detect an optional second board: board1 (200 chars of 0/1) + '|' + board2 (200 chars of 0/1) + '|' + rest.
   // RATE_MOVE always has two boards; GET_TOP_MOVES / GET_TOP_MOVES_HYBRID may optionally include one.
   bool hasSecondBoard = false;
@@ -82,10 +89,7 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
     secondBoardStr = std::string(inputStr + 201, 200);
     nonBoardInputString = std::string(inputStr + 402); // board1 + delim + board2 + delim
   } else if (requestType == RATE_MOVE){
-    // Legacy fallback: RATE_MOVE without a detectable second board (invalid request).
-    // Preserve old slicing so behavior stays "player move not found" rather than OOB.
-    secondBoardStr = std::string(inputStr + 201);
-    nonBoardInputString = std::string(inputStr + 402);
+    return "Error: RATE_MOVE requests require a value for secondBoard.";
   } else {
     nonBoardInputString = std::string(inputStr + 201); // 201 = the length of the board string + 1 for the delimiter
   }
