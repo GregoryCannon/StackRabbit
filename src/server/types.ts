@@ -149,6 +149,9 @@ export interface WorkerDataArgs {
   newSearchState: SearchState;
   inputFrameTimeline: string;
   aggressionLevel: AggressionLevel;
+  pruningBreadth: number;
+  playoutCount: number;
+  playoutLength: number;
 }
 
 export interface WorkerResponse {

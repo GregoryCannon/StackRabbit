@@ -38,6 +38,8 @@ TIMELINE_30_HZ = "X.";
 SHOULD_ADJUST = true
 REACTION_TIME_FRAMES = 18
 INPUT_TIMELINE = TIMELINE_20_HZ;
+PLAYOUT_COUNT = 300
+PLAYOUT_LENGTH = 6
 MOVIE_PATH = "C:\\Users\\Greg\\Desktop\\VODs\\" -- Where to store the fm2 VODS (absolute path)
 SCORES_TEXT_PATH = "C:\\Users\\Greg\\Desktop\\sr-test-scores.txt"
 if IS_MAC then 
@@ -201,6 +203,12 @@ function requestPrecompute()
     end
   end
 
+  -- 28 Hotfix
+  if reqLevel == 28 then
+    reqLevel = reqLevel - 1
+    reqLines = reqLines - 10
+  end
+
   -- Format URL arguments
   if stateForNextPiece == nil or stateForNextPiece.board == nil
         or stateForNextPiece.lines == nil or stateForNextPiece.level == nil then
@@ -210,8 +218,9 @@ function requestPrecompute()
   end
 
   local reqStr = "http://localhost:3000/precompute?board=" .. stateForNextPiece.board .. "&currentPiece=" .. orientToPiece[pnext]
-  reqStr = reqStr .. "&level=" .. stateForNextPiece.level .. "&lines=" .. reqLines .. "&reactionTime="
-  reqStr = reqStr .. REACTION_TIME_FRAMES .. "&inputFrameTimeline=" .. INPUT_TIMELINE .. "&dasCharge=" .. reqDasCharge .. "&aggressionLevel=" .. AGGRESSION_LEVEL
+  reqStr = reqStr .. "&level=" .. reqLevel .. "&lines=" .. reqLines .. "&reactionTime="
+  reqStr = reqStr .. REACTION_TIME_FRAMES .. "&inputFrameTimeline=" .. INPUT_TIMELINE .. "&dasCharge=" .. reqDasCharge 
+  reqStr = reqStr .. "&aggressionLevel=" .. AGGRESSION_LEVEL .. "&pruningBreadth=12" .. "&playoutCount=" .. PLAYOUT_COUNT .. "&playoutLength=" .. PLAYOUT_LENGTH
 
   local response = makeHttpRequest(reqStr)
   if response.code ~= 200 then

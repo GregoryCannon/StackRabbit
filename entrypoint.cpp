@@ -20,13 +20,13 @@
  board | level | lines | curPiece | nextPiece | inputTimeline
  */
 
-char const * testInput = "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010000000011000110011110011001110001111111110111111111011111111101111111110|19|200|4|-1|X.....|";
-char const * testInputWithSecondBoard = "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000001100000000110100000011111110001111111110|00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000010001100011000110101000011111110001111111110|19|1|6|2|X.....|343|3|";
+char const * testInput = "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010000110001101111100111111111011111111101111111110111111111011111111101111111110|19|36|1|5|X.....X.....X..X.....|8000|10|27|safe|";
+// char const * testInputWithSecondBoard = "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000001100000000110100000011111110001111111110|00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000010001100011000110101000011111110001111111110|19|1|6|2|X.....|343|3|";
 
 int runGames(){
   std::cout.imbue(std::locale("en_US.UTF-8")); // Allow for commas in printed numbers
   std::vector<std::pair<int, int>> games;
-  int numGames = 100;
+  int numGames = 1;
   int playoutCount = 49;
   int playoutLength = 2;
   char const *inputFrameTimeline = "X.....";
@@ -37,9 +37,9 @@ int runGames(){
   printf("\n----- MAIN WEIGHTS ------\n");
   simulateGamesThreaded(numGames, inputFrameTimeline, startingLevel, maxLines, playoutCount, playoutLength, /* useTestWeights= */ false, SAFE, games);
 
-  // Games with test weights
-  printf("\n----- TEST WEIGHTS ------\n");
-  simulateGamesThreaded(numGames, inputFrameTimeline, startingLevel, maxLines, playoutCount, playoutLength, /* useTestWeights= */ true, SAFE, games);
+  // // Games with test weights
+  // printf("\n----- TEST WEIGHTS ------\n");
+  // simulateGamesThreaded(numGames, inputFrameTimeline, startingLevel, maxLines, playoutCount, playoutLength, /* useTestWeights= */ true, SAFE, games);
 
 
   // for (int i = 0; i < numGames; i++){
@@ -52,8 +52,8 @@ int main(int argc, const char * argv[]) {
   // printf("%s\n", mainProcess(testInput, GET_LOCK_VALUE_LOOKUP).c_str());
   // printf("%s\n", mainProcess(testInput, GET_MOVE_AB_TEST).c_str());
   // printf("%s\n", mainProcess(testInput, GET_MOVE).c_str());
-  printf("%s\n", mainProcess(testInputWithSecondBoard, GET_TOP_MOVES).c_str());
-  // runGames();
+  // printf("%s\n", mainProcess(testInputWithSecondBoard, GET_TOP_MOVES).c_str());
+  runGames();
   
   // testAdjustments();
   return 0;

@@ -5,6 +5,7 @@
 #include "params.hpp"
 #include <limits>
 #include "formatting.hpp"
+#include "tournament_search.hpp"
 using namespace std;
 
 #define MAP_OFFSET 5000          // An offset to make any placement better than the default 0 in the map
@@ -13,13 +14,13 @@ using namespace std;
  * Performs a partial insertion sort such that the highest N elements of the list are guaranteed to be sorted and kept at the front of the list.
  * The other elements can be anywhere.
  */
-void partiallySortPossibilityList(list<Possibility> &possibilityList, int keepTopN, OUT list<Possibility> &sortedList){
+void partiallySortPossibilityList(list<Possibility> &possibilityList, int pruningBreadth, OUT list<Possibility> &sortedList){
   auto cutoffPossibility = possibilityList.begin(); // The node on the "cutoff" between being in the top N placements and not
   int size = 0; // Tracking manually is cheaper than doing the O(n) operation each iteration
 
   for (auto it = begin(possibilityList); it != end(possibilityList); it++) {
     Possibility newPossibility = *it;
-    if (size < keepTopN || newPossibility.evalScoreInclReward > cutoffPossibility->evalScoreInclReward) {
+    if (size < pruningBreadth || newPossibility.evalScoreInclReward > cutoffPossibility->evalScoreInclReward) {
       // Insert into the list in its correct sorted place
       for (auto it2 = sortedList.begin(); true; it2++) {
         if (it2 == sortedList.end()) {
@@ -35,13 +36,13 @@ void partiallySortPossibilityList(list<Possibility> &possibilityList, int keepTo
       }
 
       // Update the cutoff node
-      if (size == keepTopN) {
+      if (size == pruningBreadth) {
         // Get the Nth elt
         auto ptr = sortedList.begin();
-        advance(ptr, keepTopN - 1);
+        advance(ptr, pruningBreadth - 1);
         cutoffPossibility = ptr;
       }
-      if (size > keepTopN) {
+      if (size > pruningBreadth) {
         // Use the predecessor of the one that just got pushed out
         cutoffPossibility = prev(cutoffPossibility);
       }
@@ -59,7 +60,7 @@ void partiallySortPossibilityList(list<Possibility> &possibilityList, int keepTo
  * @param generateExplanation - when true, captures a per-move evalExplanation string
  *   (only used by GET_TOP_MOVES / GET_TOP_MOVES_HYBRID / GET_MOVE_AB_TEST paths).
  */
-int searchDepth1(GameState gameState, const Piece *firstPiece, const EvalContext *evalContext, OUT list<Possibility> &possibilityList, bool generateExplanation = false){
+int searchDepth1(GameState gameState, const Piece *firstPiece, const EvalContext *evalContext, OUT list<Possibility> &possibilityList, bool generateExplanation){
   vector<LockPlacement> firstLockPlacements;
   moveSearch(gameState, firstPiece, evalContext->pieceRangeContext.inputFrameTimeline, firstLockPlacements);
   for (auto it = begin(firstLockPlacements); it != end(firstLockPlacements); ++it) {
@@ -93,7 +94,7 @@ int searchDepth1(GameState gameState, const Piece *firstPiece, const EvalContext
  * @param generateExplanation - when true, captures a per-move evalExplanation string
  *   (only used by GET_TOP_MOVES / GET_TOP_MOVES_HYBRID / GET_MOVE_AB_TEST paths).
  */
-int searchDepth2(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int secondPieceDelay, const EvalContext *evalContext, OUT list<Possibility> &possibilityList, bool generateExplanation = false){
+int searchDepth2(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int secondPieceDelay, const EvalContext *evalContext, OUT list<Possibility> &possibilityList, bool generateExplanation){
 
   // Get the placements of the first piece
   vector<LockPlacement> firstLockPlacements;
@@ -427,10 +428,10 @@ bool playoutAndInsert(Possibility const& possibility, int playoutCount, int play
  *   (appended in sorted order, usually last) even if it wouldn't otherwise make the top N.
  *   Included moves have isPlayerMove set to true in EngineMoveData and in the JSON output.
  */
-std::string getTopMoveList(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int keepTopN, int playoutCount, int playoutLength, const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3], bool generateExplanation, unsigned int *playerBoardAfter){
+std::string getTopMoveList(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int pruningBreadth, int playoutCount, int playoutLength, const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3], bool generateExplanation, unsigned int *playerBoardAfter){
   // Keep a running list of the top X possibilities as the move search is happening.
   // Keep twice as many as we'll eventually need, since some duplicates may be removed before playouts start
-  int numSorted = keepTopN * 2;
+  int numSorted = pruningBreadth * 2;
 
   // Get the list of evaluated possibilities
   list<Possibility> possibilityList;
@@ -455,7 +456,7 @@ std::string getTopMoveList(GameState gameState, const Piece *firstPiece, const P
   // Perform playouts on the promising possibilities
   int numAdded = 0;
   for (Possibility const& possibility : initiallySortedList) {
-    if (numAdded >= keepTopN){
+    if (numAdded >= pruningBreadth){
       break;
     }
     // printf("Doing playout for: %s %s\n", encodeLockPosition(possibility.firstPlacement).c_str(), encodeLockPosition(possibility.secondPlacement).c_str());
@@ -520,16 +521,16 @@ std::string getTopMoveList(GameState gameState, const Piece *firstPiece, const P
 }
 
 /** Calculates the valuation of every possible terminal position for a given piece on a given board, and stores it in a map.
- * @param keepTopN - How many possibilities to evaluate via a full set of playouts, as opposed to just the eval function.
+ * @param pruningBreadth - How many possibilities to evaluate via a full set of playouts, as opposed to just the eval function.
  * @param secondPieceDelay - A very particular parameter that's usually 0 and only used to help simulate the loss of DAS while placing the first piece.
  */
-unordered_map<string, float> getLockValueLookup(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int keepTopN, int playoutCount, int playoutLength, int secondPieceDelay, const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3]){
+unordered_map<string, float> getLockValueLookup(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int pruningBreadth, int playoutCount, int playoutLength, int secondPieceDelay, const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3]){
   unordered_map<string, float> lockValueMap;
   unordered_map<string, int> lockValueRepeatMap;
 
   // Keep a running list of the top X possibilities as the move search is happening.
   // Keep twice as many as we'll eventually need, since some duplicates may be removed before playouts start
-  int numSorted = keepTopN * 2;
+  int numSorted = 99999;
   
   // Get the list of evaluated possibilities
   list<Possibility> possibilityList;
@@ -550,11 +551,13 @@ unordered_map<string, float> getLockValueLookup(GameState gameState, const Piece
     // Perform playouts on the promising possibilities
     int i = 0;
     int numPlayedOut = 0;
-    int firstPlacementRepeatCap = floor(LOCK_POSITION_REPEAT_CAP_PROPORTION * keepTopN);
+    // The repeat cap is a fraction of the breadth, but a cap of 0 would disqualify every
+    // possibility from playouts entirely (leaving the whole map at the deathCoef sentinel),
+    // so small breadths always allow at least one pair per lock position.
     for (Possibility const& possibility : sortedList) {
       string lockPosEncoded = encodeLockPosition(possibility.firstPlacement);
       // Cap the number of times a lock position can be repeated (despite differing second placements)
-      int shouldPlayout = i < numSorted && numPlayedOut < keepTopN && lockValueRepeatMap[lockPosEncoded] < firstPlacementRepeatCap;
+      int shouldPlayout = i < numSorted && numPlayedOut < pruningBreadth && lockValueRepeatMap[lockPosEncoded] < LOCK_POSITION_REPEAT_CAP;
       if (PLAYOUT_LOGGING_ENABLED) {
         printf("\n----%s, repeats %d, willPlay %d\n", lockPosEncoded.c_str(), lockValueRepeatMap[lockPosEncoded], shouldPlayout);
       }
@@ -609,36 +612,41 @@ std::string encodeMapToJSON(unordered_map<string, float> map){
 }
 
 /** Calculates the valuation of every possible terminal position for a given piece on a given board, and stores it in a map.
- * @param keepTopN - How many possibilities to evaluate via a full set of playouts, as opposed to just the eval function.
+ * @param pruningBreadth - How many possibilities to evaluate via a full set of playouts, as opposed to just the eval function.
+ *   -1 = tournament mode: playoutCount is interpreted as the TOTAL playout budget instead.
  */
-std::string getLockValueLookupEncoded(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int keepTopN, int playoutCount, int playoutLength, const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3]){
-  unordered_map<string, float> lockValueMap = getLockValueLookup(gameState, firstPiece, secondPiece, keepTopN, playoutCount, playoutLength, /* secondPieceDelay= */ 0, evalContext, pieceRangeContextLookup);
+std::string getLockValueLookupEncoded(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int pruningBreadth, int playoutCount, int playoutLength, const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3]){
+  unordered_map<string, float> lockValueMap;
+  if (pruningBreadth == -1) {
+    lockValueMap = getLockValueLookupTournament(gameState, firstPiece, secondPiece, pruningBreadth, playoutCount, playoutLength, /* secondPieceDelay= */ 0, evalContext, pieceRangeContextLookup);
+  } else {
+    lockValueMap = getLockValueLookup(gameState, firstPiece, secondPiece, pruningBreadth, playoutCount, playoutLength, /* secondPieceDelay= */ 0, evalContext, pieceRangeContextLookup);
+  }
   return encodeMapToJSON(lockValueMap);
 }
 
-std::string getLockValueLookupDas(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int keepTopN, int playoutCount, int playoutLength, const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3]){
+std::string getLockValueLookupDas(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int pruningBreadth, int playoutCount, int playoutLength, const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3]){
+  bool useTournament = pruningBreadth == -1;
+  auto getLockValueLookupForDas = [=](int secondPieceDelay, int deepPlayoutCount, int deepPlayoutLength) {
+    if (useTournament) {
+      return getLockValueLookupTournament(gameState, firstPiece, secondPiece, pruningBreadth, deepPlayoutCount, deepPlayoutLength, secondPieceDelay, evalContext, pieceRangeContextLookup);
+    }
+    return getLockValueLookup(gameState, firstPiece, secondPiece, pruningBreadth, deepPlayoutCount, deepPlayoutLength, secondPieceDelay, evalContext, pieceRangeContextLookup);
+  };
+
   // First, do multiple shallow searches at low depth to check if having partial or no DAS charge clearly misses the best placement
   // E.g. if the first placement is a tuck setup and the second placement resolves it (very common pattern), the second piece needs enough DAS charge to be able to actually do the tuck.
   // Alternatively, if the first placement is resolving a tuck setup, and the best second placement is something not DAS-intensive, then there should be no penalty.
-  unordered_map<string, float> shallowMapFullCharge = getLockValueLookup(
-    gameState, firstPiece, secondPiece, keepTopN, /* playoutCount= */ 0, /* playoutLength= */ 0, 
-    /* secondPieceDelay= */ 0, evalContext, pieceRangeContextLookup
-  );
+  unordered_map<string, float> shallowMapFullCharge = getLockValueLookupForDas(/* secondPieceDelay= */ 0, /* playoutCount= */ 0, /* playoutLength= */ 0);
 
   // A DAS charge of 10 (partial charge) is equivalent to waiting 5 frames before the first shift
-  unordered_map<string, float> shallowMapPartialCharge = getLockValueLookup(
-    gameState, firstPiece, secondPiece, keepTopN, /* playoutCount= */ 0, /* playoutLength= */ 0, 
-    /* secondPieceDelay= */ 5, evalContext, pieceRangeContextLookup
-  );
+  unordered_map<string, float> shallowMapPartialCharge = getLockValueLookupForDas(/* secondPieceDelay= */ 5, /* playoutCount= */ 0, /* playoutLength= */ 0);
   
   // A DAS charge of 5 is equivalent to 10 frame wait before the first shift. It's also the worst possible DAS charge, since even with 0 charge you can 
   // just first-frame tap without holding during ARE, and it ends up being exactly equivalent:
   // Charge < 5 : shift->0  1  2  3   4  5  6  7  8  9    10
   // Charge = 5:   6       7  8  9  10 11 12 13 14 15 shift->10
-  unordered_map<string, float> shallowMapMinCharge = getLockValueLookup(
-    gameState, firstPiece, secondPiece, keepTopN, /* playoutCount= */ 0, /* playoutLength= */ 0, 
-    /* secondPieceDelay= */ 10, evalContext, pieceRangeContextLookup
-  );
+  unordered_map<string, float> shallowMapMinCharge = getLockValueLookupForDas(/* secondPieceDelay= */ 10, /* playoutCount= */ 0, /* playoutLength= */ 0);
 
   // Replace the raw value maps with maps of the penalty relative to the best placement (as negative numbers)
   for (const auto& pair : shallowMapFullCharge) {
@@ -652,9 +660,7 @@ std::string getLockValueLookupDas(GameState gameState, const Piece *firstPiece, 
 
 
   // Then, do one deep search to see what the actual best move is, irrespective of DAS
-  unordered_map<string, float> deepValue = getLockValueLookup(
-    gameState, firstPiece, secondPiece, keepTopN, playoutCount, playoutLength, /* secondPieceDelay= */ 0, evalContext, pieceRangeContextLookup
-  );
+  unordered_map<string, float> deepValue = getLockValueLookupForDas(/* secondPieceDelay= */ 0, playoutCount, playoutLength);
   
   // Compile result as array of JSONs
   std::string resultStr = std::string("[\n");

@@ -1,6 +1,8 @@
 #ifndef FORMATTING
 #define FORMATTING
 
+#include <stdio.h>
+#include <stdlib.h>
 #include <string>
 #include "types.hpp"
 using namespace std;
@@ -84,6 +86,61 @@ std::string formatBoard(const unsigned int board[20]){
   output += ',';
   output += std::to_string(20 - j);
   return output;
+}
+
+/** Parses a compressed board string, as produced by formatBoard, back into a game board.
+ *
+ * Example input: 15,CaEa,3
+ * Only cell occupancy is representable in the compressed format, so the
+ * auxiliary per-row bits (holes, tuck setups, burned flag) come back cleared.
+ * On a malformed string, prints an error and leaves the board unmodified.
+ */
+void parseCompressedBoard(const std::string &compressedBoard, OUT unsigned int outBoard[20]) {
+  size_t firstComma = compressedBoard.find(',');
+  size_t secondComma = firstComma == std::string::npos ? std::string::npos : compressedBoard.find(',', firstComma + 1);
+  if (secondComma == std::string::npos) {
+    printf("Error: malformed compressed board: %s\n", compressedBoard.c_str());
+    return;
+  }
+
+  int numEmptyRows = atoi(compressedBoard.substr(0, firstComma).c_str());
+  std::string middleRows = compressedBoard.substr(firstComma + 1, secondComma - firstComma - 1);
+  int numRightWellRows = atoi(compressedBoard.substr(secondComma + 1).c_str());
+
+  // Each letter encodes half a row, so the middle must have an even number of letters,
+  // and the three sections must together describe all 20 rows.
+  if (numEmptyRows < 0 || numRightWellRows < 0 || middleRows.length() % 2 != 0 ||
+      numEmptyRows + (int)(middleRows.length() / 2) + numRightWellRows != 20) {
+    printf("Error: malformed compressed board: %s\n", compressedBoard.c_str());
+    return;
+  }
+
+  // Validate the letters up front, so a malformed string can't leave a half-written board
+  for (size_t i = 0; i < middleRows.length(); i++) {
+    if (BOARD_ENCODING.find(middleRows.at(i)) == std::string::npos) {
+      printf("Error: invalid character in compressed board: %s\n", compressedBoard.c_str());
+      return;
+    }
+  }
+
+  // Zero the board up front; that covers the empty top rows and leaves the auxiliary bits cleared
+  for (int i = 0; i < 20; i++) {
+    outBoard[i] = 0;
+  }
+
+  // Decode the middle rows, two letters per row (left half of the row first, as in formatBoard)
+  int row = numEmptyRows;
+  for (size_t i = 0; i < middleRows.length(); i += 2) {
+    int leftHalfIndex = BOARD_ENCODING.find(middleRows.at(i));
+    int rightHalfIndex = BOARD_ENCODING.find(middleRows.at(i + 1));
+    outBoard[row] = (leftHalfIndex << 5) | rightHalfIndex;
+    row++;
+  }
+
+  // Fill in the right well rows at the bottom
+  for (; row < 20; row++) {
+    outBoard[row] = FULL_ROW - 1;
+  }
 }
 
 std::string formatPlayout(PlayoutData playoutData){

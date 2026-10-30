@@ -1,10 +1,5 @@
 console.time("loading");
 import * as process from "process";
-import {
-  CPP_LIVEGAME_PLAYOUT_COUNT,
-  CPP_LIVEGAME_PLAYOUT_LENGTH,
-  CPP_LIVEGAME_PRUNING_BREADTH,
-} from "./params";
 import { WorkerDataArgs } from "./types";
 const cModule = require("../../../build/Release/cRabbit");
 
@@ -24,7 +19,7 @@ function performComputationFinesseCpp(args: WorkerDataArgs): Object {
   const inputFrameTimeline = args.inputFrameTimeline;
   const useDAS = args.newSearchState.dasCharge != -1
 
-  const encodedInputString = `${boardStr}|${args.newSearchState.level}|${args.newSearchState.lines}|${curPieceIndex}|${nextPieceIndex}|${inputFrameTimeline}|${CPP_LIVEGAME_PLAYOUT_COUNT}|${CPP_LIVEGAME_PLAYOUT_LENGTH}|${CPP_LIVEGAME_PRUNING_BREADTH}|${args.aggressionLevel}|`;
+  const encodedInputString = `${boardStr}|${args.newSearchState.level}|${args.newSearchState.lines}|${curPieceIndex}|${nextPieceIndex}|${inputFrameTimeline}|${args.playoutCount}|${args.playoutLength}|${args.pruningBreadth}|${args.aggressionLevel}|`;
   const result = JSON.parse(
     useDAS
       ? cModule.getLockValueLookupDas(encodedInputString)
