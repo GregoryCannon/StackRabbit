@@ -17,6 +17,7 @@
 #include "piece_ranges.cpp"
 #include "playout.cpp"
 #include "high_level_search.cpp"
+#include "tournament_search.cpp"
 #include "piece_rng.cpp"
 // #include "../data/ranks_output.cpp"
 #include "../data/ranks_base_7.cpp"
@@ -37,7 +38,7 @@ std::string string_format( const std::string& format, Args ... args )
 }
 
 std::string mainProcess(char const *inputStr, RequestType requestType) {
-  maybePrint("Input string %s, requestType %d\n", inputStr, requestType);
+  printf("Input string %s, requestType %d\n", inputStr, requestType);
 
   // Init empty data structures
   GameState startingGameState = {
@@ -60,10 +61,16 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
   // Loop through the other args
   std::string nonBoardInputString;
   std::string secondBoardStr;
-  // The board must occupy at least the first 200 characters plus the delimiter;
-  // anything shorter is a malformed request and the slicing below would read
-  // past the end of the buffer.
-  if (strlen(inputStr) < 201) {
+  // The board must be exactly 200 characters of 0/1 followed by the '|' delimiter;
+  // anything else (too short, wrong length, bad characters, missing delimiter) is a
+  // malformed request: the slicing below would misparse the args or read past the buffer.
+  bool board1Valid = strlen(inputStr) > 200 && inputStr[200] == '|';
+  for (int i = 0; board1Valid && i < 200; i++) {
+    if (inputStr[i] != '0' && inputStr[i] != '1') {
+      board1Valid = false;
+    }
+  }
+  if (!board1Valid) {
     return "Error: invalid board string (expected 200 characters of 0/1).";
   }
 
@@ -131,6 +138,8 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
       playoutLength = argAsInt;
       break;
     case 7:
+      // -1 = tournament mode (playoutCount is the total playout budget instead of the
+      // per-candidate count; see getLockValueLookupTournament in tournament_search.cpp)
       pruningBreadth = argAsInt;
       break;
     case 8:
@@ -181,6 +190,10 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
   }
 
   // Take the specified action on the input based on the request type
+  // The lock value lookup is a 2-ply search, so it requires the next piece to be known.
+  if ((requestType == GET_LOCK_VALUE_LOOKUP || requestType == GET_LOCK_VALUE_LOOKUP_DAS) && nextPiece == NULL){
+    return "Error: lock value lookup requests require a value for nextPiece.";
+  }
   switch (requestType) {
     case GET_LOCK_VALUE_LOOKUP: {
       return getLockValueLookupEncoded(startingGameState, curPiece, nextPiece, pruningBreadth, playoutCount, playoutLength, &context, pieceRangeContextLookup);

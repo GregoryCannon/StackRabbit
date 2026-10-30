@@ -83,6 +83,9 @@ export class PreComputeManager {
     searchState: SearchState,
     inputFrameTimeline: string,
     aggressionLevel: AggressionLevel,
+    pruningBreadth: number,
+    playoutCount: number,
+    playoutLength: number,
     onPartialResultCallback: Function,
     onResultCallback: Function
   ) {
@@ -132,6 +135,9 @@ export class PreComputeManager {
         newSearchState: { ...searchState, nextPieceId },
         inputFrameTimeline: effInputFrameTimeline,
         aggressionLevel,
+        pruningBreadth,
+        playoutCount,
+        playoutLength,
       };
 
       this.workers[THREAD_ASSIGNMENT[nextPieceId]].send(argsData);

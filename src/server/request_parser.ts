@@ -115,12 +115,9 @@ export function parseUrlArguments(
         if (count < 0) {
           throw new Error("Invalid playout count: " + count);
         }
-        if (count * result.playoutLength > MAX_CPP_PLAYOUT_MOVES) {
-          throw new Error(
-            `Playout volume exceeds the current limit of ${MAX_CPP_PLAYOUT_MOVES} moves. Current volume (count * length): ${count * result.playoutLength
-            }"`
-          );
-        }
+        // NB: the playout-volume check is done after parsing (see the end of this
+        // function), since in tournament mode (pruningBreadth == -1) the count is the
+        // TOTAL playout budget rather than a per-candidate count.
         result.playoutCount = count;
         break;
 
@@ -132,22 +129,16 @@ export function parseUrlArguments(
         if (length > 20) {
           throw new Error("Invalid playout length (max is 20): " + length);
         }
-        if (result.playoutCount * length > MAX_CPP_PLAYOUT_MOVES) {
-          throw new Error(
-            `Playout volume exceeds the current limit of ${MAX_CPP_PLAYOUT_MOVES} moves. Current volume (count * length): ${length * result.playoutCount
-            }"`
-          );
-        }
         result.playoutLength = length;
         break;
 
       case "pruningBreadth":
         const breadth = parseInt(value);
-        if (breadth < 0) {
+        if (breadth < -1) {
           throw new Error("Invalid pruning breadth: " + breadth);
         }
         if (breadth > 1156) {
-          throw new Error("Invalid pruning breadth (max is 1156): " + breadth); // 34 placements x 34 placements
+          throw new Error("Invalid pruning breadth (max is 1156, or 34x34): " + breadth); // 34 placements x 34 placements
         }
         result.pruningBreadth = breadth;
         break;
@@ -169,6 +160,18 @@ export function parseUrlArguments(
         result.dasCharge = parseInt(value);
         break;
     }
+  }
+
+  // Playout volume check. In tournament mode (pruningBreadth == -1), playoutCount is the
+  // total playout budget; otherwise the volume is playoutCount * playoutLength.
+  const totalPlayoutVolume =
+    result.pruningBreadth === -1
+      ? result.playoutCount
+      : result.playoutCount * result.playoutLength;
+  if (totalPlayoutVolume > MAX_CPP_PLAYOUT_MOVES) {
+    throw new Error(
+      `Playout volume exceeds the current limit of ${MAX_CPP_PLAYOUT_MOVES} moves. Current volume: ${totalPlayoutVolume}`
+    );
   }
 
   // Manually top out if past line cap

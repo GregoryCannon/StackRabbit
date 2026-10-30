@@ -297,6 +297,9 @@ export class RequestHandler {
       searchState,
       urlArgs.inputFrameTimeline,
       urlArgs.aggressionLevel,
+      urlArgs.pruningBreadth,
+      urlArgs.playoutCount,
+      urlArgs.playoutLength,
       function (result) {
         this.partialResult = result;
       }.bind(this),

@@ -9,6 +9,7 @@
 //   helpers.hpp                 shared board builders, InputBuilder, assertions
 //   input_validation_tests.hpp  SECTION A: input parsing & validation
 //   request_type_tests.hpp      SECTION B: one test per request type
+//   board_format_tests.hpp      formatBoard/parseCompressedBoard round trips
 
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include "../vendor/doctest.h"
@@ -18,3 +19,4 @@
 #include "helpers.hpp"
 #include "input_validation_tests.hpp"
 #include "request_type_tests.hpp"
+#include "board_format_tests.hpp"

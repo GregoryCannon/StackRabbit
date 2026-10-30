@@ -89,6 +89,40 @@ TEST_CASE("GET_LOCK_VALUE_LOOKUP returns a JSON map of lock positions to scores"
   CHECK(output.find('|') != std::string::npos);
 }
 
+TEST_CASE("GET_LOCK_VALUE_LOOKUP supports tournament mode via pruningBreadth == -1") {
+  // In tournament mode (pruningBreadth == -1), playoutCount is the TOTAL playout budget
+  // and every first placement gets a candidate with a playout-backed estimate.
+  auto input = InputBuilder()
+                   .withBoard1(makeFlatBoard(4))
+                   .withCurPiece(IDX_O)
+                   .withPruningBreadth(-1)
+                   .withPlayoutCount(2000)
+                   .build();
+  std::string output = runRequest(GET_LOCK_VALUE_LOOKUP, input);
+
+  REQUIRE(output.size() >= 2);
+  CHECK(output[0] == '{');
+  CHECK(output[output.size() - 1] == '}');
+  CHECK(output.find('|') != std::string::npos);
+}
+
+TEST_CASE("GET_LOCK_VALUE_LOOKUP_DAS supports tournament mode via pruningBreadth == -1") {
+  auto input = InputBuilder()
+                   .withBoard1(makeFlatBoard(4))
+                   .withCurPiece(IDX_O)
+                   .withPruningBreadth(-1)
+                   .withPlayoutCount(2000)
+                   .build();
+  std::string output = runRequest(GET_LOCK_VALUE_LOOKUP_DAS, input);
+
+  REQUIRE(output.size() >= 2);
+  CHECK(output[0] == '[');
+  CHECK(output[output.size() - 1] == ']');
+  // Three sub-maps, separated by ",\n"
+  CHECK(countOccurrences(output, ",\n") == 2);
+  CHECK(output.find('|') != std::string::npos);
+}
+
 TEST_CASE("GET_LOCK_VALUE_LOOKUP_DAS returns an array of three maps") {
   // Per getLockValueLookupDas: [partialChargePenalties, minChargePenalties, deepValues]
   auto input = InputBuilder()
