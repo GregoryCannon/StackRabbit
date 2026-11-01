@@ -9,7 +9,6 @@
 #define LOGGING_ENABLED 0 // Refers to movesearch/eval logging
 #define PLAYOUT_LOGGING_ENABLED 0
 #define SIMULATION_LOGGING_ENABLED 0
-#define POSITION_LOGGING_ENABLED 1 // Logs every position encountered in a simulated game to src/benchmark/position_log.jsonl (for benchmark generation)
 #define PLAYOUT_RESULT_LOGGING_ENABLED 0
 #define MOVE_SEARCH_DEBUG_LOGGING 0
 #define VARIABLE_RANGE_CHECKS_ENABLED 1

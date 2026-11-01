@@ -32,7 +32,7 @@ AiMode getAiMode(GameState gameState, int currentMax5TapHeight, int max5TapHeigh
   return STANDARD;
 }
 
-const EvalContext getEvalContext(GameState gameState, const PieceRangeContext pieceRangeContextLookup[], bool useTestWeights, AggressionLevel aggressionLevel, bool forceStandardMode){
+const EvalContext getEvalContext(GameState gameState, const PieceRangeContext pieceRangeContextLookup[], bool useTestWeights, AggressionLevel aggressionLevel){
   EvalContext context = {};
 
   // Copy the piece range context from the global lookup
@@ -43,9 +43,7 @@ const EvalContext getEvalContext(GameState gameState, const PieceRangeContext pi
   context.pieceRangeContext = pieceRangeContextLookup[pieceRangeContextIndex];
 
   // Set the mode
-  // forceStandardMode is used for position benchmarking: it skips the usual mode
-  // logic (DIG, LINEOUT, etc) so positions are always evaluated with STANDARD weights
-  AiMode aiMode = forceStandardMode ? STANDARD : getAiMode(gameState, context.pieceRangeContext.max5TapHeight, pieceRangeContextLookup[0].max5TapHeight);
+  AiMode aiMode = getAiMode(gameState, context.pieceRangeContext.max5TapHeight, pieceRangeContextLookup[0].max5TapHeight);
   context.aiMode = aiMode;
   context.aggressionLevel = aggressionLevel;
   context.weights = getWeights(context.aiMode, useTestWeights, aggressionLevel);
