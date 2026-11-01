@@ -6,6 +6,7 @@
 #include "high_level_search.hpp"
 #include "move_result.hpp"
 #include "piece_rng.hpp"
+#include "../../benchmark/position_logging.hpp"
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -34,7 +35,7 @@ int countInputsBeforeReactionTime(int reactionTime, char const *inputFrameTimeli
   return numInputs;
 }
 
-std::vector<int> simulateGame(char const *inputFrameTimeline, int startingLevel, int maxLines, int playoutCount, int playoutLength, bool useTestWeights, AggressionLevel aggressionLevel){
+std::vector<int> simulateGame(char const *inputFrameTimeline, int startingLevel, int maxLines, int playoutCount, int playoutLength, bool useTestWeights, AggressionLevel aggressionLevel, int gameId){
   // Init empty data structures
   GameState gameState = {
     /* board= */ {},
@@ -68,6 +69,9 @@ std::vector<int> simulateGame(char const *inputFrameTimeline, int startingLevel,
     // Figure out modes and eval context
     const EvalContext evalContextRaw = getEvalContext(gameState, pieceRangeContextLookup, useTestWeights, aggressionLevel);
     const EvalContext *evalContext = &evalContextRaw;
+
+    // Log the position for the benchmark (the state before the piece is placed)
+    logPosition(gameId, numMoves, gameState, &curPiece, &nextPiece, evalContext->aiMode, pieceRangeContextLookup);
 
     LockLocation bestMove = playOneMove(gameState, &curPiece, NULL, DEFAULT_PRUNING_BREADTH, playoutCount, playoutLength, evalContext, pieceRangeContextLookup);
     if (bestMove.x == NONE){
@@ -160,7 +164,7 @@ void simulateGames(int numGames, char const *inputFrameTimeline, int startingLev
   auto time_start = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
   for (int i = 0; i < numGames; i++) {
-    std::vector<int> result = simulateGame(inputFrameTimeline, startingLevel, maxLines, playoutCount, playoutLength, useTestWeights, aggressionLevel);
+    std::vector<int> result = simulateGame(inputFrameTimeline, startingLevel, maxLines, playoutCount, playoutLength, useTestWeights, aggressionLevel, i);
     games.push_back({result[0], result[1]});
     std::cout << i << ": " << result[0] << "Lines: " << result[1] << std::endl;
   }
@@ -191,7 +195,7 @@ void simulateGamesThreaded(int numGames, const char* inputFrameTimeline, int sta
     // 3. Update the worker to increment the counter
     auto worker = [&](int startIdx, int endIdx) {
         for (int i = startIdx; i < endIdx; ++i) {
-            std::vector<int> result = simulateGame(inputFrameTimeline, startingLevel, maxLines, playoutCount, playoutLength, useTestWeights, aggressionLevel);
+            std::vector<int> result = simulateGame(inputFrameTimeline, startingLevel, maxLines, playoutCount, playoutLength, useTestWeights, aggressionLevel, i);
             games[i] = {result[0], result[1]};
             gamesCompleted++; // Safely increments without locks
         }

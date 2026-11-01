@@ -49,11 +49,12 @@ int runGames(){
 }
 
 int main(int argc, const char * argv[]) {
+  // NB: benchmark position generation lives in src/benchmark/generate_positions.cpp
   // printf("%s\n", mainProcess(testInput, GET_LOCK_VALUE_LOOKUP).c_str());
   // printf("%s\n", mainProcess(testInput, GET_MOVE_AB_TEST).c_str());
   // printf("%s\n", mainProcess(testInput, GET_MOVE).c_str());
-  printf("%s\n", mainProcess(testInputWithSecondBoard, GET_TOP_MOVES).c_str());
-  // runGames();
+  // printf("%s\n", mainProcess(testInputWithSecondBoard, GET_TOP_MOVES).c_str());
+  runGames();
   
   // testAdjustments();
   return 0;

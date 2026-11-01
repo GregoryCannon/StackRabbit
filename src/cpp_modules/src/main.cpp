@@ -13,6 +13,7 @@
 #include "eval.cpp"
 #include "eval_context.cpp"
 #include "move_result.cpp"
+#include "../../benchmark/position_logging.hpp"
 #include "move_search.cpp"
 #include "piece_ranges.cpp"
 #include "playout.cpp"
