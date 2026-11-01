@@ -26,17 +26,21 @@ char const * testInputWithSecondBoard = "000000000000000000000000000000000000000
 int runGames(){
   std::cout.imbue(std::locale("en_US.UTF-8")); // Allow for commas in printed numbers
   std::vector<std::pair<int, int>> games;
-  int numGames = 10000;
-  int playoutCount = 0;
-  int playoutLength = 1;
+  int numGames = 100;
+  int playoutCount = 49;
+  int playoutLength = 2;
+  char const *inputFrameTimeline = "X.....";
+  int startingLevel = 18;
+  int maxLines = 230;
 
   // Games with main weights
   printf("\n----- MAIN WEIGHTS ------\n");
-  simulateGamesThreaded(numGames, "X.....", 19, /* maxLines= */ 100, playoutCount, playoutLength, /* useTestWeights= */ false, SAFE, games);
+  simulateGamesThreaded(numGames, inputFrameTimeline, startingLevel, maxLines, playoutCount, playoutLength, /* useTestWeights= */ false, SAFE, games);
 
   // Games with test weights
   printf("\n----- TEST WEIGHTS ------\n");
-  simulateGamesThreaded(numGames, "X.....", 19, /* maxLines= */ 100, playoutCount, playoutLength, /* useTestWeights= */ true, SAFE, games);
+  simulateGamesThreaded(numGames, inputFrameTimeline, startingLevel, maxLines, playoutCount, playoutLength, /* useTestWeights= */ true, SAFE, games);
+
 
   // for (int i = 0; i < numGames; i++){
   //   printf("Game %d: %d points, %d lines\n", i, games[i].first, games[i].second);
