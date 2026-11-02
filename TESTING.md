@@ -32,7 +32,7 @@ refactor out of scope).
   - `tests/input_validation_tests.hpp` — Section A: input parsing & validation
   - `tests/request_type_tests.hpp` — Section B: one test per request type
 - npm script: `"cpp_test_unit"` — one `g++` command, mirroring the existing
-  `cpp_main` / `cpp_benchmark` scripts (exceptions on, `-pthread` for
+  `cpp_main` / `speed_benchmark` scripts (exceptions on, `-pthread` for
   `game_simulation.cpp`)
 - Later: add a GitHub Actions job running it on push/PR
 

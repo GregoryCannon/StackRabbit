@@ -13,6 +13,7 @@ src/server/fceux/reference_only/
 *.out
 compiledWasmRabbit.js
 compiledWasmRabbit.wasm
+src/benchmark/agent_results
 
 # Media
 *.avi

@@ -118,9 +118,15 @@ float playSequence(GameState gameState, const PieceRangeContext pieceRangeContex
 }
 
 
-float getPlayoutScore(GameState gameState, int playoutCount, int playoutLength, const PieceRangeContext pieceRangeContextLookup[3], int firstPieceIndex, AggressionLevel aggressionLevel, OUT vector<PlayoutData> *playoutDataList, OUT vector<float> *perSequenceScores, int batchOffset){
+float getPlayoutScore(GameState gameState, int playoutCount, int playoutLength, const PieceRangeContext pieceRangeContextLookup[3], int firstPieceIndex, AggressionLevel aggressionLevel, OUT vector<PlayoutData> *playoutDataList, OUT vector<float> *outPlayoutScores, int sequenceOffset){
+  // // Don't perform playouts if logging is enabled
+  // if (LOGGING_ENABLED) {
+  //   return 0;
+  // }
+
   // Clamp playout counts to the batch size, so large requests don't overflow the sequences array.
-  playoutCount = std::min(playoutCount, CANONICAL_SEQUENCE_BATCH_SIZE);
+  // sequenceOffset skips rows at the front of the batch, so the offset rows are also reserved.
+  playoutCount = std::min(playoutCount, CANONICAL_SEQUENCE_BATCH_SIZE - sequenceOffset);
 
   // Sequence batching based on the last known piece given by the in-game randomizer.
   // See canonical_sequences.hpp for the batch layout and the online-validated NES table.
@@ -128,14 +134,12 @@ float getPlayoutScore(GameState gameState, int playoutCount, int playoutLength, 
     ? canonicalSequencesNoLastPieceKnown
     : canonicalPieceSequencesForLastPiece[firstPieceIndex];
 	
-  // Special case: if the playout count is equal to the full count of possible sequences at the
-  // requested length, use the exhaustive sequence list, as opposed to randomly generated ones.
-  // NB: only applies when starting from the beginning of the list (batchOffset = 0), since a
-  // shifted window of the lexicographic list is heavily prefix-biased.
-  bool useExhaustiveSequences = batchOffset == 0 && ((playoutCount == 7 && playoutLength == 1)
+  // Special case: if the playout count is equal to the full count of possible sequences at the requested length, use the exahustive sequence list,
+  // as opposed to randomly generated ones.
+  bool useExhaustiveSequences = (playoutCount == 7 && playoutLength == 1)
     || (playoutCount == 49 && playoutLength == 2)
     || (playoutCount == 343 && playoutLength == 3)
-    || (playoutCount == 2401 && playoutLength == 4));
+    || (playoutCount == 2401 && playoutLength == 4);
 
   float playoutScore = 0;
   vector<float> playoutScores;
@@ -143,12 +147,12 @@ float getPlayoutScore(GameState gameState, int playoutCount, int playoutLength, 
     // Do one playout
     const int *pieceSequence = useExhaustiveSequences 
           ? exhaustivePieceSequences + i * EXHAUSTIVE_SEQUENCE_LENGTH // Index into the exhaustive list of possible sequences;
-          : lastPieceSequences + ((batchOffset + i) % CANONICAL_SEQUENCE_BATCH_SIZE) * SEQUENCE_LENGTH; // Index into the batch for this last-known piece, optionally offset (see batchOffset above);
+          : lastPieceSequences + (i + sequenceOffset) * SEQUENCE_LENGTH; // Index into the batch for this last-known piece (offset rows are skipped);
     float resultScore = playSequence(gameState, pieceRangeContextLookup, pieceSequence, playoutLength, aggressionLevel, playoutDataList);
     playoutScores.push_back(resultScore);
     playoutScore += resultScore;
-    if (perSequenceScores != NULL) {
-      perSequenceScores->push_back(resultScore);
+    if (outPlayoutScores != nullptr) {
+      outPlayoutScores->push_back(resultScore);
     }
   }
 
