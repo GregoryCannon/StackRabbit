@@ -8,54 +8,56 @@
 #include <unordered_map>
 
 /**
- * Tournament-based candidate selection for the lock value lookup.
+ * Tournament candidate selection for the lock value lookup. The legacy lookup spends its
+ * budget on top pairs *by eval score*, starving moves eval underrates; here each first
+ * placement is a candidate whose value is sampled through its continuations:
  *
- * The legacy lookup spends its playout budget on the top pairs *by eval score*, wasting
- * playouts on dominated continuations of the same first move and starving moves the eval
- * underrates (eval blind spots). The tournament instead treats each first placement as a
- * candidate and its continuations as samples of that candidate's value, in 3 rounds:
+ *   Round 1: every candidate plays its eval-best continuation(s) (wide screen).
+ *   Cut 1:   cap at TMT_FINALIST_COUNT by optimistic rank (mean + z*SE); optional veto off.
+ *   Round 2: finalists play ALL their conts on a fresh window (discovery: eval's best cont
+ *            can be wrong; alternates need samples to prove themselves).
+ *   Cut 2:   paired veto vs the leader, then cap at TMT_R3_COUNT by raw pooled mean.
+ *   Round 3: each survivor's best cont gets the remaining budget (deep samples).
  *
- *   Round 1: every candidate plays its eval-best continuation with the screening budget
- *            (wide net, one cont per candidate so the sample count stays meaningful).
- *   Cut:     candidates significantly worse than the leader are vetoed (paired difference
- *            test on the shared round-1 window), then the field is capped at
- *            TMT_FINALIST_COUNT candidates (ranked optimistically: mean + z*SE).
- *   Finals:  the finalists' eval-best continuations split the remaining budget (deep samples).
- *
- * In tournament mode (pruningBreadth == -1 from the request) playoutCount is used as the total budget, 
- * to be divided up dynamically between all the possible candidates
- *
- * Noise: entries in a round share one window of the canonical sequence batch,, so comparisons 
- * are paired and playout luck mostly cancels. Scores accumulate cumulatively across rounds.
- *
- * The result is a map of first placement -> best overall score, where every first placement
- * searchDepth2 finds gets a playout-backed estimate published as a conservative lower
- * confidence bound (see getTournamentContPublishScore in tournament_search.cpp). This keeps
- * shallow round-1/round-2 estimates comparable with the finalists' deep round-3 estimates:
- * a lucky small-sample mean can never publish as a great score, so the map's ranking is
- * trustworthy even though most candidates only get a handful of playouts.
+ * Tournament mode (pruningBreadth == -1) treats playoutCount as the total budget. Entries in
+ * a round share one sequence window, so comparisons are paired and playout luck cancels.
+ * Result: first placement -> best LCB over its sampled conts (see getTournamentContPublishScore).
  */
 
 
 // ----- Config for tournament-style playouts -----
 
-// Max second-piece placements (continuations) that are tested per first-piece placement.
-constexpr int TMT_CONTINUATIONS_PER_CANDIDATE = 3;
+// Max continuations kept per candidate, in eval-ranked order. Discovery can only rescue a
+// cont it samples, so this must reach past eval's mis-rankings while keeping round 2's
+// per-cont sample count meaningful.
+constexpr int TMT_CONTINUATIONS_PER_CANDIDATE = 5;
 
-// The cap on how many candidates reach the finals
+// Max conts the round-1 screen plays per candidate (adaptive). Cut 1 ranks candidates on
+// one estimate each, so extra breadth dilutes the depth that cut needs; 1 is the default.
+constexpr int TMT_R1_MAX_CONTS = 1;
+
+// The cap on how many candidates reach round 2 (discovery)
 constexpr int TMT_FINALIST_COUNT = 8;
 
-// Even if low budgets are specified, no placement can get less than 10 playouts (otherwise that would be too much noise)
+// The cap on how many candidates reach round 3 (deepening)
+constexpr int TMT_R3_COUNT = 4;
+
+// Floor on playouts per placement (below this, estimates are too noisy). NB: flooring can
+// make a round overspend its share and starve later rounds.
 constexpr int TMT_MIN_PLAYOUTS = 30;
 
-// Share of the total playout budget spent on the initial screen (the finals get the remainder)
-// NB: the screen plays one continuation per candidate, so its per-entry sample count is
-// totalBudget * TMT_R1_BUDGET_SHARE / candidateCount.
-constexpr float TMT_R1_BUDGET_SHARE = 0.5f;
+// Shares of the total budget for rounds 1 and 2 (round 3 gets the remainder). R1 plays
+// r1Conts conts per candidate; R2 plays all of a finalist's conts.
+constexpr float TMT_R1_BUDGET_SHARE = 0.38f;
+constexpr float TMT_R2_BUDGET_SHARE = 0.37f;
 
-// Paired-difference test: eliminate a candidate if the mean difference vs the leader exceeds
-// this many standard errors (1.96 ~= one-sided 97.5% confidence)
+// Eliminate a candidate if the leader's paired mean difference exceeds this many standard
+// errors (1.96 ~= one-sided 97.5% confidence)
 constexpr float TMT_PAIRED_TEST_Z = 1.96f;
+
+// Cut-1 veto threshold (paired SEs vs the leader). Judges candidates on their eval-best
+// cont alone; <= 0 disables the veto (the default).
+constexpr float TMT_CUT1_VETO_Z = 0;
 
 
 

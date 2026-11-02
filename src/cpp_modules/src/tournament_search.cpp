@@ -11,8 +11,8 @@ using namespace std;
 // Stage markers on stderr (unbuffered, so they are visible even if a later stage hangs)
 #define TMT_TRACE(...) do { if (TMT_LOGGING_ENABLED) { fprintf(stderr, __VA_ARGS__); } } while (0)
 
-/** One continuation (second placement) sampled for a candidate. All conts that survive the
- * same rounds have seqScores vectors of identical length, aligned per sequence. */
+/** One continuation (second placement) sampled for a candidate. Pools are trailing-aligned:
+ * any two conts' last k scores cover the same sequence windows (paired-test invariant). */
 struct TournamentCont {
   GameState resultingState;
   float immediateReward;     // Line clear reward from the first + second placements
@@ -80,17 +80,9 @@ void logTournamentCont(std::string label, std::string key, TournamentCont const&
 }
 
 /**
- * The score a cont is allowed to publish into the final map: a conservative lower
- * confidence bound of its overall score.
- *
- * Playout scores are heavy-tailed (a bad board can score hundreds below the average), and a
- * shallow pool often contains no such draws, so its raw mean sits far above the cont's true
- * expected value. Publishing mean - tCrit * std / sqrt(n) keeps estimates with different
- * sample depths comparable: a lucky shallow mean can never outrank a deep, well-supported
- * one (a finalist's deepened cont beats its own shallow conts, and cut candidates' frozen
- * round-1 scores can't top the map), and the bound converges to the raw mean as the pool
- * deepens. The shape of tCrit reflects that: a wide margin for small pools that have not
- * sampled the tail yet, relaxing toward a ~98% one-sided bound as the pool deepens.
+ * The score a cont may publish into the final map: a conservative lower confidence bound.
+ * Playout scores are heavy-tailed and shallow pools rarely contain the tail, so
+ * mean - tCrit*SE keeps shallow estimates from outranking deep, well-supported ones.
  */
 float getTournamentContPublishScore(TournamentCont const& cont, OUT float *outRawScore = NULL){
   int n = (int) cont.seqScores.size();
@@ -100,24 +92,19 @@ float getTournamentContPublishScore(TournamentCont const& cont, OUT float *outRa
     return rawScore;
   }
   float standardError = getTournamentContStandardError(cont);
-  // ~98% one-sided t critical value (2.0 at the normal limit), widened by 4.5/df for small
-  // pools -- matches the true t values within a few percent for df >= 9 (the smallest pool
-  // is TMT_MIN_PLAYOUTS samples)
+  // ~98% one-sided t critical value, widened for small pools (exact within a few % for df >= 9)
   float tCrit = 2.0f + 4.5f / (n - 1);
   return rawScore - tCrit * standardError;
 }
 
-/** One first placement ("candidate") and its continuations, stored in eval-ranked
- * order (possibilities are sorted by eval score desc before grouping). */
+/** One first placement ("candidate") and its continuations, kept in eval-ranked order. */
 struct TournamentCandidate {
   std::string key; // encodeLockPosition of the first placement
   std::vector<TournamentCont> conts;
   bool eliminated;
 };
 
-/** Current overall-score estimate for a continuation (immediate reward + mean playout
- * score), matching how the legacy lookup combines them. Conts that were never sampled
- * (round 1 only plays the eval-best cont) have empty pools; they rank below any sampled cont. */
+/** Overall-score estimate (reward + mean playout score); unsampled conts return the reward. */
 float getTournamentContScore(TournamentCont const& cont){
   if (cont.seqScores.empty()) {
     return cont.immediateReward;
@@ -129,8 +116,7 @@ float getTournamentContScore(TournamentCont const& cont){
   return cont.immediateReward + sum / cont.seqScores.size();
 }
 
-/** Returns the index of the candidate's best-scoring sampled continuation (first index on
- * ties). Unsampled conts are skipped -- they have no estimate yet. */
+/** Index of the best-scoring sampled continuation (first index on ties; unsampled skipped). */
 int getTournamentCandidateBestContIndex(TournamentCandidate const& candidate){
   int bestIdx = -1;
   float bestScore = FLOAT_MIN;
@@ -186,15 +172,11 @@ int countTournamentSurvivors(std::vector<TournamentCandidate> const& candidates)
 }
 
 /**
- * Paired-difference significance test: is the challenger's best continuation significantly
- * worse than the leader's best continuation across the shared sequence window? Every
- * participant's pool comes entirely from the shared screening window, so the per-sequence
- * scores align exactly (common random numbers) and the mean and variance of the paired
- * differences capture how much of the gap is real rather than piece luck.
- * @returns true when the leader's advantage exceeds TMT_PAIRED_TEST_Z standard errors.
- * @param outMeanDiff / outStandardError - optional debug outputs for the computed stats.
+ * Paired-difference test vs the leader's best cont: is the challenger significantly worse?
+ * Pools differ in length, but their trailing n scores share sequence windows (common random
+ * numbers), so aligning from the end isolates the real gap.
  */
-bool isTournamentCandidateSignificantlyWorse(TournamentCandidate const& challenger, TournamentCont const& leaderCont, float *outMeanDiff = NULL, float *outStandardError = NULL){
+bool isTournamentCandidateSignificantlyWorse(TournamentCandidate const& challenger, TournamentCont const& leaderCont, float *outMeanDiff = NULL, float *outStandardError = NULL, float zThreshold = TMT_PAIRED_TEST_Z){
   const TournamentCont &challengerCont = getTournamentBestCont(challenger);
   int n = (int) std::min(leaderCont.seqScores.size(), challengerCont.seqScores.size());
   if (n < 2){
@@ -202,10 +184,9 @@ bool isTournamentCandidateSignificantlyWorse(TournamentCandidate const& challeng
     if (outStandardError != NULL) { *outStandardError = 0; }
     return false; // Not enough paired samples to conclude anything
   }
-  // Align from the end: the trailing n scores of both pools cover the same sequence windows
+  // Align from the end (see doc); paired diffs cover the full overall score
   int leaderStart = (int) leaderCont.seqScores.size() - n;
   int challengerStart = (int) challengerCont.seqScores.size() - n;
-  // Each paired difference covers the full overall score: immediate reward + playout score
   float rewardDiff = leaderCont.immediateReward - challengerCont.immediateReward;
   float sumDiff = 0;
   float sumDiffSquared = 0;
@@ -219,14 +200,20 @@ bool isTournamentCandidateSignificantlyWorse(TournamentCandidate const& challeng
   float standardError = sqrtf(std::max(variance, 0.0f) / n);
   if (outMeanDiff != NULL) { *outMeanDiff = meanDiff; }
   if (outStandardError != NULL) { *outStandardError = standardError; }
-  return meanDiff - TMT_PAIRED_TEST_Z * standardError > 0;
+  return meanDiff - zThreshold * standardError > 0;
 }
 
-/** Sorts the surviving candidates by their best continuation's optimistic ranking score
- * (mean + z*SE, ties: eval score, then key) and marks every candidate beyond the cap as
- * eliminated. Already-eliminated candidates stay eliminated and are excluded from the
- * ranking (their scores are frozen at their small-n estimates). */
-void cutTournamentCandidatesByRank(OUT std::vector<TournamentCandidate> &candidates, int cap){
+// Rank modes for cutTournamentCandidatesByRank.
+enum TournamentRankMode {
+  TMT_RANK_UPPER_BOUND,  // mean + z*SE: optimistic about under-measured pools
+  TMT_RANK_RAW_MEAN,     // plain mean: neutral selection; later evidence corrects mistakes
+  TMT_RANK_PUBLISH_SCORE // mean - tCrit*SE: conservative, the proven value
+};
+
+/** Eliminates surviving candidates ranked below `cap` by their best cont's rank-mode score
+ * (ties: eval, then key). Cut 1 uses TMT_RANK_UPPER_BOUND (tolerate small-sample noise);
+ * cut 2 uses TMT_RANK_RAW_MEAN (false positives get corrected by round 3 and the LCBs). */
+void cutTournamentCandidatesByRank(OUT std::vector<TournamentCandidate> &candidates, int cap, TournamentRankMode rankMode){
   struct CandidateRank {
     float score;
     float evalScore;
@@ -239,8 +226,15 @@ void cutTournamentCandidatesByRank(OUT std::vector<TournamentCandidate> &candida
       continue;
     }
     const TournamentCont &bestCont = getTournamentBestCont(candidates[i]);
+    float rawScore = getTournamentContScore(bestCont);
+    float rankScore = rawScore;
+    if (rankMode == TMT_RANK_UPPER_BOUND) {
+      rankScore += TMT_PAIRED_TEST_Z * getTournamentContStandardError(bestCont);
+    } else if (rankMode == TMT_RANK_PUBLISH_SCORE) {
+      rankScore = getTournamentContPublishScore(bestCont);
+    }
     rankings.push_back({
-      getTournamentContScore(bestCont) + TMT_PAIRED_TEST_Z * getTournamentContStandardError(bestCont),
+      rankScore,
       bestCont.evalScoreInclReward,
       candidates[i].key,
       i
@@ -262,8 +256,7 @@ void cutTournamentCandidatesByRank(OUT std::vector<TournamentCandidate> &candida
   }
 }
 
-/** Plays `sampleCount` more sequences on one continuation, appending the per-sequence
- * scores to its pool. `batchOffset` is the shared sequence window for this round. */
+/** Appends `sampleCount` playouts from the shared window at `batchOffset` to the cont's pool. */
 void playTournamentSamples(OUT TournamentCont &cont, int sampleCount, int batchOffset, int playoutLength, const PieceRangeContext pieceRangeContextLookup[3], int secondPieceIndex, AggressionLevel aggressionLevel){
   cont.seqScores.reserve(cont.seqScores.size() + sampleCount);
   getPlayoutScore(cont.resultingState, sampleCount, playoutLength, pieceRangeContextLookup, secondPieceIndex, aggressionLevel, /* playoutDataList */ NULL, &cont.seqScores, batchOffset);
@@ -280,8 +273,7 @@ unordered_map<string, float> getLockValueLookupTournament(GameState gameState, c
     return lockValueMap; // Topped out: no legal first placement
   }
 
-  // Eval-only shortcut (used by the DAS shallow maps, which pass playoutCount=0): max eval
-  // per first placement over all of its pairs -- identical to the legacy lookup's eval-only path.
+  // Eval-only shortcut (DAS shallow maps pass playoutCount=0): max eval per first placement.
   if (playoutCount * playoutLength == 0){
     for (Possibility const& possibility : possibilityList) {
       string lockPosEncoded = encodeLockPosition(possibility.firstPlacement);
@@ -293,16 +285,14 @@ unordered_map<string, float> getLockValueLookupTournament(GameState gameState, c
     return lockValueMap;
   }
 
-  // Sort the pairs by eval score desc before grouping, so that the per-candidate continuation
-  // cap keeps the eval-best continuations. searchDepth2 returns an unsorted list (and
-  // tucks are enumerated last), so enumeration order would keep the wrong conts.
+  // Sort pairs by eval desc so the per-candidate cont cap keeps the eval-best conts
+  // (searchDepth2's order is unsorted, tucks last).
   std::vector<Possibility> sortedPossibilities(possibilityList.begin(), possibilityList.end());
   std::stable_sort(sortedPossibilities.begin(), sortedPossibilities.end(), [](Possibility const& a, Possibility const& b){
     return a.evalScoreInclReward > b.evalScoreInclReward;
   });
 
-  // Group the pairs into candidates (one per distinct first placement), keeping the eval-best
-  // continuations of each candidate. Every first placement found by searchDepth2 gets a candidate.
+  // Group pairs into candidates (one per distinct first placement), keeping eval-best conts.
   std::vector<TournamentCandidate> candidates;
   unordered_map<string, int> candidateIndexByKey;
   for (Possibility const& possibility : sortedPossibilities) {
@@ -330,13 +320,9 @@ unordered_map<string, float> getLockValueLookupTournament(GameState gameState, c
   }
   int candidateCount = (int) candidates.size();
 
-  // ---- Budget. In tournament mode (pruningBreadth == -1), playoutCount is
-  // the TOTAL playout budget. Otherwise (legacy-style params), it's the per-candidate
-  // playout count and the total is pruningBreadth * playoutCount, matching the legacy lookup's
-  // spend. Early rounds are cheap because the sample counts are small, not because the
-  // playouts are short. NB: the TMT_MIN_PLAYOUTS floor means total spend can
-  // slightly exceed the legacy budget when pruningBreadth is small (round 3's share is floored
-  // so the finalists always get a meaningful sample count even if the budget is exhausted).
+  // ---- Budget. Tournament mode (pruningBreadth == -1): playoutCount is the total budget;
+  // legacy-style: pruningBreadth * playoutCount. NB: the TMT_MIN_PLAYOUTS floor can push
+  // total spend past the budget (round 3's share is floored so finalists stay meaningful).
   playoutCount = std::min(playoutCount, CANONICAL_SEQUENCE_BATCH_SIZE);
   long long totalBudget;
   if (pruningBreadth == -1) {
@@ -350,19 +336,22 @@ unordered_map<string, float> getLockValueLookupTournament(GameState gameState, c
   };
 
   const int secondPieceIndex = secondPiece->index;
-  // samplesSoFar doubles as the next round's batch offset (fresh sequence window per round).
-  // NB: with extreme budgets the window can wrap past CANONICAL_SEQUENCE_BATCH_SIZE and
-  // overlap round 1's window via the modulo in playout.cpp. Within-round CRN still holds;
-  // only the cross-round freshness degrades.
+  // samplesSoFar doubles as the next round's batch offset (fresh window per round). NB: with
+  // extreme budgets the window can wrap and overlap earlier rounds; within-round CRN holds.
   int samplesSoFar = 0;
 
-  // ---- Round 1: screen every candidate on its eval-best continuation (the wide net).
+  // ---- Round 1: screen every candidate on its eval-best continuation(s) (the wide net).
   TMT_TRACE("TRACE: entering R1 (n1 pending)\n");
-  // One cont per candidate keeps the screening sample count high enough to rank candidates
-  // reliably; the remaining continuations are only sampled if a later stage ever needs them.
-  int n1 = getRoundSampleCount(totalBudget * TMT_R1_BUDGET_SHARE, candidateCount);
+  // r1Conts = largest cont count whose floor-level spend fits R1's share (see TMT_R1_MAX_CONTS).
+  int r1MaxConts = std::min(TMT_R1_MAX_CONTS, TMT_CONTINUATIONS_PER_CANDIDATE);
+  int r1Conts = 1;
+  while (r1Conts < r1MaxConts
+      && (long long) candidateCount * (r1Conts + 1) * TMT_MIN_PLAYOUTS <= (long long)(totalBudget * TMT_R1_BUDGET_SHARE)) {
+    r1Conts++;
+  }
+  int n1 = getRoundSampleCount(totalBudget * TMT_R1_BUDGET_SHARE, candidateCount * r1Conts);
   if (TMT_LOGGING_ENABLED) {
-    printf("TMT setup: candidates=%d totalBudget=%lld playoutLength=%d\n", candidateCount, totalBudget, playoutLength);
+    printf("TMT setup: candidates=%d r1Conts=%d totalBudget=%lld playoutLength=%d\n", candidateCount, r1Conts, totalBudget, playoutLength);
     for (auto const& candidate : candidates) {
       for (auto const& cont : candidate.conts) {
         if (!cont.seqScores.empty()) {
@@ -372,7 +361,10 @@ unordered_map<string, float> getLockValueLookupTournament(GameState gameState, c
     }
   }
   for (auto &candidate : candidates) {
-    playTournamentSamples(candidate.conts[0], n1, samplesSoFar, playoutLength, pieceRangeContextLookup, secondPieceIndex, evalContext->aggressionLevel);
+    int contsToPlay = std::min(r1Conts, (int) candidate.conts.size());
+    for (int c = 0; c < contsToPlay; c++) {
+      playTournamentSamples(candidate.conts[c], n1, samplesSoFar, playoutLength, pieceRangeContextLookup, secondPieceIndex, evalContext->aggressionLevel);
+    }
   }
   samplesSoFar += n1;
   TMT_TRACE("TRACE: R1 done (n1=%d)\n", n1);
@@ -387,35 +379,38 @@ unordered_map<string, float> getLockValueLookupTournament(GameState gameState, c
     }
   }
 
-  // ---- Cut: candidates significantly worse than the leader are vetoed (paired difference
-  // test on the shared screening window -- every candidate's pool is that window, so the
-  // pairing is direct), then the field is capped at TMT_FINALIST_COUNT by optimistic rank
-  // (mean + z*SE) so a candidate isn't cut on one unlucky sample.
+  // ---- Cut 1: cap the field at TMT_FINALIST_COUNT by optimistic rank (mean + z*SE). The
+  // veto is off by default (TMT_CUT1_VETO_Z): single-cont evidence can't justify a veto.
   int leaderIdx = getTournamentLeaderIndex(candidates);
   const TournamentCont &leaderCont = getTournamentBestCont(candidates[leaderIdx]);
   if (TMT_LOGGING_ENABLED) {
-    printf("TMT cut: leader=%s score=%.2f\n", candidates[leaderIdx].key.c_str(), getTournamentContScore(leaderCont));
+    printf("TMT cut1: leader=%s score=%.2f\n", candidates[leaderIdx].key.c_str(), getTournamentContScore(leaderCont));
   }
-  for (int i = 0; i < candidateCount; i++) {
-    if (candidates[i].eliminated || i == leaderIdx) {
-      continue;
-    }
-    float pairedMeanDiff, pairedStandardError;
-    if (isTournamentCandidateSignificantlyWorse(candidates[i], leaderCont, &pairedMeanDiff, &pairedStandardError)) {
-      candidates[i].eliminated = true;
-      if (TMT_LOGGING_ENABLED) {
-        printf("  cut VETO %s meanDiff=%.2f se=%.2f (z=%.2f)\n", candidates[i].key.c_str(), pairedMeanDiff, pairedStandardError, pairedMeanDiff / std::max(pairedStandardError, 0.0001f));
+  if (TMT_CUT1_VETO_Z > 0) {
+    for (int i = 0; i < candidateCount; i++) {
+      if (candidates[i].eliminated || i == leaderIdx) {
+        continue;
       }
-    } else if (TMT_LOGGING_ENABLED) {
-      printf("  cut keep  %s meanDiff=%.2f se=%.2f (z=%.2f)\n", candidates[i].key.c_str(), pairedMeanDiff, pairedStandardError, pairedMeanDiff / std::max(pairedStandardError, 0.0001f));
+      float pairedMeanDiff, pairedStandardError;
+      if (isTournamentCandidateSignificantlyWorse(candidates[i], leaderCont, &pairedMeanDiff, &pairedStandardError, TMT_CUT1_VETO_Z)) {
+        candidates[i].eliminated = true;
+        if (TMT_LOGGING_ENABLED) {
+          printf("  cut1 VETO %s meanDiff=%.2f se=%.2f (z=%.2f)\n", candidates[i].key.c_str(), pairedMeanDiff, pairedStandardError, pairedMeanDiff / std::max(pairedStandardError, 0.0001f));
+        }
+      } else if (TMT_LOGGING_ENABLED) {
+        printf("  cut1 keep %s meanDiff=%.2f se=%.2f (z=%.2f)\n", candidates[i].key.c_str(), pairedMeanDiff, pairedStandardError, pairedMeanDiff / std::max(pairedStandardError, 0.0001f));
+      }
     }
   }
   int survivorsAfterVeto = countTournamentSurvivors(candidates);
-  cutTournamentCandidatesByRank(candidates, std::min(TMT_FINALIST_COUNT, survivorsAfterVeto));
-  int finalistCount = countTournamentSurvivors(candidates);
-  int spentSoFar = candidateCount * n1;
+  cutTournamentCandidatesByRank(candidates, std::min(TMT_FINALIST_COUNT, survivorsAfterVeto), TMT_RANK_UPPER_BOUND);
+  int survivorsAfterCut1 = countTournamentSurvivors(candidates);
+  int spentSoFar = 0;
+  for (auto const& candidate : candidates) {
+    spentSoFar += std::min(r1Conts, (int) candidate.conts.size()) * n1;
+  }
   if (TMT_LOGGING_ENABLED) {
-    printf("TMT finalists(%d)=", finalistCount);
+    printf("TMT cut1 done: survivors(%d)=", survivorsAfterCut1);
     for (auto const& candidate : candidates) {
       if (!candidate.eliminated) {
         printf(" %s", candidate.key.c_str());
@@ -424,33 +419,86 @@ unordered_map<string, float> getLockValueLookupTournament(GameState gameState, c
     printf("\n");
   }
 
-  // ---- Finals: the remaining budget goes to the finalists' eval-best continuations, deeply.
-  // One continuation per finalist (the screen only samples the eval-best cont).
-  int n3 = getRoundSampleCount(totalBudget - spentSoFar, finalistCount);
-  TMT_TRACE("TRACE: entering finals (n3=%d)\n", n3);
+  // ---- Round 2: sample every cont of each survivor (discovery: eval-best isn't always best).
+  int n2 = getRoundSampleCount(totalBudget * TMT_R2_BUDGET_SHARE, survivorsAfterCut1 * TMT_CONTINUATIONS_PER_CANDIDATE);
+  for (auto &candidate : candidates) {
+    if (candidate.eliminated) {
+      continue;
+    }
+    for (auto &cont : candidate.conts) {
+      playTournamentSamples(cont, n2, samplesSoFar, playoutLength, pieceRangeContextLookup, secondPieceIndex, evalContext->aggressionLevel);
+    }
+  }
+  samplesSoFar += n2;
+  spentSoFar += survivorsAfterCut1 * TMT_CONTINUATIONS_PER_CANDIDATE * n2;
+  TMT_TRACE("TRACE: R2 done (n2=%d)\n", n2);
+  if (TMT_LOGGING_ENABLED) {
+    printf("TMT R2 done: n2=%d window=[%d,%d)\n", n2, n1, n1 + n2);
+    for (auto const& candidate : candidates) {
+      if (candidate.eliminated) {
+        continue;
+      }
+      for (auto const& cont : candidate.conts) {
+        logTournamentCont("R2", candidate.key, cont, n1);
+      }
+    }
+  }
+
+  // ---- Cut 2: paired veto vs the leader, then cap at TMT_R3_COUNT by raw pooled mean.
+  // False positives get corrected by round 3 and the LCBs; cut alternates never recover.
+  leaderIdx = getTournamentLeaderIndex(candidates);
+  const TournamentCont &leaderCont2 = getTournamentBestCont(candidates[leaderIdx]);
+  if (TMT_LOGGING_ENABLED) {
+    printf("TMT cut2: leader=%s score=%.2f\n", candidates[leaderIdx].key.c_str(), getTournamentContScore(leaderCont2));
+  }
+  for (int i = 0; i < candidateCount; i++) {
+    if (candidates[i].eliminated || i == leaderIdx) {
+      continue;
+    }
+    float pairedMeanDiff, pairedStandardError;
+    if (isTournamentCandidateSignificantlyWorse(candidates[i], leaderCont2, &pairedMeanDiff, &pairedStandardError)) {
+      candidates[i].eliminated = true;
+      if (TMT_LOGGING_ENABLED) {
+        printf("  cut2 VETO %s meanDiff=%.2f se=%.2f (z=%.2f)\n", candidates[i].key.c_str(), pairedMeanDiff, pairedStandardError, pairedMeanDiff / std::max(pairedStandardError, 0.0001f));
+      }
+    } else if (TMT_LOGGING_ENABLED) {
+      printf("  cut2 keep %s meanDiff=%.2f se=%.2f (z=%.2f)\n", candidates[i].key.c_str(), pairedMeanDiff, pairedStandardError, pairedMeanDiff / std::max(pairedStandardError, 0.0001f));
+    }
+  }
+  int survivorsAfterCut2Veto = countTournamentSurvivors(candidates);
+  cutTournamentCandidatesByRank(candidates, std::min(TMT_R3_COUNT, survivorsAfterCut2Veto), TMT_RANK_RAW_MEAN);
+  int finalists = countTournamentSurvivors(candidates);
+  if (TMT_LOGGING_ENABLED) {
+    printf("TMT cut2 done: finalists(%d)=", finalists);
+    for (auto const& candidate : candidates) {
+      if (!candidate.eliminated) {
+        printf(" %s", candidate.key.c_str());
+      }
+    }
+    printf("\n");
+  }
+
+  // ---- Round 3: the remaining budget goes to each finalist's best cont, deeply.
+  int n3 = getRoundSampleCount(totalBudget - spentSoFar, finalists);
+  TMT_TRACE("TRACE: entering R3 (n3=%d)\n", n3);
   if (PLAYOUT_LOGGING_ENABLED || TMT_LOGGING_ENABLED) {
-    printf("Tournament: candidates=%d n1=%d vetoSurvivors=%d finalists=%d n3=%d samplesSoFar=%d\n",
-      candidateCount, n1, survivorsAfterVeto, finalistCount, n3, samplesSoFar + n3);
+    printf("Tournament: candidates=%d r1Conts=%d n1=%d survivors1=%d n2=%d finalists=%d n3=%d samplesSoFar=%d\n",
+      candidateCount, r1Conts, n1, survivorsAfterCut1, n2, finalists, n3, samplesSoFar + n3);
   }
   for (auto &candidate : candidates) {
     if (candidate.eliminated) {
       continue;
     }
     int contIdx = getTournamentCandidateBestContIndex(candidate);
-    TMT_TRACE("TRACE: finals playing %s cont=%s\n", candidate.key.c_str(), candidate.conts[contIdx].contKey.c_str());
+    TMT_TRACE("TRACE: R3 playing %s cont=%s\n", candidate.key.c_str(), candidate.conts[contIdx].contKey.c_str());
     playTournamentSamples(candidate.conts[contIdx], n3, samplesSoFar, playoutLength, pieceRangeContextLookup, secondPieceIndex, evalContext->aggressionLevel);
     if (TMT_LOGGING_ENABLED) {
-      logTournamentCont("finals", candidate.key, candidate.conts[contIdx], n1);
+      logTournamentCont("R3", candidate.key, candidate.conts[contIdx], n1 + n2);
     }
   }
 
-  // ---- Build the map: for every first placement, the best published score across its
-  // sampled continuations. Every key gets a playout-backed estimate, published as a lower
-  // confidence bound (see getTournamentContPublishScore) so estimates of very different
-  // sample depths are comparable: eliminated candidates' frozen round-1 means and
-  // a finalist's shallower non-best conts can't outrank the finalists' deep evidence.
-  // NB: unproven keys can publish low (even negative) values; that is the correct
-  // conservative outcome, not a bug.
+  // ---- Build the map: each first placement publishes the best LCB over its sampled conts;
+  // unproven keys may publish low -- correct and intended.
   for (auto const& candidate : candidates) {
     int bestContIdx = -1;
     float bestScore = FLOAT_MIN;
@@ -475,8 +523,7 @@ unordered_map<string, float> getLockValueLookupTournament(GameState gameState, c
   }
 
   if (TMT_LOGGING_ENABLED) {
-    // Debug-only validation: re-estimate the top keys' winning conts with the full budget,
-    // legacy-style (one big shared window starting at offset 0) for direct comparison.
+    // Debug-only: re-estimate the top keys' winning conts legacy-style for direct comparison.
     std::vector<std::pair<float, std::string>> ranked;
     for (auto const& entry : lockValueMap) {
       ranked.push_back({entry.second, entry.first});
