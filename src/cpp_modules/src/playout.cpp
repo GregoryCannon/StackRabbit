@@ -118,14 +118,15 @@ float playSequence(GameState gameState, const PieceRangeContext pieceRangeContex
 }
 
 
-float getPlayoutScore(GameState gameState, int playoutCount, int playoutLength, const PieceRangeContext pieceRangeContextLookup[3], int firstPieceIndex, AggressionLevel aggressionLevel, OUT vector<PlayoutData> *playoutDataList){
+float getPlayoutScore(GameState gameState, int playoutCount, int playoutLength, const PieceRangeContext pieceRangeContextLookup[3], int firstPieceIndex, AggressionLevel aggressionLevel, OUT vector<PlayoutData> *playoutDataList, OUT vector<float> *outPlayoutScores, int sequenceOffset){
   // // Don't perform playouts if logging is enabled
   // if (LOGGING_ENABLED) {
   //   return 0;
   // }
 
   // Clamp playout counts to the batch size, so large requests don't overflow the sequences array.
-  playoutCount = std::min(playoutCount, CANONICAL_SEQUENCE_BATCH_SIZE);
+  // sequenceOffset skips rows at the front of the batch, so the offset rows are also reserved.
+  playoutCount = std::min(playoutCount, CANONICAL_SEQUENCE_BATCH_SIZE - sequenceOffset);
 
   // Sequence batching based on the last known piece given by the in-game randomizer.
   // See canonical_sequences.hpp for the batch layout and the online-validated NES table.
@@ -146,10 +147,13 @@ float getPlayoutScore(GameState gameState, int playoutCount, int playoutLength, 
     // Do one playout
     const int *pieceSequence = useExhaustiveSequences 
           ? exhaustivePieceSequences + i * EXHAUSTIVE_SEQUENCE_LENGTH // Index into the exhaustive list of possible sequences;
-          : lastPieceSequences + i * SEQUENCE_LENGTH; // Index into the batch for this last-known piece;
+          : lastPieceSequences + (i + sequenceOffset) * SEQUENCE_LENGTH; // Index into the batch for this last-known piece (offset rows are skipped);
     float resultScore = playSequence(gameState, pieceRangeContextLookup, pieceSequence, playoutLength, aggressionLevel, playoutDataList);
     playoutScores.push_back(resultScore);
     playoutScore += resultScore;
+    if (outPlayoutScores != nullptr) {
+      outPlayoutScores->push_back(resultScore);
+    }
   }
 
   if (PLAYOUT_RESULT_LOGGING_ENABLED) {

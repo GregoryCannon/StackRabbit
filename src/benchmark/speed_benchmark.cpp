@@ -1,10 +1,12 @@
-// benchmark.cpp — Performance benchmark for the GET_MOVE path.
+// speed_benchmark.cpp — Performance benchmark for the GET_MOVE path.
+// NB: this is the engine *throughput* benchmark, unrelated to the accuracy benchmarking
+// in this folder (generate_oracle.cpp / run_agent.cpp).
 //
 // Build (from repo root):
-//   g++ -O2 -std=c++17 -o benchmark benchmark.cpp
+//   g++ -O2 -std=c++17 -o build/speed_benchmark src/benchmark/speed_benchmark.cpp
 //
 // Run:
-//   ./benchmark
+//   ./build/speed_benchmark
 
 #include <chrono>
 #include <cstdio>
@@ -15,7 +17,7 @@
 #include <algorithm>
 
 // Pull in all the engine code the same way entrypoint.cpp does.
-#include "src/cpp_modules/src/main.cpp"
+#include "../cpp_modules/src/main.cpp"
 
 
 // ---------------------------------------------------------------------------

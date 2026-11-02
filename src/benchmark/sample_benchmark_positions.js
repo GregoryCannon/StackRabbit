@@ -10,6 +10,11 @@ const path = require('path');
 const INPUT_FILE = path.join(__dirname, 'position_log.jsonl');
 const OUTPUT_FILE = path.join(__dirname, 'benchmark_positions.jsonl');
 
+// NB: the current benchmark_positions.jsonl was further edited by hand after sampling:
+// slot 125 (game 1, move 516) was all-dead per the oracle (every pair rated -3000), so it
+// was swapped for game 1, move 504 from the position log (shallowEval -532.9, survivable).
+// Re-running this sampler regenerates the original 200 without that swap.
+
 // Level strata. Level 29 play is not relevant here, and levels 19-28 are functionally
 // equivalent (gravity 2), so they form one stratum balanced equally against level 18
 // (gravity 3).
@@ -210,7 +215,7 @@ const outHeader = {
   strata: STRATA.map((s) => `${s.name}:${s.count}`).join(','),
   iPieceTetrisReadyRandomized: pieceChanges.length,
 };
-fs.writeFileSync(OUTPUT_FILE, JSON.stringify(outHeader) + '\n' + allPicked.map((p) => JSON.stringify(p)).join('\n') + '\n');
+fs.writeFileSync(OUTPUT_FILE, JSON.stringify(outHeader) + '\n' + allPicked.map((p, i) => JSON.stringify({index: i + 1, ...p})).join('\n') + '\n');
 
 // --- Summary ---
 console.log(`Wrote ${allPicked.length} positions to ${OUTPUT_FILE}`);
