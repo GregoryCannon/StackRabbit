@@ -12,7 +12,6 @@ import {
   GetGravity,
   getLevelAfterLineClears,
   IsGravityDoubled,
-  logBoard,
   NUM_ROW,
   shouldPerformInputsThisFrame
 } from "./utils";
@@ -130,17 +129,7 @@ export function getPossibleMoves(
     }
   }
 
-  // if (adjustmentState == INITIAL_PLACEMENT) {
-  //   console.log("legalplcaementsimstates");
-  //   legalPlacementSimStates.forEach(x => console.log(x.inputSequence + "  " + x.adjTimeSimState));
-  // }
-
   deDupeSortedList(legalPlacementSimStates, useDAS);
-
-  // if (adjustmentState == INITIAL_PLACEMENT) {
-  //   console.log("\n\n\nlegalplcaementsimstates");
-  //   legalPlacementSimStates.forEach(x => console.log(x.inputSequence + "  " + x.adjTimeSimState));
-  // }
 
   const [
     basicPossibilities,
@@ -152,13 +141,6 @@ export function getPossibleMoves(
     return basicPossibilities;
   }
 
-  // if (adjustmentState == INITIAL_PLACEMENT) {
-  //   console.log("\npotential tuck spin states");
-  //   potentialTuckSpinStates.forEach(x => {
-  //     console.log(x.inputSequence, x.adjTimeSimState != null)
-  //   })
-  // }
-
   const tuckSpinPossibilites = searchForTucksOrSpins(
     potentialTuckSpinStates,
     simParams,
@@ -167,12 +149,6 @@ export function getPossibleMoves(
 
   deDupeLockPossibilities(basicPossibilities);
 
-  // if (adjustmentState == INITIAL_PLACEMENT) {
-  //   console.log("basics");
-  //   console.log(basicPossibilities);
-  //   console.log("tuckspins");
-  //   console.log(tuckSpinPossibilites);
-  // }
   return basicPossibilities.concat(tuckSpinPossibilites);
 }
 
@@ -282,7 +258,6 @@ function exploreLegalPlacementsUntilLock(
       const readyForInputs = useDAS
         ? readyForTuckInputsDas(fullInputSequence, simParams.inputFrameTimeline)
         : shouldPerformInputsThisFrame(simParams.inputFrameTimeline, simState.arrFrameIndex);
-      // console.log(fullInputSequence, "isready", readyForInputs);
       if (!startedLookingForTuckSpins && readyForInputs) {
         startedLookingForTuckSpins = true;
       }
@@ -385,12 +360,9 @@ export function readyForTuckInputsDas(inputSequence: string, inputFrameTimeline:
     if (thisFr && lastFr != thisFr) {
       didStartHoldingDpad = true;
     }
-    // console.log(inputSequence, i, lastFr, thisFr, didStartHoldingDpad);
   }
 
   const minFramesWait = inputFrameTimeline.length - 1; // E.g. a timeline of X... = 3 frames waiting between inputs
-
-  // console.log("RFID", inputSequence, framesSinceLastInput, minFramesWait);
 
   return !didStartHoldingDpad && framesSinceLastInput >= minFramesWait;
 }
@@ -653,8 +625,7 @@ export function tryPlacement(
             rotationsList[simState.rotationIndex]
           )
         ) {
-          debugLog(simState, simParams, "GRAVITY");
-          lockAfterThisFrame = true;
+            lockAfterThisFrame = true;
           break; // From just the doublegravity for loop
         } else {
           simState.y++;
@@ -699,16 +670,8 @@ export function tryPlacement(
     const canKeepHoldingDpadForMoreDAS = useDAS && simState.dasCharge < 15 && dasButtonHeld != DasButtonHeld.NONE
     // If there's no reason to keep looking, quit the loop
     if (!canKeepHoldingDpadForMoreDAS && doneWaitingForAdjustment && foundPlacement) {
-      // if (goalRotationIndex == 1 && goalOffsetX == 0) {
-      //   console.log("quitting at frame", simState.frameIndex);
-      // }
       break;
     }
-    // else {
-    //   if (goalRotationIndex == 1 && goalOffsetX == 0) {
-    //     console.log("Continuing at frame", simState.frameIndex, doneWaitingForAdjustment, !canKeepHoldingDpadForMoreDAS, foundPlacement);
-    //   }
-    // }
   }
 }
 
@@ -726,15 +689,6 @@ export function performSimulationShift(
       currentRotationPiece
     )
   ) {
-    // console.log("DEBUG: COLLISION");
-    // utils.logBoard(
-    //   getBoardAndLinesClearedAfterPlacement(
-    //     board,
-    //     currentRotationPiece,
-    //     simState.x,
-    //     simState.y
-    //   )[0]
-    // );
     return 0; // Piece moved 0 cells
   }
   simState.x += xIncrement;
@@ -778,30 +732,9 @@ function performSimulationRotation(
       rotationsList[simState.rotationIndex]
     )
   ) {
-    // console.log("DEBUG: COLLISION");
-    // utils.logBoard(
-    //   getBoardAndLinesClearedAfterPlacement(
-    //     board,
-    //     rotationsList[prevRotationIndex],
-    //     simState.x,
-    //     simState.y
-    //   )[0]
-    // );
     return false; // 0 rotations were applied
   }
   return true;
-}
-
-function debugLog(simState: SimState, simParams: SimParams, reason: string) {
-  // console.log("\nDEBUG: " + reason);
-  // logBoard(
-  //   getBoardAndLinesClearedAfterPlacement(
-  //     simParams.board,
-  //     simParams.rotationsList[simState.rotationIndex],
-  //     simState.x,
-  //     simState.y
-  //   )[0]
-  // );
 }
 
 export function findWallCharge(simState: SimState, simParams: SimParams): string | null {
@@ -823,5 +756,3 @@ export function findWallCharge(simState: SimState, simParams: SimParams): string
   }
   return null;
 }
-
-console.log(readyForTuckInputsDas("_IrrrrrRrrrrrRrrrrrA..", "X.."));

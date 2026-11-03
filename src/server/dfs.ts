@@ -5,7 +5,6 @@ import {
 } from "./board_helper";
 import { findWallCharge, getPossibilityFromSimState, readyForTuckInputsDas } from "./move_search";
 import { Board, LegalPlacementSimState, Possibility, PossibilityChain, SimParams, SimState } from "./types";
-import { logBoard } from "./utils";
 
 const SPINTUCK_COST = -0.3;
 const SPIN_COST = -0.2;
@@ -125,8 +124,6 @@ function tryInput(
   let isWallChargeTuck = false;
   const wallChargeInput = X_INCREMENT_LOOKUP[inputChar] == 1 ? "R" : "L";
 
-  debugLog(simState, simParams, "TRYING " + simState.inputSequence + inputChar)
-
   while (true) {
     // Run a simulated 'frame' of gravity, shifting, and collision checking
     const willGravity = (frameIndex: number) => frameIndex % simParams.gravity === simParams.gravity - 1;
@@ -144,8 +141,6 @@ function tryInput(
             simParams.rotationsList[simState.rotationIndex]
           )
         ) {
-          debugLog(simState, simParams, "SHIFT COLLISION");
-
           // Failed to perform input, don't add this state
           return;
         }
@@ -185,8 +180,6 @@ function tryInput(
           simParams.rotationsList[newRotationIndex]
         )
       ) {
-        debugLog(simState, simParams, "ROTATION COLLISION");
-
         // Failed to perform input, don't add this state
         return;
       }
@@ -240,7 +233,6 @@ function tryInput(
           simParams.rotationsList[simState.rotationIndex]
         )
       ) {
-        debugLog(simState, simParams, "SUCCESS - GRAVITY");
         // Piece locked into the stack, so maybe add it if it's not redundant!
         const newPossibility = getPossibilityFromSimState(
           { ...simState, hasAlreadyLocked: true },
@@ -264,22 +256,4 @@ function tryInput(
     }
     simState.frameIndex += 1;
   }
-}
-
-function debugLog(simState: SimState, simParams: SimParams, reason: string) {
-  // if (reason == "SUCCESS - GRAVITY" && simState.x == 0 && simState.rotationIndex == 0) {
-  //   console.log("WAHOO!");
-  // }
-  // if (simState.x !== 1 || simState.rotationIndex !== 1) {
-  //   return
-  // }
-  // console.log("\nDEBUG: " + reason);
-  // logBoard(
-  //   getBoardAndLinesClearedAfterPlacement(
-  //     simParams.board,
-  //     simParams.rotationsList[simState.rotationIndex],
-  //     simState.x,
-  //     simState.y
-  //   )[0]
-  // );
 }
