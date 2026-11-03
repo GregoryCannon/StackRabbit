@@ -20,3 +20,4 @@
 #include "input_validation_tests.hpp"
 #include "request_type_tests.hpp"
 #include "board_format_tests.hpp"
+#include "move_search_fuzz_tests.hpp"

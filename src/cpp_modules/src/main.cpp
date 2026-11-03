@@ -14,6 +14,7 @@
 #include "eval_context.cpp"
 #include "move_result.cpp"
 #include "move_search.cpp"
+#include "das_move_search.cpp"
 #include "piece_ranges.cpp"
 #include "playout.cpp"
 #include "high_level_search.cpp"

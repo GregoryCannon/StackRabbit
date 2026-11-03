@@ -3,21 +3,6 @@
 Testing the `src/cpp_modules/` AI backend first: it is the core of StackRabbit, it is
 deterministic, and its entry points are pure string-in/string-out functions.
 
-## Framework: doctest
-
-Chosen because:
-
-- Single-header (vendored, MIT licensed) — no new build system, no dependencies
-- Works natively with the repo's unity-build style: `main.cpp` already
-  `#include`s every `.cpp` file (node-gyp single-source workaround), so the test
-  binary copies that exact pattern
-- Fastest compile times of the viable options, which matters here (the data
-  files are large)
-
-Rejected alternatives: Catch2 v3 (compiled library, fights the unity build),
-GoogleTest (needs Homebrew/vendoring + CI wiring), CMake/CTest (build-system
-refactor out of scope).
-
 ## Test binary layout
 
 - Vendor `doctest.h` into `src/cpp_modules/vendor/doctest.h` (v2.4.12)
@@ -110,6 +95,21 @@ input-string encoder so tests read like the calls they exercise.
    search** at any level — bisected via the shifted-parse scenario. The TS
    `request_parser.ts` rejects invalid timeline characters, so this is guarded
    at the boundary, but the C++ engine would hang if ever handed such input.
+
+## TS oracle fuzz fixtures (DAS move search)
+
+`npm run fuzz_generate` generates ~800 randomized board/timeline/level fixtures
+through the TypeScript `dasMoveSearch` (the reference implementation) and writes
+them to `src/server/move_search_fixtures.json`. The C++ doctest suite replays
+them via `dasMoveSearch` and compares the full (rotationIndex, x, y,
+dasChargeAfter, inputCostX10) multiset — see `DAS_move_search_spec.md` §14.
+
+`npm run fuzz_verify_sequences` is a second, stronger gate: it compiles
+`src/cpp_modules/tests/fixture_dump.cpp`, dumps C++ results for every DAS
+fixture, and diffs tuples **and character-exact input sequences** against the
+oracle JSON (exit nonzero on any mismatch). Use it after any change to either
+implementation's DAS path. Tap-only fixtures are covered by the doctest suite;
+sequences are not emitted in tap mode (they are derivable downstream).
 
 ## Phases
 
