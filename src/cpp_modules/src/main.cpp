@@ -54,7 +54,7 @@ static bool isIntegerString(std::string const &arg) {
 }
 
 std::string mainProcess(char const *inputStr, RequestType requestType) {
-  printf("Input string %s, requestType %d\n", inputStr, requestType);
+  maybePrint("Input string %s, requestType %d\n", inputStr, requestType);
 
   // Init empty data structures
   GameState startingGameState = {/* board= */ {},
