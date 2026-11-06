@@ -1,6 +1,6 @@
 import { LINE_CAP, MAX_CPP_PLAYOUT_MOVES } from "./params";
 import { INITIAL_PLACEMENT, PieceId, AggressionLevel, SearchState, UrlArguments } from "./types";
-import { getDasEquivalentInputTimeline, parseBoard } from "./utils";
+import { parseBoard } from "./utils";
 
 const AGGRESSION_LEVELS: AggressionLevel[] = ["safe", "aggro", "hyper"];
 
@@ -157,7 +157,13 @@ export function parseUrlArguments(
         break;
 
       case "dasCharge":
-        result.dasCharge = parseInt(value);
+        const dasCharge = parseInt(value);
+        if (isNaN(dasCharge) || dasCharge < -1 || dasCharge > 16) {
+          throw new Error(
+            "Illegal DAS charge (expected -1 for tap mode, or 0-16): " + value
+          );
+        }
+        result.dasCharge = dasCharge;
         break;
     }
   }
@@ -210,9 +216,9 @@ export function getCppEncodedInputString(
   const pieceLookup = ["I", "O", "L", "J", "T", "S", "Z"];
   const curPieceIndex = pieceLookup.indexOf(searchState.currentPieceId);
   const nextPieceIndex = pieceLookup.indexOf(searchState.nextPieceId);
-  const useDAS = urlArgs.dasCharge !== -1
-  // If DAS, tell the CPP backend we're a 10-12 Hz tapper 
-  const effInputFrameTimeline = useDAS ? getDasEquivalentInputTimeline(urlArgs.inputFrameTimeline) : urlArgs.inputFrameTimeline;
   // Includes the final | character at the end due to how the string is parsed (cpp doesn't have an easy split method rip)
-  return `${boardStr}|${searchState.level}|${searchState.lines}|${curPieceIndex}|${nextPieceIndex}|${effInputFrameTimeline}|${urlArgs.playoutCount}|${urlArgs.playoutLength}|${urlArgs.pruningBreadth}|${urlArgs.aggressionLevel}|`;
+  // The real input frame timeline is always sent; the C++ backend derives its own
+  // tapper approximation for playout paths and models DAS exactly for
+  // GET_LOCK_VALUE_LOOKUP_DAS (docs/engine_boundaries.md).
+  return `${boardStr}|${searchState.level}|${searchState.lines}|${curPieceIndex}|${nextPieceIndex}|${urlArgs.inputFrameTimeline}|${urlArgs.playoutCount}|${urlArgs.playoutLength}|${urlArgs.pruningBreadth}|${urlArgs.aggressionLevel}|${urlArgs.dasCharge}|`;
 }

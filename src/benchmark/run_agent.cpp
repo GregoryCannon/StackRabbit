@@ -146,11 +146,11 @@ struct AgentResult {
 std::string buildMainProcessInput(const BenchmarkPosition &pos, const HarnessConfig &config) {
   unsigned int board[20];
   decodeCompressedBoard(pos.board, board);
-  // Input format: board|level|lines|curPiece|nextPiece|timeline|playoutCount|playoutLength|pruningBreadth|aggression
+  // Input format: board|level|lines|curPiece|nextPiece|timeline|playoutCount|playoutLength|pruningBreadth|aggression|dasCharge
   std::ostringstream input;
   input << encodeBoardToString(board) << '|' << pos.level << '|' << pos.lines << '|' << pos.curPiece << '|'
         << pos.nextPiece << '|' << timeline << '|' << config.playoutCount << '|' << config.playoutLength << '|'
-        << config.pruningBreadth << "|safe|";
+        << config.pruningBreadth << "|safe|-1|";
   return input.str();
 }
 

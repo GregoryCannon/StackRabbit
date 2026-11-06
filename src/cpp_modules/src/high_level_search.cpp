@@ -6,6 +6,7 @@
 #include <limits>
 #include "formatting.hpp"
 #include "tournament_search.hpp"
+#include "das_move_search.hpp"
 using namespace std;
 
 #define MAP_OFFSET 5000          // An offset to make any placement better than the default 0 in the map
@@ -89,17 +90,57 @@ int searchDepth1(GameState gameState, const Piece *firstPiece, const EvalContext
   return (int) possibilityList.size();
 }
 
-/** Searches 2-ply from a starting state, and performs a fast eval on each of the resulting states. 
- * @returns an UNSORTED list of evaluated possibilities
+/** Searches 2-ply from a starting state, and performs a fast eval on each of the resulting states.
+ * @returns an UNSORTED list of evaluated possibilities (0 if the arguments are invalid)
+ * @param dasCharge - the first piece's incoming DAS charge: -1 = tap mode, 0..16 = DAS
+ *   mode (searches run through dasMoveSearch on dasInputFrameTimeline, the player's real
+ *   timeline). In DAS mode the second piece inherits each first placement's dasChargeAfter.
+ * @param secondPieceDasCharge - DAS bucket mode: prescribes the SECOND piece's starting
+ *   charge instead of inheriting it (the first piece is then always searched from a full
+ *   charge, DAS_CHARGE_MAX). Used by the DAS penalty buckets to evaluate the hypothesis
+ *   "the player ends the first placement with Q left over" -- the inherited value must
+ *   not be used there because it is path-dependent (the same lock cell can end at 16 via
+ *   a wall-charged drop or at 0 via a tuck).
+ *   Mutually exclusive with dasCharge: at most one of the two may be >= 0 (checked below).
  * @param generateExplanation - when true, captures a per-move evalExplanation string
  *   (only used by GET_TOP_MOVES / GET_TOP_MOVES_HYBRID / GET_MOVE_AB_TEST paths).
  */
-int searchDepth2(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int secondPieceDelay, const EvalContext *evalContext, OUT list<Possibility> &possibilityList, bool generateExplanation){
+int searchDepth2(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int dasCharge, int secondPieceDasCharge, char const *dasInputFrameTimeline, const EvalContext *evalContext, OUT list<Possibility> &possibilityList, bool generateExplanation){
 
-  // Get the placements of the first piece
+  // The two DAS modes are mutually exclusive: dasCharge describes the first piece's
+  // incoming charge (second piece inherits), secondPieceDasCharge prescribes the second
+  // piece's charge for the bucket hypothesis. Passing both is a programmer error.
+  if (dasCharge >= 0 && secondPieceDasCharge >= 0){
+    fprintf(stderr, "Error: searchDepth2 received both dasCharge (%d) and secondPieceDasCharge (%d) -- they are mutually exclusive. Pass dasCharge for a generic DAS search, or secondPieceDasCharge for the DAS bucket hypothesis.\n", dasCharge, secondPieceDasCharge);
+    return 0;
+  }
+  const bool useDas = dasCharge >= 0 || secondPieceDasCharge >= 0;
+
+  // Get the placements of the first piece. In DAS mode the results come out of
+  // dasMoveSearch as DasPossibilities and are converted BY VALUE into
+  // LockPlacements -- LockPlacement itself is unchanged (a struct edit regressed
+  // the playout benchmark once already; see TESTING.md's benchmarking methodology).
   vector<LockPlacement> firstLockPlacements;
-  moveSearch(gameState, firstPiece, evalContext->pieceRangeContext.inputFrameTimeline, firstLockPlacements);
+  // DAS mode only: the charge left over after each first placement, index-aligned
+  // with firstLockPlacements. By default the second piece spawns with it; the
+  // secondPieceDasCharge override (bucket searches) replaces it.
+  vector<int> firstDasChargeAfters;
+  if (useDas){
+    // Bucket mode (secondPieceDasCharge >= 0) always searches the first piece from a
+    // full charge so every bucket/deep lookup enumerates the same set of lock cells.
+    int firstPieceDasCharge = secondPieceDasCharge >= 0 ? DAS_CHARGE_MAX : dasCharge;
+    vector<DasPossibility> firstDasPossibilities;
+    dasMoveSearch(gameState, firstPiece, dasInputFrameTimeline, firstPieceDasCharge, /* trackInputSequences= */ false, firstDasPossibilities);
+    for (DasPossibility const &dasPossibility : firstDasPossibilities) {
+      firstLockPlacements.push_back({dasPossibility.x, dasPossibility.y, dasPossibility.rotationIndex, -1, dasPossibility.tuckInput, firstPiece});
+      firstDasChargeAfters.push_back(dasPossibility.dasChargeAfter);
+    }
+  } else {
+    moveSearch(gameState, firstPiece, evalContext->pieceRangeContext.inputFrameTimeline, firstLockPlacements);
+  }
+  int firstPlacementIndex = -1;
   for (auto it = begin(firstLockPlacements); it != end(firstLockPlacements); ++it) {
+    firstPlacementIndex++;
     LockPlacement firstPlacement = *it;
     maybePrint("\n\n\n\nNEW FIRST MOVE: rot=%d x=%d\n", firstPlacement.rotationIndex, firstPlacement.x);
 
@@ -117,24 +158,21 @@ int searchDepth2(GameState gameState, const Piece *firstPiece, const Piece *seco
 
     float firstMoveReward = getLineClearFactor(afterFirstMove.lines - gameState.lines, evalContext->weights, evalContext->shouldRewardLineClears);
 
-    // Apply the second piece delay, if there is any
-    std::string effInputTimeline = std::string("");
-    if (secondPieceDelay > 0){
-      for (int i = 0; i < secondPieceDelay; i++){
-        effInputTimeline.append(".");
-      }
-      // 57 frames is an upper bound on how long a piece can be on screen. We have to fully extend the timeline so it doesn't repeat and make the agent do this delay again.
-      // Calculation: 19 cells dropped (long bar flat) * 3 frames/gravity (level 18)
-      while (effInputTimeline.length() < 57){
-        effInputTimeline.append(evalContext->pieceRangeContext.inputFrameTimeline);
-      }
-    } else {
-      effInputTimeline = evalContext->pieceRangeContext.inputFrameTimeline;
-    }
-
     // Get the placements of the second piece
     vector<LockPlacement> secondLockPlacements;
-    moveSearch(afterFirstMove, secondPiece, effInputTimeline.c_str(), secondLockPlacements);
+    if (useDas){
+      // DAS mode: the second piece spawns with the first placement's leftover charge
+      // by default (generic semantics), or with secondPieceDasCharge when the caller
+      // prescribes it.
+      vector<DasPossibility> secondDasPossibilities;
+      int effectiveSecondPieceDasCharge = secondPieceDasCharge >= 0 ? secondPieceDasCharge : firstDasChargeAfters[firstPlacementIndex];
+      dasMoveSearch(afterFirstMove, secondPiece, dasInputFrameTimeline, effectiveSecondPieceDasCharge, /* trackInputSequences= */ false, secondDasPossibilities);
+      for (DasPossibility const &dasPossibility : secondDasPossibilities) {
+        secondLockPlacements.push_back({dasPossibility.x, dasPossibility.y, dasPossibility.rotationIndex, -1, dasPossibility.tuckInput, secondPiece});
+      }
+    } else {
+      moveSearch(afterFirstMove, secondPiece, evalContext->pieceRangeContext.inputFrameTimeline, secondLockPlacements);
+    }
 
     for (auto secondPlacement : secondLockPlacements) {
       GameState resultingState = advanceGameState(afterFirstMove, secondPlacement, evalContext);
@@ -180,7 +218,7 @@ LockLocation playOneMove(GameState gameState, const Piece *firstPiece, const Pie
     searchDepth1(gameState, firstPiece, evalContext, possibilityList, generateExplanation);
     lastSeenPiece = firstPiece;
   } else {
-    searchDepth2(gameState, firstPiece, secondPiece, /* secondPieceDelay= */ 0, evalContext, possibilityList, generateExplanation);
+    searchDepth2(gameState, firstPiece, secondPiece, /* dasCharge= */ -1, /* secondPieceDasCharge= */ -1, evalContext->pieceRangeContext.inputFrameTimeline, evalContext, possibilityList, generateExplanation);
     lastSeenPiece = secondPiece;
   }
 
@@ -289,7 +327,7 @@ std::string rateMove(GameState gameState, const Piece *firstPiece, const Piece *
   // Search depth 1
   searchDepth1(gameState, firstPiece, evalContext, possibilityListD1);
   if (hasNb){
-    searchDepth2(gameState, firstPiece, secondPiece, /* secondPieceDelay= */ 0, evalContext, possibilityListD2);
+    searchDepth2(gameState, firstPiece, secondPiece, /* dasCharge= */ -1, /* secondPieceDasCharge= */ -1, evalContext->pieceRangeContext.inputFrameTimeline, evalContext, possibilityListD2);
   }
   if (possibilityListD1.size() == 0 || (hasNb && possibilityListD2.size() == 0)){
     return std::string("Error: no legal moves found");
@@ -444,7 +482,7 @@ std::string getTopMoveList(GameState gameState, const Piece *firstPiece, const P
     searchDepth1(gameState, firstPiece, evalContext, possibilityList, generateExplanation);
     lastSeenPiece = firstPiece;
   } else {
-    searchDepth2(gameState, firstPiece, secondPiece, /* secondPieceDelay= */ 0, evalContext, possibilityList, generateExplanation);
+    searchDepth2(gameState, firstPiece, secondPiece, /* dasCharge= */ -1, /* secondPieceDasCharge= */ -1, evalContext->pieceRangeContext.inputFrameTimeline, evalContext, possibilityList, generateExplanation);
     lastSeenPiece = secondPiece;
   }
 
@@ -522,9 +560,11 @@ std::string getTopMoveList(GameState gameState, const Piece *firstPiece, const P
 
 /** Calculates the valuation of every possible terminal position for a given piece on a given board, and stores it in a map.
  * @param pruningBreadth - How many possibilities to evaluate via a full set of playouts, as opposed to just the eval function.
- * @param secondPieceDelay - A very particular parameter that's usually 0 and only used to help simulate the loss of DAS while placing the first piece.
+ * @param dasCharge - First piece's incoming DAS charge: -1 = tap mode, 0..16 = DAS mode (see searchDepth2). Mutually exclusive with secondPieceDasCharge (searchDepth2 errors out if both are >= 0).
+ * @param secondPieceDasCharge - DAS bucket mode: forces the second piece's starting charge (the bucket hypothesis) instead of inheriting the first placement's dasChargeAfter; the first piece is then searched from DAS_CHARGE_MAX. -1 = not in bucket mode.
+ * @param dasInputFrameTimeline - The player's real input frame timeline, consumed by the DAS move search in DAS mode.
  */
-unordered_map<string, float> getLockValueLookup(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int pruningBreadth, int playoutCount, int playoutLength, int secondPieceDelay, const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3]){
+unordered_map<string, float> getLockValueLookup(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int pruningBreadth, int playoutCount, int playoutLength, int dasCharge, int secondPieceDasCharge, char const *dasInputFrameTimeline, const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3]){
   unordered_map<string, float> lockValueMap;
   unordered_map<string, int> lockValueRepeatMap;
 
@@ -535,7 +575,7 @@ unordered_map<string, float> getLockValueLookup(GameState gameState, const Piece
   // Get the list of evaluated possibilities
   list<Possibility> possibilityList;
   list<Possibility> sortedList;
-  searchDepth2(gameState, firstPiece, secondPiece, secondPieceDelay, evalContext, possibilityList);
+  searchDepth2(gameState, firstPiece, secondPiece, dasCharge, secondPieceDasCharge, dasInputFrameTimeline, evalContext, possibilityList);
   partiallySortPossibilityList(possibilityList, numSorted, sortedList);
 
   // If no playouts, just use the eval
@@ -618,40 +658,61 @@ std::string encodeMapToJSON(unordered_map<string, float> map){
 std::string getLockValueLookupEncoded(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int pruningBreadth, int playoutCount, int playoutLength, const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3]){
   unordered_map<string, float> lockValueMap;
   if (pruningBreadth == -1) {
-    lockValueMap = getLockValueLookupTournament(gameState, firstPiece, secondPiece, pruningBreadth, playoutCount, playoutLength, /* secondPieceDelay= */ 0, evalContext, pieceRangeContextLookup);
+    lockValueMap = getLockValueLookupTournament(gameState, firstPiece, secondPiece, pruningBreadth, playoutCount, playoutLength, /* dasCharge= */ -1, /* secondPieceDasCharge= */ -1, evalContext->pieceRangeContext.inputFrameTimeline, evalContext, pieceRangeContextLookup);
   } else {
-    lockValueMap = getLockValueLookup(gameState, firstPiece, secondPiece, pruningBreadth, playoutCount, playoutLength, /* secondPieceDelay= */ 0, evalContext, pieceRangeContextLookup);
+    lockValueMap = getLockValueLookup(gameState, firstPiece, secondPiece, pruningBreadth, playoutCount, playoutLength, /* dasCharge= */ -1, /* secondPieceDasCharge= */ -1, evalContext->pieceRangeContext.inputFrameTimeline, evalContext, pieceRangeContextLookup);
   }
   return encodeMapToJSON(lockValueMap);
 }
 
-std::string getLockValueLookupDas(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int pruningBreadth, int playoutCount, int playoutLength, const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3]){
-  bool useTournament = pruningBreadth == -1;
-  auto getLockValueLookupForDas = [=](int secondPieceDelay, int deepPlayoutCount, int deepPlayoutLength) {
-    if (useTournament) {
-      return getLockValueLookupTournament(gameState, firstPiece, secondPiece, pruningBreadth, deepPlayoutCount, deepPlayoutLength, secondPieceDelay, evalContext, pieceRangeContextLookup);
-    }
-    return getLockValueLookup(gameState, firstPiece, secondPiece, pruningBreadth, deepPlayoutCount, deepPlayoutLength, secondPieceDelay, evalContext, pieceRangeContextLookup);
-  };
+/**
+ * Runs one lock value lookup for a DAS bucket, in either the tournament or legacy style
+ * depending on pruningBreadth (see getLockValueLookupDas). The bucket prescribes the
+ * second piece's starting charge; searchDepth2 then searches the first piece from a full
+ * charge (DAS_CHARGE_MAX), so every bucket/deep lookup enumerates the same lock cells.
+ * 
+ * These method calls pass in values for the SECOND piece DAS charge since we're concerned 
+ * with how bad the DAS can be *after* the first piece without sacrificing eval quality.
+ */
+static unordered_map<string, float> getLockValueLookupForDasBucket(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int pruningBreadth, int playoutCount, int playoutLength, int secondPieceDasCharge, char const *dasInputFrameTimeline, const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3]){
+  if (pruningBreadth == -1) {
+    return getLockValueLookupTournament(gameState, firstPiece, secondPiece, pruningBreadth, playoutCount, playoutLength, /* dasCharge= */ -1, secondPieceDasCharge, dasInputFrameTimeline, evalContext, pieceRangeContextLookup);
+  }
+  return getLockValueLookup(gameState, firstPiece, secondPiece, pruningBreadth, playoutCount, playoutLength, /* dasCharge= */ -1, secondPieceDasCharge, dasInputFrameTimeline, evalContext, pieceRangeContextLookup);
+}
 
-  // First, do multiple shallow searches at low depth to check if having partial or no DAS charge clearly misses the best placement
-  // E.g. if the first placement is a tuck setup and the second placement resolves it (very common pattern), the second piece needs enough DAS charge to be able to actually do the tuck.
-  // Alternatively, if the first placement is resolving a tuck setup, and the best second placement is something not DAS-intensive, then there should be no penalty.
-  unordered_map<string, float> shallowMapFullCharge = getLockValueLookupForDas(/* secondPieceDelay= */ 0, /* playoutCount= */ 0, /* playoutLength= */ 0);
+std::string getLockValueLookupDas(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int pruningBreadth, int playoutCount, int playoutLength, char const *dasInputFrameTimeline, const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3]){
+  // First, do multiple shallow searches at low depth to check if finishing the first placement with partial or no DAS charge sabotages the next piece's placements.
+  // E.g. if the next piece will need full DAS (i.e. an I piece going all the way to the right), losing DAS during the first piece would be bad, and the penalty should be calculated to be high.
+  // However, if the best move for the next piece can still be done with a DAS charge of 0, then the penalties should all be zero and the agent has free reign to lose DAS during the first piece.
+  //
+  // These method calls pass in values for the SECOND piece DAS charge since we're concerned with how bad the DAS can be *after* the first piece without sacrificing eval quality.
+  unordered_map<string, float> shallowMapFullCharge;
+  unordered_map<string, float> shallowMapPartialCharge;
+  unordered_map<string, float> shallowMapMinCharge;
+  // Full charge baseline that the penalties are measured against. (Low-depth to be a fair comparison).
+  shallowMapFullCharge = getLockValueLookupForDasBucket(gameState, firstPiece, secondPiece, pruningBreadth, /* playoutCount= */ 0, /* playoutLength= */ 0, /* secondPieceDasCharge= */ 15, dasInputFrameTimeline, evalContext, pieceRangeContextLookup);
 
-  // A DAS charge of 10 (partial charge) is equivalent to waiting 5 frames before the first shift
-  unordered_map<string, float> shallowMapPartialCharge = getLockValueLookupForDas(/* secondPieceDelay= */ 5, /* playoutCount= */ 0, /* playoutLength= */ 0);
-  
-  // A DAS charge of 5 is equivalent to 10 frame wait before the first shift. It's also the worst possible DAS charge, since even with 0 charge you can 
+  // Partial charge: 10 is the post-shift charge of a standard DAS shift (5 held
+  // frames away from the next shift).
+  shallowMapPartialCharge = getLockValueLookupForDasBucket(gameState, firstPiece, secondPiece, pruningBreadth, /* playoutCount= */ 0, /* playoutLength= */ 0, /* secondPieceDasCharge= */ 10, dasInputFrameTimeline, evalContext, pieceRangeContextLookup);
+
+  // Minimum charge: 5 is the worst useful charge, since even with 0 charge you can
   // just first-frame tap without holding during ARE, and it ends up being exactly equivalent:
   // Charge < 5 : shift->0  1  2  3   4  5  6  7  8  9    10
   // Charge = 5:   6       7  8  9  10 11 12 13 14 15 shift->10
-  unordered_map<string, float> shallowMapMinCharge = getLockValueLookupForDas(/* secondPieceDelay= */ 10, /* playoutCount= */ 0, /* playoutLength= */ 0);
+  shallowMapMinCharge = getLockValueLookupForDasBucket(gameState, firstPiece, secondPiece, pruningBreadth, /* playoutCount= */ 0, /* playoutLength= */ 0, /* secondPieceDasCharge= */ 5, dasInputFrameTimeline, evalContext, pieceRangeContextLookup);
 
-  // Replace the raw value maps with maps of the penalty relative to the best placement (as negative numbers)
+  // Replace the raw value maps with maps of the penalty relative to the best placement (as negative numbers).
+  // NB: all four lookups share one first-piece search, so their key sets match; the
+  // guard below is a safety net. Skipped keys match TS's getDasPenalty missing-key ->
+  // no-penalty behavior.
   for (const auto& pair : shallowMapFullCharge) {
     string key = pair.first;
     float value = pair.second;
+    if (shallowMapPartialCharge.count(key) == 0 || shallowMapMinCharge.count(key) == 0) {
+      continue;
+    }
     float penaltyPartial = shallowMapPartialCharge.at(key) - value;
     float penaltyMin = shallowMapMinCharge.at(key) - value;
     shallowMapPartialCharge[key] = penaltyPartial;
@@ -659,8 +720,8 @@ std::string getLockValueLookupDas(GameState gameState, const Piece *firstPiece, 
   }
 
 
-  // Then, do one deep search to see what the actual best move is, irrespective of DAS
-  unordered_map<string, float> deepValue = getLockValueLookupForDas(/* secondPieceDelay= */ 0, playoutCount, playoutLength);
+  // Then, do one deep search to see what the actual best move is, irrespective of DAS.
+  unordered_map<string, float> deepValue = getLockValueLookupForDasBucket(gameState, firstPiece, secondPiece, pruningBreadth, playoutCount, playoutLength, /* secondPieceDasCharge= */ 15, dasInputFrameTimeline, evalContext, pieceRangeContextLookup);
   
   // Compile result as array of JSONs
   std::string resultStr = std::string("[\n");

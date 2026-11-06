@@ -1,4 +1,3 @@
-import { PIECE_LOOKUP } from "../../docs/tetrominoes";
 import {
   _modulus,
   _validateIntParam,
@@ -15,6 +14,152 @@ import {
   NUM_ROW,
   shouldPerformInputsThisFrame
 } from "./utils";
+
+const PIECE_I = [
+  [
+    [0, 0, 0, 0],
+    [0, 0, 0, 0],
+    [1, 1, 1, 1],
+    [0, 0, 0, 0],
+  ],
+
+  [
+    [0, 0, 1, 0],
+    [0, 0, 1, 0],
+    [0, 0, 1, 0],
+    [0, 0, 1, 0],
+  ],
+];
+
+const PIECE_J = [
+  [
+    [0, 0, 0, 0],
+    [0, 1, 1, 1],
+    [0, 0, 0, 1],
+  ],
+
+  [
+    [0, 0, 1, 0],
+    [0, 0, 1, 0],
+    [0, 1, 1, 0],
+  ],
+
+  [
+    [0, 1, 0, 0],
+    [0, 1, 1, 1],
+    [0, 0, 0, 0],
+  ],
+
+  [
+    [0, 0, 1, 1],
+    [0, 0, 1, 0],
+    [0, 0, 1, 0],
+  ],
+];
+
+const PIECE_L = [
+  [
+    [0, 0, 0, 0],
+    [0, 1, 1, 1],
+    [0, 1, 0, 0],
+  ],
+
+  [
+    [0, 1, 1, 0],
+    [0, 0, 1, 0],
+    [0, 0, 1, 0],
+  ],
+
+  [
+    [0, 0, 0, 1],
+    [0, 1, 1, 1],
+    [0, 0, 0, 0],
+  ],
+
+  [
+    [0, 0, 1, 0],
+    [0, 0, 1, 0],
+    [0, 0, 1, 1],
+  ],
+];
+
+const PIECE_O = [
+  [
+    [0, 0, 0, 0],
+    [0, 1, 1, 0],
+    [0, 1, 1, 0],
+    [0, 0, 0, 0],
+  ],
+];
+
+const PIECE_S = [
+  [
+    [0, 0, 0, 0],
+    [0, 0, 1, 1],
+    [0, 1, 1, 0],
+  ],
+
+  [
+    [0, 0, 1, 0],
+    [0, 0, 1, 1],
+    [0, 0, 0, 1],
+  ],
+];
+
+const PIECE_T = [
+  [
+    [0, 0, 0, 0],
+    [0, 1, 1, 1],
+    [0, 0, 1, 0],
+  ],
+
+  [
+    [0, 0, 1, 0],
+    [0, 1, 1, 0],
+    [0, 0, 1, 0],
+  ],
+
+  [
+    [0, 0, 1, 0],
+    [0, 1, 1, 1],
+    [0, 0, 0, 0],
+  ],
+
+  [
+    [0, 0, 1, 0],
+    [0, 0, 1, 1],
+    [0, 0, 1, 0],
+  ],
+];
+
+const PIECE_Z = [
+  [
+    [0, 0, 0, 0],
+    [0, 1, 1, 0],
+    [0, 0, 1, 1],
+  ],
+
+  [
+    [0, 0, 0, 1],
+    [0, 0, 1, 1],
+    [0, 0, 1, 0],
+  ],
+];
+
+// The piece list, with colors and letter identifiers
+
+// [Definition, Color Set, Corresponding Letter]
+export const PIECE_LOOKUP = {
+  Z: [PIECE_Z, 2, "Z"],
+  S: [PIECE_S, 3, "S"],
+  T: [PIECE_T, 1, "T"],
+  O: [PIECE_O, 1, "O"],
+  L: [PIECE_L, 2, "L"],
+  I: [PIECE_I, 1, "I"],
+  J: [PIECE_J, 3, "J"],
+};
+
+export const PIECE_LIST = Object.values(PIECE_LOOKUP);
 
 export function getSearchStateAfter(
   prevSearchState: SearchState,
@@ -625,7 +770,7 @@ export function tryPlacement(
             rotationsList[simState.rotationIndex]
           )
         ) {
-            lockAfterThisFrame = true;
+          lockAfterThisFrame = true;
           break; // From just the doublegravity for loop
         } else {
           simState.y++;

@@ -62,6 +62,6 @@ constexpr float TMT_CUT1_VETO_Z = 0;
 
 
 
-std::unordered_map<std::string, float> getLockValueLookupTournament(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int pruningBreadth, int playoutCount, int playoutLength, int secondPieceDelay, const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3]);
+std::unordered_map<std::string, float> getLockValueLookupTournament(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int pruningBreadth, int playoutCount, int playoutLength, int dasCharge, int secondPieceDasCharge, char const *dasInputFrameTimeline, const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3]);
 
 #endif

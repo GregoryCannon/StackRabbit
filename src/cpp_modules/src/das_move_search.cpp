@@ -12,9 +12,10 @@ using namespace std;
  * DAS-aware move search: a 1:1 port of the TS spawn-placement pipeline
  * (move_search.ts tryPlacement + deDupeSortedList + exploreLegalPlacementsUntilLock,
  * and dfs.ts searchForTucksOrSpins/tryInput) for the INITIAL_PLACEMENT path.
- * Section references (§N) point at docs/DAS_move_search_spec.md.
+ * Equivalence with the TS mirror is enforced by the fuzz harness (see TESTING.md).
+ * The frame-exact DAS charge model is documented in docs/DAS_explainer.md.
  *
- * Per design (§13), the input sequence string is always tracked internally in
+ * By design, the input sequence string is always tracked internally in
  * DAS mode: tuck-readiness gating scans it directly, exactly like TS. The
  * runtime flag only controls whether sequences are copied into the output.
  */
@@ -99,7 +100,7 @@ static int dasInputCostX10(char c) {
   }
 }
 
-/** Port of TS readyForTuckInputsDas (§11): direct scan of the sequence string. */
+/** Port of TS readyForTuckInputsDas : direct scan of the sequence string. */
 static bool dasReadyForTuckInputs(const std::string &inputSequence, char const *inputFrameTimeline) {
   // Frames since the last input at all (trailing run of '.')
   int framesSinceLastInput = 0;
@@ -171,7 +172,7 @@ static int dasPlacePieceAndClearLines(unsigned int board[20], const Piece *piece
   return cleared;
 }
 
-/** Port of TS getPossibilityFromSimState (§10). */
+/** Port of TS getPossibilityFromSimState . */
 static DasPossibility dasGetPossibilityFromSimState(
     unsigned int board[20],
     const Piece *piece,
@@ -205,7 +206,7 @@ static DasPossibility dasGetPossibilityFromSimState(
   return p;
 }
 
-/** Port of TS tryPlacement (§5) for the INITIAL_PLACEMENT spawn path. */
+/** Port of TS tryPlacement  for the INITIAL_PLACEMENT spawn path. */
 static void dasTryPlacement(
     unsigned int board[20],
     const Piece *piece,
@@ -220,7 +221,7 @@ static void dasTryPlacement(
     int dasCharge,
     OUT std::vector<DasSimState> &legalPlacementSimStates) {
 
-  const bool holdDASduringARE = !dasWillReset && goalOffsetX != 0; // §5: '_' prefix
+  const bool holdDASduringARE = !dasWillReset && goalOffsetX != 0; // '_' hold-through-ARE prefix
 
   DasSimState simState;
   simState.x = initialX;
@@ -262,7 +263,7 @@ static void dasTryPlacement(
         return; // horizontally blocked: the whole goal is impossible
       }
       simState.x += shiftIncrement;
-      simState.dasCharge = simState.pendingDasReset ? 0 : 10; // §4 charge lifecycle
+      simState.dasCharge = simState.pendingDasReset ? 0 : 10; // charge lifecycle
       simState.pendingDasReset = false;
     } else if (willHoldDasButtonThisFrame) {
       simState.dasCharge++;
@@ -280,7 +281,7 @@ static void dasTryPlacement(
     int effShift = (willShiftThisFrame || willHoldDasButtonThisFrame) ? shiftIncrement : 0;
     char thisFrameStr = DAS_INPUT_TABLE[effShift + 1][effRot + 1];
     if (shiftIncrement != 0 && !willShiftThisFrame) {
-      thisFrameStr = tolower(thisFrameStr); // §3: DAS held but no shift executed
+      thisFrameStr = tolower(thisFrameStr); // DAS held but no shift executed
     }
     simState.inputSequence += thisFrameStr;
 
@@ -302,7 +303,7 @@ static void dasTryPlacement(
     const bool foundPlacement =
         simState.rotationIndex == goalRotationIndex && simState.x == initialX + goalOffsetX;
     if (foundPlacement) {
-      // TS registers a copy every frame while the piece sits at the goal (§5)
+      // TS registers a copy every frame while the piece sits at the goal 
       DasSimState copy = simState;
       copy.hasAlreadyLocked = lockAfterThisFrame;
       legalPlacementSimStates.push_back(copy);
@@ -313,7 +314,7 @@ static void dasTryPlacement(
     }
 
     // Spawn path: doneWaitingForAdjustment is always true, so exit as soon as
-    // the placement is found and there is no more charge to gain (§5).
+    // the placement is found and there is no more charge to gain .
     const bool canKeepHoldingDpadForMoreDAS = simState.dasCharge < 15 && simState.heldDirection != 0;
     if (!canKeepHoldingDpadForMoreDAS && foundPlacement) {
       break;
@@ -321,7 +322,7 @@ static void dasTryPlacement(
   }
 }
 
-/** Port of TS deDupeSortedList (§6): keep first + last entry per (rot, x) group. */
+/** Port of TS deDupeSortedList : keep first + last entry per (rot, x) group. */
 static std::vector<DasSimState> dasDedupeSortedStates(const std::vector<DasSimState> &states) {
   std::vector<int> groupOrder;                             // keys in first-seen order
   unordered_map<int, pair<int, int>> groupBounds;          // key -> {firstIdx, lastIdx}
@@ -350,11 +351,11 @@ static std::vector<DasSimState> dasDedupeSortedStates(const std::vector<DasSimSt
 struct DasFallResult {
   std::vector<DasPossibility> lockPossibilities;
   std::vector<DasSimState> potentialTuckSpinStates;
-  // Keyed by rotationIndex * 100 + x -> y. Missing keys read as 0 (TS `|| 0` quirk, §9).
+  // Keyed by rotationIndex * 100 + x -> y. Missing keys read as 0 (TS `|| 0` quirk).
   unordered_map<int, int> lockHeightLookup;
 };
 
-/** Port of TS exploreLegalPlacementsUntilLock (§7). */
+/** Port of TS exploreLegalPlacementsUntilLock . */
 static void dasExploreLegalPlacementsUntilLock(
     unsigned int board[20],
     const Piece *piece,
@@ -385,7 +386,7 @@ static void dasExploreLegalPlacementsUntilLock(
 
       const bool isGravityFrame = simState.frameIndex % gravity == gravity - 1;
 
-      // Start looking for tucks/spins as soon as inputs are allowed (§7)
+      // Start looking for tucks/spins as soon as inputs are allowed 
       const bool readyForInputs = dasReadyForTuckInputs(simState.inputSequence, inputFrameTimeline);
       if (!startedLookingForTuckSpins && readyForInputs) {
         startedLookingForTuckSpins = true;
@@ -396,7 +397,7 @@ static void dasExploreLegalPlacementsUntilLock(
         highestRegisteredY = simState.y;
       }
 
-      // Wall charges (§7): charge frozen during the fall except for this re-press
+      // Wall charges : charge frozen during the fall except for this re-press
       char wallCharge = 0;
       if (simState.dasCharge < 16 && startedLookingForTuckSpins) {
         wallCharge = dasFindWallCharge(board, piece, simState.x, simState.y, simState.rotationIndex);
@@ -429,7 +430,7 @@ static void dasExploreLegalPlacementsUntilLock(
   }
 }
 
-/** Port of TS dfs.tryInput (§9): one tuck/spin input, then ride gravity to lock. */
+/** Port of TS dfs.tryInput : one tuck/spin input, then ride gravity to lock. */
 static bool dasTryInput(
     unsigned int board[20],
     const Piece *piece,
@@ -459,7 +460,7 @@ static bool dasTryInput(
           return false;
         }
 
-        // §9: wall-charge tuck = the piece could have wall-charged on the
+        // wall-charge tuck: the piece could have wall-charged on the
         // previous (gravity) frame; then the tuck shift leaves charge at 10.
         const bool couldWallChargeLastFrame = collision(board, piece, newX, simState.y - 1, simState.rotationIndex) != 0;
         const bool lastFrameWasGravityFrame = (simState.frameIndex - 1) % gravity == gravity - 1;
@@ -479,7 +480,7 @@ static bool dasTryInput(
       simState.rotationIndex = newRotationIndex;
 
       if (isWallChargeTuck) {
-        // Replace the '.' right before this input with the wall-charge char (§9)
+        // Replace the '.' right before this input with the wall-charge char 
         simState.inputSequence = simState.inputSequence.substr(0, simState.inputSequence.size() - 1) +
                                  char(tolower(wallChargeInput)) + inputChar;
       } else {
@@ -518,7 +519,7 @@ static bool dasTryInput(
   }
 }
 
-/** Port of TS searchForTucksOrSpins (§9): depth-1 tuck/spin exploration. */
+/** Port of TS searchForTucksOrSpins : depth-1 tuck/spin exploration. */
 static std::vector<DasPossibility> dasSearchForTucksOrSpins(
     unsigned int board[20],
     const Piece *piece,
@@ -551,7 +552,7 @@ static std::vector<DasPossibility> dasSearchForTucksOrSpins(
       int newRot = ((simState.rotationIndex + rotDelta) % numOrientations + numOrientations) % numOrientations;
       const int newX = simState.x + xDelta;
 
-      // Visited check (§9): skip if this hover position adds nothing novel.
+      // Visited check : skip if this hover position adds nothing novel.
       auto it = lockHeightLookup.find(newRot * 100 + newX);
       const int highestYSeen = it != lockHeightLookup.end() ? it->second : 0;
       if (simState.y <= highestYSeen) {
@@ -575,7 +576,7 @@ static std::vector<DasPossibility> dasSearchForTucksOrSpins(
   return novel;
 }
 
-/** Port of TS deDupeLockPossibilities (§8): adjacent duplicate lock cells keep the later (max-charge) variant. */
+/** Port of TS deDupeLockPossibilities : adjacent duplicate lock cells keep the later (max-charge) variant. */
 static void dasDedupeLockPossibilities(std::vector<DasPossibility> &list) {
   for (int i = 0; i + 1 < (int)list.size(); i++) {
     if (list[i].rotationIndex == list[i + 1].rotationIndex &&
@@ -603,14 +604,14 @@ int dasMoveSearch(GameState gameState,
     return 0;
   }
 
-  // Phase A: per-goal frame simulation (§5)
+  // Phase A: per-goal frame simulation 
   std::vector<DasSimState> legalPlacementSimStates;
   for (int goalRotationIndex = 0; goalRotationIndex < numOrientations; goalRotationIndex++) {
     const int rangeStart = -2 - initialX;
     const int rangeEnd = 7 - initialX;
     for (int xOffset = rangeStart; xOffset <= rangeEnd; xOffset++) {
       // Spawn path: dasWillReset reduces to "incoming charge <= 5 and the goal
-      // requires movement" (§5); zero-shift goals never reset or hold.
+      // requires movement" ; zero-shift goals never reset or hold.
       const bool dasWillReset = xOffset != 0 && dasCharge <= 5;
       dasTryPlacement(gameState.board, piece, goalRotationIndex, xOffset, dasWillReset,
                       inputFrameTimeline, gravity, gravityDoubled, initialX, initialY, dasCharge,
@@ -618,23 +619,23 @@ int dasMoveSearch(GameState gameState,
     }
   }
 
-  // Phase A dedup (§6)
+  // Phase A dedup 
   const std::vector<DasSimState> dedupedStates = dasDedupeSortedStates(legalPlacementSimStates);
 
-  // Phase B: fall phase (§7)
+  // Phase B: fall phase 
   DasFallResult fall;
   dasExploreLegalPlacementsUntilLock(gameState.board, piece, dedupedStates, inputFrameTimeline,
                                      gravity, gravityDoubled, fall);
 
-  // Phase C: tuck/spin DFS (§9)
+  // Phase C: tuck/spin DFS 
   std::vector<DasPossibility> tuckPossibilities = dasSearchForTucksOrSpins(
       gameState.board, piece, fall.potentialTuckSpinStates, fall.lockHeightLookup,
       inputFrameTimeline, gravity);
 
-  // Lock dedup on the basic list (§8)
+  // Lock dedup on the basic list 
   dasDedupeLockPossibilities(fall.lockPossibilities);
 
-  // Assemble: basics then tucks, no cross-list dedup (§9)
+  // Assemble: basics then tucks, no cross-list dedup 
   for (const DasPossibility &p : fall.lockPossibilities) {
     results.push_back(p);
     if (!trackInputSequences) {

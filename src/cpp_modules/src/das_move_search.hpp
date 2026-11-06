@@ -6,7 +6,7 @@
 #include "types.hpp"
 
 /**
- * DAS-aware move search (docs/DAS_move_search_spec.md).
+ * DAS-aware move search (frame-exact charge model: docs/DAS_explainer.md).
  *
  * A 1:1 port of the TS spawn-placement pipeline (move_search.ts + dfs.ts,
  * INITIAL_PLACEMENT path) mirroring per-goal frame simulation, midair dedup,

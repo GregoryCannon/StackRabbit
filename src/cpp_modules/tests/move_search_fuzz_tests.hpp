@@ -1,4 +1,4 @@
-// Move search fuzz harness (docs/DAS_move_search_spec.md §14).
+// Move search fuzz harness (see TESTING.md, "TS oracle fuzz fixtures").
 //
 // Consumes the generated golden fixtures (move_search_fixtures.hpp, produced by
 // `npm run fuzz_generate` from the TS implementation) and checks the C++ move
@@ -10,7 +10,7 @@
 //   - DAS-mode fixtures (dasCharge >= 0): reported, not asserted, until the
 //     C++ DAS search exists. Flip SR_FUZZ_ASSERT_DAS to 1 when it lands.
 //
-// Comparison surface (spec §1): the multiset of
+// Comparison surface: the multiset of
 //   (rotationIndex, x, y, dasChargeAfter, inputCostX10)
 // where inputCostX10 comes from tuckInput (E/F/I/G -> -3, A/B -> -2, L/R -> -1,
 // '.' -> 0). Cell mismatches are hard failures; tuck-input-choice mismatches

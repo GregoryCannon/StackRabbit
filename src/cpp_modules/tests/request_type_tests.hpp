@@ -140,6 +140,26 @@ TEST_CASE("GET_LOCK_VALUE_LOOKUP_DAS returns an array of three maps") {
   CHECK(output.find('|') != std::string::npos);
 }
 
+TEST_CASE("GET_LOCK_VALUE_LOOKUP_DAS keeps its 3-map shape in DAS mode (dasCharge >= 0)") {
+  // The bucket structure is charge-agnostic (the buckets exist precisely because
+  // the player's charge is unknown); dasCharge only tells the C++ side that DAS
+  // mode is active so the searches run through dasMoveSearch.
+  for (int dasCharge : {0, 5, 10, 16}) {
+    auto input = InputBuilder()
+                     .withBoard1(makeFlatBoard(4))
+                     .withCurPiece(IDX_O)
+                     .withDasCharge(dasCharge)
+                     .build();
+    std::string output = runRequest(GET_LOCK_VALUE_LOOKUP_DAS, input);
+
+    REQUIRE(output.size() >= 2);
+    CHECK(output[0] == '[');
+    CHECK(output[output.size() - 1] == ']');
+    CHECK(countOccurrences(output, ",\n") == 2);
+    CHECK(output.find('|') != std::string::npos);
+  }
+}
+
 TEST_CASE("GET_MOVE_AB_TEST always reports agree/disagree with an explanation") {
   auto input = InputBuilder().build();
   std::string output = runRequest(GET_MOVE_AB_TEST, input);
@@ -148,6 +168,39 @@ TEST_CASE("GET_MOVE_AB_TEST always reports agree/disagree with an explanation") 
   bool isDisagree = output.rfind("[\"disagree\"", 0) == 0;
   CHECK((isAgree || isDisagree));
   CHECK(output.find("\"explanationMain\"") != std::string::npos);
+}
+
+TEST_CASE("searchDepth2 rejects dasCharge + secondPieceDasCharge passed together") {
+  // The two DAS modes are mutually exclusive (programmer-error guard in searchDepth2):
+  // dasCharge = generic DAS search (second piece inherits dasChargeAfter);
+  // secondPieceDasCharge = DAS bucket hypothesis (second piece's charge prescribed).
+  GameState g = {};
+  g.level = 18;
+  g.lines = 0;
+  std::string board = makeFlatBoard(4);
+  encodeBoard(board.c_str(), g.board);
+  getSurfaceArray(g.board, g.surfaceArray);
+  updateSurfaceAndHoles(g.surfaceArray, g.board, 9, false);
+  const PieceRangeContext contexts[4] = {
+      getPieceRangeContext("X..", 1, /* gravityDoubled= */ true),
+      getPieceRangeContext("X..", 1, /* gravityDoubled= */ false),
+      getPieceRangeContext("X..", 2, /* gravityDoubled= */ false),
+      getPieceRangeContext("X..", 3, /* gravityDoubled= */ false),
+  };
+  const EvalContext ctx = getEvalContext(g, contexts, /* useTestWeights= */ false, SAFE);
+  const Piece *J = &PIECE_LIST[IDX_J];
+  const Piece *I = &PIECE_LIST[IDX_I];
+
+  list<Possibility> rejected;
+  CHECK(searchDepth2(g, J, I, /* dasCharge= */ 16, /* secondPieceDasCharge= */ 10, "X..", &ctx, rejected) == 0);
+  CHECK(rejected.size() == 0);
+
+  list<Possibility> genericMode;
+  CHECK(searchDepth2(g, J, I, /* dasCharge= */ 16, /* secondPieceDasCharge= */ -1, "X..", &ctx, genericMode) > 0);
+  list<Possibility> bucketMode;
+  CHECK(searchDepth2(g, J, I, /* dasCharge= */ -1, /* secondPieceDasCharge= */ 10, "X..", &ctx, bucketMode) > 0);
+  list<Possibility> tapMode;
+  CHECK(searchDepth2(g, J, I, /* dasCharge= */ -1, /* secondPieceDasCharge= */ -1, "X..", &ctx, tapMode) > 0);
 }
 
 TEST_CASE("All request types complete on empty, tall, and notched boards") {

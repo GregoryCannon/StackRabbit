@@ -79,8 +79,10 @@ static std::string withVerticalIOnColumn(const std::string &board1, int col) {
 // Builds the pipe-delimited input string that mainProcess expects:
 //   [board1 (200)] | [optional board2 (200)] | level | lines | currentPieceIdx |
 //   nextPieceIdx | inputFrameTimeline | playoutCount | playoutLength |
-//   pruningBreadth | aggressionLevel |
-// See src/server/request_parser.ts getCppEncodedInputString for the TS side.
+//   pruningBreadth | aggressionLevel | dasCharge |
+// dasCharge is MANDATORY: -1 = tap mode, 0..16 = DAS mode. See
+// src/server/request_parser.ts getCppEncodedInputString for the TS side and
+// docs/engine_boundaries.md for the locked wire format.
 struct InputBuilder {
   std::string board1 = makeEmptyBoard();
   bool hasBoard2 = false;
@@ -94,6 +96,7 @@ struct InputBuilder {
   int playoutLength = 2;
   int pruningBreadth = 4;
   std::string aggression = "safe";
+  int dasCharge = -1;
 
   InputBuilder &withBoard1(std::string b) { board1 = b; return *this; }
   InputBuilder &withBoard2(std::string b) { hasBoard2 = true; board2 = b; return *this; }
@@ -106,13 +109,15 @@ struct InputBuilder {
   InputBuilder &withPlayoutLength(int l) { playoutLength = l; return *this; }
   InputBuilder &withPruningBreadth(int b) { pruningBreadth = b; return *this; }
   InputBuilder &withAggression(std::string a) { aggression = a; return *this; }
+  InputBuilder &withDasCharge(int c) { dasCharge = c; return *this; }
 
   std::string build() const {
     std::string rest = std::to_string(level) + "|" + std::to_string(lines) + "|" +
                        std::to_string(curPiece) + "|" + std::to_string(nextPiece) + "|" +
                        timeline + "|" + std::to_string(playoutCount) + "|" +
                        std::to_string(playoutLength) + "|" +
-                       std::to_string(pruningBreadth) + "|" + aggression + "|";
+                       std::to_string(pruningBreadth) + "|" + aggression + "|" +
+                       std::to_string(dasCharge) + "|";
     if (hasBoard2) {
       return board1 + "|" + board2 + "|" + rest;
     }

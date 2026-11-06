@@ -14,10 +14,10 @@ std::string getTopMoveList(GameState gameState, const Piece *firstPiece, const P
 
 std::string getLockValueLookupEncoded(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int pruningBreadth, int playoutCount, int playoutLength, const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3]);
 
-std::string getLockValueLookupDas(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int pruningBreadth, int playoutCount, int playoutLength, const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3]);
+std::string getLockValueLookupDas(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int pruningBreadth, int playoutCount, int playoutLength, char const *dasInputFrameTimeline, const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3]);
 
 int searchDepth1(GameState gameState, const Piece *firstPiece, const EvalContext *evalContext, OUT list<Possibility> &possibilityList, bool generateExplanation = false);
 
-int searchDepth2(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int secondPieceDelay, const EvalContext *evalContext, OUT list<Possibility> &possibilityList, bool generateExplanation = false);
+int searchDepth2(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int dasCharge, int secondPieceDasCharge, char const *dasInputFrameTimeline, const EvalContext *evalContext, OUT list<Possibility> &possibilityList, bool generateExplanation = false);
 
 #endif

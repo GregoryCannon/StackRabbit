@@ -4,7 +4,7 @@ An AI that plays NES Tetris at a super-human level. Can play live games in an em
 
 ### Theory
 
-At it's core, StackRabbit isk based on traditional search & heuristic methods, but it achieves high-quality board evaluation through high-depth playouts. (For example, 3000 playouts at depth 10, for each of 8 promising moves.)
+At it's core, StackRabbit is based on traditional search & heuristic methods, but it achieves high-quality board evaluation through high-depth playouts. (For example, 3000 playouts at depth 10, for each of 8 promising moves.)
 
 Unlike other games like chess, the "opponent" (the game's piece selector) doesn't make its selections adversarially (much as players may feel otherwise). That means that many optimizations like alpha-beta pruning don't apply here. Since any possible upcoming sequence is equally likely (aside from quirks of the NES RNG), we instead take a large sample of possible sequences, and test how well each position turns out when playing out those sequences.
 

@@ -81,7 +81,9 @@ static std::string makeArgs(
     const std::string& timeline,
     int playoutCount = DEFAULT_PLAYOUT_COUNT,
     int playoutLength = DEFAULT_PLAYOUT_LENGTH,
-    int pruningBreadth = DEFAULT_PRUNING_BREADTH)
+    int pruningBreadth = DEFAULT_PRUNING_BREADTH,
+    std::string aggression = "safe",
+    int dasCharge = -1)
 {
   return std::to_string(level)    + "|" +
          std::to_string(lines)    + "|" +
@@ -90,7 +92,9 @@ static std::string makeArgs(
          timeline                 + "|" +
          std::to_string(playoutCount)   + "|" +
          std::to_string(playoutLength)  + "|" +
-         std::to_string(pruningBreadth) + "|";
+         std::to_string(pruningBreadth) + "|" +
+         aggression + "|" +
+         std::to_string(dasCharge) + "|";
 }
 
 // Assemble a full GET_MOVE input string from a board string + arg string.

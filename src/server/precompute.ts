@@ -4,7 +4,6 @@ import { INITIAL_PLACEMENT, PhantomPlacement, PieceId, Possibility, PossibilityC
 import {
   formatDefaultPossibility,
   formatPossibility,
-  getDasEquivalentInputTimeline,
   logBoard,
   POSSIBLE_NEXT_PIECES,
   toPossibilityChain
@@ -128,12 +127,11 @@ export class PreComputeManager {
     console.time("WORKER PHASE");
     for (let i = 0; i < POSSIBLE_NEXT_PIECES.length; i++) {
       const nextPieceId = POSSIBLE_NEXT_PIECES[i];
-      const effInputFrameTimeline = this.useDAS ? getDasEquivalentInputTimeline(inputFrameTimeline) : inputFrameTimeline;
 
       const argsData: WorkerDataArgs = {
         piece: nextPieceId,
         newSearchState: { ...searchState, nextPieceId },
-        inputFrameTimeline: effInputFrameTimeline,
+        inputFrameTimeline,
         aggressionLevel,
         pruningBreadth,
         playoutCount,

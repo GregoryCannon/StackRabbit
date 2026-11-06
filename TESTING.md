@@ -26,13 +26,32 @@ deterministic, and its entry points are pure string-in/string-out functions.
 `mainProcess` is the same surface the Node addon and WASM builds use, so tests
 validate the full stack. No C++ internals need to be exposed for this.
 
-Input format (verified in `main.cpp:63-148`):
+Input format (verified in `main.cpp`'s arg loop; locked in
+`docs/engine_boundaries.md`):
 
 ```
 [board1 (200 chars 0/1)] | [optional board2 (200 chars 0/1)] | level | lines |
 currentPieceIdx | nextPieceIdx | inputFrameTimeline | playoutCount |
-playoutLength | pruningBreadth | aggressionLevel |
+playoutLength | pruningBreadth | aggressionLevel | dasCharge |
 ```
+
+Every non-board field is **mandatory and strictly validated** (all TS encoders
+and every hardcoded caller pass them explicitly):
+
+- `level` / `lines` / `currentPiece` / `nextPiece` / `playoutCount` /
+  `playoutLength` / `pruningBreadth` / `dasCharge`: integers (`atoi("junk")` and
+  empty fields are rejected instead of silently becoming 0 -- a silent 0 would
+  mean a degenerate game state, the I piece, or DAS mode).
+- `nextPiece = -1` explicitly means no-next-box; `pruningBreadth = -1` means
+  tournament mode.
+- `inputFrameTimeline`: non-empty, `X`/`.` characters only, at least one `X`
+  (an empty timeline used to make the engine never tap via `x % 0`, and a
+  no-`X` timeline used to hang the move search -- finding 4 below).
+- `aggressionLevel`: exactly `safe`, `aggro`, or `hyper` (unknown strings used
+  to silently mean SAFE).
+- `dasCharge`: `-1` = tap mode, `0..16` = DAS mode.
+
+`secondBoard` remains genuinely optional (per request type).
 
 Request types: `GET_LOCK_VALUE_LOOKUP`, `GET_LOCK_VALUE_LOOKUP_DAS`,
 `GET_TOP_MOVES`, `GET_TOP_MOVES_HYBRID`, `RATE_MOVE`, `GET_MOVE`,
@@ -93,8 +112,10 @@ input-string encoder so tests read like the calls they exercise.
    combinations hang the engine; see #4). Worth guarding in the parser.
 4. **A degenerate `inputFrameTimeline` with no `X` frames hangs the move
    search** at any level — bisected via the shifted-parse scenario. The TS
-   `request_parser.ts` rejects invalid timeline characters, so this is guarded
-   at the boundary, but the C++ engine would hang if ever handed such input.
+   `request_parser.ts` rejects invalid timeline characters, and the C++ parser
+   now also validates the field (non-empty, `X`/`.` only, at least one `X`) and
+   rejects empty timelines outright, so the engine can no longer be handed such
+   input by any caller.
 
 ## TS oracle fuzz fixtures (DAS move search)
 
@@ -102,7 +123,7 @@ input-string encoder so tests read like the calls they exercise.
 through the TypeScript `dasMoveSearch` (the reference implementation) and writes
 them to `src/server/move_search_fixtures.json`. The C++ doctest suite replays
 them via `dasMoveSearch` and compares the full (rotationIndex, x, y,
-dasChargeAfter, inputCostX10) multiset — see `DAS_move_search_spec.md` §14.
+dasChargeAfter, inputCostX10) multiset.
 
 `npm run fuzz_verify_sequences` is a second, stronger gate: it compiles
 `src/cpp_modules/tests/fixture_dump.cpp`, dumps C++ results for every DAS
@@ -110,6 +131,29 @@ fixture, and diffs tuples **and character-exact input sequences** against the
 oracle JSON (exit nonzero on any mismatch). Use it after any change to either
 implementation's DAS path. Tap-only fixtures are covered by the doctest suite;
 sequences are not emitted in tap mode (they are derivable downstream).
+
+Fixture coverage axes: all 7 pieces; `dasCharge ∈ {0..16}` with emphasis on
+`{0, 5, 6, 10, 14, 15, 16}`; levels 18 / 19 / 29; timelines `"X.."`, `"X..."`,
+`"X....."`; boards spanning flat heights 0–16, overhang/tuck setups, edge/wall
+adjacency, and near-ceiling spawns; zero-shift and max-shift placements. The
+fixtures are generated with a fixed seed, so `npm run fuzz_generate` is
+byte-stable — commit the diff if TS semantics change intentionally.
+
+## Benchmarking methodology
+
+- The throughput benchmark is `npm run speed_benchmark` (GET_MOVE-focused).
+- Always A/B against a **same-session** baseline: `git worktree add <tmp> HEAD`,
+  build both binaries, and alternate runs (baseline, current, baseline, ...).
+  Cross-session comparisons produced a phantom +5.5% "regression" here; the
+  same-session true cost was +0.2%.
+- Establish the noise floor first by building the **same source twice** and
+  interleaving those runs (measured on this machine: ~±0.7% per case). Deltas
+  outside that band are real; interpret the sign carefully — codegen/layout luck
+  from touching a unity-build translation unit can swing either direction.
+- Guard hot-path struct sizes: adding ~40 bytes to `LockPlacement` (which is
+  copied tens of thousands of times per request) regressed the playout benchmark
+  ~9%. Flow new feature data through side-channel structures (see
+  `DasPossibility`) instead of widening structs copied per-placement.
 
 ## Phases
 

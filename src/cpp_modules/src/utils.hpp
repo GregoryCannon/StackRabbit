@@ -197,6 +197,30 @@ int shouldPerformInputsThisFrame(int frameIndex, char const *inputFrameTimeline)
   return inputFrameTimeline[index] == 'X';
 }
 
+/**
+ * Port of TS getDasEquivalentInputTimeline (src/server/utils.ts): the fake "10-12 Hz
+ * tapper" timeline used to approximate a DAS holder in tap-mode code paths (piece
+ * ranges, eval, playouts). The real timeline is only used by the DAS move search to 
+ * determine quicktap behavior.
+ * 
+ * Returns a static string, so the pointer stays valid for the lifetime of the process.
+ */
+char const *getDasEquivalentInputTimeline(char const *quickTapInputTimeline) {
+  // How many frames the button is de-pressed while doing a quicktap. (Frame perfect would be 1.)
+  int quickTapDelay = (int) strlen(quickTapInputTimeline) - 1;
+  if (quickTapDelay <= 2) {
+    // Hits 8 high left quicktap, which means it acts like "12 hz" or so.
+    // We timeline it like this so that it, like DAS, does the slower shifts first (and potentially hanging on the stack)
+    return "X.....X.....X..X.....";
+  }
+  if (quickTapDelay <= 4) {
+    // Acts like "11 Hz"
+    return "X.....X.....X...X.....";
+  }
+  // Otherwise, use 10 Hz
+  return "X.....";
+}
+
 SimState predictStateAtAdjustmentTime(LockPlacement placement, char const *inputFrameTimeline, int gravity, bool gravityDoubled, int reactionTimeFrames){
   // Figure out how many frames of input will have elapsed
   // At the same time, calculate the Y value at adjustment time

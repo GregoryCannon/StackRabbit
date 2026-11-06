@@ -28,6 +28,11 @@
 #define DEFAULT_PLAYOUT_LENGTH 6
 #define DEFAULT_PRUNING_BREADTH 12
 
+// Maximum DAS charge (only reachable via a wall charge; holding caps at 15).
+// See docs/DAS_explainer.md. Used as the "full charge" first-piece
+// starting charge for the DAS bucket searches.
+#define DAS_CHARGE_MAX 16
+
 // Engine API params
 #define NUM_ENGINE_MOVES 8
 #define NUM_ENGINE_MOVES_ADJUSTMENTS 3

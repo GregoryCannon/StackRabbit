@@ -38,6 +38,22 @@ std::string string_format( const std::string& format, Args ... args )
     return std::string( buf.get(), buf.get() + size - 1 ); // We don't want the '\0' inside
 }
 
+// Returns true if the string parses as a plain integer (optional leading '-', digits only).
+// Used to validate the dasCharge field: unlike the other numeric fields (where
+// atoi("junk") -> 0 is harmless), a silent 0 would flip the engine into DAS mode.
+static bool isIntegerString(std::string const& arg){
+  size_t start = (!arg.empty() && arg[0] == '-') ? 1 : 0;
+  if (arg.length() <= start) {
+    return false;
+  }
+  for (size_t i = start; i < arg.length(); i++){
+    if (arg[i] < '0' || arg[i] > '9') {
+      return false;
+    }
+  }
+  return true;
+}
+
 std::string mainProcess(char const *inputStr, RequestType requestType) {
   printf("Input string %s, requestType %d\n", inputStr, requestType);
 
@@ -58,6 +74,10 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
   int pruningBreadth = DEFAULT_PRUNING_BREADTH;
   std::string inputFrameTimeline;
   AggressionLevel aggressionLevel = SAFE;
+  // Field 10 of the pipe string (appended after aggressionLevel). -1 = tap mode
+  // (byte-identical to the legacy 9-field format); 0..16 = the player is holding
+  // DAS with this much charge. The field is mandatory -- see TESTING.md's input format.
+  int dasCharge = -1;
 
   // Loop through the other args
   std::string nonBoardInputString;
@@ -105,53 +125,107 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
   std::string delim = "|";
   auto start = 0U;
   auto end = nonBoardInputString.find(delim);
+  // Every non-board field is mandatory: callers must state each value explicitly
+  // (use -1 / the documented defaults rather than omitting a field). A missing or
+  // malformed field is rejected with an error instead of silently degrading -- e.g.
+  // atoi("")->0 would otherwise play the I piece for a missing currentPiece, an
+  // empty timeline makes the engine never tap (x % 0), and stale defaults can
+  // silently kick off an expensive search.
+  bool fieldProvided[10] = {};
   for (int i = 0; end != std::string::npos; i++) {
     std::string arg = nonBoardInputString.substr(start, end - start);
     int argAsInt = atoi(arg.c_str());
     maybePrint("ARG %d: %d\n", i, argAsInt);
     switch (i) {
     case 0:
+      if (!isIntegerString(arg)){
+        return "Error: invalid level value (expected an integer): " + arg;
+      }
       startingGameState.level = argAsInt;
+      fieldProvided[0] = true;
       break;
     case 1:
+      if (!isIntegerString(arg)){
+        return "Error: invalid lines value (expected an integer): " + arg;
+      }
       startingGameState.lines = argAsInt;
+      fieldProvided[1] = true;
       break;
     case 2:
+      if (!isIntegerString(arg)){
+        return "Error: invalid currentPiece value (expected a piece index or -1): " + arg;
+      }
       if (argAsInt == -1){
         return "Error: please provide a value for currentPiece.";
       }
       curPiece = &(PIECE_LIST[argAsInt]);
+      fieldProvided[2] = true;
       break;
     case 3:
+      if (!isIntegerString(arg)){
+        return "Error: invalid nextPiece value (expected a piece index or -1): " + arg;
+      }
       if (argAsInt == -1){
         nextPiece = NULL;
       } else {
         nextPiece = &(PIECE_LIST[argAsInt]);
       }
+      fieldProvided[3] = true;
       break;
     case 4:
+      // The timeline drives all tap timing: an empty string (or one with no input
+      // frames) makes shouldPerformInputsThisFrame do x % 0 and the engine never
+      // taps (or hangs on some platforms), so it is validated strictly.
+      if (arg.empty() || arg.find_first_not_of("X.") != std::string::npos || arg.find('X') == std::string::npos){
+        return "Error: invalid inputFrameTimeline (expected X/. frames with at least one input frame): " + arg;
+      }
       inputFrameTimeline = arg;
+      fieldProvided[4] = true;
       break;
     case 5:
+      if (!isIntegerString(arg)){
+        return "Error: invalid playoutCount value (expected an integer): " + arg;
+      }
       playoutCount = argAsInt;
+      fieldProvided[5] = true;
       break;
     case 6:
+      if (!isIntegerString(arg)){
+        return "Error: invalid playoutLength value (expected an integer): " + arg;
+      }
       playoutLength = argAsInt;
+      fieldProvided[6] = true;
       break;
     case 7:
       // -1 = tournament mode (playoutCount is the total playout budget instead of the
       // per-candidate count; see getLockValueLookupTournament in tournament_search.cpp)
+      if (!isIntegerString(arg)){
+        return "Error: invalid pruningBreadth value (expected an integer): " + arg;
+      }
       pruningBreadth = argAsInt;
+      fieldProvided[7] = true;
       break;
     case 8:
-      // Play style: "safe", "aggro", or "hyper" (defaults to safe)
-      if (arg == "aggro"){
+      // Play style: "safe", "aggro", or "hyper" (previously unknown strings
+      // silently meant SAFE; now rejected like the TS boundary does)
+      if (arg == "safe"){
+        aggressionLevel = SAFE;
+      } else if (arg == "aggro"){
         aggressionLevel = AGGRO;
       } else if (arg == "hyper"){
         aggressionLevel = HYPER;
       } else {
-        aggressionLevel = SAFE;
+        return "Error: invalid aggressionLevel value (expected safe, aggro, or hyper): " + arg;
       }
+      fieldProvided[8] = true;
+      break;
+    case 9:
+      // Incoming DAS charge: -1 = tap mode, 0..16 = DAS mode.
+      if (!isIntegerString(arg)){
+        return "Error: invalid dasCharge value (expected -1 or 0-16): " + arg;
+      }
+      dasCharge = argAsInt;
+      fieldProvided[9] = true;
       break;
     default:
       break;
@@ -159,6 +233,16 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
 
     start = (int) end + (int) delim.length();
     end = nonBoardInputString.find(delim, start);
+  }
+  // All ten non-board fields are mandatory (dasCharge uses -1 for tap mode).
+  char const *fieldNames[10] = {
+    "level", "lines", "currentPiece", "nextPiece", "inputFrameTimeline",
+    "playoutCount", "playoutLength", "pruningBreadth", "aggressionLevel", "dasCharge"
+  };
+  for (int i = 0; i < 10; i++){
+    if (!fieldProvided[i]){
+      return std::string("Error: please provide a value for ") + fieldNames[i] + ".";
+    }
   }
   int wellColumn = 9;
   // Fill in the data structures
@@ -171,12 +255,21 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
   startingGameState.numTrueHoles = result.first;
   startingGameState.numPartialHoles = result.second;
 
-  // Calculate global context for the 3 possible gravity values
+  // Calculate global context for the 3 possible gravity values.
+  // DAS requests (dasCharge >= 0) carry the player's real timeline on the wire for
+  // the DAS move search; the piece-range / eval / playout contexts keep the legacy
+  // "DAS-equivalent" tapper approximation
+  std::string dasEquivalentTimelineStorage;
+  char const *contextInputFrameTimeline = inputFrameTimeline.c_str();
+  if (dasCharge >= 0) {
+    dasEquivalentTimelineStorage = getDasEquivalentInputTimeline(inputFrameTimeline.c_str());
+    contextInputFrameTimeline = dasEquivalentTimelineStorage.c_str();
+  }
   const PieceRangeContext pieceRangeContextLookup[4] = {
-    getPieceRangeContext(inputFrameTimeline.c_str(), 1, /* gravityDoubled= */ true),
-    getPieceRangeContext(inputFrameTimeline.c_str(), 1, /* gravityDoubled= */ false),
-    getPieceRangeContext(inputFrameTimeline.c_str(), 2, /* gravityDoubled= */ false),
-    getPieceRangeContext(inputFrameTimeline.c_str(), 3, /* gravityDoubled= */ false),
+    getPieceRangeContext(contextInputFrameTimeline, 1, /* gravityDoubled= */ true),
+    getPieceRangeContext(contextInputFrameTimeline, 1, /* gravityDoubled= */ false),
+    getPieceRangeContext(contextInputFrameTimeline, 2, /* gravityDoubled= */ false),
+    getPieceRangeContext(contextInputFrameTimeline, 3, /* gravityDoubled= */ false),
   };
   const EvalContext context = getEvalContext(startingGameState, pieceRangeContextLookup, /* useTestWeights= */ false, aggressionLevel);
 
@@ -201,7 +294,9 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
     }
 
     case GET_LOCK_VALUE_LOOKUP_DAS: {
-      return getLockValueLookupDas(startingGameState, curPiece, nextPiece, pruningBreadth, playoutCount, playoutLength, &context, pieceRangeContextLookup);
+      // The real timeline goes to the DAS move search; the piece-range/playout
+      // contexts above already hold the derived tapper approximation.
+      return getLockValueLookupDas(startingGameState, curPiece, nextPiece, pruningBreadth, playoutCount, playoutLength, inputFrameTimeline.c_str(), &context, pieceRangeContextLookup);
     }
 
     case GET_TOP_MOVES: {

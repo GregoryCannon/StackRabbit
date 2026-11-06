@@ -43,11 +43,16 @@ function getStackRabbitArgString(args) {
     args.lines,
     currentPieceIndex,
     nextPieceIndex,
-    args.inputFrameTimeline,
+    // The C++ parser requires X/. frames with at least one input frame; it does
+    // not normalize hyphens, so mirror the TS request parser here.
+    args.inputFrameTimeline.replace(/-/g, "."),
     playoutCount,
     args.playoutLength,
-    args.pruningBreadth || 12, // 12 = the C++ DEFAULT_PRUNING_BREADTH this client never sent before
-    args.aggressionLevel || "safe",
+    // Every field below is mandatory in the C++ pipe format; explicit values are
+    // required rather than silent defaults (an omitted field is an error now).
+    args.pruningBreadth === undefined ? 12 : args.pruningBreadth,
+    args.aggressionLevel === undefined ? "safe" : args.aggressionLevel,
+    args.dasCharge === undefined ? -1 : args.dasCharge, // -1 = tap mode
   ];
 
   return fieldsToJoin.join(DELIM) + DELIM; // The C++ parsing requires an extra delimiter at the end.
