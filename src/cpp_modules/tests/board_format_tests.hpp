@@ -54,12 +54,8 @@ TEST_CASE("formatBoard and parseCompressedBoard round trip both ways") {
   }
 
   std::vector<std::string> boardStrings = {
-      makeEmptyBoard(),
-      makeFlatBoard(4),
-      makeWellBoard(10, 4, 8),
-      makeBoardOneCellShort(7, 3),
-      makeExampleBoard(),
-      wellsOnlyBoard,
+      makeEmptyBoard(),   makeFlatBoard(4), makeWellBoard(10, 4, 8), makeBoardOneCellShort(7, 3),
+      makeExampleBoard(), wellsOnlyBoard,
   };
   for (const std::string &boardString : boardStrings) {
     unsigned int board[20];
@@ -81,11 +77,11 @@ TEST_CASE("parseCompressedBoard rejects malformed strings without touching the b
     board[i] = 7;
   }
 
-  parseCompressedBoard("15,FqF,3", board);   // Odd number of letters
-  parseCompressedBoard("15,FqFG,3", board);  // Letter outside the encoding
-  parseCompressedBoard("15FqFC3", board);    // Missing commas
-  parseCompressedBoard("14,FqFC,3", board);  // Only describes 19 rows
-  parseCompressedBoard("16,FqFC,3", board);  // Describes 21 rows
+  parseCompressedBoard("15,FqF,3", board);  // Odd number of letters
+  parseCompressedBoard("15,FqFG,3", board); // Letter outside the encoding
+  parseCompressedBoard("15FqFC3", board);   // Missing commas
+  parseCompressedBoard("14,FqFC,3", board); // Only describes 19 rows
+  parseCompressedBoard("16,FqFC,3", board); // Describes 21 rows
   for (int i = 0; i < 20; i++) {
     CHECK(board[i] == 7);
   }

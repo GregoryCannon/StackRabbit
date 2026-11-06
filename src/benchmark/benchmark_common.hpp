@@ -4,11 +4,11 @@
 // Shared helpers for the benchmark tools (generate_oracle.cpp, run_agent.cpp):
 // minimal JSONL field extraction, compressed-board decoding/encoding, and provenance.
 
+#include "../cpp_modules/src/formatting.hpp" // BOARD_ENCODING
+#include "../cpp_modules/src/utils.hpp"      // FULL_ROW
 #include <stdio.h>
 #include <stdlib.h>
 #include <string>
-#include "../cpp_modules/src/formatting.hpp" // BOARD_ENCODING
-#include "../cpp_modules/src/utils.hpp" // FULL_ROW
 
 /** Extracts a field value from a flat JSON object line (no nesting/escaping). */
 inline std::string extractStringField(const std::string &line, const char *key) {
@@ -31,11 +31,12 @@ inline int extractIntField(const std::string &line, const char *key) {
 }
 
 inline float extractFloatField(const std::string &line, const char *key) {
-  return (float) atof(extractStringField(line, key).c_str());
+  return (float)atof(extractStringField(line, key).c_str());
 }
 
 /** Decodes a compressed formatBoard string back into 20 rows of 10-bit occupancy. */
-inline void decodeCompressedBoard(const std::string &compressedBoard, OUT unsigned int outBoard[20]) {
+inline void decodeCompressedBoard(const std::string &compressedBoard,
+                                  OUT unsigned int outBoard[20]) {
   for (int i = 0; i < 20; i++) {
     outBoard[i] = 0;
   }
@@ -57,7 +58,7 @@ inline void decodeCompressedBoard(const std::string &compressedBoard, OUT unsign
       printf("Error: invalid character in compressed board: %s\n", compressedBoard.c_str());
       return;
     }
-    outBoard[row] = (unsigned int) ((leftIndex << 5) | rightIndex);
+    outBoard[row] = (unsigned int)((leftIndex << 5) | rightIndex);
     row++;
   }
   for (; row < 20; row++) {
@@ -80,13 +81,16 @@ inline std::string encodeBoardToString(const unsigned int board[20]) {
 /** Gets the current git commit hash, for recording provenance in output files. */
 inline std::string getEngineCommit() {
   FILE *pipe = popen("git rev-parse --short HEAD 2>/dev/null", "r");
-  if (!pipe) return "unknown";
+  if (!pipe)
+    return "unknown";
   char buffer[16];
   char *ok = fgets(buffer, sizeof(buffer), pipe);
   pclose(pipe);
-  if (!ok) return "unknown";
+  if (!ok)
+    return "unknown";
   std::string commit(buffer);
-  while (!commit.empty() && (commit.back() == '\n' || commit.back() == '\r')) commit.pop_back();
+  while (!commit.empty() && (commit.back() == '\n' || commit.back() == '\r'))
+    commit.pop_back();
   return commit.empty() ? "unknown" : commit;
 }
 

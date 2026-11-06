@@ -1,11 +1,11 @@
 #ifndef UTILS
 #define UTILS
 
+#include "./config.hpp"
+#include <list>
+#include <random>
 #include <stdarg.h>
 #include <stdio.h>
-#include <random>
-#include <list>
-#include "./config.hpp"
 
 // Shifts a variable X by Y places, either left or right depending on the sign
 #define SHIFTBY(x, y) ((y) > 0 ? x >> (y) : (x) << (-1 * (y)))
@@ -15,17 +15,20 @@
 #define SPAWN_Y(pieceIndex) ((pieceIndex) == 0 ? -2 : -1)
 
 // Useful bit-rows
-#define FULL_ROW 1023U // = 1111111111
+#define FULL_ROW 1023U             // = 1111111111
 #define HOLE_WEIGHT_BIT (1U << 30) // = 01000...0000000000, marks when a row needs to be cleared
-#define TUCK_SETUP_BIT(x) (1U << (29 - x)) // See the comment in types.h for an explanation of this encoding
-#define HOLE_BIT(x) (1U << (19 - x)) // See the comment in types.h for an explanation of this encoding
+#define TUCK_SETUP_BIT(x)                                                                          \
+  (1U << (29 - x)) // See the comment in types.h for an explanation of this encoding
+#define HOLE_BIT(x)                                                                                \
+  (1U << (19 - x)) // See the comment in types.h for an explanation of this encoding
 #define CELL_BIT(x) (1U << (9 - x))
 #define ALL_TUCK_SETUP_BITS (1023U << 20)
 #define ALL_HOLE_BITS (1023U << 10)
 #define ALL_AUXILIARY_BITS (~1023U) // The union of hole bits and tuck bits
 
 // Other encodings
-#define TUCK_COL_ENCODED(r, x) ((r) * 10 + (x) + 2) // Encoding of a rotation/column pair, as a number 0-39
+#define TUCK_COL_ENCODED(r, x)                                                                     \
+  ((r) * 10 + (x) + 2) // Encoding of a rotation/column pair, as a number 0-39
 #define UNREACHED 99
 
 // Converts a SimState to a LockPlacement (assuming no tuck)
@@ -68,12 +71,12 @@ void printBoard(unsigned int board[20]) {
   }
 }
 
-void printBoardWithPiece(unsigned int board[20], Piece piece, int x, int y, int rot){
+void printBoardWithPiece(unsigned int board[20], Piece piece, int x, int y, int rot) {
   printf("----- Board & piece start -----\n");
   for (int i = 0; i < 20; i++) {
     char line[] = "..........";
     int thisRow = board[i];
-    if (i >= y && i < y+4) {
+    if (i >= y && i < y + 4) {
       thisRow |= SHIFTBY(piece.rowsByRotation[rot][i - y], x);
     }
     for (int j = 0; j < 10; j++) {
@@ -91,7 +94,7 @@ void printSurface(int surfaceArray[10]) {
   printf("%d\n", surfaceArray[9]);
 }
 
-void printArray(int *array, int range, char const *description){
+void printArray(int *array, int range, char const *description) {
   printf("%s:  ", description);
   for (int i = 0; i < range; i++) {
     printf("%02d ", array[i]);
@@ -99,7 +102,7 @@ void printArray(int *array, int range, char const *description){
   printf("\n");
 }
 
-void printBoardBits(unsigned int board[20]){
+void printBoardBits(unsigned int board[20]) {
   maybePrint("Tuck setups:\n");
   for (int i = 0; i < 19; i++) {
     maybePrint("%d ", (board[i] & ALL_TUCK_SETUP_BITS) >> 20);
@@ -119,7 +122,6 @@ void printBoardBits(unsigned int board[20]){
   maybePrint("END OF INITIAL BOARD STATE\n");
 }
 
-
 /* --------- BOARD ENCODINGS -------- */
 
 void encodeBoard(char const *boardStr, unsigned int outBoard[20]) {
@@ -136,8 +138,8 @@ void encodeBoard(char const *boardStr, unsigned int outBoard[20]) {
   }
 }
 
-void copyBoard(unsigned int sourceBoard[20], unsigned int destBoard[20]){
-  for (int i = 0; i < 20; i++){
+void copyBoard(unsigned int sourceBoard[20], unsigned int destBoard[20]) {
+  for (int i = 0; i < 20; i++) {
     destBoard[i] = sourceBoard[i];
   }
 }
@@ -174,7 +176,7 @@ int getLevelAfterLineClears(int level, int lines, int numLinesCleared) {
   return level;
 }
 
-int getGravity(int level){
+int getGravity(int level) {
   if (level <= 18) {
     return 3;
   } else if (level < 29) {
@@ -183,7 +185,7 @@ int getGravity(int level){
   return 1;
 }
 
-bool isGravityDoubled(int level){
+bool isGravityDoubled(int level) {
   return (DOUBLE_KILLSCREEN_ENABLED && level >= 39) || DEBUG_DOUBLE_KS_ALWAYS_ENABLED;
 }
 
@@ -192,7 +194,7 @@ bool isGravityDoubled(int level){
  * determines if a given frame index is an input frame
  */
 int shouldPerformInputsThisFrame(int frameIndex, char const *inputFrameTimeline) {
-  int len = (int) strlen(inputFrameTimeline);
+  int len = (int)strlen(inputFrameTimeline);
   int index = frameIndex % len;
   return inputFrameTimeline[index] == 'X';
 }
@@ -200,17 +202,18 @@ int shouldPerformInputsThisFrame(int frameIndex, char const *inputFrameTimeline)
 /**
  * Port of TS getDasEquivalentInputTimeline (src/server/utils.ts): the fake "10-12 Hz
  * tapper" timeline used to approximate a DAS holder in tap-mode code paths (piece
- * ranges, eval, playouts). The real timeline is only used by the DAS move search to 
+ * ranges, eval, playouts). The real timeline is only used by the DAS move search to
  * determine quicktap behavior.
- * 
+ *
  * Returns a static string, so the pointer stays valid for the lifetime of the process.
  */
 char const *getDasEquivalentInputTimeline(char const *quickTapInputTimeline) {
   // How many frames the button is de-pressed while doing a quicktap. (Frame perfect would be 1.)
-  int quickTapDelay = (int) strlen(quickTapInputTimeline) - 1;
+  int quickTapDelay = (int)strlen(quickTapInputTimeline) - 1;
   if (quickTapDelay <= 2) {
     // Hits 8 high left quicktap, which means it acts like "12 hz" or so.
-    // We timeline it like this so that it, like DAS, does the slower shifts first (and potentially hanging on the stack)
+    // We timeline it like this so that it, like DAS, does the slower shifts first (and potentially
+    // hanging on the stack)
     return "X.....X.....X..X.....";
   }
   if (quickTapDelay <= 4) {
@@ -221,7 +224,8 @@ char const *getDasEquivalentInputTimeline(char const *quickTapInputTimeline) {
   return "X.....";
 }
 
-SimState predictStateAtAdjustmentTime(LockPlacement placement, char const *inputFrameTimeline, int gravity, bool gravityDoubled, int reactionTimeFrames){
+SimState predictStateAtAdjustmentTime(LockPlacement placement, char const *inputFrameTimeline,
+                                      int gravity, bool gravityDoubled, int reactionTimeFrames) {
   // Figure out how many frames of input will have elapsed
   // At the same time, calculate the Y value at adjustment time
   int inputsPerformed = 0;
@@ -231,10 +235,10 @@ SimState predictStateAtAdjustmentTime(LockPlacement placement, char const *input
       inputsPerformed++;
     }
     // On double killscreen, increment gravity twice every frame
-    if (gravityDoubled){
+    if (gravityDoubled) {
       adjTimeY += 2;
     }
-    // Returns true every Nth frame, where N = gravity 
+    // Returns true every Nth frame, where N = gravity
     else if (frame % gravity == gravity - 1) {
       adjTimeY++;
     }
@@ -266,26 +270,24 @@ SimState predictStateAtAdjustmentTime(LockPlacement placement, char const *input
   // Check if ARR was reset
   int arrWasReset = shiftInputsNeeded < inputsPerformed && rotationInputsNeeded < inputsPerformed;
 
-  return {
-           adjTimeX,
-           adjTimeY,
-           adjTimeRot,
-           reactionTimeFrames,
-           arrWasReset ? 0 : reactionTimeFrames,
-           placement.piece
-  };
+  return {adjTimeX,
+          adjTimeY,
+          adjTimeRot,
+          reactionTimeFrames,
+          arrWasReset ? 0 : reactionTimeFrames,
+          placement.piece};
 }
 
 /* ----------------- SORTING & GENERIC ALGS -------------- */
 
-bool lockLocationEquals(LockLocation a, LockLocation b){
+bool lockLocationEquals(LockLocation a, LockLocation b) {
   return a.rotationIndex == b.rotationIndex && a.x == b.x && a.y == b.y;
 }
 
 /** Performs the insertion operation from insertion sort. */
-void insertIntoList(EngineMoveData newData, OUT std::list<EngineMoveData> &sortedList){
-  // printf("inserting into list %d %d\n", newData.firstPlacement.x, newData.firstPlacement.rotationIndex);
-  // Insert into the list in its correct sorted place
+void insertIntoList(EngineMoveData newData, OUT std::list<EngineMoveData> &sortedList) {
+  // printf("inserting into list %d %d\n", newData.firstPlacement.x,
+  // newData.firstPlacement.rotationIndex); Insert into the list in its correct sorted place
   for (auto ptr = sortedList.begin(); true; ptr++) {
     if (ptr == sortedList.end()) {
       sortedList.push_back(newData);
@@ -299,9 +301,9 @@ void insertIntoList(EngineMoveData newData, OUT std::list<EngineMoveData> &sorte
 }
 
 /** Performs the insertion operation from insertion sort. */
-void insertIntoList(PlayoutData newData, OUT std::vector<PlayoutData> *sortedList){
-  // printf("inserting into list %d %d\n", newData.firstPlacement.x, newData.firstPlacement.rotationIndex);
-  // Insert into the list in its correct sorted place
+void insertIntoList(PlayoutData newData, OUT std::vector<PlayoutData> *sortedList) {
+  // printf("inserting into list %d %d\n", newData.firstPlacement.x,
+  // newData.firstPlacement.rotationIndex); Insert into the list in its correct sorted place
   for (auto ptr = sortedList->begin(); true; ptr++) {
     if (ptr == sortedList->end()) {
       sortedList->push_back(newData);
@@ -315,11 +317,10 @@ void insertIntoList(PlayoutData newData, OUT std::vector<PlayoutData> *sortedLis
 }
 
 /** Random number generator taken from StackOverflow */
-template<typename T>
-T qualityRandom(T range_from, T range_to) {
+template <typename T> T qualityRandom(T range_from, T range_to) {
   std::random_device rand_dev;
   std::mt19937 generator(rand_dev());
-  std::uniform_int_distribution<T>    distr(range_from, range_to - 1);
+  std::uniform_int_distribution<T> distr(range_from, range_to - 1);
   return distr(generator);
 }
 

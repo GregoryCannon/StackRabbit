@@ -8,11 +8,8 @@
 #define SR_REQUEST_TYPE_TESTS
 
 TEST_CASE("GET_MOVE returns a sane [rotation, xOffset, yOffset] triple") {
-  auto input = InputBuilder()
-                   .withBoard1(makeFlatBoard(4))
-                   .withLevel(19)
-                   .withCurPiece(IDX_I)
-                   .build();
+  auto input =
+      InputBuilder().withBoard1(makeFlatBoard(4)).withLevel(19).withCurPiece(IDX_I).build();
   std::string output = runRequest(GET_MOVE, input);
   int rot = 0, xOffset = 0, yOffset = 0;
   parseMoveTriple(output, rot, xOffset, yOffset);
@@ -76,10 +73,7 @@ TEST_CASE("GET_TOP_MOVES_HYBRID returns both noNextBox and nextBox lists") {
 }
 
 TEST_CASE("GET_LOCK_VALUE_LOOKUP returns a JSON map of lock positions to scores") {
-  auto input = InputBuilder()
-                   .withBoard1(makeFlatBoard(4))
-                   .withCurPiece(IDX_O)
-                   .build();
+  auto input = InputBuilder().withBoard1(makeFlatBoard(4)).withCurPiece(IDX_O).build();
   std::string output = runRequest(GET_LOCK_VALUE_LOOKUP, input);
 
   REQUIRE(output.size() >= 2);
@@ -125,10 +119,7 @@ TEST_CASE("GET_LOCK_VALUE_LOOKUP_DAS supports tournament mode via pruningBreadth
 
 TEST_CASE("GET_LOCK_VALUE_LOOKUP_DAS returns an array of three maps") {
   // Per getLockValueLookupDas: [partialChargePenalties, minChargePenalties, deepValues]
-  auto input = InputBuilder()
-                   .withBoard1(makeFlatBoard(4))
-                   .withCurPiece(IDX_O)
-                   .build();
+  auto input = InputBuilder().withBoard1(makeFlatBoard(4)).withCurPiece(IDX_O).build();
   std::string output = runRequest(GET_LOCK_VALUE_LOOKUP_DAS, input);
 
   REQUIRE(output.size() >= 2);
@@ -192,15 +183,23 @@ TEST_CASE("searchDepth2 rejects dasCharge + secondPieceDasCharge passed together
   const Piece *I = &PIECE_LIST[IDX_I];
 
   list<Possibility> rejected;
-  CHECK(searchDepth2(g, J, I, /* dasCharge= */ 16, /* secondPieceDasCharge= */ 10, "X..", &ctx, rejected) == 0);
+  CHECK(searchDepth2(g, J, I, /* dasCharge= */ 16, /* secondPieceDasCharge= */ 10, "X..", &ctx,
+                     rejected)
+        == 0);
   CHECK(rejected.size() == 0);
 
   list<Possibility> genericMode;
-  CHECK(searchDepth2(g, J, I, /* dasCharge= */ 16, /* secondPieceDasCharge= */ -1, "X..", &ctx, genericMode) > 0);
+  CHECK(searchDepth2(g, J, I, /* dasCharge= */ 16, /* secondPieceDasCharge= */ -1, "X..", &ctx,
+                     genericMode)
+        > 0);
   list<Possibility> bucketMode;
-  CHECK(searchDepth2(g, J, I, /* dasCharge= */ -1, /* secondPieceDasCharge= */ 10, "X..", &ctx, bucketMode) > 0);
+  CHECK(searchDepth2(g, J, I, /* dasCharge= */ -1, /* secondPieceDasCharge= */ 10, "X..", &ctx,
+                     bucketMode)
+        > 0);
   list<Possibility> tapMode;
-  CHECK(searchDepth2(g, J, I, /* dasCharge= */ -1, /* secondPieceDasCharge= */ -1, "X..", &ctx, tapMode) > 0);
+  CHECK(searchDepth2(g, J, I, /* dasCharge= */ -1, /* secondPieceDasCharge= */ -1, "X..", &ctx,
+                     tapMode)
+        > 0);
 }
 
 TEST_CASE("All request types complete on empty, tall, and notched boards") {

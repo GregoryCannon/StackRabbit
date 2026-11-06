@@ -8,7 +8,8 @@
 // Logging
 #define LOGGING_ENABLED 0 // Refers to movesearch/eval logging
 #define PLAYOUT_LOGGING_ENABLED 0
-#define TMT_LOGGING_ENABLED 0 // Round-by-round tournament candidate logging (see tournament_search.cpp)
+#define TMT_LOGGING_ENABLED                                                                        \
+  0 // Round-by-round tournament candidate logging (see tournament_search.cpp)
 #define SIMULATION_LOGGING_ENABLED 0
 #define PLAYOUT_RESULT_LOGGING_ENABLED 0
 #define MOVE_SEARCH_DEBUG_LOGGING 0
@@ -38,13 +39,22 @@
 #define NUM_ENGINE_MOVES_ADJUSTMENTS 3
 
 // Logistics of move search and pruning
-#define LOCK_POSITION_REPEAT_CAP 3 // Only used for current+next piece search. Refers to the limit on the percent of positions considered that can have the same first move. This increases the diversity of moves considered.
-#define SEMI_HOLE_PROPORTION 0.6f // Value used for things that are sort of like holes but not fully, e.g. unfilled wells while digging
+#define LOCK_POSITION_REPEAT_CAP                                                                   \
+  3 // Only used for current+next piece search. Refers to the limit on the percent of positions
+    // considered that can have the same first move. This increases the diversity of moves
+    // considered.
+#define SEMI_HOLE_PROPORTION                                                                       \
+  0.6f // Value used for things that are sort of like holes but not fully, e.g. unfilled wells while
+       // digging
 
 // Piece sequences
 #define SEQUENCE_LENGTH 20
 #define EXHAUSTIVE_SEQUENCE_LENGTH 4
-#define EXHAUSTIVE_SEQUENCE_COUNT 2401 // All 7^4 piece sequences of length 4, lexicographically ordered (their prefixes serve as the exhaustive lists for playout lengths 1-4).
-#define CANONICAL_SEQUENCE_BATCH_SIZE 8000 // Rows per canonical piece-sequence batch (see canonical_sequences.hpp). Playout counts get clamped to this.
+#define EXHAUSTIVE_SEQUENCE_COUNT                                                                  \
+  2401 // All 7^4 piece sequences of length 4, lexicographically ordered (their prefixes serve as
+       // the exhaustive lists for playout lengths 1-4).
+#define CANONICAL_SEQUENCE_BATCH_SIZE                                                              \
+  8000 // Rows per canonical piece-sequence batch (see canonical_sequences.hpp). Playout counts get
+       // clamped to this.
 
 #endif

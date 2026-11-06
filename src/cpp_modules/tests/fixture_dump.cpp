@@ -11,10 +11,10 @@
 // sequence tracking enabled.
 //
 // Consumed by `npm run fuzz_verify_sequences` (src/server/move_search_fuzz_verify.js).
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -23,10 +23,19 @@
 
 static int tuckCostX10(char tuckInput) {
   switch (tuckInput) {
-    case 'E': case 'F': case 'I': case 'G': return -3;
-    case 'A': case 'B': return -2;
-    case 'L': case 'R': return -1;
-    default: return 0;
+  case 'E':
+  case 'F':
+  case 'I':
+  case 'G':
+    return -3;
+  case 'A':
+  case 'B':
+    return -2;
+  case 'L':
+  case 'R':
+    return -1;
+  default:
+    return 0;
   }
 }
 
@@ -37,7 +46,8 @@ static void dumpFixture(int idx) {
   gameState.lines = 0;
   encodeBoard(FIXTURE_BOARD_POOL[f.boardIdx], gameState.board);
   getSurfaceArray(gameState.board, gameState.surfaceArray);
-  updateSurfaceAndHoles(gameState.surfaceArray, gameState.board, /*excludeHolesColumn=*/9, /*isDigMode=*/false);
+  updateSurfaceAndHoles(gameState.surfaceArray, gameState.board, /*excludeHolesColumn=*/9,
+                        /*isDigMode=*/false);
 
   const Piece *piece = &PIECE_LIST[f.pieceIndex];
   std::vector<std::string> rows;
@@ -46,8 +56,8 @@ static void dumpFixture(int idx) {
     moveSearch(gameState, piece, FIXTURE_TIMELINE_POOL[f.timelineIdx], locks);
     for (const LockPlacement &lp : locks) {
       char buf[128];
-      snprintf(buf, sizeof(buf), "r%d x%d y%d c%d k%d seq=",
-               lp.rotationIndex, lp.x, lp.y, -1, tuckCostX10(lp.tuckInput));
+      snprintf(buf, sizeof(buf), "r%d x%d y%d c%d k%d seq=", lp.rotationIndex, lp.x, lp.y, -1,
+               tuckCostX10(lp.tuckInput));
       rows.push_back(std::string(buf));
     }
   } else {
@@ -56,8 +66,8 @@ static void dumpFixture(int idx) {
                   /*trackInputSequences=*/true, results);
     for (const DasPossibility &p : results) {
       char buf[128];
-      snprintf(buf, sizeof(buf), "r%d x%d y%d c%d k%d seq=",
-               p.rotationIndex, p.x, p.y, p.dasChargeAfter, p.inputCostX10);
+      snprintf(buf, sizeof(buf), "r%d x%d y%d c%d k%d seq=", p.rotationIndex, p.x, p.y,
+               p.dasChargeAfter, p.inputCostX10);
       rows.push_back(std::string(buf) + p.inputSequence);
     }
   }

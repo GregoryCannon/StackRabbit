@@ -3,15 +3,15 @@
 
 std::string PIECE_CHAR_LIST = "IOLJTSZ";
 
-char getPieceChar(int index){
-  return PIECE_CHAR_LIST.at(index);
-}
+char getPieceChar(int index) { return PIECE_CHAR_LIST.at(index); }
 
 /* A set of very particular data about each piece, used for finding tucks/spins in move search.
 
-   The idea is that for any legal tuck/spin, either the top rightmost mino or the top leftmost mino must be placed on an overhang cell (except for absurdly rare contrived cases).
-   Therefore, for each piece, we store a list of where these cells are within the 4x4 grid occupied by each cell.
-   Then, during move search, we can line up these key cells with the overhang cells on the board to find tuck/spins. */
+   The idea is that for any legal tuck/spin, either the top rightmost mino or the top leftmost mino
+   must be placed on an overhang cell (except for absurdly rare contrived cases). Therefore, for
+   each piece, we store a list of where these cells are within the 4x4 grid occupied by each cell.
+   Then, during move search, we can line up these key cells with the overhang cells on the board to
+   find tuck/spins. */
 
 struct TuckOriginSpot {
   int orientation;
@@ -25,6 +25,7 @@ struct TuckInput {
   int rotationChange;
 };
 
+// clang-format off
 const Piece PIECE_I = { 'I', 0, {
                  {0, 0, 960, 0}, // e.g. 960 = 1111000000
                  {128, 128, 128, 128},

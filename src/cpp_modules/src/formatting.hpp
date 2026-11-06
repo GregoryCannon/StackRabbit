@@ -1,20 +1,21 @@
 #ifndef FORMATTING
 #define FORMATTING
 
+#include "types.hpp"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string>
-#include "types.hpp"
 using namespace std;
 
-const std::string BOARD_ENCODING = "abcdefghijklmnopqrstuvwxyzABCDEF"; // Encodes 5 bits of information (32 chars)
+const std::string BOARD_ENCODING =
+    "abcdefghijklmnopqrstuvwxyzABCDEF"; // Encodes 5 bits of information (32 chars)
 
-/** Concatenates the position of a piece into a single string. 
- * 
+/** Concatenates the position of a piece into a single string.
+ *
  * NB: differs from formatLockPosition by the order of the values and the X coordinate system.
  * There's no real need to have both beyond legacy reasons.
-*/
-std::string encodeLockPosition(LockLocation lockLocation){
+ */
+std::string encodeLockPosition(LockLocation lockLocation) {
   if (VARIABLE_RANGE_CHECKS_ENABLED || true) {
     // Check variable ranges to avoid buffer overflows
     if (lockLocation.rotationIndex > 4 || lockLocation.rotationIndex < 0) {
@@ -27,26 +28,29 @@ std::string encodeLockPosition(LockLocation lockLocation){
       printf("y index out of range %d\n", lockLocation.y);
     }
   }
-  char buffer[10]; // 2 for separators, 1 for rotIndex, 2 for x, 2 for y, 3 for expect the unexpected
+  char
+      buffer[10]; // 2 for separators, 1 for rotIndex, 2 for x, 2 for y, 3 for expect the unexpected
   snprintf(buffer, 10, "%d|%d|%d", lockLocation.rotationIndex, lockLocation.x, lockLocation.y);
   return string(buffer);
 }
 
 /** Formats a human-readable lock location */
 std::string formatLockPosition(LockLocation lockLocation, int pieceInitialY) {
-  if (lockLocation.x == NULL_LOCK_LOCATION.x){
+  if (lockLocation.x == NULL_LOCK_LOCATION.x) {
     return "null";
   }
-  char buffer[12]; // 4 for separators, 1 for rotIndex, 2 for x, 2 for y, 3 for expect the unexpected
-  snprintf(buffer, 12, "[%d,%d,%d]", lockLocation.rotationIndex, lockLocation.x - INITIAL_X, lockLocation.y - pieceInitialY);
+  char
+      buffer[12]; // 4 for separators, 1 for rotIndex, 2 for x, 2 for y, 3 for expect the unexpected
+  snprintf(buffer, 12, "[%d,%d,%d]", lockLocation.rotationIndex, lockLocation.x - INITIAL_X,
+           lockLocation.y - pieceInitialY);
   return string(buffer);
 }
 
 /** Formats a board using a simple proprietary compression/encoding system.
- * 
+ *
  * Example compressed board:
  * 15,CaEa,3
- * 
+ *
  * - The first number is the # of empty rows at the top of the board
  * - The number at the end is the # of full-right-well rows at the bottom of the board
  * - Each letter in the middle section corresponds to half a row, based on the following encoding:
@@ -58,24 +62,24 @@ std::string formatLockPosition(LockLocation lockLocation, int pieceInitialY) {
  * ...
  * F = 11111
  */
-std::string formatBoard(const unsigned int board[20]){
+std::string formatBoard(const unsigned int board[20]) {
   std::string output;
 
   // Skip empty rows at the top
   int i = 0;
-  while (i < 20 && ((board[i] & FULL_ROW) == 0)){
+  while (i < 20 && ((board[i] & FULL_ROW) == 0)) {
     i++;
   }
 
   // Skip full right well rows at the bottom
   int j = 20;
-  while ((board[j-1] & FULL_ROW) == (FULL_ROW - 1)){
+  while ((board[j - 1] & FULL_ROW) == (FULL_ROW - 1)) {
     j--;
   }
 
   output += std::to_string(i);
   output += ',';
-  for (; i < j; i++){
+  for (; i < j; i++) {
     unsigned int rightHalfMask = 31U;
     unsigned int indexRight = board[i] & rightHalfMask;
     unsigned int indexLeft = (board[i] >> 5) & rightHalfMask;
@@ -97,7 +101,8 @@ std::string formatBoard(const unsigned int board[20]){
  */
 void parseCompressedBoard(const std::string &compressedBoard, OUT unsigned int outBoard[20]) {
   size_t firstComma = compressedBoard.find(',');
-  size_t secondComma = firstComma == std::string::npos ? std::string::npos : compressedBoard.find(',', firstComma + 1);
+  size_t secondComma = firstComma == std::string::npos ? std::string::npos
+                                                       : compressedBoard.find(',', firstComma + 1);
   if (secondComma == std::string::npos) {
     printf("Error: malformed compressed board: %s\n", compressedBoard.c_str());
     return;
@@ -109,8 +114,10 @@ void parseCompressedBoard(const std::string &compressedBoard, OUT unsigned int o
 
   // Each letter encodes half a row, so the middle must have an even number of letters,
   // and the three sections must together describe all 20 rows.
-  if (numEmptyRows < 0 || numRightWellRows < 0 || middleRows.length() % 2 != 0 ||
-      numEmptyRows + (int)(middleRows.length() / 2) + numRightWellRows != 20) {
+  if (numEmptyRows < 0
+      || numRightWellRows < 0
+      || middleRows.length() % 2 != 0
+      || numEmptyRows + (int)(middleRows.length() / 2) + numRightWellRows != 20) {
     printf("Error: malformed compressed board: %s\n", compressedBoard.c_str());
     return;
   }
@@ -143,7 +150,7 @@ void parseCompressedBoard(const std::string &compressedBoard, OUT unsigned int o
   }
 }
 
-std::string formatPlayout(PlayoutData playoutData){
+std::string formatPlayout(PlayoutData playoutData) {
   std::string output = std::string("{ ");
 
   // Add the piece sequence
@@ -152,7 +159,7 @@ std::string formatPlayout(PlayoutData playoutData){
   // Add the placements list
   output += "\", \"placements\": [";
   int i = 0;
-  for (auto placement : playoutData.placements){
+  for (auto placement : playoutData.placements) {
     int initialY = playoutData.pieceSequence.at(i) == 'I' ? -2 : -1;
     i++;
     output += formatLockPosition(placement, initialY) + ",";
@@ -169,7 +176,8 @@ std::string formatPlayout(PlayoutData playoutData){
 
   // Add the score
   output += " \"score\":";
-  char scoreBuffer[10]; // 4 digits for LHS + 1 for decimal + 2 for RHS + 1 for sign + 2 for expect the unexpected
+  char scoreBuffer[10]; // 4 digits for LHS + 1 for decimal + 2 for RHS + 1 for sign + 2 for expect
+                        // the unexpected
   snprintf(scoreBuffer, 10, "%.2f", playoutData.totalScore);
   output += scoreBuffer;
   output += " }";
@@ -177,17 +185,29 @@ std::string formatPlayout(PlayoutData playoutData){
 }
 
 /** Escapes a string for safe embedding in JSON output. */
-inline std::string escapeJsonString(const std::string &input){
+inline std::string escapeJsonString(const std::string &input) {
   std::string output;
   output.reserve(input.size());
   for (char c : input) {
     switch (c) {
-      case '"': output += "\\\""; break;
-      case '\\': output += "\\\\"; break;
-      case '\n': output += "\\n"; break;
-      case '\r': output += "\\r"; break;
-      case '\t': output += "\\t"; break;
-      default: output += c; break;
+    case '"':
+      output += "\\\"";
+      break;
+    case '\\':
+      output += "\\\\";
+      break;
+    case '\n':
+      output += "\\n";
+      break;
+    case '\r':
+      output += "\\r";
+      break;
+    case '\t':
+      output += "\\t";
+      break;
+    default:
+      output += c;
+      break;
     }
   }
   return output;
@@ -207,23 +227,20 @@ inline std::string escapeJsonString(const std::string &input){
  *   { ... },
  *   { ... },
  * ]"
-*/
-std::string formatEngineMoveList(list<EngineMoveData> moveList, const Piece *firstPiece, const Piece *secondPiece){
+ */
+std::string formatEngineMoveList(list<EngineMoveData> moveList, const Piece *firstPiece,
+                                 const Piece *secondPiece) {
   std::string output = std::string("[");
-  for( const auto& move : moveList ) {
+  for (const auto &move : moveList) {
     output += "{\"firstPlacement\":";
     output += formatLockPosition(move.firstPlacement, firstPiece->initialY);
-    if (move.secondPlacement.x != NULL_LOCK_LOCATION.x){
+    if (move.secondPlacement.x != NULL_LOCK_LOCATION.x) {
       output += ", \"secondPlacement\":";
       output += formatLockPosition(move.secondPlacement, secondPiece->initialY);
     }
     char formattedMoveBuffer[70]; // Max length I got in my testing was 108 with for just the scores
-    snprintf(formattedMoveBuffer,
-        70,
-        ", \"playoutScore\":%.2f, \"shallowEvalScore\":%.2f",
-        move.playoutScore,
-        move.evalScore
-        );
+    snprintf(formattedMoveBuffer, 70, ", \"playoutScore\":%.2f, \"shallowEvalScore\":%.2f",
+             move.playoutScore, move.evalScore);
     output.append(formattedMoveBuffer);
 
     output += ", \"resultingBoard\":\"";
@@ -267,12 +284,13 @@ std::string formatEngineMoveList(list<EngineMoveData> moveList, const Piece *fir
   return output;
 }
 
-std::string formatRateMove(float playerNoAdj, float bestNoAdj, float playerWithAdj, float bestWithAdj, bool hasNb){
+std::string formatRateMove(float playerNoAdj, float bestNoAdj, float playerWithAdj,
+                           float bestWithAdj, bool hasNb) {
   std::string output = "{\"playerMoveNoAdjustment\":";
   output += std::to_string(playerNoAdj);
   output += ", \"bestMoveNoAdjustment\":";
   output += std::to_string(bestNoAdj);
-  if (hasNb){
+  if (hasNb) {
     output += ", \"playerMoveAfterAdjustment\":";
     output += std::to_string(playerWithAdj);
     output += ", \"bestMoveAfterAdjustment\":";
@@ -281,6 +299,5 @@ std::string formatRateMove(float playerNoAdj, float bestNoAdj, float playerWithA
   output += "}";
   return output;
 }
-
 
 #endif

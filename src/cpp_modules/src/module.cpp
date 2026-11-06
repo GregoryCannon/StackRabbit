@@ -1,6 +1,6 @@
-#include <nan.h>
 #include "main.cpp"
 #include "types.hpp"
+#include <nan.h>
 
 using namespace v8;
 
@@ -12,7 +12,7 @@ NAN_METHOD(GetLockValueLookupDas) {
     Nan::ThrowError("Error converting first argument to string");
   }
   Nan::Utf8String utf8Value(inputStrNan);
-  char const * inputStr = *utf8Value;
+  char const *inputStr = *utf8Value;
 
   std::string result = mainProcess(inputStr, GET_LOCK_VALUE_LOOKUP_DAS);
 
@@ -27,7 +27,7 @@ NAN_METHOD(GetLockValueLookup) {
     Nan::ThrowError("Error converting first argument to string");
   }
   Nan::Utf8String utf8Value(inputStrNan);
-  char const * inputStr = *utf8Value;
+  char const *inputStr = *utf8Value;
 
   std::string result = mainProcess(inputStr, GET_LOCK_VALUE_LOOKUP);
 
@@ -42,7 +42,7 @@ NAN_METHOD(GetMove) {
     Nan::ThrowError("Error converting first argument to string");
   }
   Nan::Utf8String utf8Value(inputStrNan);
-  char const * inputStr = *utf8Value;
+  char const *inputStr = *utf8Value;
 
   std::string result = mainProcess(inputStr, GET_MOVE);
 
@@ -57,7 +57,7 @@ NAN_METHOD(GetMoveAbTest) {
     Nan::ThrowError("Error converting first argument to string");
   }
   Nan::Utf8String utf8Value(inputStrNan);
-  char const * inputStr = *utf8Value;
+  char const *inputStr = *utf8Value;
 
   std::string result = mainProcess(inputStr, GET_MOVE_AB_TEST);
 
@@ -72,7 +72,7 @@ NAN_METHOD(GetTopMoves) {
     Nan::ThrowError("Error converting first argument to string");
   }
   Nan::Utf8String utf8Value(inputStrNan);
-  char const * inputStr = *utf8Value;
+  char const *inputStr = *utf8Value;
 
   std::string result = mainProcess(inputStr, GET_TOP_MOVES);
 
@@ -87,7 +87,7 @@ NAN_METHOD(GetTopMovesHybrid) {
     Nan::ThrowError("Error converting first argument to string");
   }
   Nan::Utf8String utf8Value(inputStrNan);
-  char const * inputStr = *utf8Value;
+  char const *inputStr = *utf8Value;
 
   std::string result = mainProcess(inputStr, GET_TOP_MOVES_HYBRID);
 
@@ -102,7 +102,7 @@ NAN_METHOD(RateMove) {
     Nan::ThrowError("Error converting first argument to string");
   }
   Nan::Utf8String utf8Value(inputStrNan);
-  char const * inputStr = *utf8Value;
+  char const *inputStr = *utf8Value;
 
   std::string result = mainProcess(inputStr, RATE_MOVE);
 

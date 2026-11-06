@@ -7,99 +7,102 @@
  * Ignore all but the most permissible of tuck setups while digging.
  * --Side effect-- marks the hole or tuck setup in the board data structure
  */
-float analyzeHole(unsigned int board[20], int r, int c, int excludeHolesColumn, int surfaceArray[10], bool isDigMode){
+float analyzeHole(unsigned int board[20], int r, int c, int excludeHolesColumn,
+                  int surfaceArray[10], bool isDigMode) {
   // VARIABLE_RANGE_CHECKS_ENABLED
-  if (true && (r < 0 || r >= 20)){
+  if (true && (r < 0 || r >= 20)) {
     printf("PANIK B, r=%d\n", r);
   }
-  if (CAN_TUCK){
+  if (CAN_TUCK) {
     float rating = 1.0f;
     if (c >= 4
-        && ((board[r] >> (9-c)) & 0b11111) == 0
-        && (20 - surfaceArray[c-1] == r+1)
-        && (surfaceArray[c-2] == surfaceArray[c-1])
-        && (surfaceArray[c-3] == surfaceArray[c-2])
-        && (surfaceArray[c-4] == surfaceArray[c-3])){
+        && ((board[r] >> (9 - c)) & 0b11111) == 0
+        && (20 - surfaceArray[c - 1] == r + 1)
+        && (surfaceArray[c - 2] == surfaceArray[c - 1])
+        && (surfaceArray[c - 3] == surfaceArray[c - 2])
+        && (surfaceArray[c - 4] == surfaceArray[c - 3])) {
       board[r] |= TUCK_SETUP_BIT(c); // Mark this cell as an overhang cell
-      rating = 0.2f; // Left side 1-high tuck, with ample space = 4+ pieces solve.
+      rating = 0.2f;                 // Left side 1-high tuck, with ample space = 4+ pieces solve.
     } else if (c >= 3
-        && ((board[r] >> (9-c)) & 0b1111) == 0
-        && (20 - surfaceArray[c-1] == r+1)
-        && (surfaceArray[c-2] == surfaceArray[c-1])
-        && (surfaceArray[c-3] == surfaceArray[c-2])){
+               && ((board[r] >> (9 - c)) & 0b1111) == 0
+               && (20 - surfaceArray[c - 1] == r + 1)
+               && (surfaceArray[c - 2] == surfaceArray[c - 1])
+               && (surfaceArray[c - 3] == surfaceArray[c - 2])) {
       board[r] |= TUCK_SETUP_BIT(c);
       rating = 0.35f; // Left side 1-high tuck, with some space = generally 3+ pieces solve.
     } else if (c >= 3
-        && ((board[r] >> (9-c)) & 0b1111) == 0
-        && (20 - surfaceArray[c-1] > r+1)
-        && (surfaceArray[c-2] == surfaceArray[c-1])
-        && (surfaceArray[c-3] == surfaceArray[c-2])){
+               && ((board[r] >> (9 - c)) & 0b1111) == 0
+               && (20 - surfaceArray[c - 1] > r + 1)
+               && (surfaceArray[c - 2] == surfaceArray[c - 1])
+               && (surfaceArray[c - 3] == surfaceArray[c - 2])) {
       board[r] |= TUCK_SETUP_BIT(c);
-      rating = 0.5f; // Left side tuck raised off the ground, with some space = generally 2 pieces solve.
+      rating =
+          0.5f; // Left side tuck raised off the ground, with some space = generally 2 pieces solve.
     } else if (c >= 2
-        && ((board[r] >> (9-c)) & 0b111) == 0
-        && (20 - surfaceArray[c-1] >= r+1)
-        && (20 - surfaceArray[c-2] >= r+1)){
+               && ((board[r] >> (9 - c)) & 0b111) == 0
+               && (20 - surfaceArray[c - 1] >= r + 1)
+               && (20 - surfaceArray[c - 2] >= r + 1)) {
       board[r] |= TUCK_SETUP_BIT(c);
       rating = 0.75f; // Left side tuck, with minimal space = generally 1-piece solve.
     } else if (c <= 5
-        && ((board[r] >> (5-c)) & 0b11111) == 0
-        && (20 - surfaceArray[c+1] == r+1)
-        && (surfaceArray[c+2] == surfaceArray[c+1])
-        && (surfaceArray[c+3] == surfaceArray[c+2])
-        && (surfaceArray[c+4] == surfaceArray[c+3])){
+               && ((board[r] >> (5 - c)) & 0b11111) == 0
+               && (20 - surfaceArray[c + 1] == r + 1)
+               && (surfaceArray[c + 2] == surfaceArray[c + 1])
+               && (surfaceArray[c + 3] == surfaceArray[c + 2])
+               && (surfaceArray[c + 4] == surfaceArray[c + 3])) {
       board[r] |= TUCK_SETUP_BIT(c);
       rating = 0.1875; // Right side 1-high tuck, with ample space = 4+ piece solve
     } else if (c <= 6
-        && ((board[r] >> (6-c)) & 0b1111) == 0
-        && (20 - surfaceArray[c+1] == r+1)
-        && (surfaceArray[c+2] == surfaceArray[c+1])
-        && (surfaceArray[c+3] == surfaceArray[c+2])){
+               && ((board[r] >> (6 - c)) & 0b1111) == 0
+               && (20 - surfaceArray[c + 1] == r + 1)
+               && (surfaceArray[c + 2] == surfaceArray[c + 1])
+               && (surfaceArray[c + 3] == surfaceArray[c + 2])) {
       board[r] |= TUCK_SETUP_BIT(c);
       rating = 0.325f; // Right side 1-high tuck, with some space = generally 3+ pieces solve.
     } else if (c <= 6
-        && ((board[r] >> (6-c)) & 0b1111) == 0
-        && (20 - surfaceArray[c+1] > r+1)
-        && (surfaceArray[c+2] == surfaceArray[c+1])
-        && (surfaceArray[c+3] == surfaceArray[c+2])){
+               && ((board[r] >> (6 - c)) & 0b1111) == 0
+               && (20 - surfaceArray[c + 1] > r + 1)
+               && (surfaceArray[c + 2] == surfaceArray[c + 1])
+               && (surfaceArray[c + 3] == surfaceArray[c + 2])) {
       board[r] |= TUCK_SETUP_BIT(c);
-      rating = 0.45f; // Right side tuck raised off the ground, with some space = generally 2 pieces solve.
+      rating = 0.45f; // Right side tuck raised off the ground, with some space = generally 2 pieces
+                      // solve.
     } else if (c <= 7
-        && ((board[r] >> (7-c)) & 0b111) == 0
-        && (20 - surfaceArray[c+1] >= r+1)
-        && (20 - surfaceArray[c+2] >= r+1)){
+               && ((board[r] >> (7 - c)) & 0b111) == 0
+               && (20 - surfaceArray[c + 1] >= r + 1)
+               && (20 - surfaceArray[c + 2] >= r + 1)) {
       board[r] |= TUCK_SETUP_BIT(c);
       rating = 0.65f; // Right side tuck, with minimal space = 1-piece solve + spin option.
     } else if (c == 8
-        && r <= 16
-        && (board[r] & 0b11) == 0
-        && (board[r+1] & 0b11) == 0
-        && (board[r+2] & 0b11) == 0
-        && (board[r+3] & 0b11) == 0){
+               && r <= 16
+               && (board[r] & 0b11) == 0
+               && (board[r + 1] & 0b11) == 0
+               && (board[r + 2] & 0b11) == 0
+               && (board[r + 3] & 0b11) == 0) {
       board[r] |= TUCK_SETUP_BIT(c);
-      board[r+1] |= TUCK_SETUP_BIT(c);
-      board[r+2] |= TUCK_SETUP_BIT(c);
-      board[r+3] |= TUCK_SETUP_BIT(c);
+      board[r + 1] |= TUCK_SETUP_BIT(c);
+      board[r + 2] |= TUCK_SETUP_BIT(c);
+      board[r + 3] |= TUCK_SETUP_BIT(c);
       rating = 0.8f; // column 9 vits = 1-piece solve
-    } else if (c <= 7
-        && ((board[r] >> (7-c)) & 0b111) == 0){
+    } else if (c <= 7 && ((board[r] >> (7 - c)) & 0b111) == 0) {
       board[r] |= TUCK_SETUP_BIT(c);
-      rating = 0.95f; // High score due to being a catchall for dubious setups like Z spintuck setup or linespin 
-      // that should only ever be done with that piece in the next box. However, if we don't label it as a tuck 
-      // setup cell, then the move search won't even be able to find the tuck!
+      rating = 0.95f; // High score due to being a catchall for dubious setups like Z spintuck setup
+                      // or linespin
+      // that should only ever be done with that piece in the next box. However, if we don't label
+      // it as a tuck setup cell, then the move search won't even be able to find the tuck!
     }
-
 
     if (rating < 1.0f) {
       if (isDigMode) {
-        return (2 + rating) / 3.0f; // Average the rating closer to 1 since tucks are bad while digging
+        return (2 + rating)
+               / 3.0f; // Average the rating closer to 1 since tucks are bad while digging
       } else {
         return rating;
       }
     }
   }
   if (c == excludeHolesColumn) {
-    if ((board[r] & ALL_HOLE_BITS) == 0){
+    if ((board[r] & ALL_HOLE_BITS) == 0) {
       // Not strictly a problem, if the holes are cleared this is just a regular well
       return 0;
     } else {
@@ -113,33 +116,32 @@ float analyzeHole(unsigned int board[20], int r, int c, int excludeHolesColumn, 
   return 1;
 }
 
-
-std::pair<int, float> getNewSurfaceAndNumNewHoles(int surfaceArray[10],
-                                  unsigned int board[20],
-                                  LockPlacement lockPlacement,
-                                  const EvalContext *evalContext,
-                                  int isTuck,
-                                  OUT int newSurface[10]) {
+std::pair<int, float> getNewSurfaceAndNumNewHoles(int surfaceArray[10], unsigned int board[20],
+                                                  LockPlacement lockPlacement,
+                                                  const EvalContext *evalContext, int isTuck,
+                                                  OUT int newSurface[10]) {
   for (int i = 0; i < 10; i++) {
     newSurface[i] = surfaceArray[i];
   }
 
-  // Calculate the new overall surface by superimposing the piece's top surface on the existing surface
-  unsigned int const *topSurface = lockPlacement.piece->topSurfaceByRotation[lockPlacement.rotationIndex];
+  // Calculate the new overall surface by superimposing the piece's top surface on the existing
+  // surface
+  unsigned int const *topSurface =
+      lockPlacement.piece->topSurfaceByRotation[lockPlacement.rotationIndex];
   for (int i = 0; i < 4; i++) {
     if (topSurface[i] != NONE) {
       int newHeight = 20 - topSurface[i] - lockPlacement.y;
       // VARIABLE RANGE CHECKS
-      if (newHeight > 20){
+      if (newHeight > 20) {
         newHeight = 20;
       }
       newSurface[lockPlacement.x + i] = newHeight;
     }
   }
-  
+
   // Adjust for the fact that tucks can place a piece UNDER the existing surface
-  if (isTuck){
-    for (int i = 0; i < 10; i++){
+  if (isTuck) {
+    for (int i = 0; i < 10; i++) {
       newSurface[i] = std::max(surfaceArray[i], newSurface[i]);
     }
   }
@@ -147,7 +149,8 @@ std::pair<int, float> getNewSurfaceAndNumNewHoles(int surfaceArray[10],
   // Check for new holes by comparing the bottom surface of the piece to the surface of the stack
   int numNewTrueHoles = 0;
   float numNewPartialHoles = 0;
-  unsigned int const *bottomSurface = lockPlacement.piece->bottomSurfaceByRotation[lockPlacement.rotationIndex];
+  unsigned int const *bottomSurface =
+      lockPlacement.piece->bottomSurfaceByRotation[lockPlacement.rotationIndex];
   for (int i = 0; i < 4; i++) {
     if (bottomSurface[i] == NONE) {
       continue;
@@ -164,17 +167,19 @@ std::pair<int, float> getNewSurfaceAndNumNewHoles(int surfaceArray[10],
     int holeWeightStartRow = -1; // Indicates that all rows above this row are weight on a hole
     for (int r = (lockPlacement.y + bottomSurface[i]); r < 20; r++) {
       // VARIABLE_RANGE_CHECKS
-      if (r < 0 || r >= 20){
+      if (r < 0 || r >= 20) {
         printf("\n\nPANIK A, r=%d, y=%d, bottomSurface=%d\n", r, lockPlacement.y, bottomSurface[i]);
         printBoard(board);
-        printBoardWithPiece(board, *lockPlacement.piece, lockPlacement.x, lockPlacement.y, lockPlacement.rotationIndex);
+        printBoardWithPiece(board, *lockPlacement.piece, lockPlacement.x, lockPlacement.y,
+                            lockPlacement.rotationIndex);
         continue;
       }
-      if (r < highestBoardCellInCol){
+      if (r < highestBoardCellInCol) {
         // Check for new holes
-        float rating = analyzeHole(board, r, c, excludeHolesCol, newSurface, evalContext->aiMode == DIG);
+        float rating =
+            analyzeHole(board, r, c, excludeHolesCol, newSurface, evalContext->aiMode == DIG);
         if (rating == 1) {
-           // If it's a true hole
+          // If it's a true hole
           holeWeightStartRow = r - 1;
           numNewTrueHoles += 1;
         } else {
@@ -186,14 +191,14 @@ std::pair<int, float> getNewSurfaceAndNumNewHoles(int surfaceArray[10],
           holeWeightStartRow = r - 1;
         }
       }
-      
     }
 
     // Mark rows as needing to be cleared
-    // maybePrint("marking needToClear (column %d): start row = %d, surface = %d\n", c, holeWeightStartRow, 20 - newSurface[c]);
-    if (holeWeightStartRow != -1){
+    // maybePrint("marking needToClear (column %d): start row = %d, surface = %d\n", c,
+    // holeWeightStartRow, 20 - newSurface[c]);
+    if (holeWeightStartRow != -1) {
       for (int r = holeWeightStartRow; r >= 20 - newSurface[c]; r--) {
-        if (VARIABLE_RANGE_CHECKS_ENABLED && (r < 0 || r >= 20)){
+        if (VARIABLE_RANGE_CHECKS_ENABLED && (r < 0 || r >= 20)) {
           printf("R value out of range %d %d\n", r, newSurface[c]);
           break;
           // throw std::invalid_argument( "r value out of range" );
@@ -209,19 +214,21 @@ std::pair<int, float> getNewSurfaceAndNumNewHoles(int surfaceArray[10],
 }
 
 /**
- * Manually finds the surface heights and holes after lines have been cleared (since usual prediction tricks
- * don't apply).
- * @param excludeHolesColumn - a prespecified column to ignore holes in (usually the well). A value of -1 disables this behavior.
+ * Manually finds the surface heights and holes after lines have been cleared (since usual
+ * prediction tricks don't apply).
+ * @param excludeHolesColumn - a prespecified column to ignore holes in (usually the well). A value
+ * of -1 disables this behavior.
  * @returns the new hole count
  */
-std::pair<int, float> updateSurfaceAndHoles(int surfaceArray[10], unsigned int board[20], int excludeHolesColumn, bool isDigMode) {
+std::pair<int, float> updateSurfaceAndHoles(int surfaceArray[10], unsigned int board[20],
+                                            int excludeHolesColumn, bool isDigMode) {
   // Reset hole and tuck setup bits
   for (int i = 0; i < 20; i++) {
     board[i] &= ~ALL_AUXILIARY_BITS;
   }
   int numTrueHoles = 0;
   float numPartialHoles = 0;
-  
+
   // Calculate the new surface array first, since its value is used in subsequent calculations
   for (int c = 0; c < 10; c++) {
     int mask = 1 << (9 - c);
@@ -232,7 +239,7 @@ std::pair<int, float> updateSurfaceAndHoles(int surfaceArray[10], unsigned int b
     // Update the new surface array
     surfaceArray[c] = 20 - r;
   }
-  
+
   // Update hole and tuck setup info
   for (int c = 0; c < 10; c++) {
     int mask = 1 << (9 - c);
@@ -246,12 +253,14 @@ std::pair<int, float> updateSurfaceAndHoles(int surfaceArray[10], unsigned int b
       if (!(board[r] & mask)) {
         float rating = analyzeHole(board, r, c, excludeHolesColumn, surfaceArray, isDigMode);
         // Check that it's a hole (1.0) and not a tuck setup (eg. 0.9)
-        if (rating == 1){
+        if (rating == 1) {
           lowestHoleInCol = r;
           numTrueHoles += 1;
-        } else if (numPartialHoles > 3){
-          // If we already have too many tuck setups, start counting them as holes to discourage setting up more and more stacked tuck setups.
-          // They're still marked as overhang cells in analyzeHole so SR will still find the tucks. But we'll still punish the eval like a hole.
+        } else if (numPartialHoles > 3) {
+          // If we already have too many tuck setups, start counting them as holes to discourage
+          // setting up more and more stacked tuck setups. They're still marked as overhang cells in
+          // analyzeHole so SR will still find the tucks. But we'll still punish the eval like a
+          // hole.
           numPartialHoles += 1;
         } else {
           numPartialHoles += rating;
@@ -261,7 +270,7 @@ std::pair<int, float> updateSurfaceAndHoles(int surfaceArray[10], unsigned int b
     }
     // Mark rows as needing to be cleared
     for (int r = lowestHoleInCol - 1; r >= 20 - surfaceArray[c]; r--) {
-      if (VARIABLE_RANGE_CHECKS_ENABLED && (r < 0 || r >= 20)){
+      if (VARIABLE_RANGE_CHECKS_ENABLED && (r < 0 || r >= 20)) {
         printf("R value out of range %d\n", r);
         break;
         // throw std::invalid_argument( "r value out of range" );
@@ -276,7 +285,8 @@ std::pair<int, float> updateSurfaceAndHoles(int surfaceArray[10], unsigned int b
  * Calculates the resulting board after placing a piece in a specified spot.
  * @returns the number of lines cleared
  */
-int getNewBoardAndLinesCleared(unsigned int board[20], LockPlacement lockPlacement, OUT unsigned int newBoard[20]) {
+int getNewBoardAndLinesCleared(unsigned int board[20], LockPlacement lockPlacement,
+                               OUT unsigned int newBoard[20]) {
   int numLinesCleared = 0;
   // The rows below the piece are always the same
   for (int r = lockPlacement.y + 4; r < 20; r++) {
@@ -294,9 +304,10 @@ int getNewBoardAndLinesCleared(unsigned int board[20], LockPlacement lockPlaceme
       newBoard[lockPlacement.y + i + numLinesCleared] = board[lockPlacement.y + i];
       continue;
     }
-    int newRow = (board[lockPlacement.y + i]
-                  | SHIFTBY(pieceRows[i], lockPlacement.x))      // Add the piece to the board
-                 & ~(SHIFTBY(pieceRows[i], lockPlacement.x - 20)); // Clear out those cells from tuck setups
+    int newRow =
+        (board[lockPlacement.y + i]
+         | SHIFTBY(pieceRows[i], lockPlacement.x))        // Add the piece to the board
+        & ~(SHIFTBY(pieceRows[i], lockPlacement.x - 20)); // Clear out those cells from tuck setups
     if ((newRow & FULL_ROW) == FULL_ROW) {
       numLinesCleared++;
       continue;
@@ -314,8 +325,7 @@ int getNewBoardAndLinesCleared(unsigned int board[20], LockPlacement lockPlaceme
   return numLinesCleared;
 }
 
-
-float adjustHoleCountAndBoardAfterTuck(unsigned int board[20], LockPlacement lockPlacement){
+float adjustHoleCountAndBoardAfterTuck(unsigned int board[20], LockPlacement lockPlacement) {
   int tuckCellsFilled = 0;
   unsigned int const *pieceRows = lockPlacement.piece->rowsByRotation[lockPlacement.rotationIndex];
   for (int i = 3; i >= 0; i--) {
@@ -339,21 +349,26 @@ float adjustHoleCountAndBoardAfterTuck(unsigned int board[20], LockPlacement loc
   return -1 * SEMI_HOLE_PROPORTION * tuckCellsFilled;
 }
 
-
 /** Gets the game state after completing a given move */
-GameState advanceGameState(GameState gameState, LockPlacement lockPlacement, const EvalContext *evalContext) {
-  GameState newState = {{}, {}, gameState.numTrueHoles, gameState.numPartialHoles, gameState.lines, gameState.level};
+GameState advanceGameState(GameState gameState, LockPlacement lockPlacement,
+                           const EvalContext *evalContext) {
+  GameState newState = {
+      {}, {}, gameState.numTrueHoles, gameState.numPartialHoles, gameState.lines, gameState.level};
   bool isTuck = lockPlacement.tuckInput != NO_TUCK_NOTATION;
   int numLinesCleared = getNewBoardAndLinesCleared(gameState.board, lockPlacement, newState.board);
   std::pair<int, float> initialResult =
-    getNewSurfaceAndNumNewHoles(gameState.surfaceArray, newState.board, lockPlacement, evalContext, isTuck, OUT newState.surfaceArray);
-  if (numLinesCleared == 0 && gameState.numPartialHoles == 0){
-    // Use the initial result, since its predictions are reliable for boards with no holes or overhangs
+      getNewSurfaceAndNumNewHoles(gameState.surfaceArray, newState.board, lockPlacement,
+                                  evalContext, isTuck, OUT newState.surfaceArray);
+  if (numLinesCleared == 0 && gameState.numPartialHoles == 0) {
+    // Use the initial result, since its predictions are reliable for boards with no holes or
+    // overhangs
     newState.numTrueHoles += initialResult.first;
     newState.numPartialHoles += initialResult.second;
   } else {
     // Recalculate the holes and overhangs from scratch
-    std::pair<int, float> recalcResult = updateSurfaceAndHoles(newState.surfaceArray, newState.board, evalContext->countWellHoles ? -1 : evalContext->wellColumn, evalContext->aiMode == DIG);
+    std::pair<int, float> recalcResult = updateSurfaceAndHoles(
+        newState.surfaceArray, newState.board,
+        evalContext->countWellHoles ? -1 : evalContext->wellColumn, evalContext->aiMode == DIG);
     newState.numTrueHoles = recalcResult.first;
     newState.numPartialHoles = recalcResult.second;
   }

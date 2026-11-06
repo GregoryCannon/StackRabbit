@@ -1,9 +1,9 @@
 #ifndef TOURNAMENT_SEARCH
 #define TOURNAMENT_SEARCH
 
+#include "config.hpp"
 #include "types.hpp"
 #include "utils.hpp"
-#include "config.hpp"
 #include <list>
 #include <unordered_map>
 
@@ -23,7 +23,6 @@
  * a round share one sequence window, so comparisons are paired and playout luck cancels.
  * Result: first placement -> best LCB over its sampled conts (see getTournamentContPublishScore).
  */
-
 
 // ----- Config for tournament-style playouts -----
 
@@ -59,9 +58,11 @@ constexpr float TMT_PAIRED_TEST_Z = 1.96f;
 // cont alone; <= 0 disables the veto (the default).
 constexpr float TMT_CUT1_VETO_Z = 0;
 
-
-
-
-std::unordered_map<std::string, float> getLockValueLookupTournament(GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int pruningBreadth, int playoutCount, int playoutLength, int dasCharge, int secondPieceDasCharge, char const *dasInputFrameTimeline, const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3]);
+std::unordered_map<std::string, float>
+getLockValueLookupTournament(GameState gameState, const Piece *firstPiece, const Piece *secondPiece,
+                             int pruningBreadth, int playoutCount, int playoutLength, int dasCharge,
+                             int secondPieceDasCharge, char const *dasInputFrameTimeline,
+                             const EvalContext *evalContext,
+                             const PieceRangeContext pieceRangeContextLookup[3]);
 
 #endif

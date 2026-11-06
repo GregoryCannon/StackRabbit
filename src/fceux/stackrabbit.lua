@@ -38,8 +38,9 @@ TIMELINE_30_HZ = "X.";
 SHOULD_ADJUST = true
 REACTION_TIME_FRAMES = 18
 INPUT_TIMELINE = TIMELINE_20_HZ;
-PLAYOUT_COUNT = 3500
+PLAYOUT_COUNT = 350
 PLAYOUT_LENGTH = 6
+PRUNING_BREADTH = 10
 MOVIE_PATH = "C:\\Users\\Greg\\Desktop\\VODs\\" -- Where to store the fm2 VODS (absolute path)
 SCORES_TEXT_PATH = "C:\\Users\\Greg\\Desktop\\sr-test-scores.txt"
 if IS_MAC then 
@@ -220,7 +221,7 @@ function requestPrecompute()
   local reqStr = "http://localhost:3000/precompute?board=" .. stateForNextPiece.board .. "&currentPiece=" .. orientToPiece[pnext]
   reqStr = reqStr .. "&level=" .. reqLevel .. "&lines=" .. reqLines .. "&reactionTime="
   reqStr = reqStr .. REACTION_TIME_FRAMES .. "&inputFrameTimeline=" .. INPUT_TIMELINE .. "&dasCharge=" .. reqDasCharge 
-  reqStr = reqStr .. "&aggressionLevel=" .. AGGRESSION_LEVEL .. "&pruningBreadth=-1" .. "&playoutCount=" .. PLAYOUT_COUNT .. "&playoutLength=" .. PLAYOUT_LENGTH
+  reqStr = reqStr .. "&aggressionLevel=" .. AGGRESSION_LEVEL .. "&pruningBreadth=" .. PRUNING_BREADTH .. "&playoutCount=" .. PLAYOUT_COUNT .. "&playoutLength=" .. PLAYOUT_LENGTH
 
   local response = makeHttpRequest(reqStr)
   if response.code ~= 200 then

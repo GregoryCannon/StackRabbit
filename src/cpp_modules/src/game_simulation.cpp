@@ -1,11 +1,11 @@
-#include "types.hpp"
-#include "utils.hpp"
 #include "config.hpp"
-#include "piece_ranges.hpp"
 #include "eval_context.hpp"
 #include "high_level_search.hpp"
 #include "move_result.hpp"
+#include "piece_ranges.hpp"
 #include "piece_rng.hpp"
+#include "types.hpp"
+#include "utils.hpp"
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -16,67 +16,63 @@
 #include <utility>
 #include <vector>
 
-const int SCORE_REWARDS[] = {
-  0,
-  40,
-  100,
-  300,
-  1200
-};
+const int SCORE_REWARDS[] = {0, 40, 100, 300, 1200};
 
 int countInputsBeforeReactionTime(int reactionTime, char const *inputFrameTimeline) {
   int numInputs = 0;
-  for (int i = 0; i < reactionTime; i++){
-    if (shouldPerformInputsThisFrame(i, inputFrameTimeline)){
+  for (int i = 0; i < reactionTime; i++) {
+    if (shouldPerformInputsThisFrame(i, inputFrameTimeline)) {
       numInputs++;
     }
   }
   return numInputs;
 }
 
-std::vector<int> simulateGame(char const *inputFrameTimeline, int startingLevel, int maxLines, int playoutCount, int playoutLength, bool useTestWeights, AggressionLevel aggressionLevel){
+std::vector<int> simulateGame(char const *inputFrameTimeline, int startingLevel, int maxLines,
+                              int playoutCount, int playoutLength, bool useTestWeights,
+                              AggressionLevel aggressionLevel) {
   // Init empty data structures
-  GameState gameState = {
-    /* board= */ {},
-    /* surfaceArray= */ {},
-    /* numTrueHole= */ 0,
-    /* numPartialHoles= */ 0,
-    /* lines= */ 0,
-    /* level= */ startingLevel
-  };
+  GameState gameState = {/* board= */ {},
+                         /* surfaceArray= */ {},
+                         /* numTrueHole= */ 0,
+                         /* numPartialHoles= */ 0,
+                         /* lines= */ 0,
+                         /* level= */ startingLevel};
   getSurfaceArray(gameState.board, gameState.surfaceArray);
   Piece curPiece;
-  Piece nextPiece = PIECE_LIST[qualityRandom(0,7)];
+  Piece nextPiece = PIECE_LIST[qualityRandom(0, 7)];
 
   // Calculate global context for the 4 possible gravity values
   const PieceRangeContext pieceRangeContextLookup[4] = {
-    getPieceRangeContext(inputFrameTimeline, 1, /* gravityDoubled= */ true),
-    getPieceRangeContext(inputFrameTimeline, 1, /* gravityDoubled= */ false),
-    getPieceRangeContext(inputFrameTimeline, 2, /* gravityDoubled= */ false),
-    getPieceRangeContext(inputFrameTimeline, 3, /* gravityDoubled= */ false),
+      getPieceRangeContext(inputFrameTimeline, 1, /* gravityDoubled= */ true),
+      getPieceRangeContext(inputFrameTimeline, 1, /* gravityDoubled= */ false),
+      getPieceRangeContext(inputFrameTimeline, 2, /* gravityDoubled= */ false),
+      getPieceRangeContext(inputFrameTimeline, 3, /* gravityDoubled= */ false),
   };
   int score = 0;
   int numMoves = 0;
 
   while (true) {
     numMoves++;
-    
+
     // Get pieces
     curPiece = nextPiece;
     nextPiece = getRandomPiece(curPiece);
 
     // Figure out modes and eval context
-    const EvalContext evalContextRaw = getEvalContext(gameState, pieceRangeContextLookup, useTestWeights, aggressionLevel);
+    const EvalContext evalContextRaw =
+        getEvalContext(gameState, pieceRangeContextLookup, useTestWeights, aggressionLevel);
     const EvalContext *evalContext = &evalContextRaw;
 
-    LockLocation bestMove = playOneMove(gameState, &curPiece, NULL, DEFAULT_PRUNING_BREADTH, playoutCount, playoutLength, evalContext, pieceRangeContextLookup);
-    if (bestMove.x == NONE){
+    LockLocation bestMove =
+        playOneMove(gameState, &curPiece, NULL, DEFAULT_PRUNING_BREADTH, playoutCount,
+                    playoutLength, evalContext, pieceRangeContextLookup);
+    if (bestMove.x == NONE) {
       // Agent died, simulated game is complete
       break;
     }
-    LockPlacement bestPlacement = {
-      bestMove.x, bestMove.y, bestMove.rotationIndex, -1, NO_TUCK_NOTATION, &curPiece
-    };
+    LockPlacement bestPlacement = {bestMove.x, bestMove.y,       bestMove.rotationIndex,
+                                   -1,         NO_TUCK_NOTATION, &curPiece};
     // Update the state to keep playing
     int oldLines = gameState.lines;
     gameState = advanceGameState(gameState, bestPlacement, evalContext);
@@ -84,7 +80,8 @@ std::vector<int> simulateGame(char const *inputFrameTimeline, int startingLevel,
 
     if (SIMULATION_LOGGING_ENABLED) {
       printBoard(gameState.board);
-      printf("Best placement: %c %d, %d\n\n", bestPlacement.piece->id, bestPlacement.rotationIndex, bestPlacement.x - SPAWN_X);
+      printf("Best placement: %c %d, %d\n\n", bestPlacement.piece->id, bestPlacement.rotationIndex,
+             bestPlacement.x - SPAWN_X);
       printf("Score: %d, Lines: %d, Level: %d\n", score, gameState.lines, gameState.level);
     }
 
@@ -95,140 +92,191 @@ std::vector<int> simulateGame(char const *inputFrameTimeline, int startingLevel,
   return {score, gameState.lines};
 }
 
-void printStats(const std::vector<std::pair<int, int>>& games, int maxLines) {
-    if (games.empty()) return;
+void printStats(const std::vector<std::pair<int, int>> &games, int maxLines) {
+  if (games.empty())
+    return;
 
-    double n = games.size();
-    double sum = 0.0;
-    for (const auto& game : games) {
-        sum += game.first;
+  double n = games.size();
+  double sum = 0.0;
+  for (const auto &game : games) {
+    sum += game.first;
+  }
+  double mean = sum / n;
+
+  double sq_sum = 0.0;
+  for (const auto &game : games) {
+    sq_sum += (game.first - mean) * (game.first - mean);
+  }
+  double stdev = std::sqrt(sq_sum / (n - 1));
+
+  // Common Z-Scores: 90% = 1.645 | 95% = 1.960 | 99% = 2.576
+  const double z_90 = 1.645;
+  const double z_95 = 1.960;
+
+  // Calculate standard error: SE = stdev / sqrt(n)
+  double standard_error = stdev / std::sqrt(games.size());
+
+  // Calculate margin of error
+  double margin_of_error = z_90 * standard_error;
+  double ci_lower = mean - margin_of_error;
+  double ci_upper = mean + margin_of_error;
+
+  // Set the locale to the user's environment default (en_US usually utilizes commas)
+  // printf("Average: %.1f\n +/- %.1f (Stdev: %.1f)\n", mean, margin_of_error, stdev);
+  std::cout
+      << std::fixed
+      << std::setprecision(0)
+      << "\nAverage: "
+      << mean
+      << "\t+/-: "
+      << margin_of_error
+      << " ("
+      << ci_lower
+      << " - "
+      << ci_upper
+      << ")\t(stdev: "
+      << stdev
+      << ")\n";
+
+  const int KILLSCREEN_CLOSE_LINES = maxLines - 10;
+
+  int killscreenCount = 0;
+  double killscreenScoreSum = 0.0;
+  double nonKillscreenScoreSum = 0.0;
+  int nonKillscreenCount = 0;
+
+  for (const auto &game : games) {
+    if (game.second > KILLSCREEN_CLOSE_LINES) {
+      killscreenCount++;
+      killscreenScoreSum += game.first;
+    } else {
+      nonKillscreenCount++;
+      nonKillscreenScoreSum += game.first;
     }
-    double mean = sum / n;
-    
-    double sq_sum = 0.0;
-    for (const auto& game : games) {
-        sq_sum += (game.first - mean) * (game.first - mean);
-    }
-    double stdev = std::sqrt(sq_sum / (n - 1));
-  
-    
-    // Common Z-Scores: 90% = 1.645 | 95% = 1.960 | 99% = 2.576
-    const double z_90 = 1.645;
-    const double z_95 = 1.960; 
-    
-    // Calculate standard error: SE = stdev / sqrt(n)
-    double standard_error = stdev / std::sqrt(games.size());
-    
-    // Calculate margin of error
-    double margin_of_error = z_90 * standard_error;
-    double ci_lower = mean - margin_of_error;
-    double ci_upper = mean + margin_of_error;
+  }
 
-    // Set the locale to the user's environment default (en_US usually utilizes commas)
-    // printf("Average: %.1f\n +/- %.1f (Stdev: %.1f)\n", mean, margin_of_error, stdev);
-    std::cout << std::fixed << std::setprecision(0) << "\nAverage: " << mean << "\t+/-: " << margin_of_error << " (" << ci_lower << " - " << ci_upper << ")\t(stdev: " << stdev << ")\n";
+  double killscreenPercent = (killscreenCount / n) * 100.0;
+  double killscreenAvg = killscreenCount > 0 ? killscreenScoreSum / killscreenCount : 0.0;
+  double nonKillscreenAvg =
+      nonKillscreenCount > 0 ? nonKillscreenScoreSum / nonKillscreenCount : 0.0;
 
-    const int KILLSCREEN_CLOSE_LINES = maxLines - 10;
-
-    int killscreenCount = 0;
-    double killscreenScoreSum = 0.0;
-    double nonKillscreenScoreSum = 0.0;
-    int nonKillscreenCount = 0;
-
-    for (const auto& game : games) {
-        if (game.second > KILLSCREEN_CLOSE_LINES) {
-            killscreenCount++;
-            killscreenScoreSum += game.first;
-        } else {
-            nonKillscreenCount++;
-            nonKillscreenScoreSum += game.first;
-        }
-    }
-
-    double killscreenPercent = (killscreenCount / n) * 100.0;
-    double killscreenAvg = killscreenCount > 0 ? killscreenScoreSum / killscreenCount : 0.0;
-    double nonKillscreenAvg = nonKillscreenCount > 0 ? nonKillscreenScoreSum / nonKillscreenCount : 0.0;
-
-    std::cout << std::setprecision(1) << "Reached killscreen (lines > " << KILLSCREEN_CLOSE_LINES << "): " << killscreenPercent << "%" << std::endl;
-    std::cout << std::setprecision(0) << "Average score of killscreen games: " << killscreenAvg << std::endl;
-    std::cout << std::setprecision(0) << "Average score of non-killscreen games: " << nonKillscreenAvg << std::endl;
+  std::cout
+      << std::setprecision(1)
+      << "Reached killscreen (lines > "
+      << KILLSCREEN_CLOSE_LINES
+      << "): "
+      << killscreenPercent
+      << "%"
+      << std::endl;
+  std::cout
+      << std::setprecision(0)
+      << "Average score of killscreen games: "
+      << killscreenAvg
+      << std::endl;
+  std::cout
+      << std::setprecision(0)
+      << "Average score of non-killscreen games: "
+      << nonKillscreenAvg
+      << std::endl;
 }
 
-void simulateGames(int numGames, char const *inputFrameTimeline, int startingLevel, int maxLines, int playoutCount, int playoutLength, bool useTestWeights, AggressionLevel aggressionLevel, OUT std::vector<std::pair<int, int>> &games){
+void simulateGames(int numGames, char const *inputFrameTimeline, int startingLevel, int maxLines,
+                   int playoutCount, int playoutLength, bool useTestWeights,
+                   AggressionLevel aggressionLevel, OUT std::vector<std::pair<int, int>> &games) {
   printf("Starting game simulations...\n");
 
-  auto time_start = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+  auto time_start = std::chrono::duration_cast<std::chrono::milliseconds>(
+                        std::chrono::system_clock::now().time_since_epoch())
+                        .count();
 
   for (int i = 0; i < numGames; i++) {
-    std::vector<int> result = simulateGame(inputFrameTimeline, startingLevel, maxLines, playoutCount, playoutLength, useTestWeights, aggressionLevel);
+    std::vector<int> result =
+        simulateGame(inputFrameTimeline, startingLevel, maxLines, playoutCount, playoutLength,
+                     useTestWeights, aggressionLevel);
     games.push_back({result[0], result[1]});
     std::cout << i << ": " << result[0] << "Lines: " << result[1] << std::endl;
   }
 
-  auto time_end = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-  printf("Time elapsed: %lld seconds\n", (time_end - time_start)/1000);
+  auto time_end = std::chrono::duration_cast<std::chrono::milliseconds>(
+                      std::chrono::system_clock::now().time_since_epoch())
+                      .count();
+  printf("Time elapsed: %lld seconds\n", (time_end - time_start) / 1000);
 
   printStats(games, maxLines);
 }
 
 // (Thanks Gemini)
-void simulateGamesThreaded(int numGames, const char* inputFrameTimeline, int startingLevel, int maxLines, int playoutCount, int playoutLength, bool useTestWeights, AggressionLevel aggressionLevel, OUT std::vector<std::pair<int, int>>& games) {
-    auto time_start = std::chrono::steady_clock::now();
+void simulateGamesThreaded(int numGames, const char *inputFrameTimeline, int startingLevel,
+                           int maxLines, int playoutCount, int playoutLength, bool useTestWeights,
+                           AggressionLevel aggressionLevel,
+                           OUT std::vector<std::pair<int, int>> &games) {
+  auto time_start = std::chrono::steady_clock::now();
 
-    games.resize(numGames);
-    
-    // 2. Create an atomic counter that all threads can safely modify
-    std::atomic<int> gamesCompleted{0}; 
+  games.resize(numGames);
 
-    unsigned int numThreads = std::thread::hardware_concurrency();
-    if (numThreads == 0) numThreads = 4;
-    // numThreads = 4;
-    std::cout << "Starting game simulations on " << numThreads << " threads...\n";
-    
-    std::vector<std::thread> threads;
-    int chunkSize = std::ceil((double)numGames / numThreads);
+  // 2. Create an atomic counter that all threads can safely modify
+  std::atomic<int> gamesCompleted{0};
 
-    // 3. Update the worker to increment the counter
-    auto worker = [&](int startIdx, int endIdx) {
-        for (int i = startIdx; i < endIdx; ++i) {
-            std::vector<int> result = simulateGame(inputFrameTimeline, startingLevel, maxLines, playoutCount, playoutLength, useTestWeights, aggressionLevel);
-            games[i] = {result[0], result[1]};
-            gamesCompleted++; // Safely increments without locks
-        }
-    };
+  unsigned int numThreads = std::thread::hardware_concurrency();
+  if (numThreads == 0)
+    numThreads = 4;
+  // numThreads = 4;
+  std::cout << "Starting game simulations on " << numThreads << " threads...\n";
 
-    for (unsigned int i = 0; i < numThreads; ++i) {
-        int startIdx = i * chunkSize;
-        int endIdx = std::min(startIdx + chunkSize, numGames);
-        
-        if (startIdx < endIdx) {
-            threads.push_back(std::thread(worker, startIdx, endIdx));
-        }
+  std::vector<std::thread> threads;
+  int chunkSize = std::ceil((double)numGames / numThreads);
+
+  // 3. Update the worker to increment the counter
+  auto worker = [&](int startIdx, int endIdx) {
+    for (int i = startIdx; i < endIdx; ++i) {
+      std::vector<int> result =
+          simulateGame(inputFrameTimeline, startingLevel, maxLines, playoutCount, playoutLength,
+                       useTestWeights, aggressionLevel);
+      games[i] = {result[0], result[1]};
+      gamesCompleted++; // Safely increments without locks
     }
+  };
 
-    // 4. Main thread tracks progress while workers do the heavy lifting
-    while (gamesCompleted < numGames) {
-        // \r brings the cursor back to the start of the line, creating an updating effect
-        std::cout << "\rSimulating: " << gamesCompleted << " / " << numGames 
-                  << " (" << (gamesCompleted * 100 / numGames) << "%)" << std::flush;
-                  
-        // Sleep for 100ms so we don't spam the CPU
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  for (unsigned int i = 0; i < numThreads; ++i) {
+    int startIdx = i * chunkSize;
+    int endIdx = std::min(startIdx + chunkSize, numGames);
+
+    if (startIdx < endIdx) {
+      threads.push_back(std::thread(worker, startIdx, endIdx));
     }
-    
-    // Print the final 100% state and move to a new line
-    std::cout << "\rSimulating: " << numGames << " / " << numGames << " (100%)\n";
+  }
 
-    for (auto& t : threads) {
-        if (t.joinable()) {
-            t.join();
-        }
+  // 4. Main thread tracks progress while workers do the heavy lifting
+  while (gamesCompleted < numGames) {
+    // \r brings the cursor back to the start of the line, creating an updating effect
+    std::cout
+        << "\rSimulating: "
+        << gamesCompleted
+        << " / "
+        << numGames
+        << " ("
+        << (gamesCompleted * 100 / numGames)
+        << "%)"
+        << std::flush;
+
+    // Sleep for 100ms so we don't spam the CPU
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  }
+
+  // Print the final 100% state and move to a new line
+  std::cout << "\rSimulating: " << numGames << " / " << numGames << " (100%)\n";
+
+  for (auto &t : threads) {
+    if (t.joinable()) {
+      t.join();
     }
+  }
 
-    auto time_end = std::chrono::steady_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(time_end - time_start).count();
-    
-    std::cout << "Time elapsed: " << duration / 1000.0 << " seconds\n";
+  auto time_end = std::chrono::steady_clock::now();
+  auto duration =
+      std::chrono::duration_cast<std::chrono::milliseconds>(time_end - time_start).count();
 
-    printStats(games, maxLines);
+  std::cout << "Time elapsed: " << duration / 1000.0 << " seconds\n";
+
+  printStats(games, maxLines);
 }

@@ -6,15 +6,17 @@
 const int pieceIndexToTableIndex[7] = {6, 3, 5, 1, 0, 4, 2};
 const int tableIndexToPieceIndex[7] = {4, 3, 6, 1, 5, 2, 0};
 
+// clang-format off
 int transitionProbability[7][7] = {
-  {2, 10, 12, 10, 10, 10, 10},
-  {12, 2, 10, 10, 10, 10, 10},
-  {10, 12, 2, 10, 10, 10, 10},
-  {10, 10, 10, 4, 10, 10, 10},
-  {10, 10, 10, 10, 4, 10, 10},
-  {12, 10, 10, 10, 10, 2, 10},
-  {10, 10, 10, 10, 12, 10, 2},
+    {2, 10, 12, 10, 10, 10, 10},
+    {12, 2, 10, 10, 10, 10, 10},
+    {10, 12, 2, 10, 10, 10, 10},
+    {10, 10, 10, 4, 10, 10, 10},
+    {10, 10, 10, 10, 4, 10, 10},
+    {12, 10, 10, 10, 10, 2, 10},
+    {10, 10, 10, 10, 12, 10, 2},
 };
+// clang-format on
 
 Piece getRandomPiece(Piece previousPiece) {
   int tableIndex = pieceIndexToTableIndex[previousPiece.index];

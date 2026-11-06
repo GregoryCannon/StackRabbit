@@ -1,9 +1,9 @@
 #include "eval_context.hpp"
-#include <math.h>
-#include <algorithm>
 #include "config.hpp"
+#include <algorithm>
+#include <math.h>
 
-int hasHoleBlockingTetrisReady(unsigned int board[20], int col10Height){
+int hasHoleBlockingTetrisReady(unsigned int board[20], int col10Height) {
   if (col10Height > 16) {
     return 0;
   }
@@ -32,18 +32,21 @@ AiMode getAiMode(GameState gameState, int currentMax5TapHeight, int max5TapHeigh
   return STANDARD;
 }
 
-const EvalContext getEvalContext(GameState gameState, const PieceRangeContext pieceRangeContextLookup[], bool useTestWeights, AggressionLevel aggressionLevel){
+const EvalContext getEvalContext(GameState gameState,
+                                 const PieceRangeContext pieceRangeContextLookup[],
+                                 bool useTestWeights, AggressionLevel aggressionLevel) {
   EvalContext context = {};
 
   // Copy the piece range context from the global lookup
   bool gravityDoubled = isGravityDoubled(gameState.level);
-  int pieceRangeContextIndex = gravityDoubled 
-          ? 0 // double killscreen context is at index 0 of the array 
-          : getGravity(gameState.level); // The rest are indexed by the gravity value
+  int pieceRangeContextIndex =
+      gravityDoubled ? 0 // double killscreen context is at index 0 of the array
+                     : getGravity(gameState.level); // The rest are indexed by the gravity value
   context.pieceRangeContext = pieceRangeContextLookup[pieceRangeContextIndex];
 
   // Set the mode
-  AiMode aiMode = getAiMode(gameState, context.pieceRangeContext.max5TapHeight, pieceRangeContextLookup[0].max5TapHeight);
+  AiMode aiMode = getAiMode(gameState, context.pieceRangeContext.max5TapHeight,
+                            pieceRangeContextLookup[0].max5TapHeight);
   context.aiMode = aiMode;
   context.aggressionLevel = aggressionLevel;
   context.weights = getWeights(context.aiMode, useTestWeights, aggressionLevel);
@@ -53,7 +56,8 @@ const EvalContext getEvalContext(GameState gameState, const PieceRangeContext pi
     context.scareHeight = 0;
     context.maxSafeCol9 = -1;
   } else {
-    float prelimScareHeight = context.pieceRangeContext.max5TapHeight - 3; // formerly 4 if play_safe
+    float prelimScareHeight =
+        context.pieceRangeContext.max5TapHeight - 3;                // formerly 4 if play_safe
     float prelimCol9 = context.pieceRangeContext.max4TapHeight - 5; // formerly 6 if play_safe
 
     prelimScareHeight = prelimScareHeight * 0.5 + 6 * 0.5;
@@ -62,15 +66,16 @@ const EvalContext getEvalContext(GameState gameState, const PieceRangeContext pi
     // FOR TESTING
     float ratio = 0;
 
-    if (DOUBLE_KILLSCREEN_ENABLED){
+    if (DOUBLE_KILLSCREEN_ENABLED) {
       int cutoffLines = 320;
-      int linearInterpolationLines = 10; // Slowly shift from the killscreen scare height to the double killscreen scare height
-      if (gameState.lines > cutoffLines){
+      int linearInterpolationLines =
+          10; // Slowly shift from the killscreen scare height to the double killscreen scare height
+      if (gameState.lines > cutoffLines) {
         int diff = std::min(linearInterpolationLines, gameState.lines - cutoffLines);
         ratio = (float)diff / (float)linearInterpolationLines;
       }
     }
-    
+
     context.scareHeight = prelimScareHeight * (1.0 - ratio);
     context.maxSafeCol9 = prelimCol9 * (1.0 - ratio);
   }
@@ -84,10 +89,10 @@ const EvalContext getEvalContext(GameState gameState, const PieceRangeContext pi
 
   // Misc other properties
   context.maxDirtyTetrisHeight = 0;
-  // context.countWellHoles = context.aiMode == DIG   // This turns out to not work in practice, it prevents filling the well to clear holes.
+  // context.countWellHoles = context.aiMode == DIG   // This turns out to not work in practice, it
+  // prevents filling the well to clear holes.
   context.countWellHoles = false;
   context.shouldRewardLineClears = (aiMode == LINEOUT || aiMode == DIRTY_NEAR_KILLSCREEN);
 
   return context;
 }
-

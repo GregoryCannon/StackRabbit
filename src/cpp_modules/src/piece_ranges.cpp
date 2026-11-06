@@ -5,7 +5,8 @@ xtable getRangeXTable() {
   for (int p = 0; p < 7; p++) {
     for (int rot = 0; rot < 4; rot++) {
       for (int x = -5; x <= 10;
-           x++) { // Lowest possible x is -2, highest possible is 7. Then three extra on either side for padding (three cells of a long bar potentially)
+           x++) { // Lowest possible x is -2, highest possible is 7. Then three extra on either
+                  // side for padding (three cells of a long bar potentially)
         int tableX = x + X_BOUNDS_COLLISION_TABLE_OFFSET;
         table[p][rot][tableX] = 0; // No collision by default
         for (int row = 0; row < 4; row++) {
@@ -28,16 +29,18 @@ const xtable X_BOUNDS_COLLISION_TABLE = getRangeXTable();
 
 /**
  * Calculates a lookup table for the Y value you'd be at while doing shift number N.
- * This is used in the tuck search, since this would be the first Y value where you could perform a tuck after N inputs of a standard placement.
+ * This is used in the tuck search, since this would be the first Y value where you could perform a
+ * tuck after N inputs of a standard placement.
  */
-void computeYValueOfEachShift(char const *inputFrameTimeline, int gravity, bool gravityDoubled, int initialY, OUT int result[7]){
+void computeYValueOfEachShift(char const *inputFrameTimeline, int gravity, bool gravityDoubled,
+                              int initialY, OUT int result[7]) {
   int inputsPerformed = 0;
   int y = initialY;
   int frameIndex = 0;
   while (inputsPerformed <= 5) {
     int isInputFrame = shouldPerformInputsThisFrame(frameIndex, inputFrameTimeline);
     int isGravityFrame =
-      frameIndex % gravity == gravity - 1;   // Returns true every Nth frame, where N = gravity
+        frameIndex % gravity == gravity - 1; // Returns true every Nth frame, where N = gravity
     if (isInputFrame) {
       result[inputsPerformed + 1] = y;
       inputsPerformed++;
@@ -49,15 +52,18 @@ void computeYValueOfEachShift(char const *inputFrameTimeline, int gravity, bool 
   }
 }
 
-const PieceRangeContext getPieceRangeContext(char const *inputFrameTimeline, int gravity, bool gravityDoubled){
+const PieceRangeContext getPieceRangeContext(char const *inputFrameTimeline, int gravity,
+                                             bool gravityDoubled) {
   PieceRangeContext context = {};
-  
+
   context.inputFrameTimeline = inputFrameTimeline;
-  computeYValueOfEachShift(inputFrameTimeline, gravity, gravityDoubled, -1, OUT context.yValueOfEachShift);
-  context.max4TapHeight = 17 - context.yValueOfEachShift[4]; // 17 is the surface height of a square/long bar when y=0
+  computeYValueOfEachShift(inputFrameTimeline, gravity, gravityDoubled, -1,
+                           OUT context.yValueOfEachShift);
+  context.max4TapHeight =
+      17 - context.yValueOfEachShift[4]; // 17 is the surface height of a square/long bar when y=0
   context.max5TapHeight = 17 - context.yValueOfEachShift[5];
-  
-  for (int i = 0; i < 10; i++){
+
+  for (int i = 0; i < 10; i++) {
     context.maxAccessibleLeft5Surface[i] = 20;
     context.maxAccessibleRightSurface[i] = 20;
     context.maxAccessibleLeftLPieceSurface[i] = 20;
@@ -65,54 +71,61 @@ const PieceRangeContext getPieceRangeContext(char const *inputFrameTimeline, int
   unsigned int const *bottomSurface = PIECE_T.bottomSurfaceByRotation[3];
 
   // Calculate inaccessible left 5-tap surface
-  for (int tapIndex = 0; tapIndex < 5; tapIndex++){
+  for (int tapIndex = 0; tapIndex < 5; tapIndex++) {
     // Superimpose the piece's bottom surface on the inaccessible surface
     for (int i = 0; i < 4; i++) {
-      if (bottomSurface[i] == NONE){
+      if (bottomSurface[i] == NONE) {
         continue;
       }
       int xBeforeShift = SPAWN_X - tapIndex;
       int shiftY = context.yValueOfEachShift[tapIndex + 1];
       // printf("tap=%d, i=%d, xAfter=%d, yBefore=%d\n", tapIndex, i, xBeforeShift, shiftY);
-      context.maxAccessibleLeft5Surface[xBeforeShift + i] = 19 - bottomSurface[i] - shiftY - PIECE_T.initialY;
+      context.maxAccessibleLeft5Surface[xBeforeShift + i] =
+          19 - bottomSurface[i] - shiftY - PIECE_T.initialY;
     }
   }
-  context.maxAccessibleLeft5Surface[0] = context.maxAccessibleLeft5Surface[1]; // The 5th shift is the last, so it just needs to resolve before/after (which is at the same Y value)
-  
+  context.maxAccessibleLeft5Surface[0] =
+      context.maxAccessibleLeft5Surface[1]; // The 5th shift is the last, so it just needs to
+                                            // resolve before/after (which is at the same Y value)
+
   // Calculate inaccessible right 4-tap surface
   bottomSurface = PIECE_I.bottomSurfaceByRotation[1];
-  for (int tapIndex = 0; tapIndex < 4; tapIndex++){
+  for (int tapIndex = 0; tapIndex < 4; tapIndex++) {
     // Superimpose the piece's bottom surface on the inaccessible surface
     for (int i = 0; i < 4; i++) {
-      if (bottomSurface[i] == NONE){
+      if (bottomSurface[i] == NONE) {
         continue;
       }
       int xBeforeShift = SPAWN_X + tapIndex;
       int shiftY = context.yValueOfEachShift[tapIndex + 1];
       // printf("tap=%d, i=%d, xAfter=%d, yBefore=%d\n", tapIndex, i, xBeforeShift, shiftY);
-      context.maxAccessibleRightSurface[xBeforeShift + i] = 19 - bottomSurface[i] - shiftY - PIECE_I.initialY;
+      context.maxAccessibleRightSurface[xBeforeShift + i] =
+          19 - bottomSurface[i] - shiftY - PIECE_I.initialY;
     }
   }
-  context.maxAccessibleRightSurface[9] = context.maxAccessibleRightSurface[8]; // The 4th shift is the last, so it just needs to resolve before/after (which is at the same Y value)
-  
+  context.maxAccessibleRightSurface[9] =
+      context.maxAccessibleRightSurface[8]; // The 4th shift is the last, so it just needs to
+                                            // resolve before/after (which is at the same Y value)
+
   // Calculate inaccessible left 4-tap surface (for an L piece)
   bottomSurface = PIECE_L.bottomSurfaceByRotation[0];
-  for (int tapIndex = 0; tapIndex < 4; tapIndex++){
+  for (int tapIndex = 0; tapIndex < 4; tapIndex++) {
     // Superimpose the piece's bottom surface on the inaccessible surface
     for (int i = 0; i < 4; i++) {
-      if (bottomSurface[i] == NONE){
+      if (bottomSurface[i] == NONE) {
         continue;
       }
       int xBeforeShift = SPAWN_X - tapIndex;
       int shiftY = context.yValueOfEachShift[tapIndex + 1];
       // printf("tap=%d, i=%d, xBefore=%d, yBefore=%d\n", tapIndex, i, xBeforeShift, shiftY);
-      context.maxAccessibleLeftLPieceSurface[xBeforeShift + i] = 19 - bottomSurface[i] - shiftY - PIECE_L.initialY;
+      context.maxAccessibleLeftLPieceSurface[xBeforeShift + i] =
+          19 - bottomSurface[i] - shiftY - PIECE_L.initialY;
     }
   }
   context.maxAccessibleLeftLPieceSurface[2] = context.maxAccessibleLeftLPieceSurface[3] - 1;
   context.maxAccessibleLeftLPieceSurface[1] = context.maxAccessibleLeftLPieceSurface[3] - 1;
   context.maxAccessibleLeftLPieceSurface[0] = context.maxAccessibleLeftLPieceSurface[3] - 2;
-  /* 
+  /*
   ^^^ We hardcode the last shift since it's weird. Imagine it's right before the 4th shift:
       o o o x
       o   * x
@@ -120,14 +133,15 @@ const PieceRangeContext getPieceRangeContext(char const *inputFrameTimeline, int
     x x x x x
     x x x x x
 
-  The cell with a * was just stored as col 4 (maxAccSurface[3]). Based on this cell, we know cols 1-3 deterministically.
-  Cols 2 and 3 must be equal, and must be less than col 4. If hypothetically c2 == c3 == c4, then the piece would have 
-  collided in col2 one row higher than the row with * in it. Therefore the highest c2 and c3 can be is one less than c4. 
-  
+  The cell with a * was just stored as col 4 (maxAccSurface[3]). Based on this cell, we know cols
+  1-3 deterministically. Cols 2 and 3 must be equal, and must be less than col 4. If hypothetically
+  c2 == c3 == c4, then the piece would have collided in col2 one row higher than the row with * in
+  it. Therefore the highest c2 and c3 can be is one less than c4.
+
   Then, because of the shape of the L piece, we know c1 is one lower than c2.
   */
 
   // printArray(context.maxAccessibleLeftLPieceSurface, 10, "MAX LEFT L PIECE SURFACE");
-  
+
   return context;
 }

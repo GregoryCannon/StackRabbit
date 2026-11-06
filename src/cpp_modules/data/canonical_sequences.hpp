@@ -24,7 +24,8 @@
  * at 12/64, all others 10/64.
  */
 
-extern const int canonicalSequencesNoLastPieceKnown[CANONICAL_SEQUENCE_BATCH_SIZE * SEQUENCE_LENGTH];
+extern const int
+    canonicalSequencesNoLastPieceKnown[CANONICAL_SEQUENCE_BATCH_SIZE * SEQUENCE_LENGTH];
 extern const int canonicalSequencesAfterI[CANONICAL_SEQUENCE_BATCH_SIZE * SEQUENCE_LENGTH];
 extern const int canonicalSequencesAfterO[CANONICAL_SEQUENCE_BATCH_SIZE * SEQUENCE_LENGTH];
 extern const int canonicalSequencesAfterL[CANONICAL_SEQUENCE_BATCH_SIZE * SEQUENCE_LENGTH];
@@ -40,7 +41,8 @@ extern const int *canonicalPieceSequencesForLastPiece[7];
 
 /**
  * A list of all possible piece sequences of length 1 - 4.
- * Ordered such that the first 7 entries contains all sequences of length 1, the first 7^2 entries contain all of length 2, etc.
+ * Ordered such that the first 7 entries contains all sequences of length 1, the first 7^2 entries
+ * contain all of length 2, etc.
  */
 extern const int exhaustivePieceSequences[EXHAUSTIVE_SEQUENCE_COUNT * EXHAUSTIVE_SEQUENCE_LENGTH];
 

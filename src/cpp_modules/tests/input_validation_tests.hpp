@@ -8,10 +8,8 @@
 
 TEST_CASE("A missing current piece returns an error message") {
   auto input = InputBuilder().withCurPiece(-1).build();
-  CHECK(runRequest(GET_MOVE, input) ==
-        "Error: please provide a value for currentPiece.");
-  CHECK(runRequest(GET_TOP_MOVES, input) ==
-        "Error: please provide a value for currentPiece.");
+  CHECK(runRequest(GET_MOVE, input) == "Error: please provide a value for currentPiece.");
+  CHECK(runRequest(GET_TOP_MOVES, input) == "Error: please provide a value for currentPiece.");
 }
 
 TEST_CASE("A missing next piece (-1) is valid and runs in no-next-box mode") {
@@ -43,37 +41,32 @@ TEST_CASE("RATE_MOVE with an unreachable player board reports that the move was 
   // A board differing from the surface by a single cell cannot result from
   // any I placement, so rateMove bails out with its documented error string.
   auto playerBoard = makeBoardWithStackedColumn(4, 1, 9);
-  auto input = InputBuilder()
-                   .withBoard1(makeFlatBoard(4))
-                   .withBoard2(playerBoard)
-                   .build();
+  auto input = InputBuilder().withBoard1(makeFlatBoard(4)).withBoard2(playerBoard).build();
   CHECK(runRequest(RATE_MOVE, input) == "Error: player move not found");
 }
 
 TEST_CASE("RATE_MOVE without a second board is rejected with an error") {
   // Regression: this used to slice past the end of the input buffer (segfault).
   auto input = InputBuilder().build();
-  CHECK(runRequest(RATE_MOVE, input) == "Error: RATE_MOVE requests require a value for secondBoard.");
+  CHECK(runRequest(RATE_MOVE, input)
+        == "Error: RATE_MOVE requests require a value for secondBoard.");
 }
 
 TEST_CASE("A board string shorter than 200 characters is rejected with an error") {
   // Regression: short inputs used to cause the arg slicing to read out of bounds.
-  CHECK(runRequest(GET_MOVE, "123") == "Error: invalid board string (expected 200 characters of 0/1).");
+  CHECK(runRequest(GET_MOVE, "123")
+        == "Error: invalid board string (expected 200 characters of 0/1).");
 }
 
 TEST_CASE("Non-numeric numeric fields are rejected (was: silently parsed as 0)") {
   // Replace the level/lines fields with junk; this used to be characterized as
   // atoi()-to-0, but every field is now mandatory and strictly validated (a
   // silent 0 can mean a degenerate game state or a different piece).
-  auto input = InputBuilder()
-                   .withLevel(0)
-                   .withLines(0)
-                   .build();
+  auto input = InputBuilder().withLevel(0).withLines(0).build();
   size_t firstPipe = input.find('|');
   size_t secondPipe = input.find('|', firstPipe + 1);
   size_t thirdPipe = input.find('|', secondPipe + 1);
-  std::string junkInput =
-      input.substr(0, firstPipe + 1) + "abc|xyz|" + input.substr(thirdPipe + 1);
+  std::string junkInput = input.substr(0, firstPipe + 1) + "abc|xyz|" + input.substr(thirdPipe + 1);
 
   CHECK(runRequest(GET_MOVE, junkInput) == "Error: invalid level value (expected an integer): abc");
 }
@@ -91,8 +84,8 @@ TEST_CASE("Unknown aggression levels are rejected (was: silently SAFE)") {
 
   // Unknown strings are rejected (matching the TS boundary), and "aggro"
   // (different burnCoef) actually changes the output.
-  CHECK(runRequest(GET_LOCK_VALUE_LOOKUP, garbageInput) ==
-        "Error: invalid aggressionLevel value (expected safe, aggro, or hyper): banana");
+  CHECK(runRequest(GET_LOCK_VALUE_LOOKUP, garbageInput)
+        == "Error: invalid aggressionLevel value (expected safe, aggro, or hyper): banana");
   CHECK(aggroOutput != safeOutput);
 }
 
@@ -115,34 +108,39 @@ TEST_CASE("A non-numeric dasCharge is rejected instead of silently becoming 0 (D
   // validated strictly (the other numeric fields keep their characterized behavior).
   auto input = InputBuilder().withBoard1(makeFlatBoard(4)).withCurPiece(IDX_O).build();
   std::string junkInput = input.substr(0, input.size() - 3) + "junk|";
-  CHECK(runRequest(GET_MOVE, junkInput) == "Error: invalid dasCharge value (expected -1 or 0-16): junk");
+  CHECK(runRequest(GET_MOVE, junkInput)
+        == "Error: invalid dasCharge value (expected -1 or 0-16): junk");
 }
 
 TEST_CASE("An empty currentPiece field is rejected (was: silently the I piece)") {
   // atoi("") -> 0 used to select PIECE_LIST[0] (the I piece) for free.
   auto input = InputBuilder().withBoard1(makeFlatBoard(4)).withCurPiece(IDX_O).build();
-  size_t restStart = input.find('|') + 1; // after board1 (no second board in this input)
+  size_t restStart = input.find('|') + 1;     // after board1 (no second board in this input)
   std::string rest = input.substr(restStart); // "level|lines|currentPiece|nextPiece|..."
   size_t firstPipe = rest.find('|');
   size_t secondPipe = rest.find('|', firstPipe + 1);
   size_t thirdPipe = rest.find('|', secondPipe + 1);
   // Blank out the currentPiece token (between the 2nd and 3rd pipes of the rest).
-  std::string emptyPieceInput = input.substr(0, restStart) + rest.substr(0, secondPipe + 1) + rest.substr(thirdPipe);
-  CHECK(runRequest(GET_MOVE, emptyPieceInput) ==
-        "Error: invalid currentPiece value (expected a piece index or -1): ");
+  std::string emptyPieceInput =
+      input.substr(0, restStart) + rest.substr(0, secondPipe + 1) + rest.substr(thirdPipe);
+  CHECK(runRequest(GET_MOVE, emptyPieceInput)
+        == "Error: invalid currentPiece value (expected a piece index or -1): ");
 }
 
 TEST_CASE("Timeline fields must be non-empty, X/.-only, and contain at least one input frame") {
   auto base = InputBuilder().withBoard1(makeFlatBoard(4)).withCurPiece(IDX_O);
   // Empty timeline: the engine used to never tap (x % 0 == 0 on some platforms).
-  CHECK(runRequest(GET_MOVE, base.withTimeline("").build()) ==
-        "Error: invalid inputFrameTimeline (expected X/. frames with at least one input frame): ");
+  CHECK(
+      runRequest(GET_MOVE, base.withTimeline("").build())
+      == "Error: invalid inputFrameTimeline (expected X/. frames with at least one input frame): ");
   // No input frames at all: the move search used to hang.
-  CHECK(runRequest(GET_MOVE, base.withTimeline(".....").build()) ==
-        "Error: invalid inputFrameTimeline (expected X/. frames with at least one input frame): .....");
+  CHECK(runRequest(GET_MOVE, base.withTimeline(".....").build())
+        == "Error: invalid inputFrameTimeline (expected X/. frames with at least one input frame): "
+           ".....");
   // Invalid characters (TS normalizes '-' to '.'; C++ receives the normalized form).
-  CHECK(runRequest(GET_MOVE, base.withTimeline("X.-X").build()) ==
-        "Error: invalid inputFrameTimeline (expected X/. frames with at least one input frame): X.-X");
+  CHECK(runRequest(GET_MOVE, base.withTimeline("X.-X").build())
+        == "Error: invalid inputFrameTimeline (expected X/. frames with at least one input frame): "
+           "X.-X");
 }
 
 TEST_CASE("Missing trailing fields report the first missing field") {
@@ -169,7 +167,8 @@ TEST_CASE("dasCharge >= 0 keeps the legacy tapper approximation for non-DAS requ
                                 .withTimeline("X.....X.....X..X.....")
                                 .withDasCharge(-1)
                                 .build();
-  CHECK(runRequest(GET_LOCK_VALUE_LOOKUP, dasInput) == runRequest(GET_LOCK_VALUE_LOOKUP, legacyEncodedInput));
+  CHECK(runRequest(GET_LOCK_VALUE_LOOKUP, dasInput)
+        == runRequest(GET_LOCK_VALUE_LOOKUP, legacyEncodedInput));
   CHECK(runRequest(GET_MOVE, dasInput) == runRequest(GET_MOVE, legacyEncodedInput));
 }
 

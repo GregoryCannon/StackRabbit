@@ -9,7 +9,7 @@
 
 #include <string>
 
-// PIECE_LIST index order (see data/tetrominoes.cpp and canonical_sequences.hpp)
+// PIECE_LIST index order (see data/tetrominoes.hpp and canonical_sequences.hpp)
 const int IDX_I = 0;
 const int IDX_O = 1;
 const int IDX_L = 2;
@@ -20,9 +20,7 @@ const int IDX_Z = 6;
 
 // 200-char board string. Row 0 is the TOP row of the board; each row is 10
 // chars of '0'/'1' (leftmost column first), per encodeBoard in utils.hpp.
-static std::string makeEmptyBoard() {
-  return std::string(200, '0');
-}
+static std::string makeEmptyBoard() { return std::string(200, '0'); }
 
 // Flat stack: the bottom `height` rows fully filled.
 static std::string makeFlatBoard(int height) {
@@ -98,26 +96,77 @@ struct InputBuilder {
   std::string aggression = "safe";
   int dasCharge = -1;
 
-  InputBuilder &withBoard1(std::string b) { board1 = b; return *this; }
-  InputBuilder &withBoard2(std::string b) { hasBoard2 = true; board2 = b; return *this; }
-  InputBuilder &withLevel(int l) { level = l; return *this; }
-  InputBuilder &withLines(int l) { lines = l; return *this; }
-  InputBuilder &withCurPiece(int p) { curPiece = p; return *this; }
-  InputBuilder &withNextPiece(int p) { nextPiece = p; return *this; }
-  InputBuilder &withTimeline(std::string t) { timeline = t; return *this; }
-  InputBuilder &withPlayoutCount(int c) { playoutCount = c; return *this; }
-  InputBuilder &withPlayoutLength(int l) { playoutLength = l; return *this; }
-  InputBuilder &withPruningBreadth(int b) { pruningBreadth = b; return *this; }
-  InputBuilder &withAggression(std::string a) { aggression = a; return *this; }
-  InputBuilder &withDasCharge(int c) { dasCharge = c; return *this; }
+  InputBuilder &withBoard1(std::string b) {
+    board1 = b;
+    return *this;
+  }
+  InputBuilder &withBoard2(std::string b) {
+    hasBoard2 = true;
+    board2 = b;
+    return *this;
+  }
+  InputBuilder &withLevel(int l) {
+    level = l;
+    return *this;
+  }
+  InputBuilder &withLines(int l) {
+    lines = l;
+    return *this;
+  }
+  InputBuilder &withCurPiece(int p) {
+    curPiece = p;
+    return *this;
+  }
+  InputBuilder &withNextPiece(int p) {
+    nextPiece = p;
+    return *this;
+  }
+  InputBuilder &withTimeline(std::string t) {
+    timeline = t;
+    return *this;
+  }
+  InputBuilder &withPlayoutCount(int c) {
+    playoutCount = c;
+    return *this;
+  }
+  InputBuilder &withPlayoutLength(int l) {
+    playoutLength = l;
+    return *this;
+  }
+  InputBuilder &withPruningBreadth(int b) {
+    pruningBreadth = b;
+    return *this;
+  }
+  InputBuilder &withAggression(std::string a) {
+    aggression = a;
+    return *this;
+  }
+  InputBuilder &withDasCharge(int c) {
+    dasCharge = c;
+    return *this;
+  }
 
   std::string build() const {
-    std::string rest = std::to_string(level) + "|" + std::to_string(lines) + "|" +
-                       std::to_string(curPiece) + "|" + std::to_string(nextPiece) + "|" +
-                       timeline + "|" + std::to_string(playoutCount) + "|" +
-                       std::to_string(playoutLength) + "|" +
-                       std::to_string(pruningBreadth) + "|" + aggression + "|" +
-                       std::to_string(dasCharge) + "|";
+    std::string rest = std::to_string(level)
+                       + "|"
+                       + std::to_string(lines)
+                       + "|"
+                       + std::to_string(curPiece)
+                       + "|"
+                       + std::to_string(nextPiece)
+                       + "|"
+                       + timeline
+                       + "|"
+                       + std::to_string(playoutCount)
+                       + "|"
+                       + std::to_string(playoutLength)
+                       + "|"
+                       + std::to_string(pruningBreadth)
+                       + "|"
+                       + aggression
+                       + "|"
+                       + std::to_string(dasCharge)
+                       + "|";
     if (hasBoard2) {
       return board1 + "|" + board2 + "|" + rest;
     }

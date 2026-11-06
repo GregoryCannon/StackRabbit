@@ -39,10 +39,14 @@ struct FuzzEntry {
   int inputCostX10;
 
   bool operator<(const FuzzEntry &o) const {
-    if (rot != o.rot) return rot < o.rot;
-    if (x != o.x) return x < o.x;
-    if (y != o.y) return y < o.y;
-    if (dasChargeAfter != o.dasChargeAfter) return dasChargeAfter < o.dasChargeAfter;
+    if (rot != o.rot)
+      return rot < o.rot;
+    if (x != o.x)
+      return x < o.x;
+    if (y != o.y)
+      return y < o.y;
+    if (dasChargeAfter != o.dasChargeAfter)
+      return dasChargeAfter < o.dasChargeAfter;
     return inputCostX10 < o.inputCostX10;
   }
 };
@@ -53,21 +57,30 @@ struct FuzzCell {
   int y;
 
   bool operator<(const FuzzCell &o) const {
-    if (rot != o.rot) return rot < o.rot;
-    if (x != o.x) return x < o.x;
+    if (rot != o.rot)
+      return rot < o.rot;
+    if (x != o.x)
+      return x < o.x;
     return y < o.y;
   }
-  bool operator==(const FuzzCell &o) const {
-    return rot == o.rot && x == o.x && y == o.y;
-  }
+  bool operator==(const FuzzCell &o) const { return rot == o.rot && x == o.x && y == o.y; }
 };
 
 static int tuckCostX10(char tuckInput) {
   switch (tuckInput) {
-    case 'E': case 'F': case 'I': case 'G': return -3;
-    case 'A': case 'B': return -2;
-    case 'L': case 'R': return -1;
-    default: return 0; // NO_TUCK_NOTATION -> basic placement
+  case 'E':
+  case 'F':
+  case 'I':
+  case 'G':
+    return -3;
+  case 'A':
+  case 'B':
+    return -2;
+  case 'L':
+  case 'R':
+    return -1;
+  default:
+    return 0; // NO_TUCK_NOTATION -> basic placement
   }
 }
 
@@ -100,7 +113,8 @@ static std::vector<FuzzEntry> runCppMoveSearch(const MoveSearchFixture &f) {
   gameState.lines = 0;
   encodeBoard(FIXTURE_BOARD_POOL[f.boardIdx], gameState.board);
   getSurfaceArray(gameState.board, gameState.surfaceArray);
-  updateSurfaceAndHoles(gameState.surfaceArray, gameState.board, /*excludeHolesColumn=*/9, /*isDigMode=*/false);
+  updateSurfaceAndHoles(gameState.surfaceArray, gameState.board, /*excludeHolesColumn=*/9,
+                        /*isDigMode=*/false);
 
   const Piece *piece = &PIECE_LIST[f.pieceIndex];
   std::vector<FuzzEntry> out;
@@ -110,12 +124,14 @@ static std::vector<FuzzEntry> runCppMoveSearch(const MoveSearchFixture &f) {
     moveSearch(gameState, piece, FIXTURE_TIMELINE_POOL[f.timelineIdx], lockPlacements);
     out.reserve(lockPlacements.size());
     for (const LockPlacement &lp : lockPlacements) {
-      out.push_back({lp.rotationIndex, lp.x, lp.y, /*dasChargeAfter=*/-1, tuckCostX10(lp.tuckInput)});
+      out.push_back(
+          {lp.rotationIndex, lp.x, lp.y, /*dasChargeAfter=*/-1, tuckCostX10(lp.tuckInput)});
     }
   } else {
     // DAS mode: the per-goal pipeline (returns DasPossibility with charge/cost directly)
     std::vector<DasPossibility> results;
-    dasMoveSearch(gameState, piece, FIXTURE_TIMELINE_POOL[f.timelineIdx], f.dasCharge, /*trackInputSequences=*/false, results);
+    dasMoveSearch(gameState, piece, FIXTURE_TIMELINE_POOL[f.timelineIdx], f.dasCharge,
+                  /*trackInputSequences=*/false, results);
     out.reserve(results.size());
     for (const DasPossibility &p : results) {
       out.push_back({p.rotationIndex, p.x, p.y, p.dasChargeAfter, p.inputCostX10});
@@ -127,25 +143,35 @@ static std::vector<FuzzEntry> runCppMoveSearch(const MoveSearchFixture &f) {
 
 static std::string fuzzEntryStr(const FuzzEntry &e) {
   std::ostringstream ss;
-  ss << "rot=" << e.rot << " x=" << e.x << " y=" << e.y
-     << " charge=" << e.dasChargeAfter << " cost=" << e.inputCostX10;
+  ss
+      << "rot="
+      << e.rot
+      << " x="
+      << e.x
+      << " y="
+      << e.y
+      << " charge="
+      << e.dasChargeAfter
+      << " cost="
+      << e.inputCostX10;
   return ss.str();
 }
 
 // Two-pointer diff over sorted entry lists; returns a human-readable report
 // (empty string if identical). Details are capped at `limit` per category.
 static std::string diffEntries(const std::vector<FuzzEntry> &expected,
-                               const std::vector<FuzzEntry> &actual,
-                               int limit) {
+                               const std::vector<FuzzEntry> &actual, int limit) {
   const size_t cap = (size_t)limit;
   std::vector<std::string> missing, extra;
   size_t i = 0, j = 0;
   while (i < expected.size() || j < actual.size()) {
     if (j >= actual.size() || (i < expected.size() && expected[i] < actual[j])) {
-      if (missing.size() < cap) missing.push_back("  expected-only: " + fuzzEntryStr(expected[i]));
+      if (missing.size() < cap)
+        missing.push_back("  expected-only: " + fuzzEntryStr(expected[i]));
       i++;
     } else if (i >= expected.size() || actual[j] < expected[i]) {
-      if (extra.size() < cap) extra.push_back("  cpp-only:       " + fuzzEntryStr(actual[j]));
+      if (extra.size() < cap)
+        extra.push_back("  cpp-only:       " + fuzzEntryStr(actual[j]));
       j++;
     } else {
       i++;
@@ -153,13 +179,22 @@ static std::string diffEntries(const std::vector<FuzzEntry> &expected,
     }
   }
 
-  if (missing.empty() && extra.empty()) return "";
+  if (missing.empty() && extra.empty())
+    return "";
 
   std::ostringstream ss;
-  ss << "    " << missing.size() << (missing.size() == cap ? "+" : "") << " expected-only, "
-     << extra.size() << (extra.size() == cap ? "+" : "") << " cpp-only";
-  for (const std::string &m : missing) ss << "\n" << m;
-  for (const std::string &e : extra) ss << "\n" << e;
+  ss
+      << "    "
+      << missing.size()
+      << (missing.size() == cap ? "+" : "")
+      << " expected-only, "
+      << extra.size()
+      << (extra.size() == cap ? "+" : "")
+      << " cpp-only";
+  for (const std::string &m : missing)
+    ss << "\n" << m;
+  for (const std::string &e : extra)
+    ss << "\n" << e;
   return ss.str();
 }
 
@@ -168,14 +203,14 @@ static std::string diffEntries(const std::vector<FuzzEntry> &expected,
 static std::vector<FuzzCell> toCells(const std::vector<FuzzEntry> &entries) {
   std::vector<FuzzCell> out;
   out.reserve(entries.size());
-  for (const FuzzEntry &e : entries) out.push_back({e.rot, e.x, e.y});
+  for (const FuzzEntry &e : entries)
+    out.push_back({e.rot, e.x, e.y});
   std::sort(out.begin(), out.end());
   return out;
 }
 
 static std::string diffCells(const std::vector<FuzzCell> &expected,
-                             const std::vector<FuzzCell> &actual,
-                             int limit) {
+                             const std::vector<FuzzCell> &actual, int limit) {
   const size_t cap = (size_t)limit;
   std::vector<std::string> missing, extra;
   size_t i = 0, j = 0;
@@ -186,10 +221,12 @@ static std::string diffCells(const std::vector<FuzzCell> &expected,
       return ss.str();
     };
     if (j >= actual.size() || (i < expected.size() && expected[i] < actual[j])) {
-      if (missing.size() < cap) missing.push_back("  expected-only: " + cellStr(expected[i]));
+      if (missing.size() < cap)
+        missing.push_back("  expected-only: " + cellStr(expected[i]));
       i++;
     } else if (i >= expected.size() || actual[j] < expected[i]) {
-      if (extra.size() < cap) extra.push_back("  cpp-only:       " + cellStr(actual[j]));
+      if (extra.size() < cap)
+        extra.push_back("  cpp-only:       " + cellStr(actual[j]));
       j++;
     } else {
       i++;
@@ -197,23 +234,38 @@ static std::string diffCells(const std::vector<FuzzCell> &expected,
     }
   }
 
-  if (missing.empty() && extra.empty()) return "";
+  if (missing.empty() && extra.empty())
+    return "";
 
   std::ostringstream ss;
-  ss << "    " << missing.size() << (missing.size() == cap ? "+" : "") << " expected-only, "
-     << extra.size() << (extra.size() == cap ? "+" : "") << " cpp-only";
-  for (const std::string &m : missing) ss << "\n" << m;
-  for (const std::string &e : extra) ss << "\n" << e;
+  ss
+      << "    "
+      << missing.size()
+      << (missing.size() == cap ? "+" : "")
+      << " expected-only, "
+      << extra.size()
+      << (extra.size() == cap ? "+" : "")
+      << " cpp-only";
+  for (const std::string &m : missing)
+    ss << "\n" << m;
+  for (const std::string &e : extra)
+    ss << "\n" << e;
   return ss.str();
 }
 
 static std::string describeFixture(int index, const MoveSearchFixture &f) {
   std::ostringstream ss;
-  ss << "fixture #" << index
-     << " piece=" << PIECE_LIST[f.pieceIndex].id
-     << " level=" << f.level
-     << " timeline=" << FIXTURE_TIMELINE_POOL[f.timelineIdx]
-     << " dasCharge=" << f.dasCharge;
+  ss
+      << "fixture #"
+      << index
+      << " piece="
+      << PIECE_LIST[f.pieceIndex].id
+      << " level="
+      << f.level
+      << " timeline="
+      << FIXTURE_TIMELINE_POOL[f.timelineIdx]
+      << " dasCharge="
+      << f.dasCharge;
   return ss.str();
 }
 
@@ -223,7 +275,8 @@ TEST_CASE("Move search fuzz: tap-mode fixtures match the TS golden") {
   std::ostringstream report;
   for (int i = 0; i < MOVE_SEARCH_FIXTURE_COUNT; i++) {
     const MoveSearchFixture &f = MOVE_SEARCH_FIXTURES[i];
-    if (f.dasCharge != -1) continue;
+    if (f.dasCharge != -1)
+      continue;
     checked++;
 
     std::vector<FuzzEntry> actual = runCppMoveSearch(f);
@@ -232,17 +285,27 @@ TEST_CASE("Move search fuzz: tap-mode fixtures match the TS golden") {
     if (!diff.empty()) {
       failures++;
       if (failures <= 200) {
-        report << "  MISMATCH " << describeFixture(i, f)
-               << " (expected " << expected.size() << " entries, got " << actual.size() << ")\n"
-               << diff << "\n";
+        report
+            << "  MISMATCH "
+            << describeFixture(i, f)
+            << " (expected "
+            << expected.size()
+            << " entries, got "
+            << actual.size()
+            << ")\n"
+            << diff
+            << "\n";
       }
     }
   }
 
   MESSAGE("Tap-mode fuzz: " << checked << " fixtures checked, " << failures << " mismatched");
-  REQUIRE_MESSAGE(failures == 0,
-                  "Tap-mode fuzz: " << failures << "/" << checked << " fixtures mismatched\n"
-                                    << report.str());
+  REQUIRE_MESSAGE(failures == 0, "Tap-mode fuzz: "
+                                     << failures
+                                     << "/"
+                                     << checked
+                                     << " fixtures mismatched\n"
+                                     << report.str());
 }
 
 TEST_CASE("Move search fuzz: DAS fixtures (pending C++ DAS support)") {
@@ -254,7 +317,8 @@ TEST_CASE("Move search fuzz: DAS fixtures (pending C++ DAS support)") {
 #endif
   for (int i = 0; i < MOVE_SEARCH_FIXTURE_COUNT; i++) {
     const MoveSearchFixture &f = MOVE_SEARCH_FIXTURES[i];
-    if (f.dasCharge == -1) continue;
+    if (f.dasCharge == -1)
+      continue;
     dasCount++;
 
     std::vector<FuzzEntry> actual = runCppMoveSearch(f);
@@ -264,9 +328,16 @@ TEST_CASE("Move search fuzz: DAS fixtures (pending C++ DAS support)") {
     if (!diff.empty()) {
       failures++;
       if (failures <= 200) {
-        report << "  MISMATCH " << describeFixture(i, f)
-               << " (expected " << expected.size() << " entries, got " << actual.size() << ")\n"
-               << diff << "\n";
+        report
+            << "  MISMATCH "
+            << describeFixture(i, f)
+            << " (expected "
+            << expected.size()
+            << " entries, got "
+            << actual.size()
+            << ")\n"
+            << diff
+            << "\n";
       }
     }
 #else
@@ -276,23 +347,34 @@ TEST_CASE("Move search fuzz: DAS fixtures (pending C++ DAS support)") {
     if (toCells(expected) == toCells(actual)) {
       cellMatches++;
     } else if (report.str().empty()) {
-      report << "  first diff at " << describeFixture(i, f) << "\n"
-             << diffCells(toCells(expected), toCells(actual), 3) << "\n";
+      report
+          << "  first diff at "
+          << describeFixture(i, f)
+          << "\n"
+          << diffCells(toCells(expected), toCells(actual), 3)
+          << "\n";
     }
 #endif
   }
 
-  MESSAGE("DAS-mode fuzz: " << dasCount << " fixtures"
+  MESSAGE("DAS-mode fuzz: "
+          << dasCount
+          << " fixtures"
 #if SR_FUZZ_ASSERT_DAS
           << " asserted (full rot/x/y/charge/cost match)"
 #else
-          << ", " << cellMatches << " match on cells alone (charge ignored)"
+          << ", "
+          << cellMatches
+          << " match on cells alone (charge ignored)"
 #endif
   );
 #if SR_FUZZ_ASSERT_DAS
-  REQUIRE_MESSAGE(failures == 0,
-                  "DAS-mode fuzz: " << failures << "/" << dasCount << " fixtures mismatched\n"
-                                    << report.str());
+  REQUIRE_MESSAGE(failures == 0, "DAS-mode fuzz: "
+                                     << failures
+                                     << "/"
+                                     << dasCount
+                                     << " fixtures mismatched\n"
+                                     << report.str());
 #else
   REQUIRE(dasCount > 0);
 #endif

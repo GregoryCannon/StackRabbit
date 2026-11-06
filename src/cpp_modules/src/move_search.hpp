@@ -5,16 +5,12 @@
 #include "utils.hpp"
 #include <vector>
 
-int moveSearch(GameState gameState, const Piece *piece, char const *inputFrameTimeline, OUT std::vector<LockPlacement> &lockPlacements);
+int moveSearch(GameState gameState, const Piece *piece, char const *inputFrameTimeline,
+               OUT std::vector<LockPlacement> &lockPlacements);
 
-int adjustmentSearch(GameState gameState,
-                     const Piece *piece,
-                     char const *inputFrameTimeline,
-                     int existingXOffset,
-                     int existingYOffset,
-                     int existingRotation,
-                     int framesAlreadyElapsed,
-                     int arrWasReset,
+int adjustmentSearch(GameState gameState, const Piece *piece, char const *inputFrameTimeline,
+                     int existingXOffset, int existingYOffset, int existingRotation,
+                     int framesAlreadyElapsed, int arrWasReset,
                      OUT std::vector<LockPlacement> &lockPlacements);
 
 #endif

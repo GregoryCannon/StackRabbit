@@ -1,9 +1,9 @@
 #ifndef DAS_MOVE_SEARCH
 #define DAS_MOVE_SEARCH
 
+#include "types.hpp"
 #include <string>
 #include <vector>
-#include "types.hpp"
 
 /**
  * DAS-aware move search (frame-exact charge model: docs/DAS_explainer.md).
@@ -24,9 +24,9 @@ struct DasPossibility {
   int x;
   int y;
   int rotationIndex;
-  int dasChargeAfter;      // 0..16 charge at the lock frame
-  int inputCostX10;        // 0 = basic; -1 tuck (L/R); -2 spin (A/B); -3 spin-tuck (E/F/I/G)
-  char tuckInput;          // '.' for basic placements
+  int dasChargeAfter; // 0..16 charge at the lock frame
+  int inputCostX10;   // 0 = basic; -1 tuck (L/R); -2 spin (A/B); -3 spin-tuck (E/F/I/G)
+  char tuckInput;     // '.' for basic placements
   int numLinesCleared;
   std::string inputSequence;
 };
@@ -37,11 +37,8 @@ struct DasPossibility {
  * @param trackInputSequences - when false, sequences are still tracked
  *   internally (tuck gating scans them) but not copied into the results.
  */
-int dasMoveSearch(GameState gameState,
-                  const Piece *piece,
-                  char const *inputFrameTimeline,
-                  int dasCharge,
-                  bool trackInputSequences,
+int dasMoveSearch(GameState gameState, const Piece *piece, char const *inputFrameTimeline,
+                  int dasCharge, bool trackInputSequences,
                   OUT std::vector<DasPossibility> &results);
 
 #endif // DAS_MOVE_SEARCH

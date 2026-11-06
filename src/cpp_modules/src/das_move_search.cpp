@@ -1,10 +1,10 @@
 #include "das_move_search.hpp"
 
-#include <algorithm>
-#include <string.h>
-#include <ctype.h>
-#include <unordered_map>
 #include "utils.hpp"
+#include <algorithm>
+#include <ctype.h>
+#include <string.h>
+#include <unordered_map>
 
 using namespace std;
 
@@ -25,9 +25,9 @@ static const char DAS_SLOW_TAP_TIMELINE[] = "X.......";
 
 // TS INPUT_LOOKUP: rows = shift increment (-1, 0, +1), cols = rot increment (-1, 0, +1)
 static const char DAS_INPUT_TABLE[3][3] = {
-  {'F', 'L', 'E'}, // shift -1 (left)
-  {'B', '.', 'A'}, // shift 0
-  {'G', 'R', 'I'}, // shift +1 (right)
+    {'F', 'L', 'E'}, // shift -1 (left)
+    {'B', '.', 'A'}, // shift 0
+    {'G', 'R', 'I'}, // shift +1 (right)
 };
 
 /** Internal simulation state for the DAS search (superset of the C++ SimState). */
@@ -55,53 +55,102 @@ static int dasNumOrientations(const Piece *piece) {
 
 static int dasArrowDir(char c) {
   switch (c) {
-    case 'L': case 'E': case 'F':
-    case 'l': case 'e': case 'f':
-      return -1;
-    case 'R': case 'I': case 'G':
-    case 'r': case 'i': case 'g':
-      return 1;
-    default:
-      return 0; // '.', '_', anything else
+  case 'L':
+  case 'E':
+  case 'F':
+  case 'l':
+  case 'e':
+  case 'f':
+    return -1;
+  case 'R':
+  case 'I':
+  case 'G':
+  case 'r':
+  case 'i':
+  case 'g':
+    return 1;
+  default:
+    return 0; // '.', '_', anything else
   }
 }
 
 static int dasHeldDirectionOfChar(char c) {
   switch (toupper(c)) {
-    case 'L': case 'E': case 'F':
-      return -1;
-    case 'R': case 'I': case 'G':
-      return 1;
-    default:
-      return 0;
+  case 'L':
+  case 'E':
+  case 'F':
+    return -1;
+  case 'R':
+  case 'I':
+  case 'G':
+    return 1;
+  default:
+    return 0;
   }
 }
 
 static void dasInputDeltas(char c, OUT int &xDelta, OUT int &rotDelta) {
   switch (c) {
-    case 'L': xDelta = -1; rotDelta = 0; break;
-    case 'R': xDelta = 1; rotDelta = 0; break;
-    case 'A': xDelta = 0; rotDelta = 1; break;
-    case 'B': xDelta = 0; rotDelta = -1; break;
-    case 'E': xDelta = -1; rotDelta = 1; break;
-    case 'I': xDelta = 1; rotDelta = 1; break;
-    case 'F': xDelta = -1; rotDelta = -1; break;
-    case 'G': xDelta = 1; rotDelta = -1; break;
-    default: xDelta = 0; rotDelta = 0; break;
+  case 'L':
+    xDelta = -1;
+    rotDelta = 0;
+    break;
+  case 'R':
+    xDelta = 1;
+    rotDelta = 0;
+    break;
+  case 'A':
+    xDelta = 0;
+    rotDelta = 1;
+    break;
+  case 'B':
+    xDelta = 0;
+    rotDelta = -1;
+    break;
+  case 'E':
+    xDelta = -1;
+    rotDelta = 1;
+    break;
+  case 'I':
+    xDelta = 1;
+    rotDelta = 1;
+    break;
+  case 'F':
+    xDelta = -1;
+    rotDelta = -1;
+    break;
+  case 'G':
+    xDelta = 1;
+    rotDelta = -1;
+    break;
+  default:
+    xDelta = 0;
+    rotDelta = 0;
+    break;
   }
 }
 
 static int dasInputCostX10(char c) {
   switch (c) {
-    case 'E': case 'F': case 'I': case 'G': return -3; // spin-tuck
-    case 'A': case 'B': return -2;                     // spin
-    case 'L': case 'R': return -1;                     // tuck
-    default: return 0;
+  case 'E':
+  case 'F':
+  case 'I':
+  case 'G':
+    return -3; // spin-tuck
+  case 'A':
+  case 'B':
+    return -2; // spin
+  case 'L':
+  case 'R':
+    return -1; // tuck
+  default:
+    return 0;
   }
 }
 
 /** Port of TS readyForTuckInputsDas : direct scan of the sequence string. */
-static bool dasReadyForTuckInputs(const std::string &inputSequence, char const *inputFrameTimeline) {
+static bool dasReadyForTuckInputs(const std::string &inputSequence,
+                                  char const *inputFrameTimeline) {
   // Frames since the last input at all (trailing run of '.')
   int framesSinceLastInput = 0;
   for (int i = (int)inputSequence.size() - 1; i >= 0; i--) {
@@ -129,7 +178,8 @@ static bool dasReadyForTuckInputs(const std::string &inputSequence, char const *
 }
 
 /** Port of TS findWallCharge: left priority. */
-static char dasFindWallCharge(unsigned int board[20], const Piece *piece, int x, int y, int rotationIndex) {
+static char dasFindWallCharge(unsigned int board[20], const Piece *piece, int x, int y,
+                              int rotationIndex) {
   if (collision(board, piece, x - 1, y, rotationIndex)) {
     return 'l'; // lowercase: the piece won't actually shift
   }
@@ -140,7 +190,8 @@ static char dasFindWallCharge(unsigned int board[20], const Piece *piece, int x,
 }
 
 /** Places the piece on a copy of the board and returns the number of cleared lines. */
-static int dasPlacePieceAndClearLines(unsigned int board[20], const Piece *piece, int rotationIndex, int x, int y) {
+static int dasPlacePieceAndClearLines(unsigned int board[20], const Piece *piece, int rotationIndex,
+                                      int x, int y) {
   unsigned int temp[20];
   memcpy(temp, board, sizeof(temp));
   for (int r = 0; r < 4; r++) {
@@ -173,12 +224,9 @@ static int dasPlacePieceAndClearLines(unsigned int board[20], const Piece *piece
 }
 
 /** Port of TS getPossibilityFromSimState . */
-static DasPossibility dasGetPossibilityFromSimState(
-    unsigned int board[20],
-    const Piece *piece,
-    const DasSimState &simState,
-    int inputCostX10,
-    char tuckInput) {
+static DasPossibility dasGetPossibilityFromSimState(unsigned int board[20], const Piece *piece,
+                                                    const DasSimState &simState, int inputCostX10,
+                                                    char tuckInput) {
   DasPossibility p;
   p.x = simState.x;
   p.y = simState.y;
@@ -186,7 +234,8 @@ static DasPossibility dasGetPossibilityFromSimState(
   p.dasChargeAfter = simState.dasCharge;
   p.inputCostX10 = inputCostX10;
   p.tuckInput = tuckInput;
-  p.numLinesCleared = dasPlacePieceAndClearLines(board, piece, simState.rotationIndex, simState.x, simState.y);
+  p.numLinesCleared =
+      dasPlacePieceAndClearLines(board, piece, simState.rotationIndex, simState.x, simState.y);
   p.inputSequence = simState.inputSequence;
 
   const int startingY = piece->id == 'I' ? -2 : -1;
@@ -207,19 +256,10 @@ static DasPossibility dasGetPossibilityFromSimState(
 }
 
 /** Port of TS tryPlacement  for the INITIAL_PLACEMENT spawn path. */
-static void dasTryPlacement(
-    unsigned int board[20],
-    const Piece *piece,
-    int goalRotationIndex,
-    int goalOffsetX,
-    bool dasWillReset,
-    char const *inputFrameTimeline,
-    int gravity,
-    bool gravityDoubled,
-    int initialX,
-    int initialY,
-    int dasCharge,
-    OUT std::vector<DasSimState> &legalPlacementSimStates) {
+static void dasTryPlacement(unsigned int board[20], const Piece *piece, int goalRotationIndex,
+                            int goalOffsetX, bool dasWillReset, char const *inputFrameTimeline,
+                            int gravity, bool gravityDoubled, int initialX, int initialY,
+                            int dasCharge, OUT std::vector<DasSimState> &legalPlacementSimStates) {
 
   const bool holdDASduringARE = !dasWillReset && goalOffsetX != 0; // '_' hold-through-ARE prefix
 
@@ -247,19 +287,22 @@ static void dasTryPlacement(
   }
 
   while (true) {
-    const bool tapShouldInputThisFrame = shouldPerformInputsThisFrame(simState.arrFrameIndex, inputFrameTimeline) != 0;
+    const bool tapShouldInputThisFrame =
+        shouldPerformInputsThisFrame(simState.arrFrameIndex, inputFrameTimeline) != 0;
     const bool canShiftThisFrame = simState.dasCharge >= 15 || simState.pendingDasReset;
     const bool willShiftThisFrame = canShiftThisFrame && simState.x != initialX + goalOffsetX;
     const bool willHoldDasButtonThisFrame =
-        simState.x != initialX + goalOffsetX ||
-        (simState.heldDirection != 0 && simState.dasCharge < 15);
-    const bool willRotateThisFrame = tapShouldInputThisFrame && simState.rotationIndex != goalRotationIndex;
+        simState.x != initialX + goalOffsetX
+        || (simState.heldDirection != 0 && simState.dasCharge < 15);
+    const bool willRotateThisFrame =
+        tapShouldInputThisFrame && simState.rotationIndex != goalRotationIndex;
     const bool isGravityFrame = simState.frameIndex % gravity == gravity - 1;
 
     bool lockAfterThisFrame = false;
 
     if (willShiftThisFrame && simState.x != initialX + goalOffsetX) {
-      if (collision(board, piece, simState.x + shiftIncrement, simState.y, simState.rotationIndex)) {
+      if (collision(board, piece, simState.x + shiftIncrement, simState.y,
+                    simState.rotationIndex)) {
         return; // horizontally blocked: the whole goal is impossible
       }
       simState.x += shiftIncrement;
@@ -303,7 +346,7 @@ static void dasTryPlacement(
     const bool foundPlacement =
         simState.rotationIndex == goalRotationIndex && simState.x == initialX + goalOffsetX;
     if (foundPlacement) {
-      // TS registers a copy every frame while the piece sits at the goal 
+      // TS registers a copy every frame while the piece sits at the goal
       DasSimState copy = simState;
       copy.hasAlreadyLocked = lockAfterThisFrame;
       legalPlacementSimStates.push_back(copy);
@@ -315,7 +358,8 @@ static void dasTryPlacement(
 
     // Spawn path: doneWaitingForAdjustment is always true, so exit as soon as
     // the placement is found and there is no more charge to gain .
-    const bool canKeepHoldingDpadForMoreDAS = simState.dasCharge < 15 && simState.heldDirection != 0;
+    const bool canKeepHoldingDpadForMoreDAS =
+        simState.dasCharge < 15 && simState.heldDirection != 0;
     if (!canKeepHoldingDpadForMoreDAS && foundPlacement) {
       break;
     }
@@ -324,8 +368,8 @@ static void dasTryPlacement(
 
 /** Port of TS deDupeSortedList : keep first + last entry per (rot, x) group. */
 static std::vector<DasSimState> dasDedupeSortedStates(const std::vector<DasSimState> &states) {
-  std::vector<int> groupOrder;                             // keys in first-seen order
-  unordered_map<int, pair<int, int>> groupBounds;          // key -> {firstIdx, lastIdx}
+  std::vector<int> groupOrder;                    // keys in first-seen order
+  unordered_map<int, pair<int, int>> groupBounds; // key -> {firstIdx, lastIdx}
   for (int i = 0; i < (int)states.size(); i++) {
     const int key = states[i].rotationIndex * 100 + states[i].x;
     auto it = groupBounds.find(key);
@@ -356,14 +400,11 @@ struct DasFallResult {
 };
 
 /** Port of TS exploreLegalPlacementsUntilLock . */
-static void dasExploreLegalPlacementsUntilLock(
-    unsigned int board[20],
-    const Piece *piece,
-    const std::vector<DasSimState> &legalPlacementSimStates,
-    char const *inputFrameTimeline,
-    int gravity,
-    bool gravityDoubled,
-    OUT DasFallResult &result) {
+static void
+dasExploreLegalPlacementsUntilLock(unsigned int board[20], const Piece *piece,
+                                   const std::vector<DasSimState> &legalPlacementSimStates,
+                                   char const *inputFrameTimeline, int gravity, bool gravityDoubled,
+                                   OUT DasFallResult &result) {
 
   for (const DasSimState &original : legalPlacementSimStates) {
     DasSimState simState = original; // TS mutates the state while falling
@@ -373,20 +414,20 @@ static void dasExploreLegalPlacementsUntilLock(
     while (true) {
       auto registerPossibility = [&]() {
         result.lockHeightLookup[simState.rotationIndex * 100 + simState.x] = simState.y;
-        result.lockPossibilities.push_back(
-            dasGetPossibilityFromSimState(board, piece, simState, /* inputCostX10= */ 0, /* tuckInput= */ '.'));
+        result.lockPossibilities.push_back(dasGetPossibilityFromSimState(
+            board, piece, simState, /* inputCostX10= */ 0, /* tuckInput= */ '.'));
       };
 
       // If it collides immediately, quit
-      if (simState.hasAlreadyLocked ||
-          collision(board, piece, simState.x, simState.y, simState.rotationIndex)) {
+      if (simState.hasAlreadyLocked
+          || collision(board, piece, simState.x, simState.y, simState.rotationIndex)) {
         registerPossibility();
         break;
       }
 
       const bool isGravityFrame = simState.frameIndex % gravity == gravity - 1;
 
-      // Start looking for tucks/spins as soon as inputs are allowed 
+      // Start looking for tucks/spins as soon as inputs are allowed
       const bool readyForInputs = dasReadyForTuckInputs(simState.inputSequence, inputFrameTimeline);
       if (!startedLookingForTuckSpins && readyForInputs) {
         startedLookingForTuckSpins = true;
@@ -400,7 +441,8 @@ static void dasExploreLegalPlacementsUntilLock(
       // Wall charges : charge frozen during the fall except for this re-press
       char wallCharge = 0;
       if (simState.dasCharge < 16 && startedLookingForTuckSpins) {
-        wallCharge = dasFindWallCharge(board, piece, simState.x, simState.y, simState.rotationIndex);
+        wallCharge =
+            dasFindWallCharge(board, piece, simState.x, simState.y, simState.rotationIndex);
       }
       if (wallCharge != 0) {
         simState.inputSequence += wallCharge;
@@ -431,16 +473,10 @@ static void dasExploreLegalPlacementsUntilLock(
 }
 
 /** Port of TS dfs.tryInput : one tuck/spin input, then ride gravity to lock. */
-static bool dasTryInput(
-    unsigned int board[20],
-    const Piece *piece,
-    char inputChar,
-    int newX,
-    int newRotationIndex,
-    const DasSimState &parentSimState,
-    char const *inputFrameTimeline,
-    int gravity,
-    OUT DasPossibility &outPossibility) {
+static bool dasTryInput(unsigned int board[20], const Piece *piece, char inputChar, int newX,
+                        int newRotationIndex, const DasSimState &parentSimState,
+                        char const *inputFrameTimeline, int gravity,
+                        OUT DasPossibility &outPossibility) {
 
   DasSimState simState = parentSimState;
   bool hasDoneInput = false;
@@ -462,7 +498,8 @@ static bool dasTryInput(
 
         // wall-charge tuck: the piece could have wall-charged on the
         // previous (gravity) frame; then the tuck shift leaves charge at 10.
-        const bool couldWallChargeLastFrame = collision(board, piece, newX, simState.y - 1, simState.rotationIndex) != 0;
+        const bool couldWallChargeLastFrame =
+            collision(board, piece, newX, simState.y - 1, simState.rotationIndex) != 0;
         const bool lastFrameWasGravityFrame = (simState.frameIndex - 1) % gravity == gravity - 1;
         if (couldWallChargeLastFrame && lastFrameWasGravityFrame) {
           isWallChargeTuck = true;
@@ -473,16 +510,17 @@ static bool dasTryInput(
         simState.x = newX;
       }
 
-      if (newRotationIndex != simState.rotationIndex &&
-          collision(board, piece, simState.x, simState.y, newRotationIndex)) {
+      if (newRotationIndex != simState.rotationIndex
+          && collision(board, piece, simState.x, simState.y, newRotationIndex)) {
         return false;
       }
       simState.rotationIndex = newRotationIndex;
 
       if (isWallChargeTuck) {
-        // Replace the '.' right before this input with the wall-charge char 
-        simState.inputSequence = simState.inputSequence.substr(0, simState.inputSequence.size() - 1) +
-                                 char(tolower(wallChargeInput)) + inputChar;
+        // Replace the '.' right before this input with the wall-charge char
+        simState.inputSequence = simState.inputSequence.substr(0, simState.inputSequence.size() - 1)
+                                 + char(tolower(wallChargeInput))
+                                 + inputChar;
       } else {
         simState.inputSequence += inputChar;
       }
@@ -495,7 +533,8 @@ static bool dasTryInput(
           newInput = char(tolower(wallChargeInput));
           simState.dasCharge++;
         } else if (dasReadyForTuckInputs(simState.inputSequence, inputFrameTimeline)) {
-          const char wallCharge = dasFindWallCharge(board, piece, simState.x, simState.y, simState.rotationIndex);
+          const char wallCharge =
+              dasFindWallCharge(board, piece, simState.x, simState.y, simState.rotationIndex);
           if (wallCharge != 0) {
             newInput = wallCharge;
             simState.dasCharge = 16;
@@ -509,7 +548,8 @@ static bool dasTryInput(
     // (TS quirk preserved; double kill screen is disabled).
     if (isGravityFrame) {
       if (collision(board, piece, simState.x, simState.y + 1, simState.rotationIndex)) {
-        outPossibility = dasGetPossibilityFromSimState(board, piece, simState, dasInputCostX10(inputChar), inputChar);
+        outPossibility = dasGetPossibilityFromSimState(board, piece, simState,
+                                                       dasInputCostX10(inputChar), inputChar);
         return true;
       }
       simState.y++;
@@ -520,16 +560,15 @@ static bool dasTryInput(
 }
 
 /** Port of TS searchForTucksOrSpins : depth-1 tuck/spin exploration. */
-static std::vector<DasPossibility> dasSearchForTucksOrSpins(
-    unsigned int board[20],
-    const Piece *piece,
-    const std::vector<DasSimState> &potentialTuckSpinStates,
-    const unordered_map<int, int> &lockHeightLookup,
-    char const *inputFrameTimeline,
-    int gravity) {
+static std::vector<DasPossibility>
+dasSearchForTucksOrSpins(unsigned int board[20], const Piece *piece,
+                         const std::vector<DasSimState> &potentialTuckSpinStates,
+                         const unordered_map<int, int> &lockHeightLookup,
+                         char const *inputFrameTimeline, int gravity) {
   const int numOrientations = dasNumOrientations(piece);
-  const char *possibleInputs =
-      numOrientations == 1 ? "LR" : numOrientations == 2 ? "LRAEI" : "LRABEIFG";
+  const char *possibleInputs = numOrientations == 1   ? "LR"
+                               : numOrientations == 2 ? "LRAEI"
+                                                      : "LRABEIFG";
 
   // Novel possibilities keyed by the lock cell, insertion order preserved
   // (TS Map iteration order), keeping the higher inputCost per cell.
@@ -549,7 +588,8 @@ static std::vector<DasPossibility> dasSearchForTucksOrSpins(
       int xDelta = 0;
       int rotDelta = 0;
       dasInputDeltas(inputChar, xDelta, rotDelta);
-      int newRot = ((simState.rotationIndex + rotDelta) % numOrientations + numOrientations) % numOrientations;
+      int newRot = ((simState.rotationIndex + rotDelta) % numOrientations + numOrientations)
+                   % numOrientations;
       const int newX = simState.x + xDelta;
 
       // Visited check : skip if this hover position adds nothing novel.
@@ -560,7 +600,8 @@ static std::vector<DasPossibility> dasSearchForTucksOrSpins(
       }
 
       DasPossibility possibility;
-      if (dasTryInput(board, piece, inputChar, newX, newRot, simState, inputFrameTimeline, gravity, possibility)) {
+      if (dasTryInput(board, piece, inputChar, newX, newRot, simState, inputFrameTimeline, gravity,
+                      possibility)) {
         const int key = (possibility.rotationIndex * 100 + possibility.x) * 1000 + possibility.y;
         DasPossibility *existing = findNovel(key);
         if (existing == NULL || possibility.inputCostX10 > existing->inputCostX10) {
@@ -576,27 +617,25 @@ static std::vector<DasPossibility> dasSearchForTucksOrSpins(
   return novel;
 }
 
-/** Port of TS deDupeLockPossibilities : adjacent duplicate lock cells keep the later (max-charge) variant. */
+/** Port of TS deDupeLockPossibilities : adjacent duplicate lock cells keep the later (max-charge)
+ * variant. */
 static void dasDedupeLockPossibilities(std::vector<DasPossibility> &list) {
   for (int i = 0; i + 1 < (int)list.size(); i++) {
-    if (list[i].rotationIndex == list[i + 1].rotationIndex &&
-        list[i].x == list[i + 1].x &&
-        list[i].y == list[i + 1].y) {
+    if (list[i].rotationIndex == list[i + 1].rotationIndex
+        && list[i].x == list[i + 1].x
+        && list[i].y == list[i + 1].y) {
       list.erase(list.begin() + i); // remove the first (worse DAS charge)
     }
   }
 }
 
-int dasMoveSearch(GameState gameState,
-                  const Piece *piece,
-                  char const *inputFrameTimeline,
-                  int dasCharge,
-                  bool trackInputSequences,
+int dasMoveSearch(GameState gameState, const Piece *piece, char const *inputFrameTimeline,
+                  int dasCharge, bool trackInputSequences,
                   OUT std::vector<DasPossibility> &results) {
   const int gravity = getGravity(gameState.level);
   const bool gravityDoubled = isGravityDoubled(gameState.level);
   const int numOrientations = dasNumOrientations(piece);
-  const int initialX = INITIAL_X;    // existingXOffset = 0 on the spawn path
+  const int initialX = INITIAL_X; // existingXOffset = 0 on the spawn path
   const int initialY = piece->initialY;
 
   // Immediate spawn collision: every goal aborts (mirrors the TS per-goal aborts)
@@ -604,7 +643,7 @@ int dasMoveSearch(GameState gameState,
     return 0;
   }
 
-  // Phase A: per-goal frame simulation 
+  // Phase A: per-goal frame simulation
   std::vector<DasSimState> legalPlacementSimStates;
   for (int goalRotationIndex = 0; goalRotationIndex < numOrientations; goalRotationIndex++) {
     const int rangeStart = -2 - initialX;
@@ -619,23 +658,23 @@ int dasMoveSearch(GameState gameState,
     }
   }
 
-  // Phase A dedup 
+  // Phase A dedup
   const std::vector<DasSimState> dedupedStates = dasDedupeSortedStates(legalPlacementSimStates);
 
-  // Phase B: fall phase 
+  // Phase B: fall phase
   DasFallResult fall;
   dasExploreLegalPlacementsUntilLock(gameState.board, piece, dedupedStates, inputFrameTimeline,
                                      gravity, gravityDoubled, fall);
 
-  // Phase C: tuck/spin DFS 
-  std::vector<DasPossibility> tuckPossibilities = dasSearchForTucksOrSpins(
-      gameState.board, piece, fall.potentialTuckSpinStates, fall.lockHeightLookup,
-      inputFrameTimeline, gravity);
+  // Phase C: tuck/spin DFS
+  std::vector<DasPossibility> tuckPossibilities =
+      dasSearchForTucksOrSpins(gameState.board, piece, fall.potentialTuckSpinStates,
+                               fall.lockHeightLookup, inputFrameTimeline, gravity);
 
-  // Lock dedup on the basic list 
+  // Lock dedup on the basic list
   dasDedupeLockPossibilities(fall.lockPossibilities);
 
-  // Assemble: basics then tucks, no cross-list dedup 
+  // Assemble: basics then tucks, no cross-list dedup
   for (const DasPossibility &p : fall.lockPossibilities) {
     results.push_back(p);
     if (!trackInputSequences) {

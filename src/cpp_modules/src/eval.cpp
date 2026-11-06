@@ -1,28 +1,28 @@
 #include "eval.hpp"
-#include "move_result.hpp"
-#include "eval_context.hpp"
-#include "utils.hpp"
-#include "../data/ranks_output.hpp"
 #include "../data/ranks_base_7.hpp"
-#include <math.h>
-#include <vector>
-#include <string>
+#include "../data/ranks_output.hpp"
+#include "eval_context.hpp"
+#include "move_result.hpp"
+#include "utils.hpp"
 #include <cstdio>
+#include <math.h>
+#include <string>
+#include <vector>
 using namespace std;
 
 /**
- * A crude way to evaluate a surface for when I'm debugging and don't want to load the surfaces every time I
- * run.
+ * A crude way to evaluate a surface for when I'm debugging and don't want to load the surfaces
+ * every time I run.
  */
 float calculateFlatness(int surfaceArray[10], int wellColumn) {
   float score = 30;
   bool hasFlatSpot = false;
   for (int i = 0; i < 9; i++) {
-    if (i == wellColumn || i+1 == wellColumn) {
+    if (i == wellColumn || i + 1 == wellColumn) {
       continue;
     }
     int diff = surfaceArray[i + 1] - surfaceArray[i];
-    if (diff == 0){
+    if (diff == 0) {
       hasFlatSpot = true;
     }
     // Correct for double wells
@@ -34,12 +34,12 @@ float calculateFlatness(int surfaceArray[10], int wellColumn) {
       score -= pow(abs(diff), 1.5);
     }
     // Line dependency
-    if (diff >= 3 && (i == 0 || (surfaceArray[i] - surfaceArray[i-1]) <= -3)) {
+    if (diff >= 3 && (i == 0 || (surfaceArray[i] - surfaceArray[i - 1]) <= -3)) {
       score -= 25;
     }
   }
   // Not having a single flat spot can be disastrous if you get a square or L/J
-  if (!hasFlatSpot){
+  if (!hasFlatSpot) {
     score -= 12;
   }
   return score;
@@ -48,8 +48,8 @@ float calculateFlatness(int surfaceArray[10], int wellColumn) {
 /** Gets the value of a surface. */
 float rateSurface(int surfaceArray[10], const EvalContext *evalContext) {
   int wellColumn = evalContext->wellColumn;
-  
-  if (USE_BASE_7_RANKS){
+
+  if (USE_BASE_7_RANKS) {
     // Convert the surface array into the custom base-9 encoding
     int b7index = 0;
     int excessGap = 0;
@@ -69,12 +69,12 @@ float rateSurface(int surfaceArray[10], const EvalContext *evalContext) {
     unsigned int subIndex = b7index & 0b111;
     int numShifts = (7 - subIndex) * 8;
     unsigned int byte = (chunk >> numShifts) & 0xFF;
-    float scaledTo30 = ((float) byte) / 255.0 * 33.8;
+    float scaledTo30 = ((float)byte) / 255.0 * 33.8;
     // Make lower ranks more punishing
     float rawScore = scaledTo30 + (excessGap * evalContext->weights.extremeGapCoef);
     return rawScore + 2 - (70 / max(3.0f, rawScore));
   }
-  
+
   // If the ranks aren't loaded, use the flatness score
   return calculateFlatness(surfaceArray, wellColumn);
 }
@@ -96,18 +96,27 @@ float getAverageHeightFactor(float avgHeight, float scareHeight) {
   return diff * diff;
 }
 
-float getBuiltOutLeftFactor(int surfaceArray[10], unsigned int board[20], float avgHeight, float scareHeight) {
+float getBuiltOutLeftFactor(int surfaceArray[10], unsigned int board[20], float avgHeight,
+                            float scareHeight) {
   if (!USE_RIGHT_WELL_FEATURES) {
     return 0;
   }
   float heightRatio = max(1.0f, avgHeight) / max(2.0f, scareHeight);
-  // float heightDiff = 0.5 * (surfaceArray[0] - avgHeight) + 0.5 * (surfaceArray[0] - surfaceArray[1]);
+  // float heightDiff = 0.5 * (surfaceArray[0] - avgHeight) + 0.5 * (surfaceArray[0] -
+  // surfaceArray[1]);
   float heightDiff = (surfaceArray[0] - avgHeight);
 
   // Handle low left cases first
   if (heightDiff < 0) {
-    float softenedHeightRatio = 0.5f * (heightRatio + 1); // Average it with 1 to make it less extreme (faster than sqrt operation)
-    return -0.5 * heightDiff * heightDiff * softenedHeightRatio; // Approximate (heightDiff ^ 1.5) as (heightDiff * heightDiff * 0.5)
+    float softenedHeightRatio =
+        0.5f
+        * (heightRatio
+           + 1); // Average it with 1 to make it less extreme (faster than sqrt operation)
+    return -0.5
+           * heightDiff
+           * heightDiff
+           * softenedHeightRatio; // Approximate (heightDiff ^ 1.5) as (heightDiff * heightDiff *
+                                  // 0.5)
   }
   // Check for holes (don't reward building out the left over holes)
   int r = 21 - surfaceArray[0];
@@ -121,7 +130,7 @@ float getBuiltOutLeftFactor(int surfaceArray[10], unsigned int board[20], float 
   return heightRatio * heightDiff;
 }
 
-float getLeftSurfaceFactor(unsigned int board[20], int surfaceArray[10], int max5TapHeight){
+float getLeftSurfaceFactor(unsigned int board[20], int surfaceArray[10], int max5TapHeight) {
   max5TapHeight = max(0, max5TapHeight);
   for (int r = 20 - surfaceArray[0]; r < 20; r++) {
     if (board[r] & HOLE_BIT(0)) {
@@ -134,7 +143,7 @@ float getLeftSurfaceFactor(unsigned int board[20], int surfaceArray[10], int max
   return 0;
 }
 
-float getCol9Factor(int col9Height, float maxSafeCol9Height){
+float getCol9Factor(int col9Height, float maxSafeCol9Height) {
   if (!USE_RIGHT_WELL_FEATURES) {
     return 0;
   }
@@ -189,7 +198,6 @@ float getHoleWeightFactor(unsigned int board[20], int wellColumn) {
   return holeWeight;
 }
 
-
 float getLikelyBurnsFactor(int surfaceArray[10], int wellColumn, int maxSafeCol9) {
   if (wellColumn != 9 || !USE_RIGHT_WELL_FEATURES) {
     return 0;
@@ -210,18 +218,24 @@ float getLikelyBurnsFactor(int surfaceArray[10], int wellColumn, int maxSafeCol9
 
 /**
  * Assesses whether the surface allows for 5 taps.
- * @returns the multiple of the accessible left penalty that should be applied. That is, 0 if 5 taps are possible, or a float around 1.0 or higher (depending on how many lines would need to clear for the left to be accessible).
+ * @returns the multiple of the accessible left penalty that should be applied. That is, 0 if 5 taps
+ * are possible, or a float around 1.0 or higher (depending on how many lines would need to clear
+ * for the left to be accessible).
  */
-float getInaccessibleLeftFactor(unsigned int board[20], int surfaceArray[10], int const maxAccessibleLeft5Surface[10], int const maxAccessibleLeftLPieceSurface[10], int wellColumn, AiMode aiMode){
+float getInaccessibleLeftFactor(unsigned int board[20], int surfaceArray[10],
+                                int const maxAccessibleLeft5Surface[10],
+                                int const maxAccessibleLeftLPieceSurface[10], int wellColumn,
+                                AiMode aiMode) {
   // Check if the agent even needs to get a piece left first.
   int highestRowOfCol1 = 19 - surfaceArray[0];
   int needs5TapForDig = board[highestRowOfCol1] & HOLE_WEIGHT_BIT;
   int needs5TapForBurn = aiMode != DIG && wellColumn == 9 && surfaceArray[0] < surfaceArray[8];
   int needs5Tap = needs5TapForDig || needs5TapForBurn;
-//  int needs5TapOnKillscreen = (surfaceArray[1] - surfaceArray[0]) > maxAccessibleLeftSurface[0];
-//  int needs5Tap = needs5TapForDig || needs5TapForBurn || needs5TapOnKillscreen;
+  //  int needs5TapOnKillscreen = (surfaceArray[1] - surfaceArray[0]) > maxAccessibleLeftSurface[0];
+  //  int needs5Tap = needs5TapForDig || needs5TapForBurn || needs5TapOnKillscreen;
 
-  // This factor is added to stop the malicious compliance of tossing some random piece left while making a hole to technically have a "built out left"
+  // This factor is added to stop the malicious compliance of tossing some random piece left while
+  // making a hole to technically have a "built out left"
   int hasHoleInLeft = false;
   for (int r = highestRowOfCol1 + 1; r < highestRowOfCol1 + 4; r++) {
     if (board[r] & (HOLE_BIT(0) | HOLE_BIT(1) | HOLE_BIT(2))) {
@@ -230,25 +244,28 @@ float getInaccessibleLeftFactor(unsigned int board[20], int surfaceArray[10], in
     }
   }
 
-  if (surfaceArray[0] == surfaceArray[1] - 1 && surfaceArray[1] == surfaceArray[2]){
+  if (surfaceArray[0] == surfaceArray[1] - 1 && surfaceArray[1] == surfaceArray[2]) {
     bool canTapLPieceLeft = true;
-    for (int i = 0; i < 7; i++) {  // col 7 is the furthest right the L piece ever is on the board when tapped left flat
+    for (int i = 0; i < 7; i++) { // col 7 is the furthest right the L piece ever is on the board
+                                  // when tapped left flat
       if (surfaceArray[i] > maxAccessibleLeftLPieceSurface[i]) {
         canTapLPieceLeft = false;
       }
     }
-    if (canTapLPieceLeft){
+    if (canTapLPieceLeft) {
       return 0;
     }
   }
 
-  // If the left is built out higher than the max 5 tap height, and there's no pressing need to get a piece there anyway, this factor doesn't matter
+  // If the left is built out higher than the max 5 tap height, and there's no pressing need to get
+  // a piece there anyway, this factor doesn't matter
   if (surfaceArray[0] > maxAccessibleLeft5Surface[0] && !needs5Tap && !hasHoleInLeft) {
     return 0;
   }
 
   int highestAbove = 0;
-  for (int i = 0; i < 7; i++) {  // col 7 is the furthest right a 5 tap piece is on the board when tapped left
+  for (int i = 0; i < 7;
+       i++) { // col 7 is the furthest right a 5 tap piece is on the board when tapped left
     if (surfaceArray[i] > maxAccessibleLeft5Surface[i]) {
       highestAbove = std::max(highestAbove, surfaceArray[i] - maxAccessibleLeft5Surface[i]);
     }
@@ -256,7 +273,7 @@ float getInaccessibleLeftFactor(unsigned int board[20], int surfaceArray[10], in
   return highestAbove == 0 ? 0 : (1.0 + 0.2 * highestAbove * highestAbove);
 }
 
-float getInaccessibleRightFactor(int surfaceArray[10], int const maxAccessibleRightSurface[10]){
+float getInaccessibleRightFactor(int surfaceArray[10], int const maxAccessibleRightSurface[10]) {
   // Check if the agent even needs to get a piece right first.
   // If column 10 is higher than column 9, this feature doesn't matter.
   int needsRightTap = surfaceArray[9] < surfaceArray[8];
@@ -265,7 +282,8 @@ float getInaccessibleRightFactor(int surfaceArray[10], int const maxAccessibleRi
   }
 
   int highestAbove = 0;
-  for (int i = 5; i < 10; i++) {  // col 7 is the furthest right a 5 tap piece is on the board when tapped left
+  for (int i = 5; i < 10;
+       i++) { // col 7 is the furthest right a 5 tap piece is on the board when tapped left
     if (surfaceArray[i] > maxAccessibleRightSurface[i]) {
       highestAbove = std::max(highestAbove, surfaceArray[i] - maxAccessibleRightSurface[i]);
     }
@@ -273,14 +291,14 @@ float getInaccessibleRightFactor(int surfaceArray[10], int const maxAccessibleRi
   return highestAbove == 0 ? 0 : 1.0 + 0.2 * highestAbove * highestAbove;
 }
 
-float getLineClearFactor(int numLinesCleared, FastEvalWeights weights, int shouldRewardLineClears){
+float getLineClearFactor(int numLinesCleared, FastEvalWeights weights, int shouldRewardLineClears) {
   return numLinesCleared == 4
-    ? weights.tetrisCoef
-    : weights.burnCoef * numLinesCleared * (shouldRewardLineClears ? -0.25 : 1);
+             ? weights.tetrisCoef
+             : weights.burnCoef * numLinesCleared * (shouldRewardLineClears ? -0.25 : 1);
 }
 
 /** Calculate how hard it will be to fill in the middle of the board enough to burn. */
-float getUnableToBurnFactor(unsigned int board[20], int surfaceArray[10], float scareHeight){
+float getUnableToBurnFactor(unsigned int board[20], int surfaceArray[10], float scareHeight) {
   if (!USE_RIGHT_WELL_FEATURES) {
     return 0;
   }
@@ -329,13 +347,13 @@ float getUnableToBurnFactor(unsigned int board[20], int surfaceArray[10], float 
     }
   }
 
-  float scareRatio = (float) col9Height / max(2.0f, scareHeight);
+  float scareRatio = (float)col9Height / max(2.0f, scareHeight);
   float heightMultiplier = scareRatio * scareRatio * scareRatio;
 
   return totalPenalty * heightMultiplier;
 }
 
-int isTetrisReady(unsigned int board[20], int surfaceArray[10], int wellColumn){
+int isTetrisReady(unsigned int board[20], int surfaceArray[10], int wellColumn) {
   int wellColHeight = surfaceArray[wellColumn];
   if (wellColHeight > 16) {
     return 0;
@@ -355,17 +373,17 @@ int isTetrisReady(unsigned int board[20], int surfaceArray[10], int wellColumn){
 float rateSurfaceForPerfectPlay(int surfaceArray[10], int wellColumn) {
   float score = 0;
   for (int i = 0; i < 9; i++) {
-    if (i == wellColumn || i+1 == wellColumn) {
+    if (i == wellColumn || i + 1 == wellColumn) {
       continue;
     }
     int diff = surfaceArray[i + 1] - surfaceArray[i];
 
     // Line dependencies
-    if (diff >= 7 && (i == 0 || surfaceArray[i-1] - surfaceArray[i] >= 7)) {
+    if (diff >= 7 && (i == 0 || surfaceArray[i - 1] - surfaceArray[i] >= 7)) {
       score += 40;
-    } else if (diff >= 3 && (i == 0 || surfaceArray[i-1] - surfaceArray[i] >= 3)) {
+    } else if (diff >= 3 && (i == 0 || surfaceArray[i - 1] - surfaceArray[i] >= 3)) {
       score += 20;
-    }  else if (diff <= -7 && i == wellColumn - 2) {
+    } else if (diff <= -7 && i == wellColumn - 2) {
       score += 40;
     } else if (diff <= -3 && i == wellColumn - 2) {
       score += 20;
@@ -377,13 +395,12 @@ float rateSurfaceForPerfectPlay(int surfaceArray[10], int wellColumn) {
   return score;
 }
 
-/** Custom evaluation function designed for perfect play. The score it returns is aimed to emulate the percent chance of maintaining a perfect board throughout all the playouts. */
-float evalForPerfectPlay(GameState gameState,
-                         GameState newState,
-                         LockPlacement lockPlacement,
+/** Custom evaluation function designed for perfect play. The score it returns is aimed to emulate
+ * the percent chance of maintaining a perfect board throughout all the playouts. */
+float evalForPerfectPlay(GameState gameState, GameState newState, LockPlacement lockPlacement,
                          const EvalContext *evalContext) {
   // Check for burns
-  if (newState.lines != gameState.lines && newState.lines - gameState.lines != 4){
+  if (newState.lines != gameState.lines && newState.lines - gameState.lines != 4) {
     return -1; // 0% chance of survival since it's over
   }
 
@@ -400,7 +417,8 @@ float evalForPerfectPlay(GameState gameState,
     return 0;
   }
 
-  // We'll track the overall badness of a position, such that as badness increases, the eval approaches 0.
+  // We'll track the overall badness of a position, such that as badness increases, the eval
+  // approaches 0.
   float badness = 0;
 
   // Rate the surface
@@ -423,29 +441,18 @@ float evalForPerfectPlay(GameState gameState,
 
   // Logging
   if (LOGGING_ENABLED) {
-    maybePrint("\nEvaluating possibility %d %d %d\n",
-               lockPlacement.rotationIndex,
-               lockPlacement.x - SPAWN_X,
-               lockPlacement.y);
+    maybePrint("\nEvaluating possibility %d %d %d\n", lockPlacement.rotationIndex,
+               lockPlacement.x - SPAWN_X, lockPlacement.y);
     printBoard(newState.board);
     printf("Numholes %d\n", newState.numTrueHoles);
-    maybePrint(
-      "badness %01f, evalScore %01f\n",
-      badness,
-      evalScore);
+    maybePrint("badness %01f, evalScore %01f\n", badness, evalScore);
   }
-
 
   return evalScore;
 }
 
-
-
-float fastEval(GameState gameState,
-               GameState newState,
-               LockPlacement lockPlacement,
-               const EvalContext *evalContext,
-               std::string *outExplanation) {
+float fastEval(GameState gameState, GameState newState, LockPlacement lockPlacement,
+               const EvalContext *evalContext, std::string *outExplanation) {
   if (SHOULD_PLAY_PERFECT) {
     return evalForPerfectPlay(gameState, newState, lockPlacement, evalContext);
   }
@@ -455,33 +462,73 @@ float fastEval(GameState gameState,
   float avgHeight = getAverageHeight(newState.surfaceArray, evalContext->wellColumn);
   int isKillscreenLineout = gameState.level >= 29 && evalContext->aiMode == LINEOUT;
   // Calculate all the factors
-  float avgHeightFactor = weights.avgHeightCoef * getAverageHeightFactor(avgHeight, evalContext->scareHeight);
-  float builtOutLeftFactor = weights.builtOutLeftCoef * getBuiltOutLeftFactor(newState.surfaceArray, newState.board, avgHeight, evalContext->scareHeight);
-  float coveredWellFactor = weights.coveredWellCoef * getCoveredWellFactor(newState.board, evalContext->wellColumn, evalContext->scareHeight);
-  float guaranteedBurnsFactor = weights.burnCoef * getGuaranteedBurnsFactor(newState.board, evalContext->wellColumn);
-  float likelyBurnsFactor = weights.burnCoef * getLikelyBurnsFactor(newState.surfaceArray, evalContext->wellColumn, evalContext->maxSafeCol9);
-  float highCol9Factor = weights.col9Coef * getCol9Factor(newState.surfaceArray[8], evalContext->maxSafeCol9);
+  float avgHeightFactor =
+      weights.avgHeightCoef * getAverageHeightFactor(avgHeight, evalContext->scareHeight);
+  float builtOutLeftFactor = weights.builtOutLeftCoef
+                             * getBuiltOutLeftFactor(newState.surfaceArray, newState.board,
+                                                     avgHeight, evalContext->scareHeight);
+  float coveredWellFactor =
+      weights.coveredWellCoef
+      * getCoveredWellFactor(newState.board, evalContext->wellColumn, evalContext->scareHeight);
+  float guaranteedBurnsFactor =
+      weights.burnCoef * getGuaranteedBurnsFactor(newState.board, evalContext->wellColumn);
+  float likelyBurnsFactor = weights.burnCoef
+                            * getLikelyBurnsFactor(newState.surfaceArray, evalContext->wellColumn,
+                                                   evalContext->maxSafeCol9);
+  float highCol9Factor =
+      weights.col9Coef * getCol9Factor(newState.surfaceArray[8], evalContext->maxSafeCol9);
   float holeFactor = weights.holeCoef * (newState.numTrueHoles + newState.numPartialHoles);
-  float holeWeightFactor = abs(weights.holeWeightCoef) > FLOAT_EPSILON ? weights.holeWeightCoef * getHoleWeightFactor(newState.board, evalContext->wellColumn) : 0;
-  float inaccessibleLeftFactor = isKillscreenLineout
-              ? 0
-              : (weights.inaccessibleLeftCoef * getInaccessibleLeftFactor(newState.board, newState.surfaceArray, evalContext->pieceRangeContext.maxAccessibleLeft5Surface, evalContext->pieceRangeContext.maxAccessibleLeftLPieceSurface,  evalContext->wellColumn, evalContext->aiMode));
-  float inaccessibleRightFactor = isKillscreenLineout
-              ? 0
-              : (weights.inaccessibleRightCoef * getInaccessibleRightFactor(newState.surfaceArray, evalContext->pieceRangeContext.maxAccessibleRightSurface));
-  float lineClearFactor = getLineClearFactor(newState.lines - gameState.lines, weights, evalContext->shouldRewardLineClears);
+  float holeWeightFactor =
+      abs(weights.holeWeightCoef) > FLOAT_EPSILON
+          ? weights.holeWeightCoef * getHoleWeightFactor(newState.board, evalContext->wellColumn)
+          : 0;
+  float inaccessibleLeftFactor =
+      isKillscreenLineout ? 0
+                          : (weights.inaccessibleLeftCoef
+                             * getInaccessibleLeftFactor(
+                                 newState.board, newState.surfaceArray,
+                                 evalContext->pieceRangeContext.maxAccessibleLeft5Surface,
+                                 evalContext->pieceRangeContext.maxAccessibleLeftLPieceSurface,
+                                 evalContext->wellColumn, evalContext->aiMode));
+  float inaccessibleRightFactor =
+      isKillscreenLineout
+          ? 0
+          : (weights.inaccessibleRightCoef
+             * getInaccessibleRightFactor(
+                 newState.surfaceArray, evalContext->pieceRangeContext.maxAccessibleRightSurface));
+  float lineClearFactor = getLineClearFactor(newState.lines - gameState.lines, weights,
+                                             evalContext->shouldRewardLineClears);
   float surfaceFactor = weights.surfaceCoef * rateSurface(newState.surfaceArray, evalContext);
   float surfaceLeftFactor =
-    (isKillscreenLineout)
-      ? weights.surfaceLeftCoef * getLeftSurfaceFactor(newState.board, newState.surfaceArray, evalContext->pieceRangeContext.max5TapHeight)
-      : 0;
+      (isKillscreenLineout)
+          ? weights.surfaceLeftCoef
+                * getLeftSurfaceFactor(newState.board, newState.surfaceArray,
+                                       evalContext->pieceRangeContext.max5TapHeight)
+          : 0;
   float tetrisReadyFactor =
-    (evalContext->wellColumn >= 0 && isTetrisReady(newState.board, newState.surfaceArray, evalContext->wellColumn))
-      ? weights.tetrisReadyCoef
-      : 0;
-  float unableToBurnFactor = weights.unableToBurnCoef * getUnableToBurnFactor(newState.board, newState.surfaceArray, evalContext->scareHeight);
+      (evalContext->wellColumn >= 0
+       && isTetrisReady(newState.board, newState.surfaceArray, evalContext->wellColumn))
+          ? weights.tetrisReadyCoef
+          : 0;
+  float unableToBurnFactor =
+      weights.unableToBurnCoef
+      * getUnableToBurnFactor(newState.board, newState.surfaceArray, evalContext->scareHeight);
 
-  float total = surfaceFactor + surfaceLeftFactor + avgHeightFactor + lineClearFactor + holeFactor + holeWeightFactor + guaranteedBurnsFactor + likelyBurnsFactor + inaccessibleLeftFactor + inaccessibleRightFactor + coveredWellFactor + highCol9Factor + tetrisReadyFactor + builtOutLeftFactor + unableToBurnFactor;
+  float total = surfaceFactor
+                + surfaceLeftFactor
+                + avgHeightFactor
+                + lineClearFactor
+                + holeFactor
+                + holeWeightFactor
+                + guaranteedBurnsFactor
+                + likelyBurnsFactor
+                + inaccessibleLeftFactor
+                + inaccessibleRightFactor
+                + coveredWellFactor
+                + highCol9Factor
+                + tetrisReadyFactor
+                + builtOutLeftFactor
+                + unableToBurnFactor;
   total = max(weights.deathCoef, total); // Can't be worse than death
 
   // Build a human-readable explanation of the non-zero eval factors.
@@ -520,10 +567,8 @@ float fastEval(GameState gameState,
 
   // Logging
   if (LOGGING_ENABLED) {
-    maybePrint("\nEvaluating possibility %d %d %d\n",
-               lockPlacement.rotationIndex,
-               lockPlacement.x - SPAWN_X,
-               lockPlacement.y);
+    maybePrint("\nEvaluating possibility %d %d %d\n", lockPlacement.rotationIndex,
+               lockPlacement.x - SPAWN_X, lockPlacement.y);
     printBoard(newState.board);
     printSurface(newState.surfaceArray);
     maybePrint("Tuck setups:\n");
@@ -544,23 +589,15 @@ float fastEval(GameState gameState,
 
     printf("Numholes %d\n", newState.numTrueHoles);
     maybePrint("AiMode %d\n", evalContext->aiMode);
-    maybePrint(
-      "Surface %01f, LeftSurface %01f, AvgHeight %01f, LineClear %01f, Hole %01f, HoleWeight %01f, GuaranteedBurns %01f, LikelyBurns %01f, InaccLeft %01f, CoveredWell %01f, HighCol9 %01f, TetrisReady %01f, BuiltLeft %01f, UnableToBrn %01f,\t Total: %01f\n",
-      surfaceFactor,
-      surfaceLeftFactor,
-      avgHeightFactor,
-      lineClearFactor,
-      holeFactor,
-      holeWeightFactor,
-      guaranteedBurnsFactor,
-      likelyBurnsFactor,
-      inaccessibleLeftFactor,
-      coveredWellFactor,
-      highCol9Factor,
-      tetrisReadyFactor,
-      builtOutLeftFactor,
-      unableToBurnFactor,
-      total);
+    maybePrint("Surface %01f, LeftSurface %01f, AvgHeight %01f, LineClear %01f, Hole %01f, "
+               "HoleWeight %01f, "
+               "GuaranteedBurns %01f, LikelyBurns %01f, InaccLeft %01f, CoveredWell %01f, HighCol9 "
+               "%01f, TetrisReady "
+               "%01f, BuiltLeft %01f, UnableToBrn %01f,\t Total: %01f\n",
+               surfaceFactor, surfaceLeftFactor, avgHeightFactor, lineClearFactor, holeFactor,
+               holeWeightFactor, guaranteedBurnsFactor, likelyBurnsFactor, inaccessibleLeftFactor,
+               coveredWellFactor, highCol9Factor, tetrisReadyFactor, builtOutLeftFactor,
+               unableToBurnFactor, total);
   }
 
   return total;
