@@ -119,25 +119,116 @@ input-string encoder so tests read like the calls they exercise.
 
 ## TS oracle fuzz fixtures (DAS move search)
 
-`npm run fuzz_generate` generates ~800 randomized board/timeline/level fixtures
-through the TypeScript `fullMoveSearch` (the reference implementation) and writes
-them to `src/server/move_search_fixtures.json`. The C++ doctest suite replays
-them via `fullMoveSearch` and compares the full (rotationIndex, x, y,
-dasChargeAfter, inputCostX10) multiset.
+`npm run fuzz_generate` generates ~2800 board/timeline/level fixtures through
+the TypeScript `fullMoveSearch` (the reference implementation) and writes them
+to `src/server/move_search_fixtures.json`. The C++ doctest suite replays them
+via `fullMoveSearch` and compares (rotationIndex, x, y, dasChargeAfter,
+inputCostX10) tuples **order-exactly** — element i of the golden list must
+equal element i of the search output. Result order is load-bearing downstream
+(`possibleMoves[0]` is the default placement; the phantom sort is stable over
+it), so an order divergence is a real bug, not noise. The one multiset
+exception is the fastMoveSearch hot-path guard, which asserts the placement
+SET only (a different search with different tuck semantics; its output order
+is its own).
 
 `npm run fuzz_verify_sequences` is a second, stronger gate: it compiles
-`src/cpp_modules/tests/fixture_dump.cpp`, dumps C++ results for every DAS
-fixture, and diffs tuples **and character-exact input sequences** against the
+`src/cpp_modules/tests/fixture_dump.cpp`, dumps C++ results for every fixture
+(both modes come out of `fullMoveSearch`; tap fixtures exercise its ARR-gated
+tap path), and diffs tuples **and character-exact input sequences** against the
 oracle JSON (exit nonzero on any mismatch). Use it after any change to either
-implementation's DAS path. Tap-only fixtures are covered by the doctest suite;
-sequences are not emitted in tap mode (they are derivable downstream).
+implementation's move search. In the doctest suite, tap fixtures are asserted
+twice: through fastMoveSearch (the hot-path guard) and through fullMoveSearch's
+tap path.
+
+### The two "tuck" definitions (fastMoveSearch vs fullMoveSearch)
+
+The two searches define "tuck" differently, by design:
+
+- **fastMoveSearch** finds gameplay tucks: destination cells flagged as
+  overhang setups by the board analysis (`analyzeHole` / `TUCK_SETUP_BIT`).
+- **TS dfs / fullMoveSearch** append any input that produces a novel lock
+  during the fall. This covers cases the rigid assumptions of fastMoveSearch
+  miss: placements that depend on the *ordering* of shifts and rotations during
+  an otherwise non-tuck placement.
+
+Concretely: the greedy goal-walk merges shift+rotation into the earliest
+possible input, which can catch on a stack corner and lock one cell away, while
+the dfs's re-ordered inputs (e.g. shift first, rotate later) slip past and
+reach cells the walk can never express. On the jagged-overhang board the TS
+definition yields 46 spins + 14 spin-tucks that fastMoveSearch intentionally
+does not model, so those fixtures are skipped in the fastMoveSearch guard only
+(asserted via fullMoveSearch, which must match TS byte-for-byte for the
+precompute pipeline).
 
 Fixture coverage axes: all 7 pieces; `dasCharge ∈ {0..16}` with emphasis on
 `{0, 5, 6, 10, 14, 15, 16}`; levels 18 / 19 / 29; timelines `"X.."`, `"X..."`,
 `"X....."`; boards spanning flat heights 0–16, overhang/tuck setups, edge/wall
-adjacency, and near-ceiling spawns; zero-shift and max-shift placements. The
-fixtures are generated with a fixed seed, so `npm run fuzz_generate` is
-byte-stable — commit the diff if TS semantics change intentionally.
+adjacency, and near-ceiling spawns; zero-shift and max-shift placements.
+Tall-stack boards (stacks reaching rows 0-2, `tap_tall`/`das_tall` tags)
+exercise locks in the top rows, including a one-row lid where only the I piece
+has any placement; adjustment fixtures include `existingYOffset = 20`
+past-bottom entries (empty result on both sides). The
+tap fixtures additionally include a jagged overhang board (`tap_tuck` tag) --
+the only structured board whose tap-mode search produces tuck/spin/spin-tuck
+possibilities, exercising the tuck/spin DFS's tap branches. The fixtures are
+generated with a fixed seed, so `npm run fuzz_generate` is byte-stable — commit
+the diff if TS semantics change intentionally.
+
+### Adjustment-mode fixtures (mid-air entry)
+
+Precompute migration Phase 1 step 2 added an `adjustmentFixtures` section
+(JSON key + `ADJUSTMENT_*` pools in the C++ header, separate index space from
+the spawn fixtures). Each fixture records a mid-air state exactly the way
+`PreComputeManager._calculatePhantomPlacements` derives one: run the TS spawn
+`getPossibleMoves` WITH a reaction time (8 / 13 / 20), stable-sort by
+`countInputs`, dedupe by the first `reactionTime` chars of `inputSequence`,
+then save the `adjTimeSimState` snapshot as `framesAlreadyElapsed / existingXOffset /
+existingYOffset / existingRotation / dasCharge / adjustmentState` and run the
+adjustment `getPossibleMoves` (no reaction time) as the golden.
+
+ Phantom selection is deterministic and coverage-driven (first phantom + the
+first phantom of each rare `(isArrContinued, dasButtonHeld, rotation-class)`
+bucket in a fixed priority order) — naive first/last/random sampling starves
+`existingRotation=3` and DAS `isArrContinued=true`, which only multi-rotation
+goals reach and which sort last by `countInputs`. Tap-mode
+`dasButtonHeld != NONE` at the reaction-time frame is only reachable when
+`reactionTime - 1` is an ARR input frame (rt=13 works for all three
+timelines). The doctest suite asserts the entry tuples; sequences are
+compared character-exactly by `fuzz_verify_sequences` under `adjustment <idx>`
+dump headers.
+
+### Reaction-time fixtures (adjTimeSimState snapshot, spawn entry)
+
+Phase 1 step 3 added a `reactionTimeFixtures` section (JSON key +
+`REACTION_TIME_*` pools in the C++ header, separate index space). Each fixture
+runs the TS spawn `getPossibleMoves` WITH a reaction time (0 / 1 / 2 / 5 / 8 /
+13 / 20 / 40, both modes) and records the FULL possibility list in result
+order, each entry carrying its walk's `adjTimeSimState` snapshot (or null).
+Unlike the other sections this one is compared **order-exactly** (array
+equality, no sorting) with the snapshot fields included — the
+result-to-snapshot mapping is part of the golden, not just the placement set.
+
+Two semantics the fixtures pin down:
+
+- A walk that reaches its goal before the reaction-time frame keeps
+  simulating (the piece keeps falling at the goal column) until the
+  reaction-time frame, so its LAST registered sim state — and therefore the
+  deduped last-of-group possibility — carries the snapshot, while the
+  first-of-group possibility (registered before the reaction-time frame)
+  carries none. Walks whose piece locks before the reaction-time frame save
+  no snapshot at all.
+- The dfs novel-keeping comparison (`inputCost + (adjTimeSimState == null ?
+  -1000 : 0)`) reads snapshot presence: of two tuck routes to the same cell,
+  the one whose parent walk saved its adjTimeSimState wins. The tuck-coverage board at
+  reaction times 6/20 produces such collisions (an instrumented TS run over
+  the section observed 21 outcome-changing comparisons in 3 fixtures; the
+  doctest asserts the resulting possibilities order-exactly).
+
+Reaction time 0 never saves a snapshot and never waits; the C++ side treats
+any `reactionTime <= 0` the same. Dumped under `reactiontime <idx>` headers
+by fixture_dump (no sorting); the doctest compares tuples + snapshots in
+order,
+`fuzz_verify_sequences` additionally compares the sequences character-exactly.
 
 ## Precompute golden fixtures (full-request parity oracle)
 

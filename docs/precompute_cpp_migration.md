@@ -105,7 +105,10 @@ result and waits for the full result, so only the final string matters.
   `dasCharge >= 15` ⇒ 0; `>= 10` ⇒ partial map; else min map.
 - **Adjustment input cost** (precompute.ts:378): per-char lookup over the
   **full** sequence including the `preAdjInputSequence` prefix; E/F/I/G = -0.3,
-  A/B = -0.2, L/R = -0.1, lowercase e/f/i/g = -0.2, everything else 0.
+  A/B = -0.2, L/R = -0.1, lowercase e/f/i/g = -0.2, everything else 0. NB: the
+  tuck/spin input's own cost is **double-counted** — it is once in the
+  sequence (per-char loop) and again via `possibility.inputCost`. Legacy TS
+  behavior; the C++ port must replicate it exactly.
 - **`getSearchStateAfter` dasCharge**: `possibility.dasChargeAfter || 0` — note
   tap-mode possibilities carry `dasChargeAfter = -1`, which is truthy and
   therefore passes through as **-1** into the formatted output.
@@ -244,9 +247,39 @@ path even before threading is considered.
    follow-up migration. The differential harness remains in place until then.
 
 Each phase lands as small independently revertible commits; full battery
-(`cpp_test_unit`, `fuzz_verify_sequences`, `tsc`, `move_test`, `cpp_test`)
+(`cpp_test_unit`, `fuzz_verify_sequences`, `tsc`, `move_test`, `npm start`)
 before and after every step. Remember: a long-running dev server keeps the old
 addon mapped — restart before trusting A/B results.
+
+### Phase 4 — Cleanup
+
+Final sweep to leave the tree in its end state:
+
+1. **Code comments**: remove all remaining TS-parity / migration-phase
+   references from code comments across the repo (pre-existing ones in
+   main.cpp, high_level_search.cpp, eval/playout files, benchmarks,
+   entrypoint.cpp, etc. predate this migration). The two AGENTS.md exceptions
+   get resolved rather than preserved: migration TODOs are deleted once the
+   end state exists, and "legacy TS, possibly a bug" flags are either fixed
+   (if deemed actual bugs) or rewritten as plain behavior notes (if intended).
+2. **Temporary artifacts**: remove scratch/probe files, stray build outputs
+   (e.g. `a.out`), and any one-off scripts created during the phases. Audit
+   with `git status` / untracked-file listing rather than assuming.
+3. **Fixture and tooling consolidation**: decide what stays versioned (the
+   golden fixture files and their generators — move_search_fixtures.json/.hpp,
+   precompute_fixtures.jsonl, the fixture_dump/verify harnesses) and remove or
+   merge superseded tooling. Every generator must still run byte-stably after
+   the cleanup (rerun each once and diff).
+4. **Derive tuck cost from `tuckInput`**: `FullMovePossibility.inputCostX10`
+   is redundant with its `tuckInput` char (the cost is a pure function of
+   that char). Drop the stored field: the dfs tie-break score and the
+   precompute collapse derive the cost on demand (`inputCostX10ForChar` /
+   char → exact TS double via `x / 10.0`). Requires regenerating the fixture
+   encoding (the packed entry pool stores cost bits) and updating the dump /
+   verify harnesses; do this before pinning anything else on the field.
+5. **Battery** after the sweep — the cleanup touches many files, so the
+   full battery plus a benchmark A/B (unity-build layout luck applies) are
+   warranted here.
 
 ## Decisions
 

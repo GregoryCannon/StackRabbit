@@ -145,14 +145,14 @@ int searchDepth2(GameState gameState, const Piece *firstPiece, const Piece *seco
     // Bucket mode (secondPieceDasCharge >= 0) always searches the first piece from a
     // full charge so every bucket/deep lookup enumerates the same set of lock cells.
     int firstPieceDasCharge = secondPieceDasCharge >= 0 ? DAS_CHARGE_MAX : dasCharge;
-    vector<DasPossibility> firstDasPossibilities;
+    vector<FullMovePossibility> firstFullMovePossibilities;
     fullMoveSearch(gameState, firstPiece, dasInputFrameTimeline, firstPieceDasCharge,
-                   /* trackInputSequences= */ false, firstDasPossibilities);
-    for (DasPossibility const &dasPossibility : firstDasPossibilities) {
-      firstLockPlacements.push_back({dasPossibility.x, dasPossibility.y,
-                                     dasPossibility.rotationIndex, -1, dasPossibility.tuckInput,
+                   /* trackInputSequences= */ false, firstFullMovePossibilities);
+    for (FullMovePossibility const &fullMovePossibility : firstFullMovePossibilities) {
+      firstLockPlacements.push_back({fullMovePossibility.x, fullMovePossibility.y,
+                                     fullMovePossibility.rotationIndex, -1, fullMovePossibility.tuckInput,
                                      firstPiece});
-      firstDasChargeAfters.push_back(dasPossibility.dasChargeAfter);
+      firstDasChargeAfters.push_back(fullMovePossibility.dasChargeAfter);
     }
   } else {
     fastMoveSearch(gameState, firstPiece, evalContext->pieceRangeContext.inputFrameTimeline,
@@ -188,16 +188,16 @@ int searchDepth2(GameState gameState, const Piece *firstPiece, const Piece *seco
       // DAS mode: the second piece spawns with the first placement's leftover charge
       // by default (generic semantics), or with secondPieceDasCharge when the caller
       // prescribes it.
-      vector<DasPossibility> secondDasPossibilities;
+      vector<FullMovePossibility> secondFullMovePossibilities;
       int effectiveSecondPieceDasCharge = secondPieceDasCharge >= 0
                                               ? secondPieceDasCharge
                                               : firstDasChargeAfters[firstPlacementIndex];
       fullMoveSearch(afterFirstMove, secondPiece, dasInputFrameTimeline,
                      effectiveSecondPieceDasCharge,
-                     /* trackInputSequences= */ false, secondDasPossibilities);
-      for (DasPossibility const &dasPossibility : secondDasPossibilities) {
-        secondLockPlacements.push_back({dasPossibility.x, dasPossibility.y,
-                                        dasPossibility.rotationIndex, -1, dasPossibility.tuckInput,
+                     /* trackInputSequences= */ false, secondFullMovePossibilities);
+      for (FullMovePossibility const &fullMovePossibility : secondFullMovePossibilities) {
+        secondLockPlacements.push_back({fullMovePossibility.x, fullMovePossibility.y,
+                                        fullMovePossibility.rotationIndex, -1, fullMovePossibility.tuckInput,
                                         secondPiece});
       }
     } else {

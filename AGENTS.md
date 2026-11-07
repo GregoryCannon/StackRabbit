@@ -33,6 +33,12 @@ stale-server output for a code change.
 - Design APIs so parameters mean one thing. If a call site needs different semantics,
   add a clearly-named parameter rather than overloading an existing one, and make
   mutually exclusive modes explicit (error out when both are passed).
+- **Code comments describe end-state behavior, not process.** Never reference TS
+  parity, the TS implementation, or migration phases/steps in code comments — that
+  context belongs in the docs (TESTING.md, docs/*.md). Two exceptions:
+  (1) ported behavior that may itself be a legacy bug may be flagged as parity
+  with "legacy TS code"; (2) unintuitive temporary behavior caused by a not-yet-
+  completed migration step may carry a TODO naming that step.
 
 ## Performance landmines
 
