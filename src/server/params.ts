@@ -11,7 +11,8 @@ export const DAS_SLOW_TAP_TIMELINE = "X......." // 7.5 Hz slowtapping
 export const IS_PAL = false;
 export const WELL_COLUMN = 9; // 0-indexed
 export const SHOULD_PUSHDOWN = false;
-export const MAX_CPP_PLAYOUT_MOVES = 9604; // 4 * 7^4, i.e. a fully exhastive depth 4 search
+// export const MAX_CPP_PLAYOUT_MOVES = 9604; // 4 * 7^4, i.e. a fully exhastive depth 4 search
+export const MAX_CPP_PLAYOUT_MOVES = 99999999;
 export const CANONICAL_SEQUENCE_BATCH_SIZE = 8000; // Max sequences per tournament batch; per-entry clamping is done in the C++ side
 
 // Calculated automatically

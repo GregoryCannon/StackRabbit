@@ -1,4 +1,4 @@
-const cModule = require("../../../build/Release/cRabbit");
+const cModule = require("../build/Release/cRabbit");
 
 export function cTest() {
   console.time("C++");

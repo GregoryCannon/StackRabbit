@@ -7,7 +7,7 @@ import {
 } from "./request_parser";
 import { INITIAL_PLACEMENT, PossibilityChain, SearchState, UrlArguments } from "./types";
 import { formatPossibility } from "./utils";
-const cModule = require("../../../build/Release/cRabbit");
+const cModule = require("../build/Release/cRabbit");
 
 function sleep(ms) {
   return new Promise((resolve) => {

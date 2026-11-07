@@ -72,7 +72,7 @@ export class PreComputeManager {
 
     // Create the worker threads
     for (let i = 0; i < NUM_THREADS; i++) {
-      const newWorker = child_process.fork("built/src/server/worker_thread.js");
+      const newWorker = child_process.fork("built/worker_thread.js");
       newWorker.addListener("message", this._onMessage);
       this.workers.push(newWorker);
     }
@@ -282,7 +282,7 @@ export class PreComputeManager {
 
     let overallResponse: string = "No legal moves B";
 
-    console.log(this.results["O"]);
+    console.log(this.results["L"]);
 
     console.time("COLLAPSE");
     let bestPhantomPlacementValue = Number.MIN_SAFE_INTEGER;

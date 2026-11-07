@@ -1,7 +1,7 @@
 console.time("loading");
 import * as process from "process";
 import { WorkerDataArgs } from "./types";
-const cModule = require("../../../build/Release/cRabbit");
+const cModule = require("../build/Release/cRabbit");
 
 console.timeEnd("loading");
 process.send({ type: "ready" }); // Let the main process know that it's loaded the ranks file
