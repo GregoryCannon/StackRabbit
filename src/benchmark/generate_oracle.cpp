@@ -1,16 +1,16 @@
 //
 //  generate_oracle.cpp
-//  Generates the benchmark oracle: for each position in benchmark_positions.jsonl, runs
+//  Generates the benchmark oracle: for each position in src/benchmark/data/hard_benchmark_positions.jsonl, runs
 //  a depth-2 search over all (first, second) placement pairs, then rates every pair with
 //  a two-round playout budget (1000 playouts for all pairs, 7000 more for the top 10% by
 //  round-1 rating), and writes the pooled mean / standard error / n per pair to
-//  src/benchmark/oracle_positions.jsonl. See oracle_format.md for the file spec.
+//  src/benchmark/data/oracle_positions.jsonl. See oracle_format.md for the file spec.
 //
 //  Build and run (from repo root):
 //    g++ -O2 src/benchmark/generate_oracle.cpp -o build/generate_oracle && ./build/generate_oracle
 //    [startPos] [endPos]
 //
-//  Position range is inclusive and 1-based (line numbers in benchmark_positions.jsonl).
+//  Position range is inclusive and 1-based (line numbers in src/benchmark/data/hard_benchmark_positions.jsonl).
 //  Results are appended to the oracle file, so ranges can be generated incrementally;
 //  the header is written only when the file doesn't exist yet.
 //
@@ -27,8 +27,8 @@
 #include <sstream>
 #include <thread>
 
-const char *ORACLE_PATH = "src/benchmark/oracle_positions.jsonl";
-const char *BENCHMARK_PATH = "src/benchmark/benchmark_positions.jsonl";
+const char *ORACLE_PATH = "src/benchmark/data/oracle_positions.jsonl";
+const char *BENCHMARK_PATH = "src/benchmark/data/hard_benchmark_positions.jsonl";
 
 const int ROUND1_PLAYOUTS = 1000;
 const int ROUND1_LENGTH = 10;
@@ -110,9 +110,8 @@ void computeOracleForPosition(const BenchmarkPosition &pos, OUT OracleResult &re
 
   // Full depth-2 search: all (first, second) placement pairs
   list<Possibility> possibilities;
-  searchDepth2(gameState, curPiece, nextPiece, /* secondPieceDelay= */ 0, evalContext,
-               possibilities,
-               /* generateExplanation= */ false);
+  searchDepth2(gameState, curPiece, nextPiece, /* dasCharge= */ -1, /* secondPieceDasCharge= */ -1,
+               timeline.c_str(), evalContext, possibilities, /* generateExplanation= */ false);
 
   struct PairWork {
     const Possibility *possibility;

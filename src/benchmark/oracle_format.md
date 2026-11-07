@@ -3,9 +3,9 @@
 Specification for the benchmark oracle file: deep-search reference ratings for the
 200 benchmark positions, used to measure agent accuracy (benchmark step 2 → step 3).
 
-- **File**: `src/benchmark/oracle_positions.jsonl`
+- **File**: `src/benchmark/data/oracle_positions.jsonl`
 - **Format**: JSONL — one JSON object per line (UTF-8)
-- **Source positions**: line-per-position from `src/benchmark/benchmark_positions.jsonl`
+- **Source positions**: line-per-position from `src/benchmark/data/benchmark_positions.jsonl`
 
 ## Header (line 0)
 
@@ -14,7 +14,7 @@ Records the provenance of the oracle run. Must be enough to reproduce or audit t
 ```json
 {
   "type": "oracle",
-  "source": "benchmark_positions.jsonl",
+  "source": "src/benchmark/data/hard_benchmark_positions.jsonl",
   "timeline": "X.....",
   "engineCommit": "...",
   "weights": "MAIN/SAFE",
@@ -63,7 +63,7 @@ line of the benchmark file).
 
 | Field | Meaning |
 |---|---|
-| `index` | Position index, matching the explicit `index` field on the corresponding line of `benchmark_positions.jsonl`. Indices are slot-stable (1..200 in output order) and survive position swaps/reorders, so benchmark and oracle files can't silently desync |
+| `index` | Position index, matching the explicit `index` field on the corresponding line of `src/benchmark/data/benchmark_positions.jsonl`. Indices are slot-stable (1..200 in output order) and survive position swaps/reorders, so benchmark and oracle files can't silently desync |
 | `board` | `formatBoard()` compressed board string |
 | `level`, `lines` | Game level and line count |
 | `curPiece`, `nextPiece` | PIECE_LIST indices (I=0 O=1 L=2 J=3 T=4 S=5 Z=6) |

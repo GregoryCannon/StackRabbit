@@ -94,7 +94,7 @@ inline std::string getEngineCommit() {
   return commit.empty() ? "unknown" : commit;
 }
 
-/** One benchmark position, as stored in benchmark_positions.jsonl. */
+/** One benchmark position, as stored in src/benchmark/data/benchmark_positions.jsonl. */
 struct BenchmarkPosition {
   int index; // Slot-stable position index (1..200)
   std::string board;

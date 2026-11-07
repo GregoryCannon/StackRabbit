@@ -6,7 +6,13 @@
 //
 //  Usage (from repo root):
 //    g++ -O2 src/benchmark/run_agent.cpp -o build/run_agent && ./build/run_agent [requestType]
-//    [playoutCount] [playoutLength] [pruningBreadth] [startPos] [endPos] [outputPath]
+//    [playoutCount] [playoutLength] [pruningBreadth] [mode]
+//
+//  - mode: trailing selector for the position/oracle pair - "standard" (default; curated
+//    benchmark_positions.jsonl + oracle_positions.jsonl) or "hard" (hard_benchmark_positions.jsonl
+//    + hard_oracle_positions.jsonl). When present it is the last argument, e.g.
+//    `./build/run_agent GET_MOVE 49 2 12 HARD`. Always runs the full position suite and
+//    writes a timestamped results file.
 //
 //  - requestType: GET_MOVE, GET_LOCK_VALUE_LOOKUP (implemented); GET_TOP_MOVES (planned)
 //  - Position range is inclusive and 1-based (benchmark position indices)
@@ -29,8 +35,8 @@
 #include <sys/stat.h>
 #include <thread>
 
-const char *BENCHMARK_PATH = "src/benchmark/benchmark_positions.jsonl";
-const char *ORACLE_PATH = "src/benchmark/oracle_positions.jsonl";
+const char *BENCHMARK_PATH = "src/benchmark/data/benchmark_positions.jsonl";
+const char *ORACLE_PATH = "src/benchmark/data/oracle_positions.jsonl";
 const char *RESULTS_DIR = "src/benchmark/agent_results";
 
 std::string timeline = "X.....";
@@ -43,8 +49,6 @@ struct HarnessConfig {
   int playoutCount;
   int playoutLength;
   int pruningBreadth;
-  int startPos;
-  int endPos;
   std::string outputPath;
 };
 
@@ -317,7 +321,7 @@ std::string formatDelta(float delta) {
 
 void writeResultsFile(const HarnessConfig &config, const std::vector<BenchmarkPosition> &positions,
                       const std::vector<OraclePosition> &oracles,
-                      const std::vector<AgentResult> &results) {
+                      const std::vector<AgentResult> &results, const char *oraclePath) {
   std::ofstream out(config.outputPath, std::ios::out | std::ios::trunc);
   char buffer[600];
 
@@ -340,7 +344,7 @@ void writeResultsFile(const HarnessConfig &config, const std::vector<BenchmarkPo
       << "\",\"date\":\""
       << dateBuffer
       << "\",\"source\":\""
-      << ORACLE_PATH
+      << oraclePath
       << "\"}\n";
 
   for (size_t i = 0; i < positions.size(); i++) {
@@ -476,7 +480,22 @@ int main(int argc, const char *argv[]) {
   auto timeStart = std::chrono::steady_clock::now();
 
   HarnessConfig config = {};
-  const char *requestTypeName = argc > 1 ? argv[1] : "GET_MOVE";
+  // The last argument, when it names a mode ("standard" default, "hard"), selects the
+  // position/oracle pair to run against; earlier arguments are the config.
+  std::string modeStr = "standard";
+  int modeArgPos = -1;
+  if (argc > 1) {
+    std::string lastArg = argv[argc - 1];
+    std::string lower = lastArg;
+    std::transform(lower.begin(), lower.end(), lower.begin(),
+                   [](unsigned char c) { return (char)std::tolower(c); });
+    if (lower == "hard" || lower == "standard") {
+      modeStr = lower;
+      modeArgPos = argc - 1;
+    }
+  }
+  int numConfigArgs = (modeArgPos > 0) ? (modeArgPos - 1) : (argc - 1);
+  const char *requestTypeName = numConfigArgs >= 1 ? argv[1] : "GET_MOVE";
   if (!parseRequestType(requestTypeName, config.requestType)) {
     printf("Error: unknown request type %s (supported: GET_MOVE, GET_LOCK_VALUE_LOOKUP, "
            "GET_TOP_MOVES)\n",
@@ -484,18 +503,14 @@ int main(int argc, const char *argv[]) {
     return 1;
   }
   config.requestTypeName = requestTypeName;
-  config.playoutCount = argc > 2 ? atoi(argv[2]) : DEFAULT_PLAYOUT_COUNT;
-  config.playoutLength = argc > 3 ? atoi(argv[3]) : DEFAULT_PLAYOUT_LENGTH;
-  config.pruningBreadth = argc > 4 ? atoi(argv[4]) : DEFAULT_PRUNING_BREADTH;
-  config.startPos = argc > 5 ? atoi(argv[5]) : 1;
-  config.endPos = argc > 6 ? atoi(argv[6]) : 999999;
-  if (argc > 7) {
-    config.outputPath = argv[7];
-  } else {
-    // Default output: a new timestamped file per run in the results folder
+  config.playoutCount = numConfigArgs >= 2 ? atoi(argv[2]) : DEFAULT_PLAYOUT_COUNT;
+  config.playoutLength = numConfigArgs >= 3 ? atoi(argv[3]) : DEFAULT_PLAYOUT_LENGTH;
+  config.pruningBreadth = numConfigArgs >= 4 ? atoi(argv[4]) : DEFAULT_PRUNING_BREADTH;
+  // Default output: a new timestamped file per run in the results folder
+  {
     std::string typeLower = requestTypeName;
     std::transform(typeLower.begin(), typeLower.end(), typeLower.begin(),
-                   [](unsigned char c) { return std::tolower(c); });
+                   [](unsigned char c) { return (char)std::tolower(c); });
     time_t now = time(nullptr);
     char timestampBuffer[20];
     strftime(timestampBuffer, sizeof(timestampBuffer), "%Y%m%d_%H%M%S", localtime(&now));
@@ -505,12 +520,22 @@ int main(int argc, const char *argv[]) {
              config.playoutCount, config.playoutLength, config.pruningBreadth, timestampBuffer);
     config.outputPath = std::string(RESULTS_DIR) + "/" + nameBuffer;
   }
+  const char *mode = modeStr.c_str();
+  const char *benchmarkPath = BENCHMARK_PATH;
+  const char *oraclePath = ORACLE_PATH;
+  if (modeStr == "hard") {
+    benchmarkPath = "src/benchmark/data/hard_benchmark_positions.jsonl";
+    oraclePath = "src/benchmark/data/hard_oracle_positions.jsonl";
+  } else if (modeStr != "standard") {
+    printf("Error: unknown mode %s (supported: standard, hard)\n", mode);
+    return 1;
+  }
 
   // Load the benchmark positions and join with the oracle lines on index
-  std::ifstream benchIn(BENCHMARK_PATH);
-  std::ifstream oracleIn(ORACLE_PATH);
+  std::ifstream benchIn(benchmarkPath);
+  std::ifstream oracleIn(oraclePath);
   if (!benchIn.is_open() || !oracleIn.is_open()) {
-    printf("Error: could not open %s and/or %s\n", BENCHMARK_PATH, ORACLE_PATH);
+    printf("Error: could not open %s and/or %s\n", benchmarkPath, oraclePath);
     return 1;
   }
   std::string headerLine;
@@ -535,8 +560,6 @@ int main(int argc, const char *argv[]) {
       continue;
     BenchmarkPosition pos = {};
     pos.index = extractIntField(line, "index");
-    if (pos.index < config.startPos || pos.index > config.endPos)
-      continue;
     pos.board = extractStringField(line, "board");
     pos.level = extractIntField(line, "level");
     pos.lines = extractIntField(line, "lines");
@@ -594,7 +617,7 @@ int main(int argc, const char *argv[]) {
   for (auto &t : threads)
     t.join();
 
-  writeResultsFile(config, positions, oracles, results);
+  writeResultsFile(config, positions, oracles, results, oraclePath);
 
   auto timeEnd = std::chrono::steady_clock::now();
   printf("Time elapsed: %.1f seconds\n",

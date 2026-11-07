@@ -1,4 +1,4 @@
-// Samples a diverse 200-position benchmark subset from position_log.jsonl.
+// Samples a diverse 200-position benchmark subset from src/benchmark/data/position_log.jsonl.
 // Stratifies by gravity-relevant level groups (18 / 19-28), spreads samples
 // across board quality and situation type, and enforces a minimum move spacing
 // within each game to avoid near-duplicate positions.
@@ -7,10 +7,10 @@
 const fs = require('fs');
 const path = require('path');
 
-const INPUT_FILE = path.join(__dirname, 'position_log.jsonl');
-const OUTPUT_FILE = path.join(__dirname, 'benchmark_positions.jsonl');
+const INPUT_FILE = path.join(__dirname, 'data/position_log.jsonl');
+const OUTPUT_FILE = path.join(__dirname, 'data/benchmark_positions.jsonl');
 
-// NB: the current benchmark_positions.jsonl was further edited by hand after sampling:
+// NB: the current src/benchmark/data/benchmark_positions.jsonl was further edited by hand after sampling:
 // slot 125 (game 1, move 516) was all-dead per the oracle (every pair rated -3000), so it
 // was swapped for game 1, move 504 from the position log (shallowEval -532.9, survivable).
 // Re-running this sampler regenerates the original 200 without that swap.
