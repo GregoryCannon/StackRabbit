@@ -114,7 +114,7 @@ export class PreComputeManager {
 
     const defaultPlacement = possibleMoves[0] || null;
     if (defaultPlacement === null) {
-      onResultCallback("No legal moves A");
+      onResultCallback("none");
       return;
     }
 
@@ -280,7 +280,7 @@ export class PreComputeManager {
 
     console.log(this.minSafeDasChargeLookup);
 
-    let overallResponse: string = "No legal moves B";
+    let overallResponse: string = "none";
 
     console.log(this.results["L"]);
 
@@ -441,10 +441,15 @@ function formatPrecomputeResult(results, defaultPlacement: PossibilityChain, rea
          This can happen if the default move search keeps holding the dpad to charge DAS, but there's a tuck
          that would require the agent to let off the dpad to reset the self-imposed "input cooldown".
          */
-      if (defaultPlacement.inputSequence.length > reactionTime) {
+      /* NB: defaultPlacement is null exactly when reactionTime is 0 (the phantom
+         has no initial placement, only adjustments). In that case there is no
+         default line to keep playing, so fall through to "none". Previously this
+         crashed with a TypeError on reachable inputs (rt=0 + a piece whose
+         adjustments all miss the lock value lookup). */
+      if (defaultPlacement && defaultPlacement.inputSequence.length > reactionTime) {
         resultString += `\n${piece}:continue`;
       } else {
-        resultString += `\n${piece}:No legal moves C`;
+        resultString += `\n${piece}:none`;
       }
     } else {
       // Otherwise, add the real result

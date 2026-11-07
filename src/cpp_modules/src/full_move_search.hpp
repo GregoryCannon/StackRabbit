@@ -1,5 +1,5 @@
-#ifndef DAS_MOVE_SEARCH
-#define DAS_MOVE_SEARCH
+#ifndef FULL_MOVE_SEARCH
+#define FULL_MOVE_SEARCH
 
 #include "types.hpp"
 #include <string>
@@ -10,12 +10,14 @@
  *
  * A 1:1 port of the TS spawn-placement pipeline (move_search.ts + dfs.ts,
  * INITIAL_PLACEMENT path) mirroring per-goal frame simulation, midair dedup,
- * the fall phase, and depth-1 tuck/spin DFS. Tap mode (dasCharge < 0) never
- * enters this file -- the legacy walk-based search is untouched.
+ * the fall phase, and depth-1 tuck/spin DFS. Tap mode (dasCharge < 0) is not
+ * implemented in this file yet -- tap-mode support is planned as part of the
+ * precompute C++ migration (see docs/precompute_cpp_migration.md); the legacy
+ * walk-based search (fastMoveSearch) still serves tap mode.
  *
- * Deliberately a SEPARATE entry point from moveSearch(): DAS results carry
+ * Deliberately a SEPARATE entry point from fastMoveSearch(): DAS results carry
  * extra data (charge, sequence, line clears), and keeping LockPlacement /
- * moveSearch byte-identical protects the playout hot path from any struct
+ * fastMoveSearch byte-identical protects the playout hot path from any struct
  * growth (a +40-byte LockPlacement regressed the speed benchmark ~9%).
  */
 
@@ -37,8 +39,8 @@ struct DasPossibility {
  * @param trackInputSequences - when false, sequences are still tracked
  *   internally (tuck gating scans them) but not copied into the results.
  */
-int dasMoveSearch(GameState gameState, const Piece *piece, char const *inputFrameTimeline,
-                  int dasCharge, bool trackInputSequences,
-                  OUT std::vector<DasPossibility> &results);
+int fullMoveSearch(GameState gameState, const Piece *piece, char const *inputFrameTimeline,
+                   int dasCharge, bool trackInputSequences,
+                   OUT std::vector<DasPossibility> &results);
 
-#endif // DAS_MOVE_SEARCH
+#endif // FULL_MOVE_SEARCH

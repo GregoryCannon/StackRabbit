@@ -6,8 +6,8 @@
 //   ./build/fixture_dump --all    every fixture (tap fixtures print empty sequences)
 //   ./build/fixture_dump 3 17     specific fixture indexes
 //
-// Tap fixtures use the legacy walk-based moveSearch (no sequences -- they are
-// derivable downstream in tap mode). DAS fixtures use dasMoveSearch with
+// Tap fixtures use the legacy walk-based fastMoveSearch (no sequences -- they
+// are derivable downstream in tap mode). DAS fixtures use fullMoveSearch with
 // sequence tracking enabled.
 //
 // Consumed by `npm run fuzz_verify_sequences` (src/server/move_search_fuzz_verify.js).
@@ -53,7 +53,7 @@ static void dumpFixture(int idx) {
   std::vector<std::string> rows;
   if (f.dasCharge == -1) {
     std::vector<LockPlacement> locks;
-    moveSearch(gameState, piece, FIXTURE_TIMELINE_POOL[f.timelineIdx], locks);
+    fastMoveSearch(gameState, piece, FIXTURE_TIMELINE_POOL[f.timelineIdx], locks);
     for (const LockPlacement &lp : locks) {
       char buf[128];
       snprintf(buf, sizeof(buf), "r%d x%d y%d c%d k%d seq=", lp.rotationIndex, lp.x, lp.y, -1,
@@ -62,8 +62,8 @@ static void dumpFixture(int idx) {
     }
   } else {
     std::vector<DasPossibility> results;
-    dasMoveSearch(gameState, piece, FIXTURE_TIMELINE_POOL[f.timelineIdx], f.dasCharge,
-                  /*trackInputSequences=*/true, results);
+    fullMoveSearch(gameState, piece, FIXTURE_TIMELINE_POOL[f.timelineIdx], f.dasCharge,
+                   /*trackInputSequences=*/true, results);
     for (const DasPossibility &p : results) {
       char buf[128];
       snprintf(buf, sizeof(buf), "r%d x%d y%d c%d k%d seq=", p.rotationIndex, p.x, p.y,

@@ -1,5 +1,5 @@
 #include "high_level_search.hpp"
-#include "das_move_search.hpp"
+#include "full_move_search.hpp"
 #include "formatting.hpp"
 #include "params.hpp"
 #include "tournament_search.hpp"
@@ -68,8 +68,8 @@ void partiallySortPossibilityList(list<Possibility> &possibilityList, int prunin
 int searchDepth1(GameState gameState, const Piece *firstPiece, const EvalContext *evalContext,
                  OUT list<Possibility> &possibilityList, bool generateExplanation) {
   vector<LockPlacement> firstLockPlacements;
-  moveSearch(gameState, firstPiece, evalContext->pieceRangeContext.inputFrameTimeline,
-             firstLockPlacements);
+  fastMoveSearch(gameState, firstPiece, evalContext->pieceRangeContext.inputFrameTimeline,
+                 firstLockPlacements);
   for (auto it = begin(firstLockPlacements); it != end(firstLockPlacements); ++it) {
     LockPlacement firstPlacement = *it;
 
@@ -101,7 +101,7 @@ int searchDepth1(GameState gameState, const Piece *firstPiece, const EvalContext
 /** Searches 2-ply from a starting state, and performs a fast eval on each of the resulting states.
  * @returns an UNSORTED list of evaluated possibilities (0 if the arguments are invalid)
  * @param dasCharge - the first piece's incoming DAS charge: -1 = tap mode, 0..16 = DAS
- *   mode (searches run through dasMoveSearch on dasInputFrameTimeline, the player's real
+ *   mode (searches run through fullMoveSearch on dasInputFrameTimeline, the player's real
  *   timeline). In DAS mode the second piece inherits each first placement's dasChargeAfter.
  * @param secondPieceDasCharge - DAS bucket mode: prescribes the SECOND piece's starting
  *   charge instead of inheriting it (the first piece is then always searched from a full
@@ -133,7 +133,7 @@ int searchDepth2(GameState gameState, const Piece *firstPiece, const Piece *seco
   const bool useDas = dasCharge >= 0 || secondPieceDasCharge >= 0;
 
   // Get the placements of the first piece. In DAS mode the results come out of
-  // dasMoveSearch as DasPossibilities and are converted BY VALUE into
+  // fullMoveSearch as DasPossibilities and are converted BY VALUE into
   // LockPlacements -- LockPlacement itself is unchanged (a struct edit regressed
   // the playout benchmark once already; see TESTING.md's benchmarking methodology).
   vector<LockPlacement> firstLockPlacements;
@@ -146,8 +146,8 @@ int searchDepth2(GameState gameState, const Piece *firstPiece, const Piece *seco
     // full charge so every bucket/deep lookup enumerates the same set of lock cells.
     int firstPieceDasCharge = secondPieceDasCharge >= 0 ? DAS_CHARGE_MAX : dasCharge;
     vector<DasPossibility> firstDasPossibilities;
-    dasMoveSearch(gameState, firstPiece, dasInputFrameTimeline, firstPieceDasCharge,
-                  /* trackInputSequences= */ false, firstDasPossibilities);
+    fullMoveSearch(gameState, firstPiece, dasInputFrameTimeline, firstPieceDasCharge,
+                   /* trackInputSequences= */ false, firstDasPossibilities);
     for (DasPossibility const &dasPossibility : firstDasPossibilities) {
       firstLockPlacements.push_back({dasPossibility.x, dasPossibility.y,
                                      dasPossibility.rotationIndex, -1, dasPossibility.tuckInput,
@@ -155,8 +155,8 @@ int searchDepth2(GameState gameState, const Piece *firstPiece, const Piece *seco
       firstDasChargeAfters.push_back(dasPossibility.dasChargeAfter);
     }
   } else {
-    moveSearch(gameState, firstPiece, evalContext->pieceRangeContext.inputFrameTimeline,
-               firstLockPlacements);
+    fastMoveSearch(gameState, firstPiece, evalContext->pieceRangeContext.inputFrameTimeline,
+                   firstLockPlacements);
   }
   int firstPlacementIndex = -1;
   for (auto it = begin(firstLockPlacements); it != end(firstLockPlacements); ++it) {
@@ -192,17 +192,17 @@ int searchDepth2(GameState gameState, const Piece *firstPiece, const Piece *seco
       int effectiveSecondPieceDasCharge = secondPieceDasCharge >= 0
                                               ? secondPieceDasCharge
                                               : firstDasChargeAfters[firstPlacementIndex];
-      dasMoveSearch(afterFirstMove, secondPiece, dasInputFrameTimeline,
-                    effectiveSecondPieceDasCharge,
-                    /* trackInputSequences= */ false, secondDasPossibilities);
+      fullMoveSearch(afterFirstMove, secondPiece, dasInputFrameTimeline,
+                     effectiveSecondPieceDasCharge,
+                     /* trackInputSequences= */ false, secondDasPossibilities);
       for (DasPossibility const &dasPossibility : secondDasPossibilities) {
         secondLockPlacements.push_back({dasPossibility.x, dasPossibility.y,
                                         dasPossibility.rotationIndex, -1, dasPossibility.tuckInput,
                                         secondPiece});
       }
     } else {
-      moveSearch(afterFirstMove, secondPiece, evalContext->pieceRangeContext.inputFrameTimeline,
-                 secondLockPlacements);
+      fastMoveSearch(afterFirstMove, secondPiece, evalContext->pieceRangeContext.inputFrameTimeline,
+                     secondLockPlacements);
     }
 
     for (auto secondPlacement : secondLockPlacements) {

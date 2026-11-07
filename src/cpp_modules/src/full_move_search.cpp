@@ -1,4 +1,4 @@
-#include "das_move_search.hpp"
+#include "full_move_search.hpp"
 
 #include "utils.hpp"
 #include <algorithm>
@@ -629,9 +629,9 @@ static void dasDedupeLockPossibilities(std::vector<DasPossibility> &list) {
   }
 }
 
-int dasMoveSearch(GameState gameState, const Piece *piece, char const *inputFrameTimeline,
-                  int dasCharge, bool trackInputSequences,
-                  OUT std::vector<DasPossibility> &results) {
+int fullMoveSearch(GameState gameState, const Piece *piece, char const *inputFrameTimeline,
+                   int dasCharge, bool trackInputSequences,
+                   OUT std::vector<DasPossibility> &results) {
   const int gravity = getGravity(gameState.level);
   const bool gravityDoubled = isGravityDoubled(gameState.level);
   const int numOrientations = dasNumOrientations(piece);

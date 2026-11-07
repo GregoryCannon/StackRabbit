@@ -372,8 +372,8 @@ int moveSearchInternal(GameState gameState, SimState spawnState, const Piece *pi
   return (int)lockPlacements.size();
 }
 
-int moveSearch(GameState gameState, const Piece *piece, char const *inputFrameTimeline,
-               OUT std::vector<LockPlacement> &lockPlacements) {
+int fastMoveSearch(GameState gameState, const Piece *piece, char const *inputFrameTimeline,
+                   OUT std::vector<LockPlacement> &lockPlacements) {
   SimState spawnState = {INITIAL_X,           piece->initialY,   /* rotationIndex= */ 0,
                          /* frameIndex= */ 0, /* arrIndex= */ 0, piece};
   return moveSearchInternal(gameState, spawnState, piece, inputFrameTimeline, lockPlacements);

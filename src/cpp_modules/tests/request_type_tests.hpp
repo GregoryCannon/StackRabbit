@@ -134,7 +134,7 @@ TEST_CASE("GET_LOCK_VALUE_LOOKUP_DAS returns an array of three maps") {
 TEST_CASE("GET_LOCK_VALUE_LOOKUP_DAS keeps its 3-map shape in DAS mode (dasCharge >= 0)") {
   // The bucket structure is charge-agnostic (the buckets exist precisely because
   // the player's charge is unknown); dasCharge only tells the C++ side that DAS
-  // mode is active so the searches run through dasMoveSearch.
+  // mode is active so the searches run through fullMoveSearch.
   for (int dasCharge : {0, 5, 10, 16}) {
     auto input = InputBuilder()
                      .withBoard1(makeFlatBoard(4))

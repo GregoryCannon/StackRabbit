@@ -10,7 +10,7 @@ Read alongside [TESTING.md](TESTING.md) (test layout, input-format contract) and
 - `npm run fuzz_verify_sequences` — TS↔C++ DAS move-search equivalence (character-exact sequences)
 - `npx tsc`
 - `npm run move_test`
-- `npm run cpp_test` — node-gyp rebuild + live addon call
+- `npm start` - ensure that it prints "Listening on port 3000" after a few seconds
 
 NB: a long-running dev server keeps the OLD addon mapped in memory — `node-gyp build`
 on disk does not update it. Restart the server to test new code, and don't mistake

@@ -277,7 +277,7 @@ function parseGameStateFromResponse(apiResult)
   if (apiResult == nil) then
     error("apiResult was nil")
   end
-  if apiResult == "No legal moves C" or apiResult == "continue" then
+  if apiResult == "none" or apiResult == "continue" then
     return
   end
 
@@ -314,7 +314,7 @@ end
 ------------------------------------]]--
 
 function calculateInputs(apiResult, isAdjustment)
-  if apiResult == "No legal moves C" or apiResult == nil then
+  if apiResult == "none" or apiResult == nil then
     if REACTION_TIME_FRAMES == 0 then
       -- Game is over when there is no placement for a new piece
       print("GAME OVER: No adjustment")

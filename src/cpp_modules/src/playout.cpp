@@ -52,8 +52,8 @@ float playSequence(GameState gameState, const PieceRangeContext pieceRangeContex
     // Get the lock placements
     std::vector<LockPlacement> lockPlacements;
     Piece piece = PIECE_LIST[pieceSequence[i]];
-    moveSearch(gameState, &piece, evalContext->pieceRangeContext.inputFrameTimeline,
-               lockPlacements);
+    fastMoveSearch(gameState, &piece, evalContext->pieceRangeContext.inputFrameTimeline,
+                   lockPlacements);
 
     if (lockPlacements.size() == 0) {
       return weights.deathCoef;

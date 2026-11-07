@@ -61,7 +61,7 @@ keyed by lock position.
 
 ## Where DAS is modeled exactly vs approximated
 
-- **Exact**: `das_move_search.cpp` — the DAS move search used for both pieces of the DAS
+- **Exact**: `full_move_search.cpp` — the DAS move search used for both pieces of the DAS
   endpoint's 2-ply searches (per-goal frame simulation, midair dedup, fall phase with
   wall charges, depth-1 tuck/spin DFS).
 - **Approximated**: `PieceRangeContext`, eval, and playouts simulate future pieces as

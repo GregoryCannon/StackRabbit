@@ -121,7 +121,7 @@ static std::vector<FuzzEntry> runCppMoveSearch(const MoveSearchFixture &f) {
   if (f.dasCharge == -1) {
     // Tap mode: the legacy walk-based search (untouched by the DAS port)
     std::vector<LockPlacement> lockPlacements;
-    moveSearch(gameState, piece, FIXTURE_TIMELINE_POOL[f.timelineIdx], lockPlacements);
+    fastMoveSearch(gameState, piece, FIXTURE_TIMELINE_POOL[f.timelineIdx], lockPlacements);
     out.reserve(lockPlacements.size());
     for (const LockPlacement &lp : lockPlacements) {
       out.push_back(
@@ -130,8 +130,8 @@ static std::vector<FuzzEntry> runCppMoveSearch(const MoveSearchFixture &f) {
   } else {
     // DAS mode: the per-goal pipeline (returns DasPossibility with charge/cost directly)
     std::vector<DasPossibility> results;
-    dasMoveSearch(gameState, piece, FIXTURE_TIMELINE_POOL[f.timelineIdx], f.dasCharge,
-                  /*trackInputSequences=*/false, results);
+    fullMoveSearch(gameState, piece, FIXTURE_TIMELINE_POOL[f.timelineIdx], f.dasCharge,
+                   /*trackInputSequences=*/false, results);
     out.reserve(results.size());
     for (const DasPossibility &p : results) {
       out.push_back({p.rotationIndex, p.x, p.y, p.dasChargeAfter, p.inputCostX10});

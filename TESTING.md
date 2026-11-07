@@ -120,9 +120,9 @@ input-string encoder so tests read like the calls they exercise.
 ## TS oracle fuzz fixtures (DAS move search)
 
 `npm run fuzz_generate` generates ~800 randomized board/timeline/level fixtures
-through the TypeScript `dasMoveSearch` (the reference implementation) and writes
+through the TypeScript `fullMoveSearch` (the reference implementation) and writes
 them to `src/server/move_search_fixtures.json`. The C++ doctest suite replays
-them via `dasMoveSearch` and compares the full (rotationIndex, x, y,
+them via `fullMoveSearch` and compares the full (rotationIndex, x, y,
 dasChargeAfter, inputCostX10) multiset.
 
 `npm run fuzz_verify_sequences` is a second, stronger gate: it compiles
@@ -138,6 +138,38 @@ Fixture coverage axes: all 7 pieces; `dasCharge ∈ {0..16}` with emphasis on
 adjacency, and near-ceiling spawns; zero-shift and max-shift placements. The
 fixtures are generated with a fixed seed, so `npm run fuzz_generate` is
 byte-stable — commit the diff if TS semantics change intentionally.
+
+## Precompute golden fixtures (full-request parity oracle)
+
+`npm run precompute_fixture_generate` drives the **real TS precompute path**
+(`RequestHandler.handlePrecomputeRequestSync` with a live `PreComputeManager`)
+over positions from `src/benchmark/data/position_log.jsonl` and writes
+`src/server/data/precompute_fixtures.jsonl` — the exact request parameters plus
+the verbatim output string per fixture. This is the parity oracle for the C++
+precompute port (see docs/precompute_cpp_migration.md, Phase 3 differential
+harness): the C++ implementation must reproduce each output byte-for-byte.
+
+Design notes:
+
+- Two tiers: **eval_only** (3428 fixtures, `playoutCount=0&playoutLength=0` —
+  fast, still exercises the full pipeline) and **production** (42 fixtures with
+  default engine params 49/2/20/safe).
+- Each logged position contributes 2 fixtures with cycled `(reactionTime,
+  dasCharge)` combos (rt ∈ {0, 8, 20}; dasCharge ∈ {-1, 0, 5, 10, 15, 16}) and
+  a cycled current piece; the logged `nextPiece` is ignored (precompute
+  searches all 7 next pieces).
+- Coverage quotas are hard-asserted by the generator (per-piece, per-rt,
+  per-dasCharge, per-combo floors; `continue` lines; per-piece `none` lines;
+  whole-response `none`; default placements). Synthetic fixtures are appended
+  only when a category is unreachable from the log.
+- Generation is deterministic (fixed seed, no timestamps): two runs must be
+  byte-identical. Commit the diff if TS precompute semantics change
+  intentionally.
+- Known pre-existing corner, now guarded in TS: with `reactionTime=0`, a piece
+  whose adjustments all miss the lock value lookup used to throw a TypeError
+  in `formatPrecomputeResult` (null `defaultPlacement`); it now emits the
+  normal per-piece `none` fallback. The C++ port must reproduce the guarded
+  behavior.
 
 ## Benchmarking methodology
 
