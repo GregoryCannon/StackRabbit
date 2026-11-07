@@ -169,11 +169,12 @@ TEST_CASE("GET_LOCK_VALUE_LOOKUP_DAS penalties never reward losing DAS (regressi
   // applied its under-overhang surface clamp to tuck placements, so the plain
   // drop's surface was pushed below the overhang and the cavity it leaves was
   // never counted -- the identical board scored ~1.3 partial holes BETTER in the
-  // low-charge buckets, producing positive penalties (+32.05 / +150.05).
-  // Penalties are added to lock values by the TS consumer (getDasPenalty in
-  // precompute.ts), so a positive penalty rewards losing DAS. The clamp now
-  // applies to every placement (a piece can never lower a column's surface),
-  // making the eval path-independent for the same board.
+  // low-charge buckets, producing positive penalties (+32.05 / +150.05). Fixed at
+  // the source by clamping the surface in getNewSurfaceAndNumNewHoles for every
+  // placement (a piece can never lower a column's surface), making the eval
+  // path-independent for the same board. The penalty maps also clamp deltas at
+  // zero (out-of-scope maneuvers must not be rewarded), which is why the
+  // endpoint-level assertion below is <= 0 either way.
   auto input = InputBuilder()
                    .withBoard1("00000000000000000000000000000000000000000000000000"
                        "00000000000000000000000000000000000000000000000000"
@@ -205,6 +206,47 @@ TEST_CASE("GET_LOCK_VALUE_LOOKUP_DAS penalties never reward losing DAS (regressi
   // The reported regression key must not carry a positive penalty in either map.
   CHECK(lookupMapValue(partialPenalties, "3|-2|9") <= 0.0f);
   CHECK(lookupMapValue(minPenalties, "3|-2|9") <= 0.0f);
+}
+
+TEST_CASE("GET_LOCK_VALUE_LOOKUP_DAS clamps out-of-scope maneuver deltas to zero") {
+  // The min-charge (5) bucket can reach maneuvers the full-charge search cannot,
+  // via the DAS-reset stair-step (the first shift happens at spawn but resets the
+  // charge to 0, so the piece descends deep between column crossings). On this
+  // board that finds a Z tuck under the first piece's overhang (second cell
+  // (1,-1,12)) that fills ~3.2 partial holes -- an eval ~146 points better than
+  // anything full charge can do for first lock cell "0|-1|9", i.e. a POSITIVE
+  // penalty of +146.62. These are valid-but-out-of-scope maneuvers (double-tuck
+  // chains the engine deliberately omits), so the maps clamp the delta at zero
+  // instead of rewarding them -- and the request must complete rather than throw
+  // (an earlier fail-fast guard threw here).
+  auto input = InputBuilder()
+                   .withBoard1("00000000000000000000000000000000000000000000000000"
+                       "00000000000000000000000000000000000000000000000000"
+                       "00000000000000000000100000000010000000001010010000"
+                       "11111110001111111110111111111011111111101111111110")
+                   .withLevel(19)
+                   .withLines(6)
+                   .withCurPiece(IDX_S)
+                   .withNextPiece(IDX_Z)
+                   .withTimeline("X..")
+                   .withPlayoutCount(0) // penalty maps are eval-only regardless of budget
+                   .withPruningBreadth(102)
+                   .withAggression("aggro")
+                   .withDasCharge(16)
+                   .build();
+  std::string output = runRequest(GET_LOCK_VALUE_LOOKUP_DAS, input);
+
+  REQUIRE(output.size() >= 2);
+  REQUIRE(output[0] == '[');
+  REQUIRE(output[output.size() - 1] == ']');
+  size_t sep1 = output.find(",\n");
+  size_t sep2 = output.find(",\n", sep1 + 1);
+  REQUIRE(sep1 != std::string::npos);
+  REQUIRE(sep2 != std::string::npos);
+  std::string partialPenalties = output.substr(1, sep1 - 1);
+  std::string minPenalties = output.substr(sep1 + 2, sep2 - sep1 - 2);
+  // The stair-step tuck inflated the min-charge delta to +146.62; it must be clamped.
+  CHECK(lookupMapValue(minPenalties, "0|-1|9") == 0.0f);
 }
 
 TEST_CASE("GET_MOVE_AB_TEST always reports agree/disagree with an explanation") {
