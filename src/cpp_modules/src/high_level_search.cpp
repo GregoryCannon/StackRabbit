@@ -5,6 +5,7 @@
 #include "tournament_search.hpp"
 #include <limits>
 #include <math.h>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 using namespace std;
@@ -871,6 +872,17 @@ std::string getLockValueLookupDas(GameState gameState, const Piece *firstPiece,
     }
     float penaltyPartial = shallowMapPartialCharge.at(key) - value;
     float penaltyMin = shallowMapMinCharge.at(key) - value;
+
+    // Throw an exception if either penalty is positive (it should always be 0 or negative)
+    if (penaltyPartial > FLOAT_EPSILON || penaltyMin > FLOAT_EPSILON) {
+      char errorBuf[200];
+      snprintf(errorBuf, sizeof(errorBuf),
+               "Error: positive DAS penalty for lock position %s (partial charge: %.2f, min "
+               "charge: %.2f). Penalties must be non-positive.",
+               key.c_str(), penaltyPartial, penaltyMin);
+      throw std::runtime_error(errorBuf);
+    }
+
     shallowMapPartialCharge[key] = penaltyPartial;
     shallowMapMinCharge[key] = penaltyMin;
   }

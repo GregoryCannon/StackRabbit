@@ -14,7 +14,16 @@ NAN_METHOD(GetLockValueLookupDas) {
   Nan::Utf8String utf8Value(inputStrNan);
   char const *inputStr = *utf8Value;
 
-  std::string result = mainProcess(inputStr, GET_LOCK_VALUE_LOOKUP_DAS);
+  // The engine throws std::runtime_error on internal invariant violations (e.g. the
+  // positive-DAS-penalty guard in getLockValueLookupDas). Convert to a JS error so
+  // the request fails loudly with the diagnostic message while the server survives.
+  std::string result;
+  try {
+    result = mainProcess(inputStr, GET_LOCK_VALUE_LOOKUP_DAS);
+  } catch (const std::exception &e) {
+    Nan::ThrowError(e.what());
+    return;
+  }
 
   info.GetReturnValue().Set(Nan::New<String>(result.c_str()).ToLocalChecked());
 }

@@ -151,6 +151,62 @@ TEST_CASE("GET_LOCK_VALUE_LOOKUP_DAS keeps its 3-map shape in DAS mode (dasCharg
   }
 }
 
+/** Extracts the numeric value stored for `key` in a "{...}" penalty/value map. */
+static float lookupMapValue(const std::string &mapJson, const std::string &key) {
+  size_t keyPos = mapJson.find("\"" + key + "\":");
+  REQUIRE(keyPos != std::string::npos);
+  size_t valueStart = keyPos + key.size() + 3; // skip "key":
+  size_t valueEnd = mapJson.find_first_of(",}", valueStart);
+  REQUIRE(valueEnd != std::string::npos);
+  return std::stof(mapJson.substr(valueStart, valueEnd - valueStart));
+}
+
+TEST_CASE("GET_LOCK_VALUE_LOOKUP_DAS penalties never reward losing DAS (regression)") {
+  // Reproduces a positive-penalty report: for the first lock cell "3|-2|9" the
+  // full-charge bucket reached the second cell (3,-1,12) as a TUCK while the
+  // partial/min-charge buckets reached the identical cell as a plain DAS drop
+  // that slid under the first piece's overhang mid-fall. advanceGameState only
+  // applied its under-overhang surface clamp to tuck placements, so the plain
+  // drop's surface was pushed below the overhang and the cavity it leaves was
+  // never counted -- the identical board scored ~1.3 partial holes BETTER in the
+  // low-charge buckets, producing positive penalties (+32.05 / +150.05).
+  // Penalties are added to lock values by the TS consumer (getDasPenalty in
+  // precompute.ts), so a positive penalty rewards losing DAS. The clamp now
+  // applies to every placement (a piece can never lower a column's surface),
+  // making the eval path-independent for the same board.
+  auto input = InputBuilder()
+                   .withBoard1("00000000000000000000000000000000000000000000000000"
+                       "00000000000000000000000000000000000000000000000000"
+                       "00000000000000001000100001110010000111001000011100"
+                       "10111111001111111110111111111011111111101111111110")
+                   .withLevel(19)
+                   .withLines(22)
+                   .withCurPiece(IDX_J)
+                   .withNextPiece(IDX_L)
+                   .withTimeline("X..")
+                   .withPlayoutCount(0) // penalty maps are built from 0-playout shallow
+                                        // lookups regardless of the budget, so this
+                                        // still exercises the bucket math cheaply
+                   .withPruningBreadth(102)
+                   .withAggression("aggro")
+                   .withDasCharge(16)
+                   .build();
+  std::string output = runRequest(GET_LOCK_VALUE_LOOKUP_DAS, input);
+
+  REQUIRE(output.size() >= 2);
+  REQUIRE(output[0] == '[');
+  REQUIRE(output[output.size() - 1] == ']');
+  size_t sep1 = output.find(",\n");
+  size_t sep2 = output.find(",\n", sep1 + 1);
+  REQUIRE(sep1 != std::string::npos);
+  REQUIRE(sep2 != std::string::npos);
+  std::string partialPenalties = output.substr(1, sep1 - 1);
+  std::string minPenalties = output.substr(sep1 + 2, sep2 - sep1 - 2);
+  // The reported regression key must not carry a positive penalty in either map.
+  CHECK(lookupMapValue(partialPenalties, "3|-2|9") <= 0.0f);
+  CHECK(lookupMapValue(minPenalties, "3|-2|9") <= 0.0f);
+}
+
 TEST_CASE("GET_MOVE_AB_TEST always reports agree/disagree with an explanation") {
   auto input = InputBuilder().build();
   std::string output = runRequest(GET_MOVE_AB_TEST, input);

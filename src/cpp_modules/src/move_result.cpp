@@ -139,11 +139,11 @@ std::pair<int, float> getNewSurfaceAndNumNewHoles(int surfaceArray[10], unsigned
     }
   }
 
-  // Adjust for the fact that tucks can place a piece UNDER the existing surface
-  if (isTuck) {
-    for (int i = 0; i < 10; i++) {
-      newSurface[i] = std::max(surfaceArray[i], newSurface[i]);
-    }
+  // Adjust for the fact that a piece placement can never LOWER a column's surface. The clamp
+  // matters when the piece ends up UNDER an existing overhang, which is not limited to tucks (if
+  // the exact tap/DAS speed limit ends up tapping a piece horizontally under an overhang).
+  for (int i = 0; i < 10; i++) {
+    newSurface[i] = std::max(surfaceArray[i], newSurface[i]);
   }
 
   // Check for new holes by comparing the bottom surface of the piece to the surface of the stack
