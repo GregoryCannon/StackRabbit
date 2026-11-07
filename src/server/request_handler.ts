@@ -70,12 +70,6 @@ export class RequestHandler {
           return ["No previous async request has been made", 404]; // Not found
         }
 
-      case "engine-movelist-cpp":
-        return [this.handleCppLookupTopMoves(searchState, urlArgs), 200];
-
-      case "engine-movelist-cpp-hybrid":
-        return [this.handleCppLookupTopMovesHybrid(searchState, urlArgs), 200];
-
       case "get-move-cpp":
         return [this.getMoveSync(searchState, urlArgs), 200];
 
@@ -85,27 +79,12 @@ export class RequestHandler {
       case "get-move-async-cpp":
         return this._wrapAsync(() => this.getMoveSync(searchState, urlArgs));
 
-      case "rate-move-cpp":
-        return [this.handleCppRateMove(searchState, urlArgs), 200];
-
       case "precompute":
-        if (!this.preComputeManager) {
-          return [
-            "Precompute requests are not supported on this server instance.",
-            200,
-          ];
-        }
         return this._wrapAsync(() =>
           this.handlePrecomputeRequest(searchState, urlArgs)
         );
 
       case "precompute-sync":
-        if (!this.preComputeManager) {
-          return [
-            "Precompute requests are not supported on this server instance.",
-            200,
-          ];
-        }
         const result = await this.handlePrecomputeRequestSync(
           searchState,
           urlArgs
@@ -114,7 +93,7 @@ export class RequestHandler {
 
       default:
         return [
-          "Please specify the request type, e.g. 'get-move' or 'rate-move'. Received: " +
+          "Unknown request type. Received: " +
           requestType,
           200,
         ];
