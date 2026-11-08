@@ -27,11 +27,36 @@ std::string getLockValueLookupEncoded(GameState gameState, const Piece *firstPie
                                       const EvalContext *evalContext,
                                       const PieceRangeContext pieceRangeContextLookup[3]);
 
+/**
+ * The three value maps behind a DAS lock value lookup: the partial-charge and
+ * min-charge penalty maps (relative to full charge, clamped at zero) and the
+ * deep lock value map. Returned directly so in-process consumers can use the
+ * maps without re-parsing generated JSON.
+ */
+struct DasLockValueMaps {
+  std::unordered_map<std::string, float> partialPenalty;
+  std::unordered_map<std::string, float> minPenalty;
+  std::unordered_map<std::string, float> lockValue;
+};
+
+DasLockValueMaps getLockValueLookupDasMaps(GameState gameState, const Piece *firstPiece,
+                                           const Piece *secondPiece, int pruningBreadth,
+                                           int playoutCount, int playoutLength,
+                                           char const *dasInputFrameTimeline,
+                                           const EvalContext *evalContext,
+                                           const PieceRangeContext pieceRangeContextLookup[3]);
+
 std::string getLockValueLookupDas(GameState gameState, const Piece *firstPiece,
                                   const Piece *secondPiece, int pruningBreadth, int playoutCount,
                                   int playoutLength, char const *dasInputFrameTimeline,
                                   const EvalContext *evalContext,
                                   const PieceRangeContext pieceRangeContextLookup[3]);
+
+unordered_map<string, float> getLockValueLookupMapped(GameState gameState, const Piece *firstPiece,
+                                                      const Piece *secondPiece, int pruningBreadth,
+                                                      int playoutCount, int playoutLength,
+                                                      const EvalContext *evalContext,
+                                                      const PieceRangeContext pieceRangeContextLookup[3]);
 
 int searchDepth1(GameState gameState, const Piece *firstPiece, const EvalContext *evalContext,
                  OUT std::list<Possibility> &possibilityList, bool generateExplanation = false);

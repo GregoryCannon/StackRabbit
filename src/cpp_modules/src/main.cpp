@@ -18,6 +18,7 @@
 #include "piece_ranges.cpp"
 #include "playout.cpp"
 #include "high_level_search.cpp"
+#include "precompute.cpp"
 #include "tournament_search.cpp"
 #include "piece_rng.cpp"
 // #include "../data/ranks_output.cpp"
@@ -75,6 +76,9 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
   // (byte-identical to the legacy 9-field format); 0..16 = the player is holding
   // DAS with this much charge. The field is mandatory -- see TESTING.md's input format.
   int dasCharge = -1;
+  // Field 11, present only on PRECOMPUTE requests: the frames the player has to
+  // react. 0..60, where 0 means the piece is still unplaced at the reaction time.
+  int reactionTime = 0;
 
   // Loop through the other args
   std::string nonBoardInputString;
@@ -136,7 +140,7 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
   // atoi("")->0 would otherwise play the I piece for a missing currentPiece, an
   // empty timeline makes the engine never tap (x % 0), and stale defaults can
   // silently kick off an expensive search.
-  bool fieldProvided[10] = {};
+  bool fieldProvided[11] = {};
   for (int i = 0; end != std::string::npos; i++) {
     std::string arg = nonBoardInputString.substr(start, end - start);
     int argAsInt = atoi(arg.c_str());
@@ -146,12 +150,19 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
       if (!isIntegerString(arg)) {
         return "Error: invalid level value (expected an integer): " + arg;
       }
+      if (argAsInt < 18) {
+        return "Error: currently only 18, 19, and 29 starts are supported by StackRabbit. Requested: "
+               + arg;
+      }
       startingGameState.level = argAsInt;
       fieldProvided[0] = true;
       break;
     case 1:
       if (!isIntegerString(arg)) {
         return "Error: invalid lines value (expected an integer): " + arg;
+      }
+      if (argAsInt < 0) {
+        return "Error: invalid line count: " + arg;
       }
       startingGameState.lines = argAsInt;
       fieldProvided[1] = true;
@@ -163,6 +174,9 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
       if (argAsInt == -1) {
         return "Error: please provide a value for currentPiece.";
       }
+      if (argAsInt < 0 || argAsInt > 6) {
+        return "Error: unknown current piece: " + arg;
+      }
       curPiece = &(PIECE_LIST[argAsInt]);
       fieldProvided[2] = true;
       break;
@@ -173,6 +187,9 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
       if (argAsInt == -1) {
         nextPiece = NULL;
       } else {
+        if (argAsInt < 0 || argAsInt > 6) {
+          return "Error: unknown next piece: " + arg;
+        }
         nextPiece = &(PIECE_LIST[argAsInt]);
       }
       fieldProvided[3] = true;
@@ -195,12 +212,18 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
       if (!isIntegerString(arg)) {
         return "Error: invalid playoutCount value (expected an integer): " + arg;
       }
+      if (argAsInt < 0) {
+        return "Error: invalid playout count: " + arg;
+      }
       playoutCount = argAsInt;
       fieldProvided[5] = true;
       break;
     case 6:
       if (!isIntegerString(arg)) {
         return "Error: invalid playoutLength value (expected an integer): " + arg;
+      }
+      if (argAsInt < 0 || argAsInt > 20) {
+        return "Error: invalid playout length (max is 20): " + arg;
       }
       playoutLength = argAsInt;
       fieldProvided[6] = true;
@@ -210,6 +233,9 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
       // per-candidate count; see getLockValueLookupTournament in tournament_search.cpp)
       if (!isIntegerString(arg)) {
         return "Error: invalid pruningBreadth value (expected an integer): " + arg;
+      }
+      if (argAsInt < -1 || argAsInt > 1156) {
+        return "Error: invalid pruning breadth (max is 1156, or 34x34): " + arg;
       }
       pruningBreadth = argAsInt;
       fieldProvided[7] = true;
@@ -233,8 +259,25 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
       if (!isIntegerString(arg)) {
         return "Error: invalid dasCharge value (expected -1 or 0-16): " + arg;
       }
+      if (argAsInt < -1 || argAsInt > 16) {
+        return "Error: illegal DAS charge (expected -1 for tap mode, or 0-16): " + arg;
+      }
       dasCharge = argAsInt;
       fieldProvided[9] = true;
+      break;
+    case 10:
+      if (requestType != PRECOMPUTE) {
+        break; // other request types ignore trailing fields
+      }
+      if (!isIntegerString(arg)) {
+        return "Error: invalid reactionTime value (expected an integer between 0 and 60): " + arg;
+      }
+      if (argAsInt < 0 || argAsInt > 60) {
+        return "Error: reaction time exceeds the maximum possible of 60 frames. Did you "
+               "accidentally send it in milliseconds? " + arg;
+      }
+      reactionTime = argAsInt;
+      fieldProvided[10] = true;
       break;
     default:
       break;
@@ -243,13 +286,28 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
     start = (int)end + (int)delim.length();
     end = nonBoardInputString.find(delim, start);
   }
-  // All ten non-board fields are mandatory (dasCharge uses -1 for tap mode).
-  char const *fieldNames[10] = {
+  // All ten non-board fields are mandatory (dasCharge uses -1 for tap mode);
+  // PRECOMPUTE additionally requires the reaction time as field 11.
+  char const *fieldNames[11] = {
       "level",        "lines",         "currentPiece",   "nextPiece",       "inputFrameTimeline",
-      "playoutCount", "playoutLength", "pruningBreadth", "aggressionLevel", "dasCharge"};
-  for (int i = 0; i < 10; i++) {
+      "playoutCount", "playoutLength", "pruningBreadth", "aggressionLevel", "dasCharge",
+      "reactionTime"};
+  const int requiredFields = requestType == PRECOMPUTE ? 11 : 10;
+  for (int i = 0; i < requiredFields; i++) {
     if (!fieldProvided[i]) {
       return std::string("Error: please provide a value for ") + fieldNames[i] + ".";
+    }
+  }
+  if (requestType == PRECOMPUTE) {
+    // In tournament mode (pruningBreadth == -1) the count is the total playout
+    // budget; otherwise the volume is count * length.
+    long long totalPlayoutVolume = pruningBreadth == -1
+                                       ? playoutCount
+                                       : static_cast<long long>(playoutCount) * playoutLength;
+    if (totalPlayoutVolume > MAX_CPP_PLAYOUT_MOVES) {
+      return "Error: playout volume exceeds the current limit of "
+             + std::to_string(MAX_CPP_PLAYOUT_MOVES)
+             + " moves. Current volume: " + std::to_string(totalPlayoutVolume);
     }
   }
   int wellColumn = 9;
@@ -396,6 +454,14 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
                            rot, xOffset, yOffset, rotTest, xOffsetTest, yOffsetTest,
                            escMain.c_str(), escTest.c_str());
     }
+  }
+
+  case PRECOMPUTE: {
+    // The real timeline goes to the move searches; the piece-range / eval /
+    // playout contexts above keep the derived tapper approximation.
+    return runPrecompute(startingGameState, curPiece, inputFrameTimeline.c_str(), dasCharge,
+                         reactionTime, pruningBreadth, playoutCount, playoutLength, &context,
+                         pieceRangeContextLookup);
   }
 
   default: {

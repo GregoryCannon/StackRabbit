@@ -37,6 +37,13 @@
 // Engine API params
 #define NUM_ENGINE_MOVES 8
 #define NUM_ENGINE_MOVES_ADJUSTMENTS 3
+// Playout-volume cap for a single request. In tournament mode (pruningBreadth == -1) the
+// volume is the playoutCount alone; otherwise playoutCount * playoutLength.
+#define MAX_CPP_PLAYOUT_MOVES 99999999LL
+
+// Whether precompute responses apply the push-down input rewrite to per-piece lines
+// (only ever in combination with level 18; see the precompute pipeline).
+#define SHOULD_PUSHDOWN 0
 
 // Logistics of move search and pruning
 #define LOCK_POSITION_REPEAT_CAP                                                                   \

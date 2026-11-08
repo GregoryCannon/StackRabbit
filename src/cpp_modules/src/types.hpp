@@ -33,8 +33,11 @@ enum RequestType {
              // without next box.
   GET_MOVE,  // Gets a single best move for a given scenario, using full playouts. Supports with or
              // without next box.
-  GET_MOVE_AB_TEST // Compares the result of GET_MOVE between the set of main weights and test
-                   // weights.
+  GET_MOVE_AB_TEST, // Compares the result of GET_MOVE between the set of main weights and test
+                    // weights.
+  PRECOMPUTE // Chooses the current piece's placement by how well each reachable mid-air adjustment
+             // leads into every possible next piece. Input: the standard 11-field pipe string plus
+             // a reactionTime field (field 11); nextPiece is unused (-1).
 };
 
 // Whether a request type needs per-move eval explanations.

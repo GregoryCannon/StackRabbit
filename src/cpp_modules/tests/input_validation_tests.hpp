@@ -12,6 +12,33 @@ TEST_CASE("A missing current piece returns an error message") {
   CHECK(runRequest(GET_TOP_MOVES, input) == "Error: please provide a value for currentPiece.");
 }
 
+TEST_CASE("Out-of-range piece indices are rejected for every request type") {
+  // Before the shared range check existed, PIECE_LIST[argAsInt] read out of
+  // bounds for any index above 6 on the non-PRECOMPUTE paths.
+  auto input = InputBuilder().withCurPiece(9).build();
+  CHECK(runRequest(GET_MOVE, input) == "Error: unknown current piece: 9");
+  CHECK(runRequest(GET_TOP_MOVES, input) == "Error: unknown current piece: 9");
+  CHECK(runRequest(GET_LOCK_VALUE_LOOKUP, input) == "Error: unknown current piece: 9");
+  auto nextInput = InputBuilder().withNextPiece(7).build();
+  CHECK(runRequest(GET_MOVE, nextInput) == "Error: unknown next piece: 7");
+  CHECK(runRequest(GET_LOCK_VALUE_LOOKUP, nextInput) == "Error: unknown next piece: 7");
+}
+
+TEST_CASE("Engine-level range limits apply to every request type") {
+  auto lowLevel = InputBuilder().withLevel(17).build();
+  CHECK(runRequest(GET_MOVE, lowLevel) ==
+        "Error: currently only 18, 19, and 29 starts are supported by StackRabbit. Requested: 17");
+  auto badLength = InputBuilder().withPlayoutLength(21).build();
+  CHECK(runRequest(GET_MOVE, badLength) ==
+        "Error: invalid playout length (max is 20): 21");
+  auto badCharge = InputBuilder().withDasCharge(17).build();
+  CHECK(runRequest(GET_MOVE, badCharge) ==
+        "Error: illegal DAS charge (expected -1 for tap mode, or 0-16): 17");
+  auto badBreadth = InputBuilder().withPruningBreadth(1157).build();
+  CHECK(runRequest(GET_MOVE, badBreadth) ==
+        "Error: invalid pruning breadth (max is 1156, or 34x34): 1157");
+}
+
 TEST_CASE("A missing next piece (-1) is valid and runs in no-next-box mode") {
   auto input = InputBuilder().withNextPiece(-1).build();
   std::string output = runRequest(GET_MOVE, input);

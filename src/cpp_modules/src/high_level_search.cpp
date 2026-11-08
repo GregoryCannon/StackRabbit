@@ -768,29 +768,37 @@ std::string encodeMapToJSON(unordered_map<string, float> map) {
 }
 
 /** Calculates the valuation of every possible terminal position for a given piece on a given board,
- * and stores it in a map.
+ * and returns it as a map (see getLockValueLookupEncoded, its JSON-encoding wrapper).
  * @param pruningBreadth - How many possibilities to evaluate via a full set of playouts, as opposed
  * to just the eval function. -1 = tournament mode: playoutCount is interpreted as the TOTAL playout
  * budget instead.
  */
+unordered_map<string, float> getLockValueLookupMapped(GameState gameState, const Piece *firstPiece,
+                                                      const Piece *secondPiece, int pruningBreadth,
+                                                      int playoutCount, int playoutLength,
+                                                      const EvalContext *evalContext,
+                                                      const PieceRangeContext pieceRangeContextLookup[3]) {
+  if (pruningBreadth == -1) {
+    return getLockValueLookupTournament(
+        gameState, firstPiece, secondPiece, pruningBreadth, playoutCount, playoutLength,
+        /* dasCharge= */ -1, /* secondPieceDasCharge= */ -1,
+        evalContext->pieceRangeContext.inputFrameTimeline, evalContext, pieceRangeContextLookup);
+  }
+  return getLockValueLookup(gameState, firstPiece, secondPiece, pruningBreadth, playoutCount,
+                            playoutLength,
+                            /* dasCharge= */ -1, /* secondPieceDasCharge= */ -1,
+                            evalContext->pieceRangeContext.inputFrameTimeline, evalContext,
+                            pieceRangeContextLookup);
+}
+
 std::string getLockValueLookupEncoded(GameState gameState, const Piece *firstPiece,
                                       const Piece *secondPiece, int pruningBreadth,
                                       int playoutCount, int playoutLength,
                                       const EvalContext *evalContext,
                                       const PieceRangeContext pieceRangeContextLookup[3]) {
-  unordered_map<string, float> lockValueMap;
-  if (pruningBreadth == -1) {
-    lockValueMap = getLockValueLookupTournament(
-        gameState, firstPiece, secondPiece, pruningBreadth, playoutCount, playoutLength,
-        /* dasCharge= */ -1, /* secondPieceDasCharge= */ -1,
-        evalContext->pieceRangeContext.inputFrameTimeline, evalContext, pieceRangeContextLookup);
-  } else {
-    lockValueMap = getLockValueLookup(
-        gameState, firstPiece, secondPiece, pruningBreadth, playoutCount, playoutLength,
-        /* dasCharge= */ -1, /* secondPieceDasCharge= */ -1,
-        evalContext->pieceRangeContext.inputFrameTimeline, evalContext, pieceRangeContextLookup);
-  }
-  return encodeMapToJSON(lockValueMap);
+  return encodeMapToJSON(getLockValueLookupMapped(gameState, firstPiece, secondPiece, pruningBreadth,
+                                                  playoutCount, playoutLength, evalContext,
+                                                  pieceRangeContextLookup));
 }
 
 /**
@@ -820,11 +828,13 @@ getLockValueLookupForDasBucket(GameState gameState, const Piece *firstPiece,
                             evalContext, pieceRangeContextLookup);
 }
 
-std::string getLockValueLookupDas(GameState gameState, const Piece *firstPiece,
-                                  const Piece *secondPiece, int pruningBreadth, int playoutCount,
-                                  int playoutLength, char const *dasInputFrameTimeline,
-                                  const EvalContext *evalContext,
-                                  const PieceRangeContext pieceRangeContextLookup[3]) {
+DasLockValueMaps getLockValueLookupDasMaps(GameState gameState, const Piece *firstPiece,
+                                           const Piece *secondPiece, int pruningBreadth,
+                                           int playoutCount, int playoutLength,
+                                           char const *dasInputFrameTimeline,
+                                           const EvalContext *evalContext,
+                                           const PieceRangeContext pieceRangeContextLookup[3]) {
+  DasLockValueMaps maps;
   // First, do multiple shallow searches at low depth to check if finishing the first placement with
   // partial or no DAS charge sabotages the next piece's placements. E.g. if the next piece will
   // need full DAS (i.e. an I piece going all the way to the right), losing DAS during the first
@@ -834,19 +844,16 @@ std::string getLockValueLookupDas(GameState gameState, const Piece *firstPiece,
   //
   // These method calls pass in values for the SECOND piece DAS charge since we're concerned with
   // how bad the DAS can be *after* the first piece without sacrificing eval quality.
-  unordered_map<string, float> shallowMapFullCharge;
-  unordered_map<string, float> shallowMapPartialCharge;
-  unordered_map<string, float> shallowMapMinCharge;
   // Full charge baseline that the penalties are measured against. (Low-depth to be a fair
   // comparison).
-  shallowMapFullCharge = getLockValueLookupForDasBucket(
+  maps.lockValue = getLockValueLookupForDasBucket(
       gameState, firstPiece, secondPiece, pruningBreadth, /* playoutCount= */ 0,
       /* playoutLength= */ 0,
       /* secondPieceDasCharge= */ 15, dasInputFrameTimeline, evalContext, pieceRangeContextLookup);
 
   // Partial charge: 10 is the post-shift charge of a standard DAS shift (5 held
   // frames away from the next shift).
-  shallowMapPartialCharge = getLockValueLookupForDasBucket(
+  maps.partialPenalty = getLockValueLookupForDasBucket(
       gameState, firstPiece, secondPiece, pruningBreadth, /* playoutCount= */ 0,
       /* playoutLength= */ 0,
       /* secondPieceDasCharge= */ 10, dasInputFrameTimeline, evalContext, pieceRangeContextLookup);
@@ -855,7 +862,7 @@ std::string getLockValueLookupDas(GameState gameState, const Piece *firstPiece,
   // just first-frame tap without holding during ARE, and it ends up being exactly equivalent:
   // Charge < 5 : shift->0  1  2  3   4  5  6  7  8  9    10
   // Charge = 5:   6       7  8  9  10 11 12 13 14 15 shift->10
-  shallowMapMinCharge = getLockValueLookupForDasBucket(
+  maps.minPenalty = getLockValueLookupForDasBucket(
       gameState, firstPiece, secondPiece, pruningBreadth, /* playoutCount= */ 0,
       /* playoutLength= */ 0,
       /* secondPieceDasCharge= */ 5, dasInputFrameTimeline, evalContext, pieceRangeContextLookup);
@@ -864,14 +871,14 @@ std::string getLockValueLookupDas(GameState gameState, const Piece *firstPiece,
   // numbers). NB: all four lookups share one first-piece search, so their key sets match; the guard
   // below is a safety net. Skipped keys match TS's getDasPenalty missing-key -> no-penalty
   // behavior.
-  for (const auto &pair : shallowMapFullCharge) {
+  for (const auto &pair : maps.lockValue) {
     string key = pair.first;
     float value = pair.second;
-    if (shallowMapPartialCharge.count(key) == 0 || shallowMapMinCharge.count(key) == 0) {
+    if (maps.partialPenalty.count(key) == 0 || maps.minPenalty.count(key) == 0) {
       continue;
     }
-    float penaltyPartial = shallowMapPartialCharge.at(key) - value;
-    float penaltyMin = shallowMapMinCharge.at(key) - value;
+    float penaltyPartial = maps.partialPenalty.at(key) - value;
+    float penaltyMin = maps.minPenalty.at(key) - value;
 
     // A positive penalty means a lower-charge bucket scored the first placement HIGHER
     // than full charge. This happens when the low-charge search finds maneuvers that
@@ -880,22 +887,34 @@ std::string getLockValueLookupDas(GameState gameState, const Piece *firstPiece,
     // it, so clamp the delta at zero. The TS consumer adds these values to lock
     // values, so clamping keeps "no advantage from losing DAS" instead of inflating
     // the low-charge continuation.
-    shallowMapPartialCharge[key] = std::min(penaltyPartial, 0.0f);
-    shallowMapMinCharge[key] = std::min(penaltyMin, 0.0f);
+    maps.partialPenalty[key] = std::min(penaltyPartial, 0.0f);
+    maps.minPenalty[key] = std::min(penaltyMin, 0.0f);
   }
 
   // Then, do one deep search to see what the actual best move is, irrespective of DAS.
-  unordered_map<string, float> deepValue = getLockValueLookupForDasBucket(
+  maps.lockValue = getLockValueLookupForDasBucket(
       gameState, firstPiece, secondPiece, pruningBreadth, playoutCount, playoutLength,
       /* secondPieceDasCharge= */ 15, dasInputFrameTimeline, evalContext, pieceRangeContextLookup);
 
+  return maps;
+}
+
+std::string getLockValueLookupDas(GameState gameState, const Piece *firstPiece,
+                                  const Piece *secondPiece, int pruningBreadth, int playoutCount,
+                                  int playoutLength, char const *dasInputFrameTimeline,
+                                  const EvalContext *evalContext,
+                                  const PieceRangeContext pieceRangeContextLookup[3]) {
+  const DasLockValueMaps maps = getLockValueLookupDasMaps(
+      gameState, firstPiece, secondPiece, pruningBreadth, playoutCount, playoutLength,
+      dasInputFrameTimeline, evalContext, pieceRangeContextLookup);
+
   // Compile result as array of JSONs
   std::string resultStr = std::string("[\n");
-  resultStr.append(encodeMapToJSON(shallowMapPartialCharge));
+  resultStr.append(encodeMapToJSON(maps.partialPenalty));
   resultStr.append(",\n");
-  resultStr.append(encodeMapToJSON(shallowMapMinCharge));
+  resultStr.append(encodeMapToJSON(maps.minPenalty));
   resultStr.append(",\n");
-  resultStr.append(encodeMapToJSON(deepValue));
+  resultStr.append(encodeMapToJSON(maps.lockValue));
   resultStr.append("\n]");
   return resultStr;
 }

@@ -28,6 +28,30 @@ NAN_METHOD(GetLockValueLookupDas) {
   info.GetReturnValue().Set(Nan::New<String>(result.c_str()).ToLocalChecked());
 }
 
+NAN_METHOD(Precompute) {
+  // Parse string arg
+  Nan::MaybeLocal<String> maybeStr = Nan::To<String>(info[0]);
+  v8::Local<String> inputStrNan;
+  if (maybeStr.ToLocal(&inputStrNan) == false) {
+    Nan::ThrowError("Error converting first argument to string");
+  }
+  Nan::Utf8String utf8Value(inputStrNan);
+  char const *inputStr = *utf8Value;
+
+  // The engine throws std::runtime_error on internal invariant violations.
+  // Convert to a JS error so the request fails loudly with the diagnostic
+  // message while the server survives.
+  std::string result;
+  try {
+    result = mainProcess(inputStr, PRECOMPUTE);
+  } catch (const std::exception &e) {
+    Nan::ThrowError(e.what());
+    return;
+  }
+
+  info.GetReturnValue().Set(Nan::New<String>(result.c_str()).ToLocalChecked());
+}
+
 NAN_METHOD(GetLockValueLookup) {
   // Parse string arg
   Nan::MaybeLocal<String> maybeStr = Nan::To<String>(info[0]);
@@ -119,6 +143,8 @@ NAN_METHOD(RateMove) {
 }
 
 NAN_MODULE_INIT(Init) {
+  Nan::Set(target, Nan::New("precompute").ToLocalChecked(),
+           Nan::GetFunction(Nan::New<FunctionTemplate>(Precompute)).ToLocalChecked());
   Nan::Set(target, Nan::New("getLockValueLookup").ToLocalChecked(),
            Nan::GetFunction(Nan::New<FunctionTemplate>(GetLockValueLookup)).ToLocalChecked());
   Nan::Set(target, Nan::New("getLockValueLookupDas").ToLocalChecked(),

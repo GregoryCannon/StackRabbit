@@ -196,55 +196,68 @@ Each sub-step independently revertible, full battery after each:
    capture; comparison becomes **order-exact** (array equality, not multiset).
    This is the equivalence gate for Phase 2 — do not start Phase 2 red.
 
-### Phase 2 — Port the glue (`precompute.cpp`)
+### Phase 2a — Plumbing + differential harness (first-cut port)
 
-New file; new request type `PRECOMPUTE` handled in `mainProcess` so
-GameState/EvalContext setup is shared with existing paths. Input format: the
-standard 11-field pipe string **plus a `reactionTime` field (field 11)** (new
-layout, so existing callers are untouched; the C++ parser validates every
-field itself). Every URL-arg validation currently in request_parser.ts that
-affects this path must be mirrored in the C++ parser (house rule: each
-boundary validates its own inputs).
+Deliverable: all the wiring exists and the differential harness produces an
+**honest mismatch report** — not parity. One subagent-sized step; battery must
+be green (the refactor below must not perturb existing outputs).
 
-Steps inside one synchronous function:
-
-1. Initial `fullMoveSearch` (real timeline, `dasCharge`, `reactionTime`) →
-   possibilities with sequences, relative placements, boards-after,
-   `lockPositionEncoded`, `dasChargeAfter`, adj-time states. Empty ⇒ return
-   `"No legal moves A"`.
-2. Build GameState once; for each of the 7 next pieces call the lock-lookup
-   internals **in-process** (no JSON round-trip). This requires splitting
-   `getLockValueLookupDas` into a map-returning core (returns the partial /
+1. New request type `PRECOMPUTE` handled in `mainProcess` so
+   GameState/EvalContext setup is shared with existing paths. Input format: the
+   standard 11-field pipe string **plus a `reactionTime` field (field 11)** (new
+   layout, so existing callers are untouched; the C++ parser validates every
+   field itself). Every URL-arg validation currently in request_parser.ts that
+   affects this path must be mirrored in the C++ parser (house rule: each
+   boundary validates its own inputs).
+2. Split `getLockValueLookupDas` into a map-returning core (returns the partial /
    min / deep `unordered_map<string,float>` triple directly) + a thin JSON
    wrapper that the existing `GET_LOCK_VALUE_LOOKUP_DAS` path keeps using —
-   pure refactor, wire output unchanged. Replicate `%.2f` rounding on all
-   three maps so the collapse sees exactly the values TS saw.
-3. Phantom placements: `std::stable_sort` by `countInputs`, prefix dedupe,
-   adjustment search states (incl. the `reactionTime === 0` special case).
-4. Adjustment `fullMoveSearch` per phantom.
-5. Collapse: exact iteration order and tie-breaking, double math, rounded
-   inputs, piece-probability table, `/7`.
-6. Format the output string per `formatPrecomputeResult` + utils.ts, with the
-   `none` fallback convention (see checklist) and the retained `continue`
+   pure refactor, wire output unchanged.
+3. `precompute.cpp`: a first-cut synchronous port of the pipeline (steps 3-6 of
+   the pipeline list below may be incomplete — that's what the harness will
+   surface): initial `fullMoveSearch` (real timeline, `dasCharge`,
+   `reactionTime`) → empty ⇒ `none`; per-next-piece in-process lock lookups
+   (replicate `%.2f` rounding on all three maps so the collapse sees exactly
+   the values TS saw); phantom placements (`std::stable_sort` by `countInputs`,
+   prefix dedupe, adjustment search states incl. the `reactionTime === 0`
+   special case); adjustment `fullMoveSearch` per phantom; collapse (exact
+   iteration order and tie-breaking, double math, rounded inputs,
+   piece-probability table, `/7`); formatting per `formatPrecomputeResult` +
+   utils.ts with the `none` fallback convention and the retained `continue`
    marker.
+4. Expose via `module.cpp` as `precompute(inputStr)`; serve on a new
+   `precompute-cpp` HTTP route (the `precompute` route keeps serving the TS
+   path).
+5. Differential runner: node script (mirroring `fuzz_verify_sequences`) over
+   `src/server/data/precompute_fixtures.jsonl` — derive each fixture's
+   `PRECOMPUTE` pipe string (11 standard fields + `reactionTime`; `nextPiece =
+   -1` since precompute searches all 7), call `precompute()`, require
+   byte-identical output to the recorded string. Report match count +
+   categorized diffs.
+
+Gate: full battery green; runner honestly reports the starting match count
+with raw diff examples.
+
+### Phase 2b — Drive to byte-parity
+
+Failure-driven iteration against the differential harness until **3,470/3,470
+fixtures are byte-identical**. Every failure is concrete and reproducible from
+a fixture record. Rules: report raw diffs while iterating; stop and report
+honestly if convergence stalls rather than papering over (AGENTS.md
+checkpoint-boundary discipline). Full battery after; watch the stale-addon
+trap when re-running the HTTP route checks.
 
 Performance note: the 7 lock lookups share one GameState; building contexts
 once instead of 7× should make the C++ path strictly faster than the worker
 path even before threading is considered.
 
-### Phase 3 — Wiring, differential verification, cutover
+### Phase 3 — Live traffic (out of scope here)
 
-1. Expose via module.cpp as `precompute(inputStr)`, mirroring the existing
-   NAN_METHOD pattern with the std::runtime_error → JS error handling.
-2. Differential harness: for every fixture, run TS `precompute-sync` and C++
-   `precompute()`, require byte-identical strings. Wire as (a) a node script
-   in the style of `fuzz_verify_sequences`, and (b) doctest coverage for the
-   C++-internal pieces.
-3. Serve the C++ path on a new `precompute-cpp` HTTP route (the `precompute`
-   route keeps serving the TS path). Live cutover is explicitly **out of
-   scope** for this migration — flipping routes, deleting
-   `PreComputeManager`/worker_thread.ts, and retiring TS is a separate
-   follow-up migration. The differential harness remains in place until then.
+Absorbed into Phase 2a (module exposure, `precompute-cpp` route, differential
+harness). What remains for the separate follow-up migration: flipping the live
+`precompute` routes to the C++ path, deleting `PreComputeManager` /
+worker_thread.ts, and retiring the TS path. The differential harness remains
+in place until then.
 
 Each phase lands as small independently revertible commits; full battery
 (`cpp_test_unit`, `fuzz_verify_sequences`, `tsc`, `move_test`, `npm start`)

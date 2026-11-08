@@ -63,3 +63,11 @@ stale-server output for a code change.
   the file itself.
 - Pin new behavior with tests as you go (see TESTING.md's sections for the pattern);
   flip characterization tests deliberately and say why in the test comment.
+- **Float-parity vs V8: disable FMA contraction on accumulation lines.** Clang/GCC
+  default to `-ffp-contract=fast`, which fuses `acc += a * b` into a
+  single-rounding `fma` — even at -O0 — while V8 rounds the multiply and add
+  separately. A 1-ULP drift per accumulation silently broke exact phantom-value
+  ties in the precompute port (18/3470 fixtures picked a different winner). When
+  C++ must reproduce JS float arithmetic bit-exactly, split the multiply and the
+  add into separate statements (or control `-ffp-contract`) and verify with
+  hex-float dumps.

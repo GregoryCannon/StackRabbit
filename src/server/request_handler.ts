@@ -2,6 +2,7 @@ import { getPossibleMoves, getSearchStateAfter } from "./move_search";
 import { PreComputeManager } from "./precompute";
 import {
   getCppEncodedInputString,
+  getPrecomputeCppEncodedInputString,
   getSearchStateFromUrlArguments,
   parseUrlArguments,
 } from "./request_parser";
@@ -90,6 +91,9 @@ export class RequestHandler {
           urlArgs
         );
         return [result, 200];
+
+      case "precompute-cpp":
+        return [this.handlePrecomputeCpp(searchState, urlArgs), 200];
 
       default:
         return [
@@ -287,6 +291,17 @@ export class RequestHandler {
         this.asyncCallInProgress = false;
       }.bind(this)
     );
+  }
+
+  /**
+   * Serves the precompute result from the C++ engine path, synchronously.
+   */
+  handlePrecomputeCpp(searchState: SearchState, urlArgs: UrlArguments) {
+    const encodedInputString = getPrecomputeCppEncodedInputString(
+      searchState,
+      urlArgs
+    );
+    return cModule.precompute(encodedInputString);
   }
 
   /**

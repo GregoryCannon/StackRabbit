@@ -188,6 +188,22 @@ export function parseUrlArguments(
   return result;
 }
 
+/**
+ * Encodes the PRECOMPUTE request: the standard 11-field pipe string plus the
+ * reaction time as field 11. The next piece is always -1 because precompute
+ * searches all seven next pieces itself.
+ */
+export function getPrecomputeCppEncodedInputString(
+  searchState: SearchState,
+  urlArgs: UrlArguments
+) {
+  const boardStr = searchState.board.map((x) => x.join("")).join("");
+  const pieceLookup = ["I", "O", "L", "J", "T", "S", "Z"];
+  const curPieceIndex = pieceLookup.indexOf(searchState.currentPieceId);
+  const nextPieceIndex = pieceLookup.indexOf(searchState.nextPieceId);
+  return `${boardStr}|${searchState.level}|${searchState.lines}|${curPieceIndex}|${nextPieceIndex}|${urlArgs.inputFrameTimeline}|${urlArgs.playoutCount}|${urlArgs.playoutLength}|${urlArgs.pruningBreadth}|${urlArgs.aggressionLevel}|${urlArgs.dasCharge}|${searchState.reactionTime}|`;
+}
+
 export function getSearchStateFromUrlArguments(urlArgs: UrlArguments): SearchState {
   return {
     board: urlArgs.board,
