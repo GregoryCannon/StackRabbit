@@ -772,6 +772,11 @@ std::string encodeMapToJSON(unordered_map<string, float> map) {
  * @param pruningBreadth - How many possibilities to evaluate via a full set of playouts, as opposed
  * to just the eval function. -1 = tournament mode: playoutCount is interpreted as the TOTAL playout
  * budget instead.
+ *
+ * Thread-safety contract: precompute calls this once per next piece on concurrent threads. It must
+ * remain thread-safe, along with everything reachable from it (enforced by `npm run
+ * precompute_tsan`; see AGENTS.md's rule against new non-const file-scope statics and
+ * thread-unsafe libc calls on this path).
  */
 unordered_map<string, float> getLockValueLookupMapped(GameState gameState, const Piece *firstPiece,
                                                       const Piece *secondPiece, int pruningBreadth,
@@ -828,6 +833,15 @@ getLockValueLookupForDasBucket(GameState gameState, const Piece *firstPiece,
                             evalContext, pieceRangeContextLookup);
 }
 
+/** Runs the full DAS-penalty lookup for one next piece: three low-depth bucket lookups (full /
+ * partial / minimum second-piece charge) converted to relative penalties, plus one deep lookup for
+ * the raw values (see getLockValueLookupDas, its JSON-encoding wrapper).
+ *
+ * Thread-safety contract: precompute calls this once per next piece on concurrent threads. It must
+ * remain thread-safe, along with everything reachable from it (enforced by `npm run
+ * precompute_tsan`; see AGENTS.md's rule against new non-const file-scope statics and
+ * thread-unsafe libc calls on this path).
+ */
 DasLockValueMaps getLockValueLookupDasMaps(GameState gameState, const Piece *firstPiece,
                                            const Piece *secondPiece, int pruningBreadth,
                                            int playoutCount, int playoutLength,

@@ -5,10 +5,12 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <exception>
 #include <limits>
 #include <stdexcept>
 #include <stdio.h>
 #include <string.h>
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -386,25 +388,48 @@ std::string runPrecompute(GameState gameState, const Piece *curPiece,
     return "none";
   }
 
-  // Step 2: one lock value lookup per next piece, values rounded for the collapse.
+  // Step 2: one lock value lookup per next piece, values rounded for the
+  // collapse. The seven lookups are independent: one thread per next piece,
+  // each writing only its own slot, so no shared mutable state is touched.
   const bool useDAS = dasCharge != -1;
   PrecomputeValueMap lockValues[7];
   PrecomputeValueMap partialPenalties[7];
   PrecomputeValueMap minPenalties[7];
+  std::exception_ptr lookupErrors[7] = {};
+  std::thread lookupThreads[7];
   for (int i = 0; i < 7; i++) {
-    const Piece *nextPiece = &PIECE_LIST[i];
-    if (useDAS) {
-      const DasLockValueMaps maps = getLockValueLookupDasMaps(
-          gameState, curPiece, nextPiece, pruningBreadth, playoutCount, playoutLength,
-          inputFrameTimeline, evalContext, pieceRangeContextLookup);
-      roundCopyMap(maps.partialPenalty, partialPenalties[i]);
-      roundCopyMap(maps.minPenalty, minPenalties[i]);
-      roundCopyMap(maps.lockValue, lockValues[i]);
-    } else {
-      roundCopyMap(getLockValueLookupMapped(gameState, curPiece, nextPiece, pruningBreadth,
-                                            playoutCount, playoutLength, evalContext,
-                                            pieceRangeContextLookup),
-                   lockValues[i]);
+    lookupThreads[i] = std::thread([i, &useDAS, &gameState, curPiece, inputFrameTimeline,
+                                    pruningBreadth, playoutCount, playoutLength, evalContext,
+                                    &pieceRangeContextLookup, &lockValues, &partialPenalties,
+                                    &minPenalties, &lookupErrors]() {
+      try {
+        const Piece *nextPiece = &PIECE_LIST[i];
+        if (useDAS) {
+          const DasLockValueMaps maps = getLockValueLookupDasMaps(
+              gameState, curPiece, nextPiece, pruningBreadth, playoutCount, playoutLength,
+              inputFrameTimeline, evalContext, pieceRangeContextLookup);
+          roundCopyMap(maps.partialPenalty, partialPenalties[i]);
+          roundCopyMap(maps.minPenalty, minPenalties[i]);
+          roundCopyMap(maps.lockValue, lockValues[i]);
+        } else {
+          roundCopyMap(getLockValueLookupMapped(gameState, curPiece, nextPiece, pruningBreadth,
+                                                playoutCount, playoutLength, evalContext,
+                                                pieceRangeContextLookup),
+                       lockValues[i]);
+        }
+      } catch (...) {
+        lookupErrors[i] = std::current_exception();
+      }
+    });
+  }
+  for (std::thread &lookupThread : lookupThreads) {
+    lookupThread.join();
+  }
+  // All threads are joined before rethrowing, so a failure surfaces as a JS
+  // error with the first failing piece's diagnostic (piece 0 first).
+  for (int i = 0; i < 7; i++) {
+    if (lookupErrors[i]) {
+      std::rethrow_exception(lookupErrors[i]);
     }
   }
 

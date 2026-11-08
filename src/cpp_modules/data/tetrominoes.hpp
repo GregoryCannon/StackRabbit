@@ -1,7 +1,7 @@
 #include "../src/types.hpp"
 #include <list>
 
-std::string PIECE_CHAR_LIST = "IOLJTSZ";
+const std::string PIECE_CHAR_LIST = "IOLJTSZ";
 
 char getPieceChar(int index) { return PIECE_CHAR_LIST.at(index); }
 
@@ -152,18 +152,18 @@ const Piece PIECE_Z = { 'Z', 6, {
                },{ 17, 17, NONE, NONE},
                -1 };
 
-static std::list<TuckOriginSpot> TUCK_SPOTS_I = {
+static const std::list<TuckOriginSpot> TUCK_SPOTS_I = {
   {0, 0, 2},
   {0, 3, 2},
   {1, 2, 0}
 };
 
-static std::list<TuckOriginSpot> TUCK_SPOTS_O = {
+static const std::list<TuckOriginSpot> TUCK_SPOTS_O = {
   {0, 1, 1},
   {0, 2, 1}
 };
 
-static std::list<TuckOriginSpot> TUCK_SPOTS_L = {
+static const std::list<TuckOriginSpot> TUCK_SPOTS_L = {
   {0, 1, 1},
   {0, 3, 1},
   {1, 1, 0},
@@ -174,7 +174,7 @@ static std::list<TuckOriginSpot> TUCK_SPOTS_L = {
   {3, 3, 2}
 };
 
-static std::list<TuckOriginSpot> TUCK_SPOTS_J = {
+static const std::list<TuckOriginSpot> TUCK_SPOTS_J = {
   {0, 1, 1},
   {0, 3, 1},
   {1, 1, 2},
@@ -185,7 +185,7 @@ static std::list<TuckOriginSpot> TUCK_SPOTS_J = {
   {3, 3, 0}
 };
 
-static std::list<TuckOriginSpot> TUCK_SPOTS_T = {
+static const std::list<TuckOriginSpot> TUCK_SPOTS_T = {
   {0, 1, 1},
   {0, 3, 1},
   {1, 1, 1},
@@ -196,14 +196,14 @@ static std::list<TuckOriginSpot> TUCK_SPOTS_T = {
   {3, 3, 1},
 };
 
-static std::list<TuckOriginSpot> TUCK_SPOTS_S = {
+static const std::list<TuckOriginSpot> TUCK_SPOTS_S = {
   {0, 1, 2},
   {0, 3, 1},
   {1, 2, 0},
   {1, 3, 1}
 };
 
-static std::list<TuckOriginSpot> TUCK_SPOTS_Z = {
+static const std::list<TuckOriginSpot> TUCK_SPOTS_Z = {
   {0, 1, 1},
   {0, 3, 2},
   {1, 3, 0},
@@ -212,9 +212,9 @@ static std::list<TuckOriginSpot> TUCK_SPOTS_Z = {
 
 const Piece PIECE_LIST[7] = {PIECE_I, PIECE_O, PIECE_L, PIECE_J, PIECE_T, PIECE_S, PIECE_Z};
 
-static std::list<TuckOriginSpot> TUCK_SPOTS_LIST[7] = {TUCK_SPOTS_I, TUCK_SPOTS_O, TUCK_SPOTS_L, TUCK_SPOTS_J, TUCK_SPOTS_T, TUCK_SPOTS_S, TUCK_SPOTS_Z};
+static const std::list<TuckOriginSpot> TUCK_SPOTS_LIST[7] = {TUCK_SPOTS_I, TUCK_SPOTS_O, TUCK_SPOTS_L, TUCK_SPOTS_J, TUCK_SPOTS_T, TUCK_SPOTS_S, TUCK_SPOTS_Z};
 
-std::list<TuckInput> TUCK_INPUTS {
+const std::list<TuckInput> TUCK_INPUTS {
   {'L', -1, 0},
   {'R', 1, 0},
   {'A', 0, 1},

@@ -1,0 +1,13 @@
+# Allowlist for `npm run precompute_static_lint`: non-const, non-thread_local
+# file-scope `static` VARIABLE declarations that are deliberately permitted in
+# the files reachable from the precompute lookup entry points (which run on
+# concurrent per-next-piece threads -- see AGENTS.md's thread-safety rule).
+#
+# One entry per line, either `file.cpp:line` or a bare `file.cpp` to waive the
+# whole file. Lines starting with # are comments.
+#
+# Adding a waiver here is a deliberate, reviewable act: the reviewed diff of an
+# engine change should never contain a new non-const file-scope static, so a
+# waiver must come with a justification for why that static is thread-safe.
+#
+# (intentionally empty)

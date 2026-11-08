@@ -18,7 +18,10 @@
 #include "piece_ranges.cpp"
 #include "playout.cpp"
 #include "high_level_search.cpp"
+#ifndef __EMSCRIPTEN__
+// The precompute path is not part of the WASM build.
 #include "precompute.cpp"
+#endif
 #include "tournament_search.cpp"
 #include "piece_rng.cpp"
 // #include "../data/ranks_output.cpp"
@@ -457,11 +460,16 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
   }
 
   case PRECOMPUTE: {
+#ifndef __EMSCRIPTEN__
     // The real timeline goes to the move searches; the piece-range / eval /
     // playout contexts above keep the derived tapper approximation.
     return runPrecompute(startingGameState, curPiece, inputFrameTimeline.c_str(), dasCharge,
                          reactionTime, pruningBreadth, playoutCount, playoutLength, &context,
                          pieceRangeContextLookup);
+#else
+    // The precompute path is not part of the WASM build.
+    return "Precompute unavailable";
+#endif
   }
 
   default: {

@@ -10,6 +10,10 @@ Read alongside [TESTING.md](TESTING.md) (test layout, input-format contract) and
 - `npm run fuzz_verify_sequences` — TS↔C++ DAS move-search equivalence (character-exact sequences)
 - `npx tsc`
 - `npm run move_test`
+- `npm run precompute_verify` — C++ precompute vs golden fixtures, byte-identical (3470/3470)
+- `npm run precompute_tsan` — ThreadSanitizer replay of the 42 production-param precompute
+  requests; zero warnings required (the thread-safety gate, see Change discipline)
+- `npm run precompute_static_lint` — file-scope statics tripwire over the thread-audited files
 - `npm start` - ensure that it prints "Listening on port 3000" after a few seconds
 
 NB: a long-running dev server keeps the OLD addon mapped in memory — `node-gyp build`
@@ -26,6 +30,14 @@ stale-server output for a code change.
 - **Every boundary validates its own inputs** (TS URL args in `request_parser.ts`, the
   C++ pipe parser in `main.cpp`). Never rely on the caller having validated; silent
   defaults and junk-tolerant parsing have each caused real bugs here.
+- **Precompute lookup thread-safety is a tested contract.** Precompute runs
+  `getLockValueLookupMapped` / `getLockValueLookupDasMaps` (see their contract comments in
+  `high_level_search.cpp`) once per next piece on concurrent threads. No new non-const
+  file-scope statics or thread-unsafe libc calls (`rand()`, `strtok`, ...) in code reachable
+  from those entry points. Enforcement: `npm run precompute_tsan` (battery item — ~18s,
+  cheap enough for every run) and `npm run precompute_static_lint`. The lint is knowingly
+  crude; a false positive is waived in `src/cpp_modules/tests/thread_static_allowlist.txt`
+  (adding a waiver is a deliberate, reviewable act), never by weakening the lint.
 - When touching the pipe format or shared signatures, update **all** callers in
   lockstep: `request_parser.ts`, `worker_thread.ts`, `cmodules.ts`, `entrypoint.cpp`,
   `speed_benchmark.cpp`, `run_agent.cpp`, `src/wasm/sample_client/wasmRabbit-worker.js`

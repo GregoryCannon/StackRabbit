@@ -8,12 +8,19 @@
  * nothing is sorted, re-ordered or normalised before the comparison.
  *
  * Usage: npm run precompute_verify
+ *
+ * `--dump-inputs [path]` (default build/precompute_tsan_inputs.txt) writes the
+ * production-tier requests for the TSan replay harness instead of running the
+ * differential verify: a count line, then two lines per request — the
+ * PRECOMPUTE pipe string, then the recorded golden output with every newline
+ * escaped to a \x01 sentinel (pipe strings never contain newlines or \x01).
+ * This mode does not load the addon.
  */
 const fs = require("fs");
 const path = require("path");
-const cModule = require(path.join(__dirname, "../../build/Release/cRabbit"));
 
 const FIXTURES_PATH = path.join(__dirname, "data/precompute_fixtures.jsonl");
+const DEFAULT_DUMP_PATH = path.join(__dirname, "../../build/precompute_tsan_inputs.txt");
 const PIECE_LOOKUP = ["I", "O", "L", "J", "T", "S", "Z"];
 const MAX_DIFF_EXAMPLES = 5;
 
@@ -66,9 +73,33 @@ function categorize(tsOutput, cppOutput) {
   return null;
 }
 
-function main() {
+function loadFixtures() {
   const raw = fs.readFileSync(FIXTURES_PATH, "utf8").trim().split("\n");
-  const fixtures = raw.slice(1).map((line) => JSON.parse(line));
+  return raw.slice(1).map((line) => JSON.parse(line));
+}
+
+/** Writes the production-tier requests in the TSan replay harness's input format. */
+function dumpInputs(outputPath) {
+  const production = loadFixtures().filter((fixture) => fixture.tier === "production");
+  const lines = [String(production.length)];
+  for (const fixture of production) {
+    lines.push(buildPipeString(fixture));
+    lines.push(fixture.output.replace(/\n/g, "\x01"));
+  }
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+  fs.writeFileSync(outputPath, lines.join("\n") + "\n");
+  console.log(`Dumped ${production.length} production-tier precompute requests to ${outputPath}`);
+}
+
+function main() {
+  const dumpArg = process.argv.indexOf("--dump-inputs");
+  if (dumpArg !== -1) {
+    dumpInputs(process.argv[dumpArg + 1] || DEFAULT_DUMP_PATH);
+    return;
+  }
+
+  const cModule = require(path.join(__dirname, "../../build/Release/cRabbit"));
+  const fixtures = loadFixtures();
   console.log(`Precompute differential verify: ${fixtures.length} fixtures\n`);
 
   let matches = 0;

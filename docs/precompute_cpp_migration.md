@@ -251,48 +251,189 @@ Performance note: the 7 lock lookups share one GameState; building contexts
 once instead of 7× should make the C++ path strictly faster than the worker
 path even before threading is considered.
 
-### Phase 3 — Live traffic (out of scope here)
+### Phase 3 — Thread the 7 lock lookups
 
-Absorbed into Phase 2a (module exposure, `precompute-cpp` route, differential
-harness). What remains for the separate follow-up migration: flipping the live
-`precompute` routes to the C++ path, deleting `PreComputeManager` /
-worker_thread.ts, and retiring the TS path. The differential harness remains
-in place until then.
+The 7 per-next-piece lock lookups are independent and dominate precompute
+latency; threading them drops production-path latency from `sum(7 lookups)` to
+`max(1 lookup)`. The byte-parity gate makes this verifiable: any race that
+affects results fails `precompute_verify` instantly.
+
+Design decisions (agreed):
+
+- **Always-threaded, no sequential fallback flag** — a rarely-exercised path
+  is its own liability; the worktree A/B discipline provides the sequential
+  build for benchmarks.
+- **Node and direct-C++ consumers only; WASM out of scope.** `precompute.cpp`
+  must simply not be included by `wasm.cpp` (one-line check in this phase).
+  C++ debugging goes through `mainProcess(inputStr, PRECOMPUTE)` (the doctest
+  `runRequest` path exercises the same threaded code).
+- **Scope: thread only the 7 lock lookups.** Per-phantom adjustment searches
+  stay sequential until measurements justify more (they are single-search
+  calls, orders of magnitude cheaper). Bucket-level parallelism (the 3-4 DAS
+  lookups inside one piece) stays out permanently.
+- **7 `std::thread`s, one per next piece, join at the end.** No pool or work
+  queue for v1 (~100µs spawn vs multi-hundred-ms tasks; ≤8-core
+  oversubscription is harmless). Contained v2 refinement if profiling shows
+  oversubscription hurting: atomic-index queue with
+  `min(7, hardware_concurrency())` workers.
+- **Results**: preallocated per-piece slots; each thread writes only into
+  `results[pieceIndex]` — zero shared mutable writes.
+- **Exceptions**: per-thread `std::exception_ptr`, rethrown in piece order
+  after join (deterministic error selection; preserves the NAN
+  runtime_error → JS error contract).
+
+Steps, each independently revertible:
+
+1. **Thread-safety audit (before any thread spawns).** Scope: everything
+   reachable from `getLockValueLookupMapped` / `getLockValueLookupDasMaps` —
+   high_level_search.cpp, tournament_search.cpp, playout.cpp, eval.cpp,
+   eval_context.cpp, piece_rng.cpp, move_result.cpp, move_search.cpp,
+   full_move_search.cpp, piece_ranges.cpp. Looking for: non-const file-scope
+   `static`s, function-local statics with lazy init, global RNG state (prime
+   suspect — if playouts do not draw purely from the canonical sequence
+   tables, parallel results become order-dependent), thread-unsafe libc
+   (`rand()`, `strtok`), mutation through the shared `EvalContext*` /
+   `PieceRangeContext*` pointers. Findings become their own revertible fixes
+   (`thread_local`, immutability, parameterization) with the battery +
+   `precompute_verify` after each.
+2. **Threading commit** in `precompute.cpp` per the design above; confirm
+   `binding.gyp` has `-pthread`/C++17; confirm `wasm.cpp` does not include
+   the precompute path.
+3. **Verification**: `precompute_verify` 3470/3470 byte-identical (the
+   determinism gate), repeated back-to-back several times (shakes
+   timing-dependent races); interleaved same-session worktree A/B
+   (pre-threading commit as baseline) on production-param workloads — the
+   eval-only tier is too fast to demonstrate the win.
+4. **Thread-safety enforcement for the future** — a one-time audit decays;
+   make thread-safety a tested property:
+   - **TSan harness (the teeth)**: standalone `-fsanitize=thread` binary with
+     the same unity sources plus a `main` that reads pipe strings and calls
+     `mainProcess(inputStr, PRECOMPUTE)`. `precompute_verify` gains a
+     `--dump-inputs` mode emitting the fixture pipe strings; the TSan harness
+     replays a subset (30-50 production-param fixtures — heavy enough to
+     matter, small enough that TSan's ~5-15x slowdown stays in minutes) with
+     7-way concurrency, catching any unsynchronized access — including races
+     that are benign today. Add as `npm run precompute_tsan`; if runtime
+     proves too heavy for every battery run, degrade to "every change touching
+     eval/playout/search/piece_rng".
+   - **Written contract**: both lookup entry points get contract comments
+     ("must remain thread-safe; enforced by `precompute_tsan`"); AGENTS.md
+     gets the rule (no new non-const statics or thread-unsafe libc calls in
+     code reachable from them).
+   - **Cheap lint tripwire**: battery script flagging new non-const
+     file-scope `static` declarations in the audited files (crude, waivable,
+     but makes the failure mode a red battery item instead of an undiscussed
+     diff line).
+   - NB: `precompute_verify` byte-parity alone is not enough — it only
+     catches races that change results, not benign-today/latent-crash races.
 
 Each phase lands as small independently revertible commits; full battery
-(`cpp_test_unit`, `fuzz_verify_sequences`, `tsc`, `move_test`, `npm start`)
-before and after every step. Remember: a long-running dev server keeps the old
-addon mapped — restart before trusting A/B results.
+(`cpp_test_unit`, `fuzz_verify_sequences`, `precompute_verify`, `tsc`,
+`move_test`, `npm start`) before and after every step. Remember: a
+long-running dev server keeps the old addon mapped — restart before trusting
+A/B results.
 
-### Phase 4 — Cleanup
+### Phase 4 — Cleanup and testing consolidation
 
-Final sweep to leave the tree in its end state:
+Final sweep to leave the tree in its end state. The engine's core surfaces
+(search layer) and value surfaces (eval) have different test-stratification
+needs; this phase reorganizes the migration's ad-hoc test tooling into that
+shape. Principle: **the oracles are the permanent record of legacy behavior;
+the generators are migration-era tools that die with TS.**
 
-1. **Code comments**: remove all remaining TS-parity / migration-phase
-   references from code comments across the repo (pre-existing ones in
-   main.cpp, high_level_search.cpp, eval/playout files, benchmarks,
-   entrypoint.cpp, etc. predate this migration). The two AGENTS.md exceptions
-   get resolved rather than preserved: migration TODOs are deleted once the
-   end state exists, and "legacy TS, possibly a bug" flags are either fixed
-   (if deemed actual bugs) or rewritten as plain behavior notes (if intended).
-2. **Temporary artifacts**: remove scratch/probe files, stray build outputs
-   (e.g. `a.out`), and any one-off scripts created during the phases. Audit
-   with `git status` / untracked-file listing rather than assuming.
-3. **Fixture and tooling consolidation**: decide what stays versioned (the
-   golden fixture files and their generators — move_search_fixtures.json/.hpp,
-   precompute_fixtures.jsonl, the fixture_dump/verify harnesses) and remove or
-   merge superseded tooling. Every generator must still run byte-stably after
-   the cleanup (rerun each once and diff).
-4. **Derive tuck cost from `tuckInput`**: `FullMovePossibility.inputCostX10`
-   is redundant with its `tuckInput` char (the cost is a pure function of
-   that char). Drop the stored field: the dfs tie-break score and the
-   precompute collapse derive the cost on demand (`inputCostX10ForChar` /
-   char → exact TS double via `x / 10.0`). Requires regenerating the fixture
-   encoding (the packed entry pool stores cost bits) and updating the dump /
-   verify harnesses; do this before pinning anything else on the field.
-5. **Battery** after the sweep — the cleanup touches many files, so the
-   full battery plus a benchmark A/B (unity-build layout luck applies) are
-   warranted here.
+**A. Testing consolidation and eval-resilience**
+
+1. **Synthetic-map collapse/formatter tests** (doctest): make
+   `precompute.cpp`'s collapse + formatting callable at doctest level with
+   **crafted lock-value maps and synthetic phantom sets** (test-entry
+   refactor, no production-behavior change). Pin with synthetic constants:
+   exact phantom-value ties (guards the FMA/accumulation class permanently,
+   unlike the eval-only tier which catches it only via real-eval luck),
+   `continue`/`none` fallback conditions, `~~` slicing, pushdown, level
+   transitions, probability weighting, tie-breaks. The collapse is a pure
+   function of (phantoms, maps, penalties) — these tests are eval-free and
+   permanent.
+2. **Property/invariant tests** on the full pipeline: output well-formedness
+   (Default line + 7 piece lines in `POSSIBLE_NEXT_PIECES` order), fallback
+   markers only under their documented conditions, lock values finite and
+   within sane bounds (catches NaN / forgotten scale factors in eval revamps
+   cheaply), winning phantom == argmax recomputed from the maps.
+3. **Rebaseline workflow** (TESTING.md): the full-pipeline goldens
+   (`precompute_fixtures.jsonl`) are **reviewable snapshots, not immovable
+   walls**. An intentional eval change runs `precompute_verify`, reviews the
+   categorized diff (value-flip churn vs anything structural), then
+   re-baselines. Post-TS, regeneration necessarily comes from C++ itself —
+   circular by design, safe because layer A.1 guarantees the machinery.
+   Document this in TESTING.md; the move-search oracle needs no such note
+   (it is eval-immune — pure simulation).
+4. **Battery**: add `precompute_verify` to the standard battery list (it is
+   the permanent regression gate for the precompute surface).
+
+**B. Keep / adapt / drop triage**
+
+- Keep as-is: the move-search fuzz stack (oracle + doctest + fixture_dump +
+  `fuzz_verify_sequences` — the executable spec of the search layer, and the
+  only definition of correct search behavior after TS deletion); the
+  input-validation doctest additions.
+- Adapt: `npm start` battery item → a small script (start, wait for
+  "Listening", kill, fail loudly on a stale-server EADDRINUSE); the
+  differential-runner pattern documented as the house recipe for future
+  parity work.
+- Keep until cutover, drop there: the `precompute-cpp` route (A/B surface).
+- Drop in this phase: the `SR_FUZZ_ASSERT_DAS` toggle (dead scaffolding — DAS
+  has been asserted for many steps); probe/scratch scripts; pre-existing
+  legacy scaffolding the fuzz stack replaced (e.g. `testAdjustments` /
+  `testCases` in move_search.cpp).
+- Dies with TS at cutover (annotate now, delete then): the fuzz generators
+  (`fuzz_generate`, the precompute fixture generator) — they run TS and
+  cannot outlive it. Add header comments to the oracle files stating they
+  become hand-maintained characterization baselines at cutover.
+
+**C. Code comments**
+
+Remove all remaining TS-parity / migration-phase references from code
+comments across the repo (pre-existing ones in main.cpp, high_level_search.cpp,
+eval/playout files, benchmarks, entrypoint.cpp, etc. predate this migration).
+The two AGENTS.md exceptions get resolved rather than preserved: migration
+TODOs are deleted once the end state exists, and "legacy TS, possibly a bug"
+flags are either fixed (if deemed actual bugs) or rewritten as plain behavior
+notes (if intended).
+
+**D. Temporary artifacts**
+
+Remove scratch/probe files, stray build outputs (e.g. `a.out`), and any
+one-off scripts created during the phases. Audit with `git status` /
+untracked-file listing rather than assuming.
+
+**E. Fixture and tooling consolidation**
+
+Decide what stays versioned (the golden fixture files and their generators —
+move_search_fixtures.json/.hpp, precompute_fixtures.jsonl, the fixture_dump /
+verify harnesses) and remove or merge superseded tooling. Every generator
+must still run byte-stably after the cleanup (rerun each once and diff).
+
+**F. Derive tuck cost from `tuckInput`**
+
+`FullMovePossibility.inputCostX10` is redundant with its `tuckInput` char
+(the cost is a pure function of that char). Drop the stored field: the dfs
+tie-break score and the precompute collapse derive the cost on demand
+(`inputCostX10ForChar` / char → exact TS double via `x / 10.0`). Requires
+regenerating the fixture encoding (the packed entry pool stores cost bits)
+and updating the dump / verify harnesses; do this before pinning anything
+else on the field.
+
+**G. Battery after the sweep**
+
+The cleanup touches many files, so the full battery (now including
+`precompute_verify`) plus a benchmark A/B (unity-build layout luck applies)
+are warranted here.
+
+### Phase 5 — Live traffic (out of scope here)
+
+A separate follow-up migration: flipping the live `precompute` routes to the
+C++ path, deleting `PreComputeManager` / worker_thread.ts, and retiring the
+TS path (the fuzz generators die with it; see Phase 4). The differential
+harness and precompute-cpp route remain in place until then.
 
 ## Decisions
 
