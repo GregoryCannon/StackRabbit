@@ -62,6 +62,5 @@ int main(int argc, const char *argv[]) {
   // printf("%s\n", mainProcess(testInputWithSecondBoard, GET_TOP_MOVES).c_str());
   // runGames();
 
-  // testAdjustments();
   return 0;
 }

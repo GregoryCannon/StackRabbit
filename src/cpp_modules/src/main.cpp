@@ -75,9 +75,9 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
   int pruningBreadth = DEFAULT_PRUNING_BREADTH;
   std::string inputFrameTimeline;
   AggressionLevel aggressionLevel = SAFE;
-  // Field 10 of the pipe string (appended after aggressionLevel). -1 = tap mode
-  // (byte-identical to the legacy 9-field format); 0..16 = the player is holding
-  // DAS with this much charge. The field is mandatory -- see TESTING.md's input format.
+  // Field 10 of the pipe string (appended after aggressionLevel). -1 = tap mode;
+  // 0..16 = the player is holding DAS with this much charge. The field is
+  // mandatory -- see TESTING.md's input format.
   int dasCharge = -1;
   // Field 11, present only on PRECOMPUTE requests: the frames the player has to
   // react. 0..60, where 0 means the piece is still unplaced at the reaction time.
@@ -244,8 +244,7 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
       fieldProvided[7] = true;
       break;
     case 8:
-      // Play style: "safe", "aggro", or "hyper" (previously unknown strings
-      // silently meant SAFE; now rejected like the TS boundary does)
+      // Play style: "safe", "aggro", or "hyper"; anything else is rejected.
       if (arg == "safe") {
         aggressionLevel = SAFE;
       } else if (arg == "aggro") {
@@ -327,7 +326,7 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
 
   // Calculate global context for the 3 possible gravity values.
   // DAS requests (dasCharge >= 0) carry the player's real timeline on the wire for
-  // the DAS move search; the piece-range / eval / playout contexts keep the legacy
+  // the DAS move search; the piece-range / eval / playout contexts keep the
   // "DAS-equivalent" tapper approximation
   std::string dasEquivalentTimelineStorage;
   char const *contextInputFrameTimeline = inputFrameTimeline.c_str();

@@ -1,6 +1,9 @@
 // Dumps the C++ move-search results for fuzz fixtures in the same entry format
 // as src/server/move_search_fixtures.json, for external diffing.
 //
+// TODO(Phase 5 cutover): at cutover the JSON oracle becomes a hand-maintained
+// characterization baseline re-baselined from C++ itself (see TESTING.md).
+//
 // Usage:
 //   ./build/fixture_dump --das    all DAS fixtures (dasCharge >= 0)
 //   ./build/fixture_dump --all    every fixture
@@ -52,7 +55,7 @@ static void dumpRows(const Piece *piece, int idx, const char *kind, const char *
   for (const FullMovePossibility &p : results) {
     char buf[128];
     snprintf(buf, sizeof(buf), "r%d x%d y%d c%d k%d seq=", p.rotationIndex, p.x, p.y,
-             p.dasChargeAfter, p.inputCostX10);
+             p.dasChargeAfter, inputCostX10ForChar(p.tuckInput));
     rows.push_back(std::string(buf) + p.inputSequence);
   }
 
@@ -125,7 +128,7 @@ static void dumpReactionTimeFixture(int idx) {
     char buf[512];
     snprintf(buf, sizeof(buf),
              "  r%d x%d y%d c%d k%d seq=%s adj=%d f%d x%d y%d rot%d c%d arr%d held%d pre=%s",
-             p.rotationIndex, p.x, p.y, p.dasChargeAfter, p.inputCostX10,
+             p.rotationIndex, p.x, p.y, p.dasChargeAfter, inputCostX10ForChar(p.tuckInput),
              p.inputSequence.c_str(), c.hasCapture, c.frameIndex, c.x, c.y, c.rotationIndex,
              c.dasCharge, c.isArrContinued, c.dasButtonHeld,
              c.hasCapture ? FIXTURE_RT_PREFIX_POOL[c.preAdjSeqIdx] : "");

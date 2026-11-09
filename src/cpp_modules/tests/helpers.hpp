@@ -79,7 +79,6 @@ static std::string withVerticalIOnColumn(const std::string &board1, int col) {
 //   nextPieceIdx | inputFrameTimeline | playoutCount | playoutLength |
 //   pruningBreadth | aggressionLevel | dasCharge |
 // dasCharge is MANDATORY: -1 = tap mode, 0..16 = DAS mode. See
-// src/server/request_parser.ts getCppEncodedInputString for the TS side and
 // docs/engine_boundaries.md for the locked wire format.
 struct InputBuilder {
   std::string board1 = makeEmptyBoard();

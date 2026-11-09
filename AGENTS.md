@@ -14,7 +14,10 @@ Read alongside [TESTING.md](TESTING.md) (test layout, input-format contract) and
 - `npm run precompute_tsan` — ThreadSanitizer replay of the 42 production-param precompute
   requests; zero warnings required (the thread-safety gate, see Change discipline)
 - `npm run precompute_static_lint` — file-scope statics tripwire over the thread-audited files
-- `npm start` - ensure that it prints "Listening on port 3000" after a few seconds
+- `npm run start_check` — builds the addon + TS (the only battery item exercising the
+  node-gyp addon build), starts the server, waits for "Listening on port 3000", kills
+  the process tree, and verifies port 3000 is freed; fails loudly if a stale server
+  already occupies the port (kill it manually — the trap below)
 
 NB: a long-running dev server keeps the OLD addon mapped in memory — `node-gyp build`
 on disk does not update it. Restart the server to test new code, and don't mistake

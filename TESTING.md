@@ -9,8 +9,9 @@ deterministic, and its entry points are pure string-in/string-out functions.
 - `src/cpp_modules/tests/stackrabbit_test.cpp`:
   - `#define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN` + include `doctest.h`
   - Include the same source list as `main.cpp` (via `main.cpp` itself, the
-    unity build) — but **not** `entrypoint.cpp` / `benchmark.cpp`
-    (they define `main()`) or `module.cpp` / `wasm.cpp` (nan/emscripten glue)
+    unity build) — but **not** the other `main()` definers (`entrypoint.cpp`,
+    `fixture_dump.cpp`, `precompute_tsan.cpp`, `src/benchmark/*.cpp`) or
+    `module.cpp` / `wasm.cpp` (nan/emscripten glue)
 - Test cases live in per-category headers included by the main file (the
   engine is a unity build, so everything must compile as one translation unit):
   - `tests/helpers.hpp` — shared board builders, `InputBuilder`, assertions
@@ -94,7 +95,7 @@ input-string encoder so tests read like the calls they exercise.
   formats — any drift breaks prod, so goldens guard it.
 - Exercise levels 18, 19, and 29 (kill-screen gravity) per core request type.
 - Use small `playoutCount`/`playoutLength` to keep the suite fast; heavy
-  parameter runs stay in `benchmark.cpp`, not tests.
+  parameter runs stay in the benchmark binaries (`src/benchmark/`), not tests.
 
 ## Findings (from building the suite)
 
@@ -261,6 +262,87 @@ Design notes:
   in `formatPrecomputeResult` (null `defaultPlacement`); it now emits the
   normal per-piece `none` fallback. The C++ port must reproduce the guarded
   behavior.
+
+### Re-baselining after an intentional eval change
+
+The full-pipeline goldens are **reviewable snapshots, not immovable walls**.
+An intentional eval change (weights, eval-context setup, playout handling --
+anything the lock value lookups feed) works like this:
+
+1. Run `npm run precompute_verify` and review the categorized mismatch
+   report. Value-flip churn (`default line` / `piece X line` categories: a
+   changed winner or per-piece value with the response shape intact) is the
+   expected face of an eval change. Anything structural -- `fallback vs
+   content` or `whole-response none vs content` categories, a malformed
+   line, a changed `~~` slice -- means pipeline behavior changed, not just
+   values; fix that before re-baselining.
+2. Regenerate the oracle with `npm run precompute_fixture_generate` (rerun
+   twice for byte-stability) and commit the diff together with the eval
+   change.
+3. Refresh the doctest side the same way: the baked fixtures in
+   `src/cpp_modules/tests/precompute_pipeline_fixtures.hpp` are extracted
+   from the jsonl (selection rule and pipe format recorded in that header's
+   top comment), so an eval change that re-baselines the jsonl must refresh
+   the header in the same commit -- `cpp_test_unit` fails loudly otherwise.
+
+While TS exists, regeneration keeps the oracle independent of the C++ code
+under test. After the TS cutover the jsonl's generator dies with TS and
+regeneration necessarily comes from the C++ implementation itself --
+circular by design, and safe because the synthetic collapse/formatter tests
+(`precompute_collapse_tests.hpp`) pin the collapse's tie-breaking, rounding,
+fallback and formatting rules independently of any eval values, so a
+C++-generated re-baseline cannot silently redefine the pipeline's
+semantics. The property tests (`precompute_property_tests.hpp`) hold the
+line in between: they re-derive the winning phantom and the fallback
+conditions from the maps and pin well-formedness and value sanity on every
+battery run.
+
+The move-search oracle needs no such workflow: it is eval-immune (pure
+simulation with no lock values in it), so an eval change cannot move it.
+
+## Differential runner house recipe
+
+The pattern for any future parity work (a port that must reproduce a reference
+implementation byte-for-byte):
+
+1. Freeze a **golden fixture file** — the reference implementation's verbatim
+   outputs for a deterministic, coverage-driven request set, produced by a
+   fixed-seed generator (two runs must be byte-identical).
+2. Write a **small runner** that derives each request string from the records
+   (nothing beyond the encoding contract), invokes the implementation under
+   test, and **byte-compares** against the recorded output. Exit nonzero on
+   any mismatch.
+3. Report **match counts plus categorized diffs**. Categorization separates
+   value churn (a changed number or winner with the response shape intact —
+   reviewable, re-baselineable) from structural breaks (changed shape,
+   fallback, ordering, malformed output — never re-baseline over these).
+
+Live instances: `src/server/move_search_fuzz_verify.js` (over
+`src/server/move_search_fixtures.json` via the `fixture_dump` binary) and
+`src/server/precompute_verify.js` (over
+`src/server/data/precompute_fixtures.jsonl` via the Node addon, with the
+categorized mismatch report behind the re-baselining workflow above).
+
+## Versioned fixture and tooling inventory
+
+The golden fixture files stay versioned permanently: they are the executable
+record of legacy behavior. `src/server/move_search_fixtures.json` (plus the
+baked C++ literal `src/cpp_modules/tests/move_search_fixtures.hpp`) is the only
+definition of correct move-search behavior; `src/server/data/precompute_fixtures.jsonl`
+is the precompute parity oracle; `src/benchmark/data/*` feeds the documented
+benchmark workflow and predates the migration. The verify/dump/tsan harnesses
+(`fixture_dump.cpp`, `fuzz_verify_sequences`, `precompute_verify`,
+`precompute_tsan`) are permanent regression gates. The generators
+(`fuzz_generate`, `precompute_fixture_generate`) stay only until the TS cutover,
+then die with TS (TODO(Phase 5 cutover) in their headers).
+
+Both generators are deterministic: when either is touched, back up the goldens,
+rerun it twice, and require run-vs-run **and** run-vs-committed diffs to be
+byte-identical (the precompute generator takes an output-path argument; the
+fuzz generator writes the golden paths, with git as the safety net). Any diff
+is a checkpoint-boundary finding — restore and report, never absorb. The baked
+hpp is emitted by the generator: keep it that way (hand edits to it are lost on
+the next regeneration).
 
 ## Benchmarking methodology
 

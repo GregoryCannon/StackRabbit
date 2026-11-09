@@ -93,6 +93,8 @@ export class RequestHandler {
         return [result, 200];
 
       case "precompute-cpp":
+        // TODO(Phase 5 cutover): this A/B surface is kept until the TS precompute
+        // path retires; the route is dropped at cutover.
         return [this.handlePrecomputeCpp(searchState, urlArgs), 200];
 
       default:

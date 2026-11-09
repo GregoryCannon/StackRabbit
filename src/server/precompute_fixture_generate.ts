@@ -5,14 +5,18 @@ import { PieceId } from "./types";
 import * as fs from "fs";
 
 /**
- * Golden fixture generator for the precompute pipeline (Phase 0 step 5 of the
- * precompute C++ migration, see docs/precompute_cpp_migration.md).
+ * Golden fixture generator for the precompute pipeline (see
+ * docs/precompute_cpp_migration.md).
+ *
+ * TODO(Phase 5 cutover): this generator runs the TS engine and cannot outlive
+ * it; it is deleted at cutover.
  *
  * Drives the REAL TS precompute path (parseUrlArguments -> SearchState ->
  * RequestHandler.handlePrecomputeRequestSync with a live PreComputeManager) over
  * positions sampled from src/benchmark/data/position_log.jsonl, and records the
  * exact returned string per fixture into a versioned JSONL artifact. That file is
- * the parity oracle the C++ port will be differentially tested against in Phase 3.
+ * the parity oracle the C++ pipeline is differentially tested against
+ * (npm run precompute_verify).
  *
  * Regenerate with: npm run precompute_fixture_generate [-- <outputPath>]
  * Output is deterministic (fixed PRNG seed, fixed position log): two runs must be
@@ -23,7 +27,8 @@ import * as fs from "fs";
  * dominates, playout params matter less):
  *   - eval_only tier: every logged position x 2 (rt/das) combos with
  *     playoutCount=0/playoutLength=0 (eval-only lock lookups in the C++ workers).
- *     Parity still holds because the C++ side replays the identical params.
+ *     The C++ side replays the identical params, so the recorded strings
+ *     remain valid.
  *   - production tier: a smaller subset with the default engine params
  *     (playoutCount=49, playoutLength=2, pruningBreadth=20, aggression=safe).
  *

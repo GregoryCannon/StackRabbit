@@ -200,10 +200,9 @@ int shouldPerformInputsThisFrame(int frameIndex, char const *inputFrameTimeline)
 }
 
 /**
- * Port of TS getDasEquivalentInputTimeline (src/server/utils.ts): the fake "10-12 Hz
- * tapper" timeline used to approximate a DAS holder in tap-mode code paths (piece
- * ranges, eval, playouts). The real timeline is only used by the DAS move search to
- * determine quicktap behavior.
+ * The fake "10-12 Hz tapper" timeline used to approximate a DAS holder in
+ * tap-mode code paths (piece ranges, eval, playouts). The real timeline is
+ * only used by the DAS move search to determine quicktap behavior.
  *
  * Returns a static string, so the pointer stays valid for the lifetime of the process.
  */

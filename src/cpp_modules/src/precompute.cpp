@@ -1,3 +1,5 @@
+#include "precompute.hpp"
+
 #include "full_move_search.hpp"
 #include "high_level_search.hpp"
 #include "utils.hpp"
@@ -41,6 +43,9 @@ using namespace std;
  * Their intersection is what the collapse may consider; a cell outside the
  * lookup is skipped, and on a near-topped board an empty lookup makes the
  * per-piece fallback the intended response.
+ *
+ * preparePrecomputeState performs steps 1-4 and collapseAndFormatPrecompute
+ * performs steps 5-6; runPrecompute is the composition of the two.
  */
 
 namespace {
@@ -50,31 +55,6 @@ const double PRECOMPUTE_MIN_VALUE = -9007199254740991.0;
 
 /** The next pieces in response order; PIECE_CHAR_LIST shares this order. */
 const char *const RESPONSE_PIECE_ORDER = "IOLJTSZ";
-
-/** One placement outcome shaped for the collapse and the formatters. */
-struct PrecomputePossibility {
-  int relRot; // placement relative to the search's entry state
-  int relX;
-  int relY;
-  int rot; // absolute lock coordinates: the lock value map keys
-  int x;
-  int y;
-  std::string inputSequence;
-  int inputCostX10; // 0 basic; -1 tuck; -2 spin; -3 spin-tuck
-  int dasChargeAfter;
-  int numLinesCleared;
-};
-
-/** One candidate initial placement and its adjustment search. */
-struct PrecomputePhantom {
-  std::string inputSequence; // the dedupe prefix (first reactionTime chars)
-  bool hasInitialPlacement = false;
-  PrecomputePossibility initial{};
-  bool hasAdjustmentState = false;
-  FullMoveSearchContext adjustmentCtx;
-  int adjustmentDasCharge = 0;
-  std::vector<PrecomputePossibility> possibleAdjustments;
-};
 
 int numOrientationsOf(const Piece *piece) {
   for (int r = 0; r < 4; r++) {
@@ -154,8 +134,6 @@ double roundForConsumer(float value) {
   return strtod(buffer, NULL);
 }
 
-typedef std::unordered_map<std::string, double> PrecomputeValueMap;
-
 void roundCopyMap(const std::unordered_map<std::string, float> &source, OUT PrecomputeValueMap &out) {
   out.reserve(source.size());
   for (const auto &entry : source) {
@@ -190,8 +168,9 @@ double dasPenalty(bool useDas, int dasChargeAfter, const std::string &key,
 /**
  * Per-character input cost over the adjustment's full sequence, plus the
  * possibility's own cost. The tuck character's cost is therefore counted
- * twice: once in the per-character sum and once via inputCostX10. This is
- * legacy TS behaviour, replicated deliberately.
+ * twice: once in the per-character sum and once via its own
+ * inputCostX10ForChar entry. This double count is deliberate (pinned by the
+ * collapse tests).
  */
 double adjustmentInputCost(const PrecomputePossibility &possibility) {
   double cost = 0;
@@ -221,7 +200,7 @@ double adjustmentInputCost(const PrecomputePossibility &possibility) {
       break;
     }
   }
-  return cost + possibility.inputCostX10 / 10.0;
+  return cost + inputCostX10ForChar(possibility.tuckInput) / 10.0;
 }
 
 /** NES PRNG transition odds, indexed T J Z O S L I. */
@@ -264,7 +243,7 @@ PrecomputePossibility toPrecomputePossibility(const FullMovePossibility &possibi
   out.relX = possibility.x - initialX;
   out.relY = possibility.y - initialY;
   out.inputSequence = possibility.inputSequence;
-  out.inputCostX10 = possibility.inputCostX10;
+  out.tuckInput = possibility.tuckInput;
   out.dasChargeAfter = possibility.dasChargeAfter;
   out.numLinesCleared = possibility.numLinesCleared;
   return out;
@@ -319,13 +298,13 @@ std::string formatDefaultLine(const PrecomputePossibility &placement, int reacti
 }
 
 /** rot,x,y | sequence | board | level | lines | das. */
-std::string formatPieceLine(const PrecomputePossibility &placement, unsigned int board[20],
-                            const Piece *piece, int level, int lines) {
+std::string formatPieceLine(const PrecomputePossibility &placement, bool pushDown,
+                            unsigned int board[20], const Piece *piece, int level, int lines) {
   const int levelAfter = getLevelAfterLineClears(level, lines, placement.numLinesCleared);
   const std::string sequence =
-      (SHOULD_PUSHDOWN && levelAfter == 18) ? pushDownSequence(placement.inputSequence)
-                                            : (placement.inputSequence.empty() ? "none"
-                                                                               : placement.inputSequence);
+      (pushDown && levelAfter == 18) ? pushDownSequence(placement.inputSequence)
+                                     : (placement.inputSequence.empty() ? "none"
+                                                                        : placement.inputSequence);
 
   char head[32];
   snprintf(head, sizeof(head), "%d,%d,%d|", placement.relRot, placement.relX, placement.relY);
@@ -347,7 +326,8 @@ std::string formatPieceLine(const PrecomputePossibility &placement, unsigned int
 /** Default line plus one line per next piece, with the fallback markers. */
 std::string formatPrecomputeResult(const PrecomputePhantom &phantom,
                                    const PrecomputePossibility *const bestPerPiece[7], int reactionTime,
-                                   unsigned int board[20], const Piece *piece, int level, int lines) {
+                                   bool pushDown, unsigned int board[20], const Piece *piece,
+                                   int level, int lines) {
   std::string out = "Default:";
   if (phantom.hasInitialPlacement) {
     out += formatDefaultLine(phantom.initial, reactionTime, board, piece, level, lines);
@@ -362,7 +342,7 @@ std::string formatPrecomputeResult(const PrecomputePhantom &phantom,
     out += RESPONSE_PIECE_ORDER[i];
     out += ":";
     if (bestPerPiece[i] != NULL) {
-      out += formatPieceLine(*bestPerPiece[i], board, piece, level, lines);
+      out += formatPieceLine(*bestPerPiece[i], pushDown, board, piece, level, lines);
     } else {
       out += canContinue ? "continue" : "none";
     }
@@ -372,11 +352,11 @@ std::string formatPrecomputeResult(const PrecomputePhantom &phantom,
 
 } // namespace
 
-std::string runPrecompute(GameState gameState, const Piece *curPiece,
-                          char const *inputFrameTimeline, int dasCharge, int reactionTime,
-                          int pruningBreadth, int playoutCount, int playoutLength,
-                          const EvalContext *evalContext,
-                          const PieceRangeContext pieceRangeContextLookup[3]) {
+PrecomputeState preparePrecomputeState(GameState gameState, const Piece *curPiece,
+                                       char const *inputFrameTimeline, int dasCharge,
+                                       int reactionTime, int pruningBreadth, int playoutCount,
+                                       int playoutLength, const EvalContext *evalContext,
+                                       const PieceRangeContext pieceRangeContextLookup[3]) {
   const int numOrientations = numOrientationsOf(curPiece);
 
   // Step 1: the current piece's placements, with the mid-air snapshots.
@@ -385,37 +365,38 @@ std::string runPrecompute(GameState gameState, const Piece *curPiece,
   fullMoveSearch(gameState, curPiece, inputFrameTimeline, dasCharge, /* trackInputSequences= */ true,
                  initialResults, FullMoveSearchContext(), reactionTime, &captures);
   if (initialResults.empty()) {
-    return "none";
+    // No legal placement: the state keeps no phantoms and the lock lookups do
+    // not run at all; the collapse responds "none".
+    return PrecomputeState();
   }
+
+  PrecomputeState state;
+  state.reactionTime = reactionTime;
 
   // Step 2: one lock value lookup per next piece, values rounded for the
   // collapse. The seven lookups are independent: one thread per next piece,
   // each writing only its own slot, so no shared mutable state is touched.
-  const bool useDAS = dasCharge != -1;
-  PrecomputeValueMap lockValues[7];
-  PrecomputeValueMap partialPenalties[7];
-  PrecomputeValueMap minPenalties[7];
+  state.useDAS = dasCharge != -1;
   std::exception_ptr lookupErrors[7] = {};
   std::thread lookupThreads[7];
   for (int i = 0; i < 7; i++) {
-    lookupThreads[i] = std::thread([i, &useDAS, &gameState, curPiece, inputFrameTimeline,
+    lookupThreads[i] = std::thread([i, &state, &gameState, curPiece, inputFrameTimeline,
                                     pruningBreadth, playoutCount, playoutLength, evalContext,
-                                    &pieceRangeContextLookup, &lockValues, &partialPenalties,
-                                    &minPenalties, &lookupErrors]() {
+                                    &pieceRangeContextLookup, &lookupErrors]() {
       try {
         const Piece *nextPiece = &PIECE_LIST[i];
-        if (useDAS) {
+        if (state.useDAS) {
           const DasLockValueMaps maps = getLockValueLookupDasMaps(
               gameState, curPiece, nextPiece, pruningBreadth, playoutCount, playoutLength,
               inputFrameTimeline, evalContext, pieceRangeContextLookup);
-          roundCopyMap(maps.partialPenalty, partialPenalties[i]);
-          roundCopyMap(maps.minPenalty, minPenalties[i]);
-          roundCopyMap(maps.lockValue, lockValues[i]);
+          roundCopyMap(maps.partialPenalty, state.partialPenalties[i]);
+          roundCopyMap(maps.minPenalty, state.minPenalties[i]);
+          roundCopyMap(maps.lockValue, state.lockValues[i]);
         } else {
           roundCopyMap(getLockValueLookupMapped(gameState, curPiece, nextPiece, pruningBreadth,
                                                 playoutCount, playoutLength, evalContext,
                                                 pieceRangeContextLookup),
-                       lockValues[i]);
+                       state.lockValues[i]);
         }
       } catch (...) {
         lookupErrors[i] = std::current_exception();
@@ -434,7 +415,6 @@ std::string runPrecompute(GameState gameState, const Piece *curPiece,
   }
 
   // Step 3: the phantom placements.
-  std::vector<PrecomputePhantom> phantoms;
   if (reactionTime == 0) {
     // The piece is still unplaced at the reaction time, so the single phantom
     // starts from the spawn state and has no initial placement to show.
@@ -442,7 +422,7 @@ std::string runPrecompute(GameState gameState, const Piece *curPiece,
     phantom.hasAdjustmentState = true;
     phantom.adjustmentCtx = FullMoveSearchContext();
     phantom.adjustmentDasCharge = dasCharge;
-    phantoms.push_back(phantom);
+    state.phantoms.push_back(phantom);
   } else {
     std::vector<PrecomputePossibility> initialPlacements;
     initialPlacements.reserve(initialResults.size());
@@ -487,12 +467,12 @@ std::string runPrecompute(GameState gameState, const Piece *curPiece,
         phantom.adjustmentCtx.preAdjInputSequence = capture.preAdjInputSequence;
         phantom.adjustmentDasCharge = capture.dasCharge;
       }
-      phantoms.push_back(phantom);
+      state.phantoms.push_back(phantom);
     }
   }
 
   // Step 4: one adjustment search per phantom that captured a mid-air state.
-  for (PrecomputePhantom &phantom : phantoms) {
+  for (PrecomputePhantom &phantom : state.phantoms) {
     if (!phantom.hasAdjustmentState) {
       continue;
     }
@@ -508,32 +488,37 @@ std::string runPrecompute(GameState gameState, const Piece *curPiece,
     }
   }
 
+  return state;
+}
+
+std::string collapseAndFormatPrecompute(const PrecomputeState &state, unsigned int board[20],
+                                        const Piece *piece, int level, int lines, bool pushDown) {
   // Step 5: the collapse.
   double bestPhantomValue = PRECOMPUTE_MIN_VALUE;
   std::string overallResponse = "none";
-  for (const PrecomputePhantom &phantom : phantoms) {
+  for (const PrecomputePhantom &phantom : state.phantoms) {
     double totalValue = 0;
     const PrecomputePossibility *bestPerPiece[7] = {NULL, NULL, NULL, NULL, NULL, NULL, NULL};
 
     if (phantom.possibleAdjustments.empty()) {
       if (!phantom.hasInitialPlacement) {
-        // The spawn-state search already proved non-empty (step 1 returned
-        // early otherwise), so the reaction-time-zero phantom always has
+        // The spawn-state search already proved non-empty (prepare returns no
+        // phantoms otherwise), so the reaction-time-zero phantom always has
         // adjustments. Reaching this point would mean the invariant broke.
         throw std::runtime_error("Precompute phantom has no placement and no adjustments.");
       }
       for (int i = 0; i < 7; i++) {
         const std::string key =
             encodeLockCell(phantom.initial.rot, phantom.initial.x, phantom.initial.y);
-        const double value = lockValueOrNan(lockValues[i], key)
-                             + phantom.initial.inputCostX10 / 10.0
-                             + dasPenalty(useDAS, phantom.initial.dasChargeAfter, key,
-                                          partialPenalties[i], minPenalties[i]);
+        const double value = lockValueOrNan(state.lockValues[i], key)
+                             + inputCostX10ForChar(phantom.initial.tuckInput) / 10.0
+                             + dasPenalty(state.useDAS, phantom.initial.dasChargeAfter, key,
+                                          state.partialPenalties[i], state.minPenalties[i]);
         // Keep the multiply out of the addition: a fused multiply-add rounds
         // once per term instead of twice, and the single-rounding result can
         // flip one of the exact phantom ties the collapse must resolve
         // first-wins. The two-rounding accumulation is the contract here.
-        const double term = value * pieceProbability(curPiece, &PIECE_LIST[i]);
+        const double term = value * pieceProbability(piece, &PIECE_LIST[i]);
         totalValue += term;
       }
     } else {
@@ -542,12 +527,12 @@ std::string runPrecompute(GameState gameState, const Piece *curPiece,
         const PrecomputePossibility *bestAdjustment = NULL;
         for (const PrecomputePossibility &adjustment : phantom.possibleAdjustments) {
           const std::string key = encodeLockCell(adjustment.rot, adjustment.x, adjustment.y);
-          if (lockValues[i].find(key) == lockValues[i].end()) {
+          if (state.lockValues[i].find(key) == state.lockValues[i].end()) {
             continue;
           }
-          const double value = lockValues[i].at(key) + adjustmentInputCost(adjustment)
-                               + dasPenalty(useDAS, adjustment.dasChargeAfter, key,
-                                            partialPenalties[i], minPenalties[i]);
+          const double value = state.lockValues[i].at(key) + adjustmentInputCost(adjustment)
+                               + dasPenalty(state.useDAS, adjustment.dasChargeAfter, key,
+                                            state.partialPenalties[i], state.minPenalties[i]);
           // A tie keeps the later adjustment.
           if (value >= maxValue) {
             maxValue = value;
@@ -557,7 +542,7 @@ std::string runPrecompute(GameState gameState, const Piece *curPiece,
         bestPerPiece[i] = bestAdjustment;
         // Two roundings per term, never a fused multiply-add (see the
         // default-placement branch above for why the fused form is wrong).
-        const double term = maxValue * pieceProbability(curPiece, &PIECE_LIST[i]);
+        const double term = maxValue * pieceProbability(piece, &PIECE_LIST[i]);
         totalValue += term;
       }
     }
@@ -565,11 +550,24 @@ std::string runPrecompute(GameState gameState, const Piece *curPiece,
     const double phantomValue = totalValue / 7;
     // A tie keeps the earlier phantom.
     if (phantomValue > bestPhantomValue) {
-      overallResponse = formatPrecomputeResult(phantom, bestPerPiece, reactionTime, gameState.board,
-                                               curPiece, gameState.level, gameState.lines);
+      overallResponse =
+          formatPrecomputeResult(phantom, bestPerPiece, state.reactionTime, pushDown, board, piece,
+                                 level, lines);
       bestPhantomValue = phantomValue;
     }
   }
 
   return overallResponse;
+}
+
+std::string runPrecompute(GameState gameState, const Piece *curPiece,
+                          char const *inputFrameTimeline, int dasCharge, int reactionTime,
+                          int pruningBreadth, int playoutCount, int playoutLength,
+                          const EvalContext *evalContext,
+                          const PieceRangeContext pieceRangeContextLookup[3]) {
+  const PrecomputeState state = preparePrecomputeState(
+      gameState, curPiece, inputFrameTimeline, dasCharge, reactionTime, pruningBreadth, playoutCount,
+      playoutLength, evalContext, pieceRangeContextLookup);
+  return collapseAndFormatPrecompute(state, gameState.board, curPiece, gameState.level,
+                                     gameState.lines, SHOULD_PUSHDOWN);
 }

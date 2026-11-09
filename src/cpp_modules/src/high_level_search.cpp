@@ -883,8 +883,8 @@ DasLockValueMaps getLockValueLookupDasMaps(GameState gameState, const Piece *fir
 
   // Replace the raw value maps with maps of the penalty relative to the best placement (as negative
   // numbers). NB: all four lookups share one first-piece search, so their key sets match; the guard
-  // below is a safety net. Skipped keys match TS's getDasPenalty missing-key -> no-penalty
-  // behavior.
+  // below is a safety net. Skipped keys carry no penalty, matching the
+  // consumer's missing-key -> no-penalty rule.
   for (const auto &pair : maps.lockValue) {
     string key = pair.first;
     float value = pair.second;
@@ -898,7 +898,7 @@ DasLockValueMaps getLockValueLookupDasMaps(GameState gameState, const Piece *fir
     // than full charge. This happens when the low-charge search finds maneuvers that
     // are out of the engine's scope (e.g. double-tuck chains, which are deliberately
     // omitted for complexity) -- the maneuver is real but the engine must not reward
-    // it, so clamp the delta at zero. The TS consumer adds these values to lock
+    // it, so clamp the delta at zero. The consumer adds these values to lock
     // values, so clamping keeps "no advantage from losing DAS" instead of inflating
     // the low-charge continuation.
     maps.partialPenalty[key] = std::min(penaltyPartial, 0.0f);

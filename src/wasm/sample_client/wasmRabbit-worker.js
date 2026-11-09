@@ -44,7 +44,7 @@ function getStackRabbitArgString(args) {
     currentPieceIndex,
     nextPieceIndex,
     // The C++ parser requires X/. frames with at least one input frame; it does
-    // not normalize hyphens, so mirror the TS request parser here.
+    // not normalize hyphens, so '-' is normalized to '.' here.
     args.inputFrameTimeline.replace(/-/g, "."),
     playoutCount,
     args.playoutLength,

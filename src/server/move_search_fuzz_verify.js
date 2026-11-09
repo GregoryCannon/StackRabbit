@@ -3,6 +3,10 @@
  * strongest available level: character-exact input sequences, plus the
  * (rotationIndex, x, y, dasChargeAfter, inputCostX10) tuples.
  *
+ * TODO(Phase 5 cutover): at cutover the oracle becomes a hand-maintained
+ * characterization baseline; updates come from reviewed verifier diffs,
+ * re-baselined from C++ itself (see TESTING.md).
+ *
  * Covers BOTH modes: DAS fixtures (dasCharge >= 0, the frame-exact charge
  * search) and tap fixtures (dasCharge == -1, fullMoveSearch's ARR-gated tap
  * path), plus the adjustment fixtures (mid-air entry states from the

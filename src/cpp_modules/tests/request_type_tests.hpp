@@ -309,7 +309,7 @@ TEST_CASE("All request types complete on empty, tall, and notched boards") {
   RequestType types[4] = {GET_MOVE, GET_TOP_MOVES, GET_LOCK_VALUE_LOOKUP, RATE_MOVE};
   for (const auto &board : boards) {
     // Every type gets a player board: RATE_MOVE requires one (see findings in
-    // TESTING.md -- without it the legacy fallback path reads out of bounds).
+    // TESTING.md -- without it the fallback path reads out of bounds).
     // The player board is a vertical I dropped onto col 0 of the *current*
     // board, so the move is always reachable by the current piece (I).
     auto input = InputBuilder()

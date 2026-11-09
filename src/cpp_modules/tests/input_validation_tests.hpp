@@ -109,8 +109,8 @@ TEST_CASE("Unknown aggression levels are rejected (was: silently SAFE)") {
   std::string safeOutput = runRequest(GET_LOCK_VALUE_LOOKUP, safeInput);
   std::string aggroOutput = runRequest(GET_LOCK_VALUE_LOOKUP, aggroInput);
 
-  // Unknown strings are rejected (matching the TS boundary), and "aggro"
-  // (different burnCoef) actually changes the output.
+  // Unknown strings are rejected, and "aggro" (different burnCoef) actually
+  // changes the output.
   CHECK(runRequest(GET_LOCK_VALUE_LOOKUP, garbageInput)
         == "Error: invalid aggressionLevel value (expected safe, aggro, or hyper): banana");
   CHECK(aggroOutput != safeOutput);
@@ -118,7 +118,7 @@ TEST_CASE("Unknown aggression levels are rejected (was: silently SAFE)") {
 
 TEST_CASE("A missing dasCharge field is rejected (the field is mandatory)") {
   // Callers must state the DAS state explicitly: -1 for tap mode, 0..16 for DAS
-  // mode. Inputs from before the dasCharge field existed are rejected.
+  // mode. Inputs missing the dasCharge field are rejected.
   auto input = InputBuilder().withBoard1(makeFlatBoard(4)).withCurPiece(IDX_O).build();
   std::string legacyInput = input.substr(0, input.size() - 3); // strip trailing "-1|"
   REQUIRE(legacyInput.size() > 0);
@@ -164,7 +164,8 @@ TEST_CASE("Timeline fields must be non-empty, X/.-only, and contain at least one
   CHECK(runRequest(GET_MOVE, base.withTimeline(".....").build())
         == "Error: invalid inputFrameTimeline (expected X/. frames with at least one input frame): "
            ".....");
-  // Invalid characters (TS normalizes '-' to '.'; C++ receives the normalized form).
+  // Invalid characters: '-' is normalized to '.' by the JS host before the
+  // addon is called, so this boundary rejects it.
   CHECK(runRequest(GET_MOVE, base.withTimeline("X.-X").build())
         == "Error: invalid inputFrameTimeline (expected X/. frames with at least one input frame): "
            "X.-X");
@@ -179,9 +180,10 @@ TEST_CASE("Missing trailing fields report the first missing field") {
 }
 
 TEST_CASE("dasCharge >= 0 keeps the legacy tapper approximation for non-DAS request paths") {
-  // A DAS-holding player's non-DAS requests must behave exactly as they did when
-  // TS encoded the DAS-equivalent timeline directly: the C++ side now derives
-  // that timeline itself from dasCharge (docs/engine_boundaries.md).
+  // A DAS-holding player's non-DAS requests run on the DAS-equivalent timeline
+  // derived from dasCharge (docs/engine_boundaries.md): passing the real
+  // timeline with dasCharge >= 0 must produce the same output as passing the
+  // derived timeline directly.
   auto dasInput = InputBuilder()
                       .withBoard1(makeFlatBoard(4))
                       .withCurPiece(IDX_O)

@@ -56,13 +56,19 @@ struct FullMoveSearchContext {
   std::string preAdjInputSequence;
 };
 
+/**
+ * Input cost (x10) for one tuck/spin notation character:
+ * '.'/anything unlisted = 0 (basic); L/R = -1 (tuck); A/B = -2 (spin);
+ * E/F/I/G = -3 (spin-tuck).
+ */
+int inputCostX10ForChar(char c);
+
 /** One computed placement outcome in DAS mode. */
 struct FullMovePossibility {
   int x;
   int y;
   int rotationIndex;
   int dasChargeAfter; // 0..16 charge at the lock frame (-1 in tap mode)
-  int inputCostX10;   // 0 = basic; -1 tuck (L/R); -2 spin (A/B); -3 spin-tuck (E/F/I/G)
   char tuckInput;     // '.' for basic placements
   int numLinesCleared;
   std::string inputSequence;

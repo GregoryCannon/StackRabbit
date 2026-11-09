@@ -7,8 +7,7 @@
 //     fastMoveSearch (the hot-path legacy search; fixtures containing spin
 //     entries are skipped there, see the test case) and through fullMoveSearch's
 //     ARR-gated tap path.
-//   - DAS-mode fixtures (dasCharge >= 0): asserted through fullMoveSearch
-//     (flip SR_FUZZ_ASSERT_DAS to 0 to downgrade to informational).
+//   - DAS-mode fixtures (dasCharge >= 0): asserted through fullMoveSearch.
 //   - Adjustment fixtures (ADJUSTMENT_FIXTURES): mid-air entry states run
 //     through fullMoveSearch with a FullMoveSearchContext.
 //   - Reaction-time fixtures (REACTION_TIME_FIXTURES): spawn searches run
@@ -40,11 +39,6 @@
 #include "move_search_fixtures.hpp"
 #include "../src/full_move_search.hpp"
 
-// Flip to 1 once the C++ DAS move search lands.
-#ifndef SR_FUZZ_ASSERT_DAS
-#define SR_FUZZ_ASSERT_DAS 1
-#endif
-
 struct FuzzEntry {
   int rot;
   int x;
@@ -69,39 +63,6 @@ struct FuzzEntry {
            inputCostX10 == o.inputCostX10;
   }
 };
-
-struct FuzzCell {
-  int rot;
-  int x;
-  int y;
-
-  bool operator<(const FuzzCell &o) const {
-    if (rot != o.rot)
-      return rot < o.rot;
-    if (x != o.x)
-      return x < o.x;
-    return y < o.y;
-  }
-  bool operator==(const FuzzCell &o) const { return rot == o.rot && x == o.x && y == o.y; }
-};
-
-static int tuckCostX10(char tuckInput) {
-  switch (tuckInput) {
-  case 'E':
-  case 'F':
-  case 'I':
-  case 'G':
-    return -3;
-  case 'A':
-  case 'B':
-    return -2;
-  case 'L':
-  case 'R':
-    return -1;
-  default:
-    return 0; // NO_TUCK_NOTATION -> basic placement
-  }
-}
 
 // Unpacks one expected entry from FIXTURE_ENTRY_POOL (bit layout documented in
 // the generator's packEntry; 18 bits: rot | (x+8)<<2 | (y+2)<<6 |
@@ -150,13 +111,14 @@ static std::vector<FuzzEntry> runCppMoveSearch(const MoveSearchFixture &f,
   const Piece *piece = &PIECE_LIST[f.pieceIndex];
   std::vector<FuzzEntry> out;
   if (f.dasCharge == -1 && !forceFullSearch) {
-    // Tap mode: the legacy walk-based search (untouched by the DAS port)
+    // Tap mode: the walk-based fastMoveSearch (its tuck semantics differ from
+    // fullMoveSearch's; see the spin-entry guard below)
     std::vector<LockPlacement> lockPlacements;
     fastMoveSearch(gameState, piece, FIXTURE_TIMELINE_POOL[f.timelineIdx], lockPlacements);
     out.reserve(lockPlacements.size());
     for (const LockPlacement &lp : lockPlacements) {
       out.push_back(
-          {lp.rotationIndex, lp.x, lp.y, /*dasChargeAfter=*/-1, tuckCostX10(lp.tuckInput)});
+          {lp.rotationIndex, lp.x, lp.y, /*dasChargeAfter=*/-1, inputCostX10ForChar(lp.tuckInput)});
     }
   } else {
     // fullMoveSearch: DAS mode, or tap mode via its ARR-gated tap path
@@ -166,7 +128,8 @@ static std::vector<FuzzEntry> runCppMoveSearch(const MoveSearchFixture &f,
                    /*trackInputSequences=*/false, results);
     out.reserve(results.size());
     for (const FullMovePossibility &p : results) {
-      out.push_back({p.rotationIndex, p.x, p.y, p.dasChargeAfter, p.inputCostX10});
+      out.push_back(
+          {p.rotationIndex, p.x, p.y, p.dasChargeAfter, inputCostX10ForChar(p.tuckInput)});
     }
   }
   return out;
@@ -263,61 +226,6 @@ static std::string diffEntries(const std::vector<FuzzEntry> &expected,
   return ss.str();
 }
 
-// Strips charge/cost, keeping only lock cells (multiset semantics preserved:
-// a cell may legitimately appear twice -- basic + tuck).
-static std::vector<FuzzCell> toCells(const std::vector<FuzzEntry> &entries) {
-  std::vector<FuzzCell> out;
-  out.reserve(entries.size());
-  for (const FuzzEntry &e : entries)
-    out.push_back({e.rot, e.x, e.y});
-  std::sort(out.begin(), out.end());
-  return out;
-}
-
-static std::string diffCells(const std::vector<FuzzCell> &expected,
-                             const std::vector<FuzzCell> &actual, int limit) {
-  const size_t cap = (size_t)limit;
-  std::vector<std::string> missing, extra;
-  size_t i = 0, j = 0;
-  while (i < expected.size() || j < actual.size()) {
-    auto cellStr = [](const FuzzCell &c) {
-      std::ostringstream ss;
-      ss << "rot=" << c.rot << " x=" << c.x << " y=" << c.y;
-      return ss.str();
-    };
-    if (j >= actual.size() || (i < expected.size() && expected[i] < actual[j])) {
-      if (missing.size() < cap)
-        missing.push_back("  expected-only: " + cellStr(expected[i]));
-      i++;
-    } else if (i >= expected.size() || actual[j] < expected[i]) {
-      if (extra.size() < cap)
-        extra.push_back("  cpp-only:       " + cellStr(actual[j]));
-      j++;
-    } else {
-      i++;
-      j++;
-    }
-  }
-
-  if (missing.empty() && extra.empty())
-    return "";
-
-  std::ostringstream ss;
-  ss
-      << "    "
-      << missing.size()
-      << (missing.size() == cap ? "+" : "")
-      << " expected-only, "
-      << extra.size()
-      << (extra.size() == cap ? "+" : "")
-      << " cpp-only";
-  for (const std::string &m : missing)
-    ss << "\n" << m;
-  for (const std::string &e : extra)
-    ss << "\n" << e;
-  return ss.str();
-}
-
 static std::string describeFixture(int index, const MoveSearchFixture &f) {
   std::ostringstream ss;
   ss
@@ -348,8 +256,8 @@ TEST_CASE("Move search fuzz: tap-mode fixtures match the golden") {
 
     // The two searches define "tuck" differently, by design: fastMoveSearch
     // finds gameplay tucks (destination cells flagged as overhang setups by the
-    // board analysis), while fullMoveSearch mirrors TS's dfs, which appends any
-    // input producing a novel lock during the fall. On the jagged-overhang
+    // board analysis), while fullMoveSearch's tuck/spin DFS appends any input
+    // producing a novel lock during the fall. On the jagged-overhang
     // board the dfs-based definition yields 46 spins + 14 spin-tucks that
     // fastMoveSearch intentionally does not model, so those fixtures are
     // skipped here (asserted via the fullMoveSearch tap-path test below and
@@ -450,13 +358,10 @@ TEST_CASE("Move search fuzz: tap fixtures match the golden via fullMoveSearch (t
                                      << report.str());
 }
 
-TEST_CASE("Move search fuzz: DAS fixtures (pending C++ DAS support)") {
+TEST_CASE("Move search fuzz: DAS fixtures match the golden") {
   int dasCount = 0;
-  int cellMatches = 0;
-  std::ostringstream report;
-#if SR_FUZZ_ASSERT_DAS
   int failures = 0;
-#endif
+  std::ostringstream report;
   for (int i = 0; i < MOVE_SEARCH_FIXTURE_COUNT; i++) {
     const MoveSearchFixture &f = MOVE_SEARCH_FIXTURES[i];
     if (f.dasCharge == -1)
@@ -465,7 +370,6 @@ TEST_CASE("Move search fuzz: DAS fixtures (pending C++ DAS support)") {
 
     std::vector<FuzzEntry> actual = runCppMoveSearch(f);
     std::vector<FuzzEntry> expected = expectedEntries(f);
-#if SR_FUZZ_ASSERT_DAS
     std::string diff = diffEntriesInOrder(expected, actual, /*context=*/2);
     if (!diff.empty()) {
       failures++;
@@ -482,44 +386,17 @@ TEST_CASE("Move search fuzz: DAS fixtures (pending C++ DAS support)") {
             << "\n";
       }
     }
-#else
-    // Informational: how close is the current tap-only C++ search to the TS
-    // DAS golden when charge is ignored entirely? Quantifies the gap that the
-    // DAS port needs to close (and what getDasEquivalentInputTimeline papers over).
-    if (toCells(expected) == toCells(actual)) {
-      cellMatches++;
-    } else if (report.str().empty()) {
-      report
-          << "  first diff at "
-          << describeFixture(i, f)
-          << "\n"
-          << diffCells(toCells(expected), toCells(actual), 3)
-          << "\n";
-    }
-#endif
   }
 
   MESSAGE("DAS-mode fuzz: "
           << dasCount
-          << " fixtures"
-#if SR_FUZZ_ASSERT_DAS
-          << " asserted (full rot/x/y/charge/cost match)"
-#else
-          << ", "
-          << cellMatches
-          << " match on cells alone (charge ignored)"
-#endif
-  );
-#if SR_FUZZ_ASSERT_DAS
+          << " fixtures asserted (full rot/x/y/charge/cost match)");
   REQUIRE_MESSAGE(failures == 0, "DAS-mode fuzz: "
                                      << failures
                                      << "/"
                                      << dasCount
                                      << " fixtures mismatched\n"
                                      << report.str());
-#else
-  REQUIRE(dasCount > 0);
-#endif
 }
 
 // Mid-air adjustment entry states. Each fixture starts from the adjTimeSimState
@@ -562,7 +439,7 @@ TEST_CASE("Move search fuzz: adjustment fixtures match the golden (mid-air entry
     std::vector<FuzzEntry> actual;
     actual.reserve(results.size());
     for (const FullMovePossibility &p : results) {
-      actual.push_back({p.rotationIndex, p.x, p.y, p.dasChargeAfter, p.inputCostX10});
+      actual.push_back({p.rotationIndex, p.x, p.y, p.dasChargeAfter, inputCostX10ForChar(p.tuckInput)});
     }
     std::vector<FuzzEntry> expected = expectedAdjustmentEntries(f);
     std::string diff = diffEntriesInOrder(expected, actual, /*context=*/2);
@@ -645,7 +522,8 @@ TEST_CASE("Move search fuzz: reaction-time fixtures match the golden (adjTimeSim
     for (int j = 0; j < entryCount; j++) {
       const FuzzEntry expected = unpackEntry(REACTION_TIME_ENTRY_POOL[f.entryOffset + j]);
       const FuzzEntry actual = {results[j].rotationIndex, results[j].x, results[j].y,
-                                results[j].dasChargeAfter, results[j].inputCostX10};
+                                results[j].dasChargeAfter,
+                                inputCostX10ForChar(results[j].tuckInput)};
       const FixtureAdjTimeCapture &ec = REACTION_TIME_CAPTURE_POOL[f.captureOffset + j];
       const AdjTimeSimStateSlot &ac = captures[j];
       const bool captureMatch =

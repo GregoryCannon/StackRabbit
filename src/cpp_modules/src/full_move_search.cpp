@@ -167,7 +167,7 @@ static void inputDeltas(char c, OUT int &xDelta, OUT int &rotDelta) {
   }
 }
 
-static int inputCostX10ForChar(char c) {
+int inputCostX10ForChar(char c) {
   switch (c) {
   case 'E':
   case 'F':
@@ -274,14 +274,13 @@ static int placePieceAndClearLines(unsigned int board[20], const Piece *piece, i
 
 /** Converts a sim state at lock time into a result possibility. */
 static FullMovePossibility getPossibilityFromSimState(unsigned int board[20], const Piece *piece,
-                                                    const FullSimState &simState, int inputCostX10,
-                                                    char tuckInput) {
+                                                      const FullSimState &simState,
+                                                      char tuckInput) {
   FullMovePossibility p;
   p.x = simState.x;
   p.y = simState.y;
   p.rotationIndex = simState.rotationIndex;
   p.dasChargeAfter = simState.dasCharge;
-  p.inputCostX10 = inputCostX10;
   p.tuckInput = tuckInput;
   p.numLinesCleared =
       placePieceAndClearLines(board, piece, simState.rotationIndex, simState.x, simState.y);
@@ -336,8 +335,8 @@ static void tryPlacement(unsigned int board[20], const Piece *piece, int goalRot
                             OUT std::vector<AdjTimeSimState> &captureArena,
                             OUT std::vector<FullSimState> &legalPlacementSimStates) {
 
-  // TS: holdDASduringARE requires !adjustmentState.isAdjustment -- adjustments
-  // never get the '_' hold-through-ARE marker.
+  // Adjustments never get the '_' hold-through-ARE marker: holdDASduringARE
+  // requires a non-adjustment context.
   const bool holdDASduringARE =
       useDAS && !ctx.isAdjustment && !dasWillReset && goalOffsetX != 0;
 
@@ -511,8 +510,7 @@ struct FallPhaseResult {
   // index-aligned with lockPossibilities.
   std::vector<int> lockCaptureIdx;
   std::vector<FullSimState> potentialTuckSpinStates;
-  // Keyed by rotationIndex * 100 + x -> y. Missing keys read as 0 (legacy TS
-  // `|| 0` behavior; possibly a bug, preserved for parity).
+  // Keyed by rotationIndex * 100 + x -> y. Missing keys read as 0.
   unordered_map<int, int> lockHeightLookup;
 };
 
@@ -543,8 +541,8 @@ exploreLegalPlacementsUntilLock(unsigned int board[20], const Piece *piece,
       auto registerPossibility = [&]() {
         result.lockHeightLookup[simState.rotationIndex * 100 + simState.x] = simState.y;
         result.lockCaptureIdx.push_back(simState.adjCaptureIdx);
-        result.lockPossibilities.push_back(getPossibilityFromSimState(
-            board, piece, simState, /* inputCostX10= */ 0, /* tuckInput= */ '.'));
+        result.lockPossibilities.push_back(
+            getPossibilityFromSimState(board, piece, simState, /* tuckInput= */ '.'));
       };
 
       // If it collides immediately, quit
@@ -688,8 +686,7 @@ static bool tryInput(unsigned int board[20], const Piece *piece, char inputChar,
     // (double kill screen is disabled).
     if (isGravityFrame) {
       if (collision(board, piece, simState.x, simState.y + 1, simState.rotationIndex)) {
-        outPossibility = getPossibilityFromSimState(board, piece, simState,
-                                                       inputCostX10ForChar(inputChar), inputChar);
+        outPossibility = getPossibilityFromSimState(board, piece, simState, inputChar);
         return true;
       }
       simState.y++;
@@ -701,10 +698,10 @@ static bool tryInput(unsigned int board[20], const Piece *piece, char inputChar,
 
 /** Novel-keeping score for the dfs: adjustability first (a walk that saved its
  * adjTimeSimState beats one that locked too early), input cost as the
- * tiebreaker. inputCostX10 spans -3..0, so the 10000-point no-snapshot penalty
+ * tiebreaker. The cost spans -3..0, so the 10000-point no-snapshot penalty
  * dominates. */
-static int tuckScore(int inputCostX10, int adjCaptureIdx) {
-  return inputCostX10 + (adjCaptureIdx >= 0 ? 0 : -10000);
+static int tuckScore(char tuckInput, int adjCaptureIdx) {
+  return inputCostX10ForChar(tuckInput) + (adjCaptureIdx >= 0 ? 0 : -10000);
 }
 
 /** Depth-1 tuck/spin exploration. */
@@ -761,8 +758,8 @@ searchForTucksOrSpins(unsigned int board[20], const Piece *piece,
         const int key = (possibility.rotationIndex * 100 + possibility.x) * 1000 + possibility.y;
         NovelTuck *existing = findNovel(key);
         if (existing == NULL
-            || tuckScore(possibility.inputCostX10, parentCaptureIdx)
-                   > tuckScore(existing->possibility.inputCostX10, existing->adjCaptureIdx)) {
+            || tuckScore(possibility.tuckInput, parentCaptureIdx)
+                   > tuckScore(existing->possibility.tuckInput, existing->adjCaptureIdx)) {
           if (existing != NULL) {
             existing->possibility = possibility;
             existing->adjCaptureIdx = parentCaptureIdx;
@@ -808,7 +805,7 @@ int fullMoveSearch(GameState gameState, const Piece *piece, char const *inputFra
                    int dasCharge, bool trackInputSequences,
                    OUT std::vector<FullMovePossibility> &results, const FullMoveSearchContext &ctx,
                    int reactionTime, OUT std::vector<AdjTimeSimStateSlot> *adjTimeCaptures) {
-  const bool useDAS = dasCharge != -1; // TS: useDAS = dasCharge !== -1
+  const bool useDAS = dasCharge != -1;
   const int gravity = getGravity(gameState.level);
   const bool gravityDoubled = isGravityDoubled(gameState.level);
   const int numOrientations = numPieceOrientations(piece);
@@ -819,7 +816,7 @@ int fullMoveSearch(GameState gameState, const Piece *piece, char const *inputFra
     adjTimeCaptures->clear();
   }
 
-  // TS: a piece that has already fallen past the bottom of the board has no
+  // A piece that has already fallen past the bottom of the board has no
   // legal moves (reachable from mid-air adjustment states).
   if (ctx.existingYOffset >= 20) {
     return 0;

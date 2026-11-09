@@ -58,4 +58,4 @@ positions where a shallow agent happens to agree with the deep oracle.
 
 After implementation lands, run the standard verification battery:
 `npm run cpp_test_unit`, `npm run fuzz_verify_sequences`, `npx tsc`, `npm run move_test`,
-`npm run cpp_test`, plus `npm run benchmark_run_agent` on the new hard set.
+plus `npm run benchmark_run_agent` on the new hard set.
