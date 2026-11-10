@@ -35,10 +35,20 @@ enum RequestType {
              // without next box.
   GET_MOVE_AB_TEST, // Compares the result of GET_MOVE between the set of main weights and test
                     // weights.
-  PRECOMPUTE // Chooses the current piece's placement by how well each reachable mid-air adjustment
-             // leads into every possible next piece. Input: the standard 11-field pipe string plus
-             // a reactionTime field (field 11); nextPiece is unused (-1).
+  PRECOMPUTE, // Chooses the current piece's placement by how well each reachable mid-air adjustment
+              // leads into every possible next piece. Input: the standard 11-field pipe string plus
+              // a reactionTime field (field 11); nextPiece is unused (-1).
+  PRECOMPUTE_BACKUP // The backup response for the live game server: the same pipe format and move
+                    // search as PRECOMPUTE, answered with the best-eval placement instead of the
+                    // full pipeline. Served when the full precompute has not finished by poll
+                    // time (docs/live_game_server.md).
 };
+
+// Whether a request type speaks the precompute pipe format: the standard 10
+// fields plus reactionTime as field 11 (nextPiece is required but unused).
+inline bool isPrecomputePipeRequest(RequestType req) {
+  return req == PRECOMPUTE || req == PRECOMPUTE_BACKUP;
+}
 
 // Whether a request type needs per-move eval explanations.
 // Only GET_TOP_MOVES, GET_TOP_MOVES_HYBRID, and GET_MOVE_AB_TEST populate

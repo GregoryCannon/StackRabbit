@@ -56,7 +56,21 @@ and every hardcoded caller pass them explicitly):
 
 Request types: `GET_LOCK_VALUE_LOOKUP`, `GET_LOCK_VALUE_LOOKUP_DAS`,
 `GET_TOP_MOVES`, `GET_TOP_MOVES_HYBRID`, `RATE_MOVE`, `GET_MOVE`,
-`GET_MOVE_AB_TEST`.
+`GET_MOVE_AB_TEST`, `PRECOMPUTE`, `PRECOMPUTE_BACKUP`.
+
+`PRECOMPUTE` and `PRECOMPUTE_BACKUP` speak the precompute pipe format: the
+fields above plus a mandatory `reactionTime` (0..60 frames) appended after
+`dasCharge`; `nextPiece` is unused there (`-1` -- the searches cover all seven
+pieces). Both validate identically. The precompute response shape is
+`Default:` + one line per next piece (`I`..`Z` in `IOLJTSZ` order).
+`PRECOMPUTE_BACKUP` (the live game server's partial-result answer,
+docs/live_game_server.md) runs only the initial move search and answers with
+the best-eval placement -- scored exactly the way the depth-1 move choice
+evaluates candidates, ties keeping the first result in search order -- as
+`Default:<relRot,relX,relY|<sequence>~~|<200-char board>|<level>|<lines>|<dasChargeAfter>`
+plus seven `<piece>:continue` lines. The sequence is emitted unsliced (the
+999 slice convention: the whole sequence sits before `~~`), and a piece with
+no legal placement answers exactly `none`.
 
 Shared helpers live in the test file: board-string builders (empty board, board
 with a well, notch, full row), piece-letter → `PIECE_LIST` index mapping, and an
@@ -335,6 +349,17 @@ benchmark workflow and predates the migration. The verify/dump/tsan harnesses
 `precompute_tsan`) are permanent regression gates. The generators
 (`fuzz_generate`, `precompute_fixture_generate`) stay only until the TS cutover,
 then die with TS (TODO(Phase 5 cutover) in their headers).
+
+The C++ live game server (`src/cpp_modules/src/live_game_server.cpp`, default
+port 3001) has its own differential harness: `npm run live_server_check` boots
+the server on the battery-dedicated port 3101 and runs
+`src/server/live_server_verify.js`, which drives all 42 production-tier
+precompute fixtures through the real HTTP surface (one `/precompute` kick, then
+`/async-result` polls until the full result is in) and byte-compares each
+response against the golden — the same fixtures' `output` strings the addon
+path verifies. It also asserts the backup tier's shape when observed
+(backup-first computation means early polls see it) and the error path (a junk
+pipe surfaces as a 500 + message, cleared by the next valid kick).
 
 Both generators are deterministic: when either is touched, back up the goldens,
 rerun it twice, and require run-vs-run **and** run-vs-committed diffs to be

@@ -24,7 +24,39 @@ aggressionLevel | dasCharge |
 - Encoders that must stay in lockstep: `src/server/request_parser.ts`
   (`getCppEncodedInputString`), `src/server/worker_thread.ts`,
   `src/server/cmodules.ts`, `entrypoint.cpp`, `src/benchmark/speed_benchmark.cpp`,
-  `src/benchmark/run_agent.cpp`, `src/wasm/sample_client/wasmRabbit-worker.js`.
+  `src/benchmark/run_agent.cpp`, `src/wasm/sample_client/wasmRabbit-worker.js`,
+  `src/fceux/stackrabbit.lua`.
+
+## C++ live game server surface
+
+`src/cpp_modules/src/live_game_server.cpp` — standalone zero-dependency HTTP
+server serving the live precompute flow (the TS server's replacement; see
+docs/live_game_server.md for the design). Default port 3001, overridable via
+argv[1] or the `PORT` env var (the battery uses 3101). Responses are
+`text/plain`; every response closes the connection.
+
+Routes:
+
+- `GET /ping` → 200 `pong`.
+- `GET /precompute?p=<pipe>` → 200 `Request accepted.` and the request is
+  computed asynchronously (503 `Busy` if one is still computing — defensive;
+  the agent never overlaps; 400 if `p` is absent).
+- `GET /async-result` → 200 + full result once computed, else 200 + backup
+  response, else 504 `Still calculating` (the window before the backup lands),
+  else 404 `No previous async request has been made`. A rejected/failed engine
+  run surfaces as 500 + message and sticks until the next valid kick.
+
+The pipe-direct contract: the `p` parameter is the raw 12-field engine pipe
+string (percent-encoded by the client, decoded here) — there is **no URL-argument
+layer**; `mainProcess`'s pipe parser is the single input boundary, so the
+server inherits the engine's strict field validation verbatim.
+
+Backup tier semantics: the worker computes the backup response first (one move
+search plus cheap evals, a few ms) so a poll landing before the full result is
+answered with it instead of a 504; the full precompute supersedes it once done.
+The backup is a full-format response (`Default:<placement>` + seven
+`<piece>:continue` lines, or `none` when the piece has no legal placement) —
+the same shape the full result can take when every next piece keeps the default.
 
 ## Lock position encoding (the join key)
 

@@ -94,4 +94,19 @@ std::string runPrecompute(GameState gameState, const Piece *curPiece,
                           const EvalContext *evalContext,
                           const PieceRangeContext pieceRangeContextLookup[3]);
 
+/**
+ * The backup response for the live game server: the best-eval placement of the
+ * current piece plus keep-playing-the-default markers for every next piece.
+ * Served when the full precompute has not finished by poll time. Takes the
+ * same arguments as runPrecompute (the search parameters are unused -- only
+ * the first pipeline step runs) so callers can switch between the two freely.
+ * The response is "none" when the piece has no legal placement, otherwise
+ * "Default:<placement>" plus one ":continue" line per next piece.
+ */
+std::string runPrecomputeBackup(GameState gameState, const Piece *curPiece,
+                                char const *inputFrameTimeline, int dasCharge, int reactionTime,
+                                int pruningBreadth, int playoutCount, int playoutLength,
+                                const EvalContext *evalContext,
+                                const PieceRangeContext pieceRangeContextLookup[3]);
+
 #endif // PRECOMPUTE_HPP

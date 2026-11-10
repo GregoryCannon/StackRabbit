@@ -18,6 +18,8 @@ Read alongside [TESTING.md](TESTING.md) (test layout, input-format contract) and
   node-gyp addon build), starts the server, waits for "Listening on port 3000", kills
   the process tree, and verifies port 3000 is freed; fails loudly if a stale server
   already occupies the port (kill it manually — the trap below)
+- `npm run live_server_check` — boots the C++ live server (battery port 3101) and
+  byte-verifies all 42 production-precompute golden responses over HTTP
 
 NB: a long-running dev server keeps the OLD addon mapped in memory — `node-gyp build`
 on disk does not update it. Restart the server to test new code, and don't mistake
@@ -43,7 +45,8 @@ stale-server output for a code change.
   (adding a waiver is a deliberate, reviewable act), never by weakening the lint.
 - When touching the pipe format or shared signatures, update **all** callers in
   lockstep: `request_parser.ts`, `worker_thread.ts`, `cmodules.ts`, `entrypoint.cpp`,
-  `speed_benchmark.cpp`, `run_agent.cpp`, `src/wasm/sample_client/wasmRabbit-worker.js`
+  `speed_benchmark.cpp`, `run_agent.cpp`, `src/wasm/sample_client/wasmRabbit-worker.js`,
+  `src/fceux/stackrabbit.lua`
   — and rebuild the WASM artifacts (`npm run wasm_build`) when the engine changes.
 - Design APIs so parameters mean one thing. If a call site needs different semantics,
   add a clearly-named parameter rather than overloading an existing one, and make

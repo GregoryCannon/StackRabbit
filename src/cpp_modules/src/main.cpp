@@ -268,7 +268,7 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
       fieldProvided[9] = true;
       break;
     case 10:
-      if (requestType != PRECOMPUTE) {
+      if (!isPrecomputePipeRequest(requestType)) {
         break; // other request types ignore trailing fields
       }
       if (!isIntegerString(arg)) {
@@ -289,18 +289,19 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
     end = nonBoardInputString.find(delim, start);
   }
   // All ten non-board fields are mandatory (dasCharge uses -1 for tap mode);
-  // PRECOMPUTE additionally requires the reaction time as field 11.
+  // the precompute pipe format additionally requires the reaction time as
+  // field 11.
   char const *fieldNames[11] = {
       "level",        "lines",         "currentPiece",   "nextPiece",       "inputFrameTimeline",
       "playoutCount", "playoutLength", "pruningBreadth", "aggressionLevel", "dasCharge",
       "reactionTime"};
-  const int requiredFields = requestType == PRECOMPUTE ? 11 : 10;
+  const int requiredFields = isPrecomputePipeRequest(requestType) ? 11 : 10;
   for (int i = 0; i < requiredFields; i++) {
     if (!fieldProvided[i]) {
       return std::string("Error: please provide a value for ") + fieldNames[i] + ".";
     }
   }
-  if (requestType == PRECOMPUTE) {
+  if (isPrecomputePipeRequest(requestType)) {
     // In tournament mode (pruningBreadth == -1) the count is the total playout
     // budget; otherwise the volume is count * length.
     long long totalPlayoutVolume = pruningBreadth == -1
@@ -458,13 +459,19 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
     }
   }
 
-  case PRECOMPUTE: {
+  case PRECOMPUTE:
+  case PRECOMPUTE_BACKUP: {
 #ifndef __EMSCRIPTEN__
     // The real timeline goes to the move searches; the piece-range / eval /
     // playout contexts above keep the derived tapper approximation.
-    return runPrecompute(startingGameState, curPiece, inputFrameTimeline.c_str(), dasCharge,
-                         reactionTime, pruningBreadth, playoutCount, playoutLength, &context,
-                         pieceRangeContextLookup);
+    if (requestType == PRECOMPUTE) {
+      return runPrecompute(startingGameState, curPiece, inputFrameTimeline.c_str(), dasCharge,
+                           reactionTime, pruningBreadth, playoutCount, playoutLength, &context,
+                           pieceRangeContextLookup);
+    }
+    return runPrecomputeBackup(startingGameState, curPiece, inputFrameTimeline.c_str(), dasCharge,
+                               reactionTime, pruningBreadth, playoutCount, playoutLength, &context,
+                               pieceRangeContextLookup);
 #else
     // The precompute path is not part of the WASM build.
     return "Precompute unavailable";

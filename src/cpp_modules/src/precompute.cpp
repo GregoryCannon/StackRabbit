@@ -1,7 +1,9 @@
 #include "precompute.hpp"
 
+#include "eval.hpp"
 #include "full_move_search.hpp"
 #include "high_level_search.hpp"
+#include "move_result.hpp"
 #include "utils.hpp"
 
 #include <algorithm>
@@ -570,4 +572,53 @@ std::string runPrecompute(GameState gameState, const Piece *curPiece,
       playoutLength, evalContext, pieceRangeContextLookup);
   return collapseAndFormatPrecompute(state, gameState.board, curPiece, gameState.level,
                                      gameState.lines, SHOULD_PUSHDOWN);
+}
+
+std::string runPrecomputeBackup(GameState gameState, const Piece *curPiece,
+                                char const *inputFrameTimeline, int dasCharge, int reactionTime,
+                                int pruningBreadth, int playoutCount, int playoutLength,
+                                const EvalContext *evalContext,
+                                const PieceRangeContext pieceRangeContextLookup[3]) {
+  // Step 1 of the precompute pipeline only: the current piece's placements
+  // with their input sequences.
+  std::vector<FullMovePossibility> results;
+  fullMoveSearch(gameState, curPiece, inputFrameTimeline, dasCharge, /* trackInputSequences= */ true,
+                 results, FullMoveSearchContext(), reactionTime, /* adjTimeCaptures= */ NULL);
+  if (results.empty()) {
+    return "none";
+  }
+
+  // The best-eval placement wins. Each candidate is scored exactly the way
+  // the depth-1 move choice scores its candidates: the post-lock state (board
+  // after lock, line clears, level/lines update, surface/holes), then
+  // fastEval against the request's eval context. Ties keep the first
+  // placement in search order.
+  const FullMovePossibility *winner = &results[0];
+  float bestScore = FLOAT_MIN;
+  for (const FullMovePossibility &result : results) {
+    const LockPlacement placement = {result.x, result.y, result.rotationIndex,
+                                     /* tuckFrame= */ -1, result.tuckInput, curPiece};
+    const GameState resultingState = advanceGameState(gameState, placement, evalContext);
+    const float score =
+        fastEval(gameState, resultingState, placement, evalContext, /* outExplanation= */ NULL);
+    if (score > bestScore) {
+      bestScore = score;
+      winner = &result;
+    }
+  }
+
+  const PrecomputePossibility placement =
+      toPrecomputePossibility(*winner, /* existingRotation= */ 0, INITIAL_X, curPiece->initialY,
+                              numOrientationsOf(curPiece));
+  // The 999 reaction time means no slicing: the Default line carries the full
+  // input sequence (the slice clamps to the sequence length).
+  std::string out = "Default:";
+  out += formatDefaultLine(placement, /* reactionTime= */ 999, gameState.board, curPiece,
+                           gameState.level, gameState.lines);
+  for (int i = 0; i < 7; i++) {
+    out += "\n";
+    out += RESPONSE_PIECE_ORDER[i];
+    out += ":continue";
+  }
+  return out;
 }

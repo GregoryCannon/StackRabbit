@@ -326,4 +326,364 @@ TEST_CASE("All request types complete on empty, tall, and notched boards") {
   }
 }
 
+// --- PRECOMPUTE_BACKUP ----------------------------------------------------
+//
+// The backup response: the best-eval placement plus keep-playing-the-default
+// markers for every next piece; served when the full precompute has not
+// finished by poll time. The pipes here follow the precompute format: the
+// standard 10 fields plus reactionTime (nextPiece is unused, -1), so they are
+// built straight from InputBuilder's 10 fields + "<reactionTime>|".
+
+/** The backup-relevant request state, rebuilt the way mainProcess builds it. */
+struct BackupProbe {
+  GameState gameState;
+  EvalContext evalContext;
+};
+
+// Mirrors main.cpp's PRECOMPUTE/BACKUP setup: board parse, surface/holes, the
+// piece-range and eval contexts. In tap mode the timeline is the request's
+// own; in DAS mode the caller passes the derived DAS-equivalent timeline
+// (main.cpp keeps the real one for the searches only).
+static BackupProbe probeStateFrom(const std::string &boardStr, int level, int lines,
+                                  const std::string &timeline, std::string aggression) {
+  BackupProbe probe;
+  probe.gameState = GameState{};
+  encodeBoard(boardStr.c_str(), probe.gameState.board);
+  probe.gameState.level = level;
+  probe.gameState.lines = lines;
+  getSurfaceArray(probe.gameState.board, probe.gameState.surfaceArray);
+  std::pair<int, float> holes = updateSurfaceAndHoles(probe.gameState.surfaceArray,
+                                                      probe.gameState.board,
+                                                      /* wellColumn= */ 9, /* isDigMode= */ false);
+  probe.gameState.numTrueHoles = holes.first;
+  probe.gameState.numPartialHoles = holes.second;
+  PieceRangeContext contexts[4] = {
+      getPieceRangeContext(timeline.c_str(), 1, /* gravityDoubled= */ true),
+      getPieceRangeContext(timeline.c_str(), 1, /* gravityDoubled= */ false),
+      getPieceRangeContext(timeline.c_str(), 2, /* gravityDoubled= */ false),
+      getPieceRangeContext(timeline.c_str(), 3, /* gravityDoubled= */ false),
+  };
+  AggressionLevel aggressionLevel = SAFE;
+  if (aggression == "aggro") {
+    aggressionLevel = AGGRO;
+  } else if (aggression == "hyper") {
+    aggressionLevel = HYPER;
+  }
+  probe.evalContext = getEvalContext(probe.gameState, contexts, /* useTestWeights= */ false,
+                                     aggressionLevel);
+  std::pair<int, float> holes2 =
+      updateSurfaceAndHoles(probe.gameState.surfaceArray, probe.gameState.board,
+                            probe.evalContext.countWellHoles ? -1 : probe.evalContext.wellColumn,
+                            probe.evalContext.aiMode == DIG);
+  probe.gameState.numTrueHoles = holes2.first;
+  probe.gameState.numPartialHoles = holes2.second;
+  return probe;
+}
+
+/**
+ * The documented backup selection procedure, applied independently: score
+ * every fullMoveSearch result with the depth-1 move choice's per-candidate
+ * evaluation (post-lock state, then fastEval) and return the argmax index.
+ * Ties keep the first result in search order (strict >).
+ */
+static int backupSelectionIndex(const BackupProbe &probe, const Piece *curPiece,
+                                const std::vector<FullMovePossibility> &results) {
+  int winner = -1;
+  float bestScore = FLOAT_MIN;
+  for (size_t i = 0; i < results.size(); i++) {
+    const FullMovePossibility &result = results[i];
+    LockPlacement placement = {result.x, result.y, result.rotationIndex, -1, result.tuckInput,
+                               curPiece};
+    GameState resultingState = advanceGameState(probe.gameState, placement, &probe.evalContext);
+    float score = fastEval(probe.gameState, resultingState, placement, &probe.evalContext, nullptr);
+    if (score > bestScore) {
+      bestScore = score;
+      winner = (int)i;
+    }
+  }
+  REQUIRE(winner >= 0);
+  return winner;
+}
+
+/** The "rot,x,y|" head of the Default line. */
+static std::string defaultLineHead(const std::string &response) {
+  size_t lineEnd = response.find('\n');
+  REQUIRE(lineEnd != std::string::npos);
+  return response.substr(0, lineEnd);
+}
+
+TEST_CASE("PRECOMPUTE_BACKUP returns the exact backup response for the obvious well-fill placement") {
+  // A 4-high stack with a 4-deep well at column 9, I piece, tap mode: the only
+  // placement that clears lines is the vertical I into the well, which clears
+  // all four rows and leaves an empty board -- unambiguously the best placement.
+  auto input = InputBuilder()
+                   .withBoard1(makeWellBoard(4, 4, 9))
+                   .withLevel(18)
+                   .withLines(0)
+                   .withCurPiece(IDX_I)
+                   .withNextPiece(-1)
+                   .withTimeline("X.X.X.X.X.X.X.X.")
+                   .withPlayoutCount(1)
+                   .withPlayoutLength(1)
+                   .withPruningBreadth(4)
+                   .withAggression("safe")
+                   .withDasCharge(-1)
+                   .build()
+               + "10|";
+
+  std::string expected = "Default:1,4,18|"
+                         // The full input sequence (999 = no slicing): the rotate/shift
+                         // inputs, then the search's fall/lock/wait notation.
+                         "I.R.R.R" + std::string(50, '.') + "*****" + std::string(17, '^') + "*****"
+                         + "~~|" + std::string(200, '0') // the well fill clears the whole board
+                         + "|18|4|-1"
+                         "\nI:continue"
+                         "\nO:continue"
+                         "\nL:continue"
+                         "\nJ:continue"
+                         "\nT:continue"
+                         "\nS:continue"
+                         "\nZ:continue";
+  std::string output = runRequest(PRECOMPUTE_BACKUP, input);
+  CHECK(output == expected);
+  // Deterministic: the same request answers the same bytes.
+  CHECK(runRequest(PRECOMPUTE_BACKUP, input) == expected);
+}
+
+TEST_CASE("PRECOMPUTE_BACKUP picks the best-eval placement, not the search's first result") {
+  auto input = InputBuilder()
+                   .withBoard1(makeWellBoard(4, 4, 9))
+                   .withLevel(18)
+                   .withLines(0)
+                   .withCurPiece(IDX_I)
+                   .withNextPiece(-1)
+                   .withTimeline("X.X.X.X.X.X.X.X.")
+                   .withPlayoutCount(1)
+                   .withPlayoutLength(1)
+                   .withPruningBreadth(4)
+                   .withAggression("safe")
+                   .withDasCharge(-1)
+                   .build()
+               + "10|";
+
+  BackupProbe probe = probeStateFrom(makeWellBoard(4, 4, 9), 18, 0, "X.X.X.X.X.X.X.X.", "safe");
+  const Piece *curPiece = &PIECE_LIST[IDX_I];
+  std::vector<FullMovePossibility> results;
+  fullMoveSearch(probe.gameState, curPiece, "X.X.X.X.X.X.X.X.", /* dasCharge= */ -1,
+                 /* trackInputSequences= */ true, results, FullMoveSearchContext(),
+                 /* reactionTime= */ 10, /* adjTimeCaptures= */ NULL);
+  REQUIRE(results.size() > 1);
+
+  int winner = backupSelectionIndex(probe, curPiece, results);
+  // The premise of this pin: on this board the search's first result is a
+  // naive left-edge placement that is NOT the best-eval placement.
+  REQUIRE(winner != 0);
+
+  std::string output = runRequest(PRECOMPUTE_BACKUP, input);
+  std::string head = defaultLineHead(output);
+  REQUIRE(head.rfind("Default:", 0) == 0);
+  size_t firstComma = head.find(',');
+  size_t secondComma = head.find(',', firstComma + 1);
+  REQUIRE(firstComma != std::string::npos);
+  REQUIRE(secondComma != std::string::npos);
+  int relRot = std::stoi(head.substr(8, firstComma - 8));
+  int relX = std::stoi(head.substr(firstComma + 1, secondComma - firstComma - 1));
+  int relY = std::stoi(head.substr(secondComma + 1));
+
+  // The chosen placement is the argmax under the documented procedure.
+  const int numOrientations = 2; // the I piece
+  const FullMovePossibility &best = results[winner];
+  CHECK(relRot == (best.rotationIndex - 0 + numOrientations) % numOrientations);
+  CHECK(relX == best.x - INITIAL_X);
+  CHECK(relY == best.y - curPiece->initialY);
+  // Hand-verifiable anchor: the well fill (vertical I at column 9, four lines
+  // cleared) is what the procedure must find.
+  CHECK(best.rotationIndex == 1);
+  CHECK(best.x == 7);
+  CHECK(best.numLinesCleared == 4);
+}
+
+TEST_CASE("PRECOMPUTE_BACKUP breaks exact eval ties by keeping the first result in search order") {
+  // On a 1-high flat stack the I piece's two middle horizontal placements land
+  // on rows that score identically down to the bit (verified by the recompute
+  // below); they are the top two scores, so the tie decides the winner.
+  auto input = InputBuilder()
+                   .withBoard1(makeFlatBoard(1))
+                   .withLevel(18)
+                   .withLines(0)
+                   .withCurPiece(IDX_I)
+                   .withNextPiece(-1)
+                   .withTimeline("X.X.X.X.X.X.X.X.")
+                   .withPlayoutCount(1)
+                   .withPlayoutLength(1)
+                   .withPruningBreadth(4)
+                   .withAggression("safe")
+                   .withDasCharge(-1)
+                   .build()
+               + "10|";
+
+  BackupProbe probe = probeStateFrom(makeFlatBoard(1), 18, 0, "X.X.X.X.X.X.X.X.", "safe");
+  const Piece *curPiece = &PIECE_LIST[IDX_I];
+  std::vector<FullMovePossibility> results;
+  fullMoveSearch(probe.gameState, curPiece, "X.X.X.X.X.X.X.X.", /* dasCharge= */ -1,
+                 /* trackInputSequences= */ true, results, FullMoveSearchContext(),
+                 /* reactionTime= */ 10, /* adjTimeCaptures= */ NULL);
+  REQUIRE(results.size() >= 4);
+
+  int winner = backupSelectionIndex(probe, curPiece, results);
+  // The premise: the winner's score is exactly tied (bit-for-bit) with a LATER
+  // result's score, so first-in-search-order is what decides.
+  REQUIRE(winner >= 0);
+  REQUIRE((size_t)winner + 1 < results.size());
+  {
+    const FullMovePossibility &a = results[winner];
+    LockPlacement pa = {a.x, a.y, a.rotationIndex, -1, a.tuckInput, curPiece};
+    GameState sa = advanceGameState(probe.gameState, pa, &probe.evalContext);
+    float scoreA = fastEval(probe.gameState, sa, pa, &probe.evalContext, nullptr);
+    const FullMovePossibility &b = results[winner + 1];
+    LockPlacement pb = {b.x, b.y, b.rotationIndex, -1, b.tuckInput, curPiece};
+    GameState sb = advanceGameState(probe.gameState, pb, &probe.evalContext);
+    float scoreB = fastEval(probe.gameState, sb, pb, &probe.evalContext, nullptr);
+    unsigned int bitsA, bitsB;
+    memcpy(&bitsA, &scoreA, sizeof(bitsA));
+    memcpy(&bitsB, &scoreB, sizeof(bitsB));
+    REQUIRE(bitsA == bitsB);
+  }
+
+  // x=2 (the earlier result) wins over its bit-identical successor x=3. The
+  // response's post-lock board rendering clears every full row, so the
+  // pre-existing full bottom row burns: the piece's row shifts down into row
+  // 19 and the line count rises to 1.
+  std::string head = defaultLineHead(runRequest(PRECOMPUTE_BACKUP, input));
+  CHECK(head == "Default:0,-1,18|" + std::string("L") + std::string(56, '.')
+                     + std::string(5, '*') + std::string(17, '^') + std::string(5, '*') + "~~|"
+                     + std::string(190, '0') + "0011110000|18|1|-1");
+}
+
+TEST_CASE("PRECOMPUTE_BACKUP returns exactly none when the piece has no legal placement") {
+  // A fully topped-out board leaves no spawn cell free.
+  auto input = InputBuilder()
+                   .withBoard1(makeFlatBoard(20))
+                   .withLevel(18)
+                   .withLines(0)
+                   .withCurPiece(IDX_I)
+                   .withNextPiece(-1)
+                   .withTimeline("X...")
+                   .withPlayoutCount(1)
+                   .withPlayoutLength(1)
+                   .withPruningBreadth(4)
+                   .withAggression("safe")
+                   .withDasCharge(-1)
+                   .build()
+               + "10|";
+  CHECK(runRequest(PRECOMPUTE_BACKUP, input) == "none");
+}
+
+TEST_CASE("PRECOMPUTE_BACKUP's 999 reaction time puts the full sequence in the Default line") {
+  // Tap mode: the whole sequence (lock/wait markers included) sits before the
+  // ~~ separator, nothing after it.
+  auto tapInput = InputBuilder()
+                      .withBoard1(makeWellBoard(4, 4, 9))
+                      .withLevel(18)
+                      .withLines(0)
+                      .withCurPiece(IDX_I)
+                      .withNextPiece(-1)
+                      .withTimeline("X.X.X.X.X.X.X.X.")
+                      .withPlayoutCount(1)
+                      .withPlayoutLength(1)
+                      .withPruningBreadth(4)
+                      .withAggression("safe")
+                      .withDasCharge(-1)
+                      .build()
+                  + "10|";
+  {
+    BackupProbe probe = probeStateFrom(makeWellBoard(4, 4, 9), 18, 0, "X.X.X.X.X.X.X.X.", "safe");
+    const Piece *curPiece = &PIECE_LIST[IDX_I];
+    std::vector<FullMovePossibility> results;
+    fullMoveSearch(probe.gameState, curPiece, "X.X.X.X.X.X.X.X.", -1, true, results,
+                   FullMoveSearchContext(), 10, NULL);
+    const FullMovePossibility &best = results[backupSelectionIndex(probe, curPiece, results)];
+
+    std::string defaultLine = defaultLineHead(runRequest(PRECOMPUTE_BACKUP, tapInput));
+    std::string expectedLine =
+        "Default:1,4,18|" + best.inputSequence + "~~|" + std::string(200, '0') + "|18|4|-1";
+    CHECK(defaultLine == expectedLine);
+    CHECK(countOccurrences(defaultLine, "~~") == 1);
+  }
+
+  // DAS mode: the sequence carries the '_' hold-through-ARE marker (the branch
+  // whose slice index would be reactionTime + 1) and lowercase held inputs;
+  // the same no-slicing outcome applies.
+  auto dasInput = InputBuilder()
+                      .withBoard1(makeWellBoard(4, 4, 9))
+                      .withLevel(18)
+                      .withLines(0)
+                      .withCurPiece(IDX_I)
+                      .withNextPiece(-1)
+                      .withTimeline("X.....")
+                      .withPlayoutCount(1)
+                      .withPlayoutLength(1)
+                      .withPruningBreadth(4)
+                      .withAggression("safe")
+                      .withDasCharge(16)
+                      .build()
+                  + "10|";
+  {
+    std::string dasEquivalent = getDasEquivalentInputTimeline("X.....");
+    BackupProbe probe = probeStateFrom(makeWellBoard(4, 4, 9), 18, 0, dasEquivalent, "safe");
+    const Piece *curPiece = &PIECE_LIST[IDX_I];
+    std::vector<FullMovePossibility> results;
+    fullMoveSearch(probe.gameState, curPiece, "X.....", /* dasCharge= */ 16, true, results,
+                   FullMoveSearchContext(), 10, NULL);
+    const FullMovePossibility &best = results[backupSelectionIndex(probe, curPiece, results)];
+
+    std::string defaultLine = defaultLineHead(runRequest(PRECOMPUTE_BACKUP, dasInput));
+    std::string expectedLine = "Default:1,4,18|" + best.inputSequence + "~~|" + std::string(200, '0')
+                               + "|18|4|16";
+    CHECK(defaultLine == expectedLine);
+    CHECK(countOccurrences(defaultLine, "~~") == 1);
+    // The hold branch is genuinely exercised: the sequence holds through ARE.
+    CHECK(best.inputSequence.find('_') != std::string::npos);
+  }
+}
+
+TEST_CASE("PRECOMPUTE_BACKUP shares PRECOMPUTE's reaction-time field validation") {
+  auto base = InputBuilder()
+                  .withBoard1(makeFlatBoard(4))
+                  .withLevel(18)
+                  .withLines(0)
+                  .withCurPiece(IDX_O)
+                  .withNextPiece(-1)
+                  .withTimeline("X...")
+                  .withPlayoutCount(1)
+                  .withPlayoutLength(1)
+                  .withPruningBreadth(4)
+                  .withAggression("safe")
+                  .withDasCharge(-1)
+                  .build()
+              + "5|";
+  // A 10-field pipe (no reactionTime) is rejected identically by both types.
+  std::string tenField = base.substr(0, base.size() - 2);
+  REQUIRE(tenField.back() == '|');
+  std::string missingError = "Error: please provide a value for reactionTime.";
+  CHECK(runRequest(PRECOMPUTE_BACKUP, tenField) == missingError);
+  CHECK(runRequest(PRECOMPUTE, tenField) == missingError);
+
+  SUBCASE("junk reaction time") {
+    std::string junk = base.substr(0, base.size() - 2) + "junk|";
+    std::string junkError =
+        "Error: invalid reactionTime value (expected an integer between 0 and 60): junk";
+    CHECK(runRequest(PRECOMPUTE_BACKUP, junk) == junkError);
+    CHECK(runRequest(PRECOMPUTE, junk) == junkError);
+  }
+  SUBCASE("reaction time above 60") {
+    std::string over = base.substr(0, base.size() - 2) + "61|";
+    std::string overError =
+        "Error: reaction time exceeds the maximum possible of 60 frames. Did you accidentally send "
+        "it in milliseconds? 61";
+    CHECK(runRequest(PRECOMPUTE_BACKUP, over) == overError);
+    CHECK(runRequest(PRECOMPUTE, over) == overError);
+  }
+}
+
 #endif // SR_REQUEST_TYPE_TESTS
