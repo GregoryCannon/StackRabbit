@@ -63,8 +63,9 @@ fields above plus a mandatory `reactionTime` (0..60 frames) appended after
 `dasCharge`; `nextPiece` is unused there (`-1` -- the searches cover all seven
 pieces). Both validate identically. The precompute response shape is
 `Default:` + one line per next piece (`I`..`Z` in `IOLJTSZ` order).
-`PRECOMPUTE_BACKUP` (the live game server's partial-result answer,
-docs/live_game_server.md) runs only the initial move search and answers with
+`PRECOMPUTE_BACKUP` (the live game server's partial-result answer; see
+`live_game_server.cpp`'s header and `runPrecomputeBackup` in precompute.cpp)
+runs only the initial move search and answers with
 the best-eval placement -- scored exactly the way the depth-1 move choice
 evaluates candidates, ties keeping the first result in search order -- as
 `Default:<relRot,relX,relY|<sequence>~~|<200-char board>|<level>|<lines>|<dasChargeAfter>`

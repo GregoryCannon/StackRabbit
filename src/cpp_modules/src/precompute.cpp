@@ -380,6 +380,8 @@ PrecomputeState preparePrecomputeState(GameState gameState, const Piece *curPiec
   // Step 2: one lock value lookup per next piece, values rounded for the
   // collapse. The seven lookups are independent: one thread per next piece,
   // each writing only its own slot, so no shared mutable state is touched.
+  // The playouts inside one lookup stay serial, so the slowest single lookup
+  // floors the pipeline's wall time — relevant when tuning the playout config.
   state.useDAS = dasCharge != -1;
   std::exception_ptr lookupErrors[7] = {};
   std::thread lookupThreads[7];

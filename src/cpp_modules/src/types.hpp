@@ -41,7 +41,7 @@ enum RequestType {
   PRECOMPUTE_BACKUP // The backup response for the live game server: the same pipe format and move
                     // search as PRECOMPUTE, answered with the best-eval placement instead of the
                     // full pipeline. Served when the full precompute has not finished by poll
-                    // time (docs/live_game_server.md).
+                    // time.
 };
 
 // Whether a request type speaks the precompute pipe format: the standard 10

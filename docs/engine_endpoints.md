@@ -30,8 +30,8 @@ aggressionLevel | dasCharge |
 ## C++ live game server surface
 
 `src/cpp_modules/src/live_game_server.cpp` — standalone zero-dependency HTTP
-server serving the live precompute flow (the TS server's replacement; see
-docs/live_game_server.md for the design). Default port 3001, overridable via
+server serving the live precompute flow (the TS server's replacement; see the
+file's header comment for the design). Default port 3001, overridable via
 argv[1] or the `PORT` env var (the battery uses 3101). Responses are
 `text/plain`; every response closes the connection.
 

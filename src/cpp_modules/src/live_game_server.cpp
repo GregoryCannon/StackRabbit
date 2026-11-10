@@ -1,6 +1,6 @@
 // live_game_server.cpp — standalone HTTP server serving the live-game
-// precompute contract over POSIX sockets, zero dependencies (see
-// docs/live_game_server.md for the design).
+// precompute contract over POSIX sockets, zero dependencies (the route/flow
+// reference below; also documented in docs/engine_endpoints.md).
 //
 // Build (from repo root):
 //   g++ -O2 -std=c++17 -pthread -o build/live_game_server src/cpp_modules/src/live_game_server.cpp
@@ -25,8 +25,10 @@
 //
 // The pipe is the raw 12-field engine pipe string; mainProcess's parser (in
 // main.cpp) is the single input boundary — there is no URL-argument layer.
-// The agent percent-encodes the pipe's `|` separators; they are decoded here
-// and the pipe is handed to the engine verbatim.
+// Percent-encoded `|` separators are also accepted and decoded (the raw form
+// keeps agent URLs readable). The agent's flow: kick /precompute as soon as
+// the upcoming piece is known, then poll /async-result once, right before
+// that piece spawns (~160ms later).
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
