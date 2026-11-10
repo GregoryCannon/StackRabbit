@@ -238,7 +238,16 @@ static char dasFindWallCharge(unsigned int board[20], const Piece *piece, int x,
   return 0;
 }
 
-/** Places the piece on a copy of the board and returns the number of cleared lines. */
+/**
+ * Places the piece on a copy of the board and returns the number of cleared lines.
+ *
+ * TODO: this counts EVERY full row after stamping, including rows that were
+ * already full before the piece locked; getNewBoardAndLinesCleared
+ * (move_result.cpp) counts only rows the piece itself completed. The two
+ * conventions coexist: search/response paths collapse pre-existing full rows,
+ * the eval path does not. Unifying them changes response board/lines fields
+ * and requires re-baselining the golden fixtures (pinned by the backup tests).
+ */
 static int placePieceAndClearLines(unsigned int board[20], const Piece *piece, int rotationIndex,
                                       int x, int y) {
   unsigned int temp[20];

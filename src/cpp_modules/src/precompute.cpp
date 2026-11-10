@@ -170,9 +170,11 @@ double dasPenalty(bool useDas, int dasChargeAfter, const std::string &key,
 /**
  * Per-character input cost over the adjustment's full sequence, plus the
  * possibility's own cost. The tuck character's cost is therefore counted
- * twice: once in the per-character sum and once via its own
- * inputCostX10ForChar entry. This double count is deliberate (pinned by the
- * collapse tests).
+ * twice: once in the per-character sum and once via inputCostX10.
+ *
+ * TODO: the double count skews collapse values toward tuck/spin adjustments.
+ * Fixing it is a deliberate behavior change: it flips the golden fixtures and
+ * requires the re-baseline workflow (TESTING.md). Pinned by the collapse tests.
  */
 double adjustmentInputCost(const PrecomputePossibility &possibility) {
   double cost = 0;

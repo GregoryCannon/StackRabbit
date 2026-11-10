@@ -410,6 +410,10 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
     LockLocation bestMove =
         playOneMove(startingGameState, curPiece, nextPiece, pruningBreadth, playoutCount,
                     playoutLength, &context, pieceRangeContextLookup);
+    // TODO: a topped-out board returns NULL_LOCK_LOCATION, which renders here as
+    // huge coordinate numbers; the JS consumer detects "no legal moves" by
+    // matching xOffset > 999999. Replace with an explicit error/sentinel when
+    // the TS server consumers retire (a wire-contract change -- lockstep).
     int xOffset = bestMove.x - 3;
     int rot = bestMove.rotationIndex;
     int yOffset = bestMove.y - curPiece->initialY;

@@ -122,6 +122,9 @@ int searchDepth2(GameState gameState, const Piece *firstPiece, const Piece *seco
   // incoming charge (second piece inherits), secondPieceDasCharge prescribes the second
   // piece's charge for the bucket hypothesis. Passing both is a programmer error.
   if (dasCharge >= 0 && secondPieceDasCharge >= 0) {
+    // TODO: this logs and returns an empty search rather than throwing, so the
+    // caller silently sees "no legal moves". Decide the contract: reject loudly
+    // (throw, surfacing as a 500) or define a documented precedence.
     fprintf(stderr,
             "Error: searchDepth2 received both dasCharge (%d) and secondPieceDasCharge (%d) -- "
             "they are mutually "

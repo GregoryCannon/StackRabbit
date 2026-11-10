@@ -284,6 +284,10 @@ std::pair<int, float> updateSurfaceAndHoles(int surfaceArray[10], unsigned int b
 /**
  * Calculates the resulting board after placing a piece in a specified spot.
  * @returns the number of lines cleared
+ *
+ * TODO: this counts only rows the PIECE completed; placePieceAndClearLines
+ * (full_move_search.cpp) also collapses rows that were already full before the
+ * piece locked. The coexisting conventions are documented there.
  */
 int getNewBoardAndLinesCleared(unsigned int board[20], LockPlacement lockPlacement,
                                OUT unsigned int newBoard[20]) {
