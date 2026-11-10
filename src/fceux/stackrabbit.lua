@@ -7,6 +7,9 @@ USE_PUSHDOWN = true
 DEBUG_MODE = true
 SHOULD_RECORD_GAMES = true
 AGGRESSION_LEVEL = "aggro" -- How much the agent values burning lines: "safe", "aggro", or "hyper"
+-- The C++ live server serving precompute (docs/engine_endpoints.md). The TS server
+-- stays on 3000 until the first-move flow is ported to /precompute as well.
+LIVE_SERVER_URL = "http://localhost:3001"
 
 -- OS-dependent config
 -- (We detect mac os based on common directories
@@ -37,6 +40,11 @@ TIMELINE_30_HZ = "X.";
 -- Config constants
 SHOULD_ADJUST = true
 REACTION_TIME_FRAMES = 18
+-- The first piece's precompute (reaction time 0) is queried this many frames
+-- after the kick -- much later than the usual reaction window, since there are
+-- ~90 frames of startup and the result only needs to be ready before the first
+-- placement starts.
+FIRST_PIECE_RESULT_FRAMES = 20
 INPUT_TIMELINE = TIMELINE_20_HZ;
 PLAYOUT_COUNT = 3100
 PLAYOUT_LENGTH = 6
@@ -80,6 +88,9 @@ end
 -- Translate internal Piece IDs to actual piece types (T: 2 J: 7 Z: 9 O: 10 S: 11 L: 15 I: 18)
 orientToPiece = {[0]="none", [2]="T", [7]="J", [8]="Z", [10]="O", [11]="S", [14]="L", [18]="I"}
 orientToNum = {[0]="none", [2]=1, [7]=2, [8]=3, [10]=4, [11]=5, [14]=6, [18]=7}
+-- Index of each piece in the C++ pipe's piece field (the I,O,L,J,T,S,Z ordering;
+-- NOT the same numbering as orientToNum)
+PIECE_INDEX = {I=0, O=1, L=2, J=3, T=4, S=5, Z=6}
 
 function startRecording()
   if(SHOULD_RECORD_GAMES) then
@@ -136,11 +147,13 @@ end
 ----------- HTTP Requests -------------- 
 ------------------------------------]]--
 
-function parsePrecompute(precomputeResult)
+function parsePrecompute(precomputeResult, requestReactionTime)
   local rows = splitString(precomputeResult, "\n")
 
-  -- Parse the initial placement and queue up those inputs
-  if REACTION_TIME_FRAMES > 0 then
+  -- Parse the initial placement and queue up those inputs. A reaction time of
+  -- zero has no default placement (the piece has not been placed yet), so the
+  -- row reads "Default:N/A (0 reaction time)" and must be skipped.
+  if requestReactionTime > 0 then
     local defaultPlacement = splitString(rows[1], ":")[2]
     if defaultPlacement == nil then
       print("GAME OVER - no default placement")
@@ -162,28 +175,20 @@ end
 
   
 
--- Make a request that will kick off a longer calculation. Subsequent frames will ping the server again for the result.
-function requestFirstPlacementAsync()
-  offsetXAtAdjustmentTime = 0
-  rotationAtAdjustmentTime = 0
-  canFirstFrameShiftAtAdjustmentTime = true
-  offsetYAtAdjustmentTime = 0
-
-  -- Format URL arguments
-  local reqDasCharge = -1
-  if (USE_DAS) then
-    reqDasCharge = 0
-  end
-  local reqStr = "http://localhost:3000/get-move-async-cpp?board=" .. getEncodedBoard() .. "&currentPiece=" .. orientToPiece[pcur]
-  reqStr = reqStr .. "&nextPiece=" .. orientToPiece[pnext] .. "&level=" .. level .. "&lines=" .. numLines .. "&inputFrameTimeline=" 
-  reqStr = reqStr .. INPUT_TIMELINE .. "&dasCharge=" .. reqDasCharge .. "&aggressionLevel=" .. AGGRESSION_LEVEL
-
-  local response = makeHttpRequest(reqStr)
-  if response.code ~= 200 then
-    error("Request not acknowledged by backend")
-  end
-  waitingOnAsyncRequest = true
-  return response.data
+-- Build the C++ engine's own pipe string (all 12 fields required; see
+-- docs/engine_endpoints.md). nextPiece is always -1 because precompute searches
+-- all seven next pieces itself; the C++ pipe parser is the input boundary and
+-- rejects anything malformed. The pipe goes on the wire raw -- the HTTP clients
+-- in play (libcurl / luasocket) pass query bytes verbatim and the server reads
+-- the raw request line, so the URL stays readable (percent-encoding also works).
+function buildPrecomputePipe(board, level, lines, pieceName, dasCharge, reactionTime)
+  local pipe = board
+      .. "|" .. level .. "|" .. lines
+      .. "|" .. PIECE_INDEX[pieceName] .. "|-1"
+      .. "|" .. INPUT_TIMELINE
+      .. "|" .. PLAYOUT_COUNT .. "|" .. PLAYOUT_LENGTH .. "|" .. PRUNING_BREADTH
+      .. "|" .. AGGRESSION_LEVEL .. "|" .. dasCharge .. "|" .. reactionTime .. "|"
+  return pipe
 end
 
 function requestPrecompute()
@@ -210,7 +215,6 @@ function requestPrecompute()
     reqLines = reqLines - 10
   end
 
-  -- Format URL arguments
   if stateForNextPiece == nil or stateForNextPiece.board == nil
         or stateForNextPiece.lines == nil or stateForNextPiece.level == nil then
     print("GAME OVER - unknown state")
@@ -218,22 +222,39 @@ function requestPrecompute()
     return
   end
 
-  local reqStr = "http://localhost:3000/precompute?board=" .. stateForNextPiece.board .. "&currentPiece=" .. orientToPiece[pnext]
-  reqStr = reqStr .. "&level=" .. reqLevel .. "&lines=" .. reqLines .. "&reactionTime="
-  reqStr = reqStr .. REACTION_TIME_FRAMES .. "&inputFrameTimeline=" .. INPUT_TIMELINE .. "&dasCharge=" .. reqDasCharge 
-  reqStr = reqStr .. "&aggressionLevel=" .. AGGRESSION_LEVEL .. "&pruningBreadth=" .. PRUNING_BREADTH .. "&playoutCount=" .. PLAYOUT_COUNT .. "&playoutLength=" .. PLAYOUT_LENGTH
+  local reqStr = LIVE_SERVER_URL .. "/precompute?p="
+      .. buildPrecomputePipe(stateForNextPiece.board, reqLevel, reqLines,
+                             orientToPiece[pnext], reqDasCharge, REACTION_TIME_FRAMES)
 
   local response = makeHttpRequest(reqStr)
   if response.code ~= 200 then
     error("Request not acknowledged by backend")
   end
-  waitingOnAsyncRequest = true; 
+  waitingOnAsyncRequest = true;
+  return response.data
+end
+
+-- The first piece's placement: a normal precompute with reaction time 0 (the
+-- piece has not been placed yet, so the result is all per-next-piece lines and
+-- no default). We already know the next piece at this point, but the query is
+-- the standard shape (nextPiece = -1) -- the result is indexed for the known
+-- piece when it is fetched, same as every other precompute.
+function requestFirstPlacement()
+  local reqStr = LIVE_SERVER_URL .. "/precompute?p="
+      .. buildPrecomputePipe(getEncodedBoard(), level, numLines, orientToPiece[pcur],
+                             (USE_DAS and 0 or -1), 0)
+
+  local response = makeHttpRequest(reqStr)
+  if response.code ~= 200 then
+    error("Request not acknowledged by backend")
+  end
+  waitingOnAsyncRequest = true;
   return response.data
 end
 
 -- Check if the async computation has finished, and if so make the adjustment based on it
 function fetchAsyncResult()
-  local response = makeHttpRequest("http://localhost:3000/async-result")
+  local response = makeHttpRequest(LIVE_SERVER_URL .. "/async-result")
 
   -- Only use the response if the server indicated that it sent the async result
   if response.code ~= 200 then
@@ -408,10 +429,11 @@ end
 function onFirstFrameOfNewPiece()  
   readFromMemory()
     
-  -- If it's the first piece, make an 'adjustment' to do the initial placement
+  -- If it's the first piece, precompute the initial placement (reaction time
+  -- 0; the result is fetched at FIRST_PIECE_RESULT_FRAMES)
   if isFirstPiece then
     resetPieceScopedVars()
-    requestFirstPlacementAsync()
+    requestFirstPlacement()
   end
 
 end
@@ -443,19 +465,31 @@ end
 
 -- Called when reaction time has passed and it's time to perform the adjustment
 function processAdjustment()
+  -- TODO: this check is a no-op in Lua (a table compares by identity against a
+  -- fresh literal, so it is always false). An empty adjustmentLookup here means
+  -- the precompute result never arrived -- decide whether to detect that.
   if (adjustmentLookup == {}) then
     error("No adjustment lookup found")
   end
 
-  if isFirstPiece then
-    local adjustmentApiResult = fetchAsyncResult()
-    calculateInputs(adjustmentApiResult, true)
-    parseGameStateFromResponse(adjustmentApiResult)
-  else 
-    local adjustmentApiResult = adjustmentLookup[orientToPiece[pnext]]
-    calculateInputs(adjustmentApiResult, true)
-    parseGameStateFromResponse(adjustmentApiResult)
-  end 
+  local adjustmentApiResult = adjustmentLookup[orientToPiece[pnext]]
+  calculateInputs(adjustmentApiResult, true)
+  parseGameStateFromResponse(adjustmentApiResult)
+
+  print("Time for adjustment " .. inputSequence)
+end
+
+-- The first piece's result: fetched late (FIRST_PIECE_RESULT_FRAMES), so the
+-- full precompute is ready. The response has reaction time 0 -- no default
+-- placement, only per-next-piece lines -- and we already know the next piece,
+-- so index straight to its line.
+function processFirstAdjustment()
+  local apiResult = fetchAsyncResult()
+  parsePrecompute(apiResult, 0)
+
+  local adjustmentApiResult = adjustmentLookup[orientToPiece[pnext]]
+  calculateInputs(adjustmentApiResult, true)
+  parseGameStateFromResponse(adjustmentApiResult)
 
   print("Time for adjustment " .. inputSequence)
 end
@@ -500,7 +534,7 @@ function runGameFrame()
       print("\n------ " .. orientToPiece[pnext] .. " ------")
       resetPieceScopedVars()
       local apiResult = fetchAsyncResult()
-      parsePrecompute(apiResult)
+      parsePrecompute(apiResult, REACTION_TIME_FRAMES)
       waitingOnAsyncRequest = false
     end
     
@@ -514,7 +548,14 @@ function runGameFrame()
       -- First active frame for piece. This is where board state/input sequence is calculated
       onFirstFrameOfNewPiece()
     end
-    if frameIndex == REACTION_TIME_FRAMES and (SHOULD_ADJUST or isFirstPiece)  then
+    if isFirstPiece then
+      -- The first piece: fetch its precompute (reaction time 0) after a long
+      -- buffer -- there are ~90 startup frames, so starting the placement at
+      -- FIRST_PIECE_RESULT_FRAMES is comfortable.
+      if frameIndex == FIRST_PIECE_RESULT_FRAMES then
+        processFirstAdjustment()
+      end
+    elseif frameIndex == REACTION_TIME_FRAMES and SHOULD_ADJUST then
       -- Once reaction time is over, handle adjustment     
       processAdjustment()
     elseif frameIndex == REACTION_TIME_FRAMES + 1 then

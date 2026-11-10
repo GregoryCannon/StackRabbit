@@ -67,13 +67,13 @@ struct AsyncSlot {
   std::mutex mutex;
   std::condition_variable jobReady;
   State state = State::IDLE;
-  std::string pipe;      // input of the request being computed
+  std::string pipe; // input of the request being computed
   bool hasPartial = false;
-  std::string partial;   // backup response, stored a few ms after the kick
+  std::string partial; // backup response, stored a few ms after the kick
   bool hasFull = false;
-  std::string full;      // full precompute response
+  std::string full; // full precompute response
   bool hasError = false;
-  std::string error;     // engine rejection message or exception message
+  std::string error; // engine rejection message or exception message
 };
 
 AsyncSlot g_slot;
@@ -107,9 +107,7 @@ void markDone() {
 // happens on the worker thread, after the kick has already been answered.
 // The agent treats a rejected kick and a failed poll the same way (fatal), so
 // the contract holds either way.
-bool isEngineRejection(const std::string &response) {
-  return response.rfind("Error:", 0) == 0;
-}
+bool isEngineRejection(const std::string &response) { return response.rfind("Error:", 0) == 0; }
 
 // ---------------------------------------------------------------------------
 // Worker thread
@@ -133,6 +131,10 @@ void workerLoop() {
       pipe = g_slot.pipe;
     }
 
+    // One line per request with the input and the compute time of each stage,
+    // so a live session's log can be replayed request-by-request.
+    auto backupStarted = std::chrono::steady_clock::now();
+    double fullMs = -1;
     std::string backup;
     bool backupUsable = false;
     try {
@@ -150,8 +152,12 @@ void workerLoop() {
     } catch (...) {
       storeError("Unknown engine error (non-std exception)");
     }
+    double backupMs =
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - backupStarted)
+            .count();
 
     if (backupUsable) {
+      auto fullStarted = std::chrono::steady_clock::now();
       try {
         std::string full = mainProcess(pipe.c_str(), PRECOMPUTE);
         if (isEngineRejection(full)) {
@@ -164,8 +170,13 @@ void workerLoop() {
       } catch (...) {
         storeError("Unknown engine error (non-std exception)");
       }
+      fullMs =
+          std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - fullStarted)
+              .count();
     }
 
+    printf("[compute] backup=%.2fms full=%.2fms input=%s\n", backupMs, fullMs, pipe.c_str());
+    fflush(stdout);
     markDone();
   }
 }
@@ -195,8 +206,10 @@ std::string percentDecode(const std::string &s) {
   std::string out;
   out.reserve(s.size());
   for (size_t i = 0; i < s.size(); i++) {
-    if (s[i] == '%' && i + 2 < s.size() && hexDigitValue(s[i + 1]) >= 0 &&
-        hexDigitValue(s[i + 2]) >= 0) {
+    if (s[i] == '%'
+        && i + 2 < s.size()
+        && hexDigitValue(s[i + 1]) >= 0
+        && hexDigitValue(s[i + 2]) >= 0) {
       out.push_back((char)((hexDigitValue(s[i + 1]) << 4) | hexDigitValue(s[i + 2])));
       i += 2;
     } else {
@@ -220,9 +233,8 @@ bool extractPipeParam(const std::string &query, std::string &value) {
     if (found == 0 || query[found - 1] == '&') {
       size_t valueStart = found + 2;
       size_t valueEnd = query.find('&', valueStart);
-      value = query.substr(valueStart, valueEnd == std::string::npos
-                                           ? std::string::npos
-                                           : valueEnd - valueStart);
+      value = query.substr(valueStart, valueEnd == std::string::npos ? std::string::npos
+                                                                     : valueEnd - valueStart);
       return true;
     }
     searchFrom = found + 1;
@@ -340,15 +352,18 @@ void sendAll(int fd, const char *data, size_t length) {
 }
 
 void sendResponse(int fd, int status, const std::string &body) {
-  std::string head = "HTTP/1.1 " + std::to_string(status) + " " + statusText(status) +
-                     "\r\n"
-                     "Content-Type: text/plain\r\n"
-                     "Access-Control-Allow-Origin: *\r\n"
-                     "Content-Length: " +
-                     std::to_string(body.size()) +
-                     "\r\n"
-                     "Connection: close\r\n"
-                     "\r\n";
+  std::string head = "HTTP/1.1 "
+                     + std::to_string(status)
+                     + " "
+                     + statusText(status)
+                     + "\r\n"
+                       "Content-Type: text/plain\r\n"
+                       "Access-Control-Allow-Origin: *\r\n"
+                       "Content-Length: "
+                     + std::to_string(body.size())
+                     + "\r\n"
+                       "Connection: close\r\n"
+                       "\r\n";
   sendAll(fd, head.data(), head.size());
   sendAll(fd, body.data(), body.size());
 }
@@ -398,16 +413,16 @@ void handleConnection(int fd) {
   size_t lineEnd = raw.find("\r\n");
   std::string requestLine = raw.substr(0, lineEnd);
   size_t firstSpace = requestLine.find(' ');
-  size_t secondSpace = (firstSpace == std::string::npos)
-                           ? std::string::npos
-                           : requestLine.find(' ', firstSpace + 1);
-  bool wellFormed = firstSpace != std::string::npos && secondSpace != std::string::npos &&
-                    secondSpace + 1 < requestLine.size() &&
-                    requestLine.find(' ', secondSpace + 1) == std::string::npos &&
-                    requestLine.compare(secondSpace + 1, 5, "HTTP/") == 0;
+  size_t secondSpace =
+      (firstSpace == std::string::npos) ? std::string::npos : requestLine.find(' ', firstSpace + 1);
+  bool wellFormed = firstSpace != std::string::npos
+                    && secondSpace != std::string::npos
+                    && secondSpace + 1 < requestLine.size()
+                    && requestLine.find(' ', secondSpace + 1) == std::string::npos
+                    && requestLine.compare(secondSpace + 1, 5, "HTTP/") == 0;
   std::string method = wellFormed ? requestLine.substr(0, firstSpace) : "";
-  std::string target = wellFormed ? requestLine.substr(firstSpace + 1, secondSpace - firstSpace - 1)
-                                  : "";
+  std::string target =
+      wellFormed ? requestLine.substr(firstSpace + 1, secondSpace - firstSpace - 1) : "";
   if (!wellFormed) {
     printf("GET <malformed request line> 400 %.2fms\n", elapsedMs());
     fflush(stdout);
