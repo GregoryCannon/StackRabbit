@@ -58,7 +58,7 @@ void debugPrint(const char *format, ...) {
   va_end(args);
 }
 
-void printBoard(unsigned int board[20]) {
+void printBoard(const unsigned int board[20]) {
   printf("----- Board start -----\n");
   for (int i = 0; i < 20; i++) {
     char line[] = "..........";
@@ -71,7 +71,7 @@ void printBoard(unsigned int board[20]) {
   }
 }
 
-void printBoardWithPiece(unsigned int board[20], Piece piece, int x, int y, int rot) {
+void printBoardWithPiece(const unsigned int board[20], Piece piece, int x, int y, int rot) {
   printf("----- Board & piece start -----\n");
   for (int i = 0; i < 20; i++) {
     char line[] = "..........";

@@ -14,7 +14,7 @@ using namespace std;
 /**
  * Checks for collisions with the board and the edges of the screen
  */
-inline int collision(unsigned int board[20], const Piece *piece, int x, int y, int rotIndex) {
+inline int collision(const unsigned int board[20], const Piece *piece, int x, int y, int rotIndex) {
   if (y > piece->maxYByRotation[rotIndex]) {
     return 1;
   }
@@ -95,7 +95,7 @@ inline bool isGravityDropFrame(int frameIndex, int gravity) {
  * Explores how far in a given direction a piece can be shifted, and registers all the legal
  * placements along the way
  */
-int exploreHorizontally(unsigned int board[20], SimState simState, int shiftIncrement,
+int exploreHorizontally(const unsigned int board[20], SimState simState, int shiftIncrement,
                         int maxOrMinX, int goalRotationIndex, char const *inputFrameTimeline,
                         int timelineLen, int gravity, bool gravityDoubled,
                         LegalPlacementsList &legalPlacements) {
@@ -186,7 +186,7 @@ int exploreHorizontally(unsigned int board[20], SimState simState, int shiftIncr
  * Explores for moves with more rotations than shifts (the only blind spot of the default
  * exploration behavior).
  */
-void explorePlacementsNearSpawn(unsigned int board[20], SimState simState, int goalRotationIndex,
+void explorePlacementsNearSpawn(const unsigned int board[20], SimState simState, int goalRotationIndex,
                                 char const *inputFrameTimeline, int timelineLen, int gravity,
                                 bool gravityDoubled, LegalPlacementsList &legalPlacements) {
   int rotationDifference = abs(goalRotationIndex - simState.rotationIndex);
@@ -207,7 +207,7 @@ void explorePlacementsNearSpawn(unsigned int board[20], SimState simState, int g
  * Optimized method to convert legal placements to lock placements.
  * (!!) Doesn't allow for tucks.
  */
-void getLockPlacementsFast(const LegalPlacementsList &legalPlacements, int surfaceArray[10],
+void getLockPlacementsFast(const LegalPlacementsList &legalPlacements, const int surfaceArray[10],
                            OUT int availableTuckCols[40],
                            OUT vector<LockPlacement> &lockPlacements) {
   for (int i = 0; i < legalPlacements.count; i++) {
@@ -250,7 +250,7 @@ void getLockPlacementsFast(const LegalPlacementsList &legalPlacements, int surfa
   }
 }
 
-char findTuckInput(unsigned int board[20], SimState afterTuckState, int availableTuckCols[40],
+char findTuckInput(const unsigned int board[20], SimState afterTuckState, int availableTuckCols[40],
                    int minTuckYValsByNumPrevInputs[7]) {
   // Do rotations mod 4 or mod 2, depending on the piece (rotation logic skipped for O)
   int numOrientations = afterTuckState.piece->id == 'O'                      ? 1
@@ -304,7 +304,7 @@ char findTuckInput(unsigned int board[20], SimState afterTuckState, int availabl
    Each piece has a precomputed list of the possible ways it can fill a tuck cell (defined in
    tetrominoes.h), which drastically reduces the number of placements to try each time.
  */
-void findTucks(unsigned int board[20], const Piece *piece, int availableTuckCols[40],
+void findTucks(const unsigned int board[20], const Piece *piece, int availableTuckCols[40],
                int minTuckYValsByNumPrevInputs[7], OUT std::vector<LockPlacement> &lockPlacements) {
   bool seenTuckSpots[25][16][4] = {};
   for (int overhangY = 0; overhangY < 20; overhangY++) {
@@ -356,7 +356,7 @@ void findTucks(unsigned int board[20], const Piece *piece, int availableTuckCols
  * Wrapped in two parent functions depending on whether the move search is from standard spawn or
  * from a midair adjustment spot.
  */
-int moveSearchInternal(GameState gameState, SimState spawnState, const Piece *piece,
+int moveSearchInternal(const GameState &gameState, SimState spawnState, const Piece *piece,
                        char const *inputFrameTimeline,
                        OUT std::vector<LockPlacement> &lockPlacements) {
   lockPlacements.reserve(40);
@@ -416,14 +416,14 @@ int moveSearchInternal(GameState gameState, SimState spawnState, const Piece *pi
   return (int)lockPlacements.size();
 }
 
-int fastMoveSearch(GameState gameState, const Piece *piece, char const *inputFrameTimeline,
+int fastMoveSearch(const GameState &gameState, const Piece *piece, char const *inputFrameTimeline,
                    OUT std::vector<LockPlacement> &lockPlacements) {
   SimState spawnState = {INITIAL_X,           piece->initialY,   /* rotationIndex= */ 0,
                          /* frameIndex= */ 0, /* arrIndex= */ 0, piece};
   return moveSearchInternal(gameState, spawnState, piece, inputFrameTimeline, lockPlacements);
 }
 
-int adjustmentSearch(GameState gameState, const Piece *piece, char const *inputFrameTimeline,
+int adjustmentSearch(const GameState &gameState, const Piece *piece, char const *inputFrameTimeline,
                      int existingXOffset, int existingYOffset, int existingRotation,
                      int framesAlreadyElapsed, int arrWasReset,
                      OUT std::vector<LockPlacement> &lockPlacements) {

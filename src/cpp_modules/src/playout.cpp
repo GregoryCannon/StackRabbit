@@ -51,8 +51,8 @@ float playSequence(GameState gameState, const PieceRangeContext pieceRangeContex
 
     // Get the lock placements
     std::vector<LockPlacement> lockPlacements;
-    Piece piece = PIECE_LIST[pieceSequence[i]];
-    fastMoveSearch(gameState, &piece, evalContext->pieceRangeContext.inputFrameTimeline,
+    const Piece *piece = &PIECE_LIST[pieceSequence[i]];
+    fastMoveSearch(gameState, piece, evalContext->pieceRangeContext.inputFrameTimeline,
                    lockPlacements);
 
     if (lockPlacements.size() == 0) {
@@ -63,7 +63,7 @@ float playSequence(GameState gameState, const PieceRangeContext pieceRangeContex
     LockPlacement bestMove = pickLockPlacement(gameState, evalContext, lockPlacements);
     if (trackPlayouts) {
       LockLocation bestMoveLocation = {bestMove.x, bestMove.y, bestMove.rotationIndex};
-      newPlayoutData.pieceSequence += getPieceChar(piece.index);
+      newPlayoutData.pieceSequence += getPieceChar(piece->index);
       newPlayoutData.placements.push_back(bestMoveLocation);
     }
 
