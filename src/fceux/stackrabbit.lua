@@ -9,7 +9,7 @@ SHOULD_RECORD_GAMES = true
 AGGRESSION_LEVEL = "aggro" -- How much the agent values burning lines: "safe", "aggro", or "hyper"
 -- The C++ live server serving precompute (docs/engine_endpoints.md). The TS server
 -- stays on 3000 until the first-move flow is ported to /precompute as well.
-LIVE_SERVER_URL = "http://localhost:3001"
+LIVE_SERVER_URL = "http://localhost:3000"
 
 -- OS-dependent config
 -- (We detect mac os based on common directories
@@ -197,9 +197,9 @@ function requestPrecompute()
   end
   print("\n\nrequestPrecompute")
   -- Convert requests to PAL
-  local reqLevel = stateForNextPiece.level
-  local reqLines = stateForNextPiece.lines
-  local reqDasCharge = stateForNextPiece.dasCharge
+  local reqLevel = tonumber(stateForNextPiece.level)
+  local reqLines = tonumber(stateForNextPiece.lines)
+  local reqDasCharge = tonumber(stateForNextPiece.dasCharge)
   if IS_PAL then
     reqLines = numLines + 100
     if reqLevel == 18 then

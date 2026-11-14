@@ -52,7 +52,7 @@
 
 namespace {
 
-const int DEFAULT_PORT = 3001;
+const int DEFAULT_PORT = 3000;
 const int RECV_TIMEOUT_SECONDS = 5; // header reads that outlive this can't wedge the accept loop
 const size_t READ_BUFFER_LIMIT = 8192;
 const int LISTEN_BACKLOG = 16;
