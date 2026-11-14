@@ -152,69 +152,24 @@ const Piece PIECE_Z = { 'Z', 6, {
                },{ 17, 17, NONE, NONE},
                -1 };
 
-static const std::list<TuckOriginSpot> TUCK_SPOTS_I = {
-  {0, 0, 2},
-  {0, 3, 2},
-  {1, 2, 0}
-};
-
-static const std::list<TuckOriginSpot> TUCK_SPOTS_O = {
-  {0, 1, 1},
-  {0, 2, 1}
-};
-
-static const std::list<TuckOriginSpot> TUCK_SPOTS_L = {
-  {0, 1, 1},
-  {0, 3, 1},
-  {1, 1, 0},
-  {1, 2, 0},
-  {2, 1, 1},
-  {2, 3, 0},
-  {3, 2, 0},
-  {3, 3, 2}
-};
-
-static const std::list<TuckOriginSpot> TUCK_SPOTS_J = {
-  {0, 1, 1},
-  {0, 3, 1},
-  {1, 1, 2},
-  {1, 2, 0},
-  {2, 1, 0},
-  {2, 3, 1},
-  {3, 2, 0},
-  {3, 3, 0}
-};
-
-static const std::list<TuckOriginSpot> TUCK_SPOTS_T = {
-  {0, 1, 1},
-  {0, 3, 1},
-  {1, 1, 1},
-  {1, 2, 0},
-  {2, 1, 1},
-  {2, 3, 1},
-  {3, 2, 0},
-  {3, 3, 1},
-};
-
-static const std::list<TuckOriginSpot> TUCK_SPOTS_S = {
-  {0, 1, 2},
-  {0, 3, 1},
-  {1, 2, 0},
-  {1, 3, 1}
-};
-
-static const std::list<TuckOriginSpot> TUCK_SPOTS_Z = {
-  {0, 1, 1},
-  {0, 3, 2},
-  {1, 3, 0},
-  {1, 2, 1}
+struct TuckSpotList {
+  int count;
+  TuckOriginSpot spots[8];
 };
 
 const Piece PIECE_LIST[7] = {PIECE_I, PIECE_O, PIECE_L, PIECE_J, PIECE_T, PIECE_S, PIECE_Z};
 
-static const std::list<TuckOriginSpot> TUCK_SPOTS_LIST[7] = {TUCK_SPOTS_I, TUCK_SPOTS_O, TUCK_SPOTS_L, TUCK_SPOTS_J, TUCK_SPOTS_T, TUCK_SPOTS_S, TUCK_SPOTS_Z};
+constexpr TuckSpotList TUCK_SPOTS_LIST[7] = {
+  {3, {{0, 0, 2}, {0, 3, 2}, {1, 2, 0}}},
+  {2, {{0, 1, 1}, {0, 2, 1}}},
+  {8, {{0, 1, 1}, {0, 3, 1}, {1, 1, 0}, {1, 2, 0}, {2, 1, 1}, {2, 3, 0}, {3, 2, 0}, {3, 3, 2}}},
+  {8, {{0, 1, 1}, {0, 3, 1}, {1, 1, 2}, {1, 2, 0}, {2, 1, 0}, {2, 3, 1}, {3, 2, 0}, {3, 3, 0}}},
+  {8, {{0, 1, 1}, {0, 3, 1}, {1, 1, 1}, {1, 2, 0}, {2, 1, 1}, {2, 3, 1}, {3, 2, 0}, {3, 3, 1}}},
+  {4, {{0, 1, 2}, {0, 3, 1}, {1, 2, 0}, {1, 3, 1}}},
+  {4, {{0, 1, 1}, {0, 3, 2}, {1, 3, 0}, {1, 2, 1}}}
+};
 
-const std::list<TuckInput> TUCK_INPUTS {
+constexpr TuckInput TUCK_INPUTS[8] = {
   {'L', -1, 0},
   {'R', 1, 0},
   {'A', 0, 1},
