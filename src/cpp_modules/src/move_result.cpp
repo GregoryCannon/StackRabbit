@@ -8,7 +8,7 @@
  * --Side effect-- marks the hole or tuck setup in the board data structure
  */
 float analyzeHole(unsigned int board[20], int r, int c, int excludeHolesColumn,
-                  int surfaceArray[10], bool isDigMode) {
+                  const int surfaceArray[10], bool isDigMode) {
   // VARIABLE_RANGE_CHECKS_ENABLED
   if (true && (r < 0 || r >= 20)) {
     printf("PANIK B, r=%d\n", r);
@@ -116,10 +116,8 @@ float analyzeHole(unsigned int board[20], int r, int c, int excludeHolesColumn,
   return 1;
 }
 
-std::pair<int, float> getNewSurfaceAndNumNewHoles(int surfaceArray[10], unsigned int board[20],
-                                                  LockPlacement lockPlacement,
-                                                  const EvalContext *evalContext, int isTuck,
-                                                  OUT int newSurface[10]) {
+static inline void getNewSurface(const int surfaceArray[10], const LockPlacement &lockPlacement,
+                                 OUT int newSurface[10]) {
   for (int i = 0; i < 10; i++) {
     newSurface[i] = surfaceArray[i];
   }
@@ -129,26 +127,33 @@ std::pair<int, float> getNewSurfaceAndNumNewHoles(int surfaceArray[10], unsigned
   unsigned int const *topSurface =
       lockPlacement.piece->topSurfaceByRotation[lockPlacement.rotationIndex];
   for (int i = 0; i < 4; i++) {
-    if (topSurface[i] != NONE) {
-      int newHeight = 20 - topSurface[i] - lockPlacement.y;
-      // VARIABLE RANGE CHECKS
-      if (newHeight > 20) {
-        newHeight = 20;
-      }
-      newSurface[lockPlacement.x + i] = newHeight;
+    if (topSurface[i] == NONE) {
+      continue;
+    }
+    int col = lockPlacement.x + i;
+    int newHeight = 20 - topSurface[i] - lockPlacement.y;
+    // VARIABLE RANGE CHECKS
+    if (newHeight > 20) {
+      newHeight = 20;
+    }
+    // Placing a piece can never lower a column's surface height (e.g. when tucked under an
+    // overhang)
+    if (newHeight > newSurface[col]) {
+      newSurface[col] = newHeight;
     }
   }
+}
 
-  // Adjust for the fact that a piece placement can never LOWER a column's surface. The clamp
-  // matters when the piece ends up UNDER an existing overhang, which is not limited to tucks (if
-  // the exact tap/DAS speed limit ends up tapping a piece horizontally under an overhang).
-  for (int i = 0; i < 10; i++) {
-    newSurface[i] = std::max(surfaceArray[i], newSurface[i]);
-  }
-
-  // Check for new holes by comparing the bottom surface of the piece to the surface of the stack
+static inline std::pair<int, float>
+checkForNewHoles(const int surfaceArray[10], unsigned int board[20],
+                 const LockPlacement &lockPlacement, const EvalContext *evalContext,
+                 const int newSurface[10], int numExistingTrueHoles) {
   int numNewTrueHoles = 0;
   float numNewPartialHoles = 0;
+  const bool hasExistingHoles = numExistingTrueHoles > 0;
+  const int excludeHolesCol = evalContext->countWellHoles ? -1 : evalContext->wellColumn;
+  const bool isDigMode = evalContext->aiMode == DIG;
+
   unsigned int const *bottomSurface =
       lockPlacement.piece->bottomSurfaceByRotation[lockPlacement.rotationIndex];
   for (int i = 0; i < 4; i++) {
@@ -160,12 +165,22 @@ std::pair<int, float> getNewSurfaceAndNumNewHoles(int surfaceArray[10], unsigned
     if (!evalContext->countWellHoles && c == evalContext->wellColumn) {
       continue;
     }
-    int excludeHolesCol = evalContext->countWellHoles ? -1 : evalContext->wellColumn;
 
     // Loop through the cells between the bottom of the piece and the ground
     const int highestBoardCellInCol = 20 - surfaceArray[c];
+    const int startRow = lockPlacement.y + bottomSurface[i];
+    // If startRow >= highestBoardCellInCol, the piece bottom sits at or below the stack surface
+    // (higher row numbers are lower down), meaning there are no gap cells under the piece to form
+    // new holes.
+    // On a board with no existing holes, there are also no holes below to add weight to,
+    // so this column can be skipped entirely.
+    if (!hasExistingHoles && startRow >= highestBoardCellInCol) {
+      continue;
+    }
+    const int maxRow = hasExistingHoles ? 20 : highestBoardCellInCol;
+
     int holeWeightStartRow = -1; // Indicates that all rows above this row are weight on a hole
-    for (int r = (lockPlacement.y + bottomSurface[i]); r < 20; r++) {
+    for (int r = startRow; r < maxRow; r++) {
       // VARIABLE_RANGE_CHECKS
       if (r < 0 || r >= 20) {
         printf("\n\nPANIK A, r=%d, y=%d, bottomSurface=%d\n", r, lockPlacement.y, bottomSurface[i]);
@@ -176,8 +191,7 @@ std::pair<int, float> getNewSurfaceAndNumNewHoles(int surfaceArray[10], unsigned
       }
       if (r < highestBoardCellInCol) {
         // Check for new holes
-        float rating =
-            analyzeHole(board, r, c, excludeHolesCol, newSurface, evalContext->aiMode == DIG);
+        float rating = analyzeHole(board, r, c, excludeHolesCol, newSurface, isDigMode);
         if (rating == 1) {
           // If it's a true hole
           holeWeightStartRow = r - 1;
@@ -210,7 +224,18 @@ std::pair<int, float> getNewSurfaceAndNumNewHoles(int surfaceArray[10], unsigned
     }
   }
 
-  return pair<int, float>(numNewTrueHoles, numNewPartialHoles);
+  return {numNewTrueHoles, numNewPartialHoles};
+}
+
+std::pair<int, float> getNewSurfaceAndNumNewHoles(const int surfaceArray[10],
+                                                  unsigned int board[20],
+                                                  const LockPlacement &lockPlacement,
+                                                  const EvalContext *evalContext,
+                                                  /*isTuck=*/int, OUT int newSurface[10]) {
+  getNewSurface(surfaceArray, lockPlacement, newSurface);
+  // Without an existing hole count, conservatively perform the full scan down to row 20
+  return checkForNewHoles(surfaceArray, board, lockPlacement, evalContext, newSurface,
+                          /*numExistingTrueHoles=*/1);
 }
 
 /**
@@ -289,96 +314,112 @@ std::pair<int, float> updateSurfaceAndHoles(int surfaceArray[10], unsigned int b
  * (full_move_search.cpp) also collapses rows that were already full before the
  * piece locked. The coexisting conventions are documented there.
  */
-int getNewBoardAndLinesCleared(unsigned int board[20], LockPlacement lockPlacement,
+int getNewBoardAndLinesCleared(const unsigned int board[20], const LockPlacement &lockPlacement,
                                OUT unsigned int newBoard[20]) {
   int numLinesCleared = 0;
+  const int x = lockPlacement.x;
+  const int y = lockPlacement.y;
+
   // The rows below the piece are always the same
-  for (int r = lockPlacement.y + 4; r < 20; r++) {
+  for (int r = y + 4; r < 20; r++) {
     newBoard[r] = board[r];
   }
   // Check the piece rows, bottom to top
   unsigned int const *pieceRows = lockPlacement.piece->rowsByRotation[lockPlacement.rotationIndex];
   for (int i = 3; i >= 0; i--) {
-    // Don't add any minos off the board
-    if (lockPlacement.y + i < 0) {
+    int rowIdx = y + i;
+    // Don't add minos or copy rows off the board (protects floor placements like y=17 horizontal I)
+    if (rowIdx < 0 || rowIdx >= 20) {
       continue;
     }
 
-    if (pieceRows[i] == 0) {
-      newBoard[lockPlacement.y + i + numLinesCleared] = board[lockPlacement.y + i];
+    unsigned int pRow = pieceRows[i];
+    if (pRow == 0) {
+      newBoard[rowIdx + numLinesCleared] = board[rowIdx];
       continue;
     }
-    int newRow =
-        (board[lockPlacement.y + i]
-         | SHIFTBY(pieceRows[i], lockPlacement.x))        // Add the piece to the board
-        & ~(SHIFTBY(pieceRows[i], lockPlacement.x - 20)); // Clear out those cells from tuck setups
+    unsigned int pieceShifted = SHIFTBY(pRow, x);
+    // Add piece minos (bits 0-9) and clear any tuck-setup bits they cover (bits 20-29)
+    unsigned int newRow = (board[rowIdx] | pieceShifted) & ~(pieceShifted << 20);
     if ((newRow & FULL_ROW) == FULL_ROW) {
       numLinesCleared++;
       continue;
     }
-    newBoard[lockPlacement.y + i + numLinesCleared] = newRow;
+    newBoard[rowIdx + numLinesCleared] = newRow;
   }
   // Copy the rest of the rows
-  for (int r = 0; r < lockPlacement.y; r++) {
-    newBoard[r + numLinesCleared] = board[r];
-  }
-  // Add empty lines at the top of the board if needed
-  for (int i = 0; i < numLinesCleared; i++) {
-    newBoard[i] = 0;
-  }
-  return numLinesCleared;
-}
-
-float adjustHoleCountAndBoardAfterTuck(unsigned int board[20], LockPlacement lockPlacement) {
-  int tuckCellsFilled = 0;
-  unsigned int const *pieceRows = lockPlacement.piece->rowsByRotation[lockPlacement.rotationIndex];
-  for (int i = 3; i >= 0; i--) {
-    // Don't add any minos that are off the board
-    if (lockPlacement.y + i < 0) {
-      continue;
-    }
-
-    if (pieceRows[i] == 0) {
-      continue;
-    }
-    // Count the number of tuck cells filled in this row of the piece
-    int intersection = board[lockPlacement.y + i] & SHIFTBY(pieceRows[i], lockPlacement.x - 20);
-    while ((intersection & ALL_TUCK_SETUP_BITS) > 0) {
-      if (intersection & (1 << 20)) {
-        tuckCellsFilled++;
+    if (numLinesCleared == 0) {
+      for (int r = 0; r < y; r++) {
+        newBoard[r] = board[r];
       }
-      intersection = intersection >> 1;
+    } else {
+      for (int r = 0; r < y; r++) {
+        newBoard[r + numLinesCleared] = board[r];
+      }
+      // Add empty lines at the top of the board if needed
+      for (int i = 0; i < numLinesCleared; i++) {
+        newBoard[i] = 0;
+      }
     }
-  }
-  return -1 * SEMI_HOLE_PROPORTION * tuckCellsFilled;
-}
-
-/** Gets the game state after completing a given move */
-GameState advanceGameState(GameState gameState, LockPlacement lockPlacement,
-                           const EvalContext *evalContext) {
-  GameState newState = {
-      {}, {}, gameState.numTrueHoles, gameState.numPartialHoles, gameState.lines, gameState.level};
-  bool isTuck = lockPlacement.tuckInput != NO_TUCK_NOTATION;
-  int numLinesCleared = getNewBoardAndLinesCleared(gameState.board, lockPlacement, newState.board);
-  std::pair<int, float> initialResult =
-      getNewSurfaceAndNumNewHoles(gameState.surfaceArray, newState.board, lockPlacement,
-                                  evalContext, isTuck, OUT newState.surfaceArray);
-  if (numLinesCleared == 0 && gameState.numPartialHoles == 0) {
-    // Use the initial result, since its predictions are reliable for boards with no holes or
-    // overhangs
-    newState.numTrueHoles += initialResult.first;
-    newState.numPartialHoles += initialResult.second;
-  } else {
-    // Recalculate the holes and overhangs from scratch
-    std::pair<int, float> recalcResult = updateSurfaceAndHoles(
-        newState.surfaceArray, newState.board,
-        evalContext->countWellHoles ? -1 : evalContext->wellColumn, evalContext->aiMode == DIG);
-    newState.numTrueHoles = recalcResult.first;
-    newState.numPartialHoles = recalcResult.second;
+    return numLinesCleared;
   }
 
-  newState.lines += numLinesCleared;
-  newState.level = getLevelAfterLineClears(gameState.level, gameState.lines, numLinesCleared);
+  float adjustHoleCountAndBoardAfterTuck(unsigned int board[20], LockPlacement lockPlacement) {
+    int tuckCellsFilled = 0;
+    unsigned int const *pieceRows =
+        lockPlacement.piece->rowsByRotation[lockPlacement.rotationIndex];
+    for (int i = 3; i >= 0; i--) {
+      // Don't add any minos that are off the board
+      if (lockPlacement.y + i < 0) {
+        continue;
+      }
 
-  return newState;
-}
+      if (pieceRows[i] == 0) {
+        continue;
+      }
+      // Count the number of tuck cells filled in this row of the piece
+      int intersection = board[lockPlacement.y + i] & SHIFTBY(pieceRows[i], lockPlacement.x - 20);
+      while ((intersection & ALL_TUCK_SETUP_BITS) > 0) {
+        if (intersection & (1 << 20)) {
+          tuckCellsFilled++;
+        }
+        intersection = intersection >> 1;
+      }
+    }
+    return -1 * SEMI_HOLE_PROPORTION * tuckCellsFilled;
+  }
+
+  /** Gets the game state after completing a given move */
+  GameState advanceGameState(const GameState &gameState, const LockPlacement &lockPlacement,
+                             const EvalContext *evalContext) {
+    GameState newState;
+
+    int numLinesCleared =
+        getNewBoardAndLinesCleared(gameState.board, lockPlacement, newState.board);
+    getNewSurface(gameState.surfaceArray, lockPlacement, newState.surfaceArray);
+
+    if (numLinesCleared == 0 && gameState.numPartialHoles == 0) {
+      // Incremental prediction is reliable when no lines cleared and no partial holes/overhangs
+      // exist
+      std::pair<int, float> newHoles =
+          checkForNewHoles(gameState.surfaceArray, newState.board, lockPlacement, evalContext,
+                           newState.surfaceArray, gameState.numTrueHoles);
+      newState.numTrueHoles = gameState.numTrueHoles + newHoles.first;
+      newState.numPartialHoles = gameState.numPartialHoles + newHoles.second;
+    } else {
+      // Recalculate holes and overhangs from scratch
+      std::pair<int, float> recalcResult = updateSurfaceAndHoles(
+          newState.surfaceArray, newState.board,
+          evalContext->countWellHoles ? -1 : evalContext->wellColumn, evalContext->aiMode == DIG);
+      newState.numTrueHoles = recalcResult.first;
+      newState.numPartialHoles = recalcResult.second;
+    }
+
+    newState.lines = gameState.lines + numLinesCleared;
+    newState.level =
+        (numLinesCleared == 0)
+            ? gameState.level
+            : getLevelAfterLineClears(gameState.level, gameState.lines, numLinesCleared);
+
+    return newState;
+  }
