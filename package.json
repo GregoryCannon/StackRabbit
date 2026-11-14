@@ -18,7 +18,7 @@
     "live_server_build": "mkdir -p build && g++ -O2 -std=c++17 -pthread -o build/live_game_server src/cpp_modules/src/live_game_server.cpp",
     "live_server": "npm run live_server_build && ./build/live_game_server",
     "live_server_check": "npm run live_server_build && node src/server/live_server_check.js",
-    "speed_benchmark": "g++ src/benchmark/speed_benchmark.cpp -o build/speed_benchmark && ./build/speed_benchmark",
+    "speed_benchmark": "g++ -O2 -std=c++17 src/benchmark/speed_benchmark.cpp -o build/speed_benchmark && ./build/speed_benchmark",
     "benchmark_sample_positions": "node src/benchmark/sample_benchmark_positions.js",
     "benchmark_run_agent": "g++ -O2 src/benchmark/run_agent.cpp -o build/run_agent && ./build/run_agent",
     "benchmark_find_hard": "g++ -O2 src/benchmark/find_hard_positions.cpp -o build/find_hard_positions && ./build/find_hard_positions",
