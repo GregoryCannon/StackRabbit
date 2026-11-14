@@ -87,7 +87,7 @@ void printBoardWithPiece(const unsigned int board[20], Piece piece, int x, int y
   }
 }
 
-void printSurface(int surfaceArray[10]) {
+void printSurface(const int surfaceArray[10]) {
   for (int i = 0; i < 9; i++) {
     printf("%d ", surfaceArray[i]);
   }
@@ -102,7 +102,7 @@ void printArray(int *array, int range, char const *description) {
   printf("\n");
 }
 
-void printBoardBits(unsigned int board[20]) {
+void printBoardBits(const unsigned int board[20]) {
   maybePrint("Tuck setups:\n");
   for (int i = 0; i < 19; i++) {
     maybePrint("%d ", (board[i] & ALL_TUCK_SETUP_BITS) >> 20);

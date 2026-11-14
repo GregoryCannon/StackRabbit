@@ -5,9 +5,13 @@
 #include <string>
 #include <vector>
 
-float getLineClearFactor(int numLinesCleared, FastEvalWeights weights, int shouldRewardLineClears);
+inline float getLineClearFactor(int numLinesCleared, const FastEvalWeights &weights, int shouldRewardLineClears) {
+  return numLinesCleared == 4
+             ? weights.tetrisCoef
+             : weights.burnCoef * numLinesCleared * (shouldRewardLineClears ? -0.25 : 1);
+}
 
-float fastEval(GameState gameState, GameState newState, LockPlacement lockPlacement,
+float fastEval(const GameState &gameState, const GameState &newState, const LockPlacement &lockPlacement,
                const EvalContext *evalContext, std::string *outExplanation = nullptr);
 
 #endif
