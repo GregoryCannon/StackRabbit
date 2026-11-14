@@ -1,7 +1,51 @@
-# Testing Plan — C++ Modules (Phase 1)
+# Testing & Verification Plan
 
-Testing the `src/cpp_modules/` AI backend first: it is the core of StackRabbit, it is
-deterministic, and its entry points are pure string-in/string-out functions.
+Testing the `src/cpp_modules/` AI backend and full engine stack: it is deterministic,
+heavily optimized, and its core entry points are pure string-in/string-out functions.
+
+## Overview of Test Suites, Verifiers, and Benchmarks
+
+StackRabbit maintains layered test harnesses with distinct verification depths. The test suites and the generator scripts that produce their golden fixtures/oracles are organized as follows:
+
+* **C++ Unit Tests** (`npm run cpp_test_unit`)
+  * **Files**: `src/cpp_modules/tests/stackrabbit_test.cpp`, included headers
+  * **Purpose**: Fast in-memory doctest suite (~2s). Black-box unit tests validating pipe parsing, all request types, board compression, synthetic precompute collapse math, pipeline invariants, and move search placement tuples.
+* **TS Unit Tests** (`npm run move_test`)
+  * **Files**: `src/server/move_search_test.ts`
+  * **Purpose**: TypeScript unit test suite validating legal move counts, placement uniqueness, and tapping reachability across levels and input frequencies.
+* **Move Search Parity & Fuzz Verifiers**
+  * **In-Suite Move Search Fuzz** (`npm run cpp_test_unit` — `src/cpp_modules/tests/move_search_fuzz_tests.hpp`): Replays the ~2,800 fixtures inside the C++ test binary. Compares result order and `(rot, x, y, chargeAfter, inputCost)` tuples in-memory against baked bitfields (no string sequences). Tests both `fullMoveSearch` and `fastMoveSearch`.
+  * **Move Search Sequence Verifier** (`npm run fuzz_verify_sequences` — `src/cpp_modules/tests/fixture_dump.cpp`, `src/server/move_search_fuzz_verify.js`): The strongest move-search parity gate. Runs C++ `build/fixture_dump` across all fixtures and asserts **character-exact controller input sequences** (frame-by-frame) and tuple ordering against `src/server/move_search_fixtures.json`.
+  * **Associated Generator**:
+    * `npm run fuzz_generate` (`src/server/move_search_fuzz_generate.ts`): Deterministic generator driving the TS reference move search over ~2,800 matrix fixtures (boards, levels, pieces, timelines, DAS charges, adjustments, reaction times). Emits `src/server/move_search_fixtures.json` (consumed by `fuzz_verify_sequences`) and `src/cpp_modules/tests/move_search_fixtures.hpp` (consumed by `cpp_test_unit`).
+* **Precompute Pipeline Parity & Concurrency Gates**
+  * **Precompute Verifier** (`npm run precompute_verify` — `src/server/precompute_verify.js`): Feeds all 3,470 golden precompute requests through the C++ Node addon and verifies byte-identical responses against the TS oracle.
+  * **Precompute TSan Gate** (`npm run precompute_tsan` — `src/cpp_modules/tests/precompute_tsan.cpp`): Compiles with `-fsanitize=thread` and replays the 42 production precompute requests to catch race conditions and concurrency hazards across the 7 per-next-piece worker threads.
+  * **Live Server Verifier** (`npm run live_server_check` — `src/server/live_server_check.js`, `src/server/live_server_verify.js`): Boots the native C++ HTTP live game server on isolated port 3101, exercises `/precompute` and `/async-result` polls, asserts backup-response shapes and 500 error recovery, and byte-verifies all 42 production responses.
+  * **Precompute Static Lint** (`npm run precompute_static_lint` — `src/cpp_modules/tests/precompute_static_lint.js`): Static tripwire ensuring no non-const, non-thread-local file-scope static variables exist in files reachable from concurrent precompute lookup calls (enforced with `thread_static_allowlist.txt`).
+  * **Associated Generator**:
+    * `npm run precompute_fixture_generate` (`src/server/precompute_fixture_generate.ts`): Drives the live TS precompute pipeline over logged positions to generate `src/server/data/precompute_fixtures.jsonl` (3,470 fixtures) with strict coverage quotas across pieces, reaction times, and DAS buckets (consumed by `precompute_verify`, `precompute_tsan`, and `live_server_check`).
+* **Server Smoke Check**
+  * **Server Startup Check** (`npm run start_check` — `src/server/start_check.js`): Verifies the Node addon build, launches the TS server on port 3000, confirms startup, kills the process tree, and verifies the port is freed.
+* **Benchmarks**
+  * **Throughput Benchmark** (`npm run speed_benchmark` — `src/benchmark/speed_benchmark.cpp`): Measures raw engine throughput (ms/call, ops/sec) for `GET_MOVE` across varying board topologies, speeds, and playout parameters.
+  * **Accuracy Benchmark Suite** (`npm run benchmark_run_agent` — `src/benchmark/run_agent.cpp`): Evaluates engine move choice and decision quality against a deep Monte Carlo oracle (1,000–8,000 playouts) on standard or hard positions (e.g. `npm run benchmark_run_agent -- GET_MOVE 49 2 20 hard`).
+  * **Associated Generators**:
+    * `npm run benchmark_sample_positions` (`src/benchmark/sample_benchmark_positions.js`): Samples 200 diverse game positions from `position_log.jsonl` into `src/benchmark/data/benchmark_positions.jsonl`.
+    * `npm run benchmark_find_hard` (`src/benchmark/find_hard_positions.cpp`): Mines positions where shallow eval diverges from deep search into `src/benchmark/data/hard_benchmark_positions.jsonl`.
+    * `generate_oracle.cpp` (`src/benchmark/generate_oracle.cpp`): Generates ground-truth deep-playout ratings into `src/benchmark/data/oracle_positions.jsonl` and `hard_oracle_positions.jsonl`.
+
+### Distinguishing Key Overlapping Tests
+
+* **`move_search_fuzz_tests.hpp` vs. `move_search_fuzz_verify.js`**:
+  * `move_search_fuzz_tests.hpp` is an in-memory C++ doctest suite (`npm run cpp_test_unit`). It checks placement tuples `(rotation, x, y, dasChargeAfter, inputCost)` in result order against bit-packed integers in `move_search_fixtures.hpp`. It runs fast (~2s) and also guards `fastMoveSearch` set equivalence, but it does *not* carry or check controller input sequences.
+  * `move_search_fuzz_verify.js` (`npm run fuzz_verify_sequences`) is a separate Node.js differential harness. It runs `build/fixture_dump --all` and diffs both the placement tuples and the **character-exact controller input sequences** (frame-by-frame) against `move_search_fixtures.json`. It is the authoritative gate for sequence correctness.
+* **`precompute_verify.js` vs. `live_server_check.js`**:
+  * `precompute_verify.js` tests the C++ Node addon in-process across all 3,470 fixtures (both eval-only and production tiers).
+  * `live_server_check.js` tests the standalone multi-threaded C++ binary over HTTP on port 3101 across the 42 production fixtures, validating the HTTP async polling contract, backup-tier intermediate responses, error handling, and socket teardown.
+* **`precompute_tsan.cpp` vs. `precompute_static_lint.js`**:
+  * `precompute_tsan.cpp` is a dynamic concurrency check: it replays production requests under ThreadSanitizer to detect data races during multi-threaded execution.
+  * `precompute_static_lint.js` is a static tripwire: it checks source code at build time for un-waived mutable file-scope statics in the concurrency call tree.
 
 ## Test binary layout
 
@@ -372,7 +416,12 @@ the next regeneration).
 
 ## Benchmarking methodology
 
-- The throughput benchmark is `npm run speed_benchmark` (GET_MOVE-focused).
+The benchmarks evaluate two orthogonal axes: **engine throughput** (execution speed) and
+**agent accuracy / decision quality** (comparison against a deep Monte Carlo oracle).
+
+### 1. Throughput Benchmarking (`speed_benchmark`)
+
+- The throughput benchmark is `npm run speed_benchmark` (`src/benchmark/speed_benchmark.cpp`, GET_MOVE-focused).
 - Always A/B against a **same-session** baseline: `git worktree add <tmp> HEAD`,
   build both binaries, and alternate runs (baseline, current, baseline, ...).
   Cross-session comparisons produced a phantom +5.5% "regression" here; the
@@ -385,6 +434,33 @@ the next regeneration).
   copied tens of thousands of times per request) regressed the playout benchmark
   ~9%. Flow new feature data through side-channel structures (see
   `DasPossibility`) instead of widening structs copied per-placement.
+
+### 2. Accuracy & Decision Quality Benchmark Suite
+
+This suite evaluates how well different engine configurations (pruning breadth, playout count,
+weight sets) choose placements on a standardized test set compared to a deep-playout oracle:
+
+1. **Dataset Sampling (`sample_benchmark_positions.js`)**:
+   - Run: `npm run benchmark_sample_positions`
+   - Samples 200 diverse game positions from `src/benchmark/data/position_log.jsonl` into
+     `src/benchmark/data/benchmark_positions.jsonl`.
+   - Stratifies by gravity groups (100 from level 18, 100 from levels 19–28) with move
+     spacing to avoid adjacent near-duplicates.
+2. **Hard Position Mining (`find_hard_positions.cpp`)**:
+   - Run: `npm run benchmark_find_hard`
+   - Re-randomizes pieces and compares shallow eval (0 playouts) vs. deep search (2,000 playouts).
+   - Filters for positions where the two depths disagree, writing them to
+     `src/benchmark/data/hard_benchmark_positions.jsonl` to test non-trivial evaluation boundaries.
+3. **Deep Oracle Generation (`generate_oracle.cpp`)**:
+   - Build and run: `g++ -O2 src/benchmark/generate_oracle.cpp -o build/generate_oracle && ./build/generate_oracle [start] [end]`
+   - Rates every placement pair using a heavy two-round playout budget (1,000 playouts for all pairs,
+     7,000 additional playouts for the top 10%).
+   - Emits pooled mean ratings and standard errors to `src/benchmark/data/oracle_positions.jsonl`
+     (specification in `src/benchmark/oracle_format.md`).
+4. **Agent Scoring Harness (`run_agent.cpp`)**:
+   - Run: `npm run benchmark_run_agent` (e.g. `./build/run_agent GET_MOVE 49 2 20 standard`)
+   - Runs `mainProcess` on the benchmark positions, compares chosen placements against the oracle,
+     and writes timestamped score reports into `src/benchmark/agent_results/`.
 
 ## Phases
 

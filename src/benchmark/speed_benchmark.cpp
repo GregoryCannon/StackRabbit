@@ -115,102 +115,127 @@ static std::vector<BenchmarkCase> buildCases() {
   // --- Empty board, various pieces and speeds ---
   cases.push_back(
       {"Empty board | level 18 | I piece | 20hz",
-       makeInput(emptyBoard(), makeArgs(18, 0, 0 /*I*/, 4 /*T*/, "X.....", 30, 2, 20))});
+       makeInput(emptyBoard(), makeArgs(18, 0, /*I*/ 0, /*T*/ 4, "X.....", /*playoutCount*/ 49,
+                                        /*playoutLength*/ 2, /*pruningBreadth*/ 20))});
 
   cases.push_back(
       {"Empty board | level 18 | T piece | 20hz",
-       makeInput(emptyBoard(), makeArgs(18, 0, 4 /*T*/, 2 /*L*/, "X.....", 30, 2, 20))});
+       makeInput(emptyBoard(), makeArgs(18, 0, /*T*/ 4, /*L*/ 2, "X.....", /*playoutCount*/ 49,
+                                        /*playoutLength*/ 2, /*pruningBreadth*/ 20))});
 
   cases.push_back(
       {"Empty board | level 18 | S piece | 20hz",
-       makeInput(emptyBoard(), makeArgs(18, 0, 5 /*S*/, 6 /*Z*/, "X.....", 30, 2, 20))});
+       makeInput(emptyBoard(), makeArgs(18, 0, /*S*/ 5, /*Z*/ 6, "X.....", /*playoutCount*/ 49,
+                                        /*playoutLength*/ 2, /*pruningBreadth*/ 20))});
 
   // --- 4 rows filled (tetris-ready), right well open ---
   cases.push_back(
       {"4-row fill | level 18 | I piece | 20hz",
-       makeInput(makeBoard(4, 9), makeArgs(18, 0, 0 /*I*/, 3 /*J*/, "X.....", 30, 2, 20))});
+       makeInput(makeBoard(4, 9), makeArgs(18, 0, /*I*/ 0, /*J*/ 3, "X.....", /*playoutCount*/ 49,
+                                           /*playoutLength*/ 2, /*pruningBreadth*/ 20))});
 
-  cases.push_back(
-      {"4-row fill | level 19 | L piece | 13hz",
-       makeInput(makeBoard(4, 9), makeArgs(19, 0, 2 /*L*/, 0 /*I*/, "X..X..X..X..", 30, 2, 20))});
+  cases.push_back({"4-row fill | level 19 | L piece | 13hz",
+                   makeInput(makeBoard(4, 9),
+                             makeArgs(19, 0, /*L*/ 2, /*I*/ 0, "X..X..X..X..", /*playoutCount*/ 49,
+                                      /*playoutLength*/ 2, /*pruningBreadth*/ 20))});
 
-  cases.push_back(
-      {"4-row fill | level 19 | O piece | 13hz",
-       makeInput(makeBoard(4, 9), makeArgs(19, 0, 1 /*O*/, 5 /*S*/, "X..X..X..X..", 30, 2, 20))});
+  cases.push_back({"4-row fill | level 19 | O piece | 13hz",
+                   makeInput(makeBoard(4, 9),
+                             makeArgs(19, 0, /*O*/ 1, /*S*/ 5, "X..X..X..X..", /*playoutCount*/ 49,
+                                      /*playoutLength*/ 2, /*pruningBreadth*/ 20))});
 
   // --- 8 rows filled, building toward tetris ---
   cases.push_back(
       {"8-row fill | level 18 | J piece | 20hz",
-       makeInput(makeBoard(8, 9), makeArgs(18, 40, 3 /*J*/, 4 /*T*/, "X.....", 30, 2, 20))});
+       makeInput(makeBoard(8, 9), makeArgs(18, 40, /*J*/ 3, /*T*/ 4, "X.....", /*playoutCount*/ 49,
+                                           /*playoutLength*/ 2, /*pruningBreadth*/ 20))});
 
   cases.push_back(
       {"8-row fill | level 18 | Z piece | 20hz",
-       makeInput(makeBoard(8, 9), makeArgs(18, 40, 6 /*Z*/, 1 /*O*/, "X.....", 30, 2, 20))});
+       makeInput(makeBoard(8, 9), makeArgs(18, 40, /*Z*/ 6, /*O*/ 1, "X.....", /*playoutCount*/ 49,
+                                           /*playoutLength*/ 2, /*pruningBreadth*/ 20))});
 
-  cases.push_back(
-      {"8-row fill | level 19 | T piece | 13hz",
-       makeInput(makeBoard(8, 9), makeArgs(19, 40, 4 /*T*/, 2 /*L*/, "X..X..X..X..", 30, 2, 20))});
+  cases.push_back({"8-row fill | level 19 | T piece | 13hz",
+                   makeInput(makeBoard(8, 9),
+                             makeArgs(19, 40, /*T*/ 4, /*L*/ 2, "X..X..X..X..", /*playoutCount*/ 49,
+                                      /*playoutLength*/ 2, /*pruningBreadth*/ 20))});
 
   // --- Jagged board — forces the AI to think harder about surface ---
   cases.push_back(
       {"Jagged board | level 18 | T piece | 20hz",
-       makeInput(jaggedBoard(), makeArgs(18, 20, 4 /*T*/, 3 /*J*/, "X.....", 30, 2, 20))});
+       makeInput(jaggedBoard(), makeArgs(18, 20, /*T*/ 4, /*J*/ 3, "X.....", /*playoutCount*/ 49,
+                                         /*playoutLength*/ 2, /*pruningBreadth*/ 20))});
 
   cases.push_back(
       {"Jagged board | level 18 | S piece | 20hz",
-       makeInput(jaggedBoard(), makeArgs(18, 20, 5 /*S*/, 6 /*Z*/, "X.....", 30, 2, 20))});
+       makeInput(jaggedBoard(), makeArgs(18, 20, /*S*/ 5, /*Z*/ 6, "X.....", /*playoutCount*/ 49,
+                                         /*playoutLength*/ 2, /*pruningBreadth*/ 20))});
 
-  cases.push_back(
-      {"Jagged board | level 19 | I piece | 13hz",
-       makeInput(jaggedBoard(), makeArgs(19, 20, 0 /*I*/, 2 /*L*/, "X..X..X..X..", 30, 2, 20))});
+  cases.push_back({"Jagged board | level 19 | I piece | 13hz",
+                   makeInput(jaggedBoard(),
+                             makeArgs(19, 20, /*I*/ 0, /*L*/ 2, "X..X..X..X..", /*playoutCount*/ 49,
+                                      /*playoutLength*/ 2, /*pruningBreadth*/ 20))});
 
   // --- Nearly topped-out (high-stress, danger scenario) ---
-  cases.push_back(
-      {"Near top-out | level 18 | I piece | 20hz",
-       makeInput(nearlyToppedOut(), makeArgs(18, 120, 0 /*I*/, 4 /*T*/, "X.....", 30, 2, 20))});
+  cases.push_back({"Near top-out | level 18 | I piece | 20hz",
+                   makeInput(nearlyToppedOut(),
+                             makeArgs(18, 120, /*I*/ 0, /*T*/ 4, "X.....", /*playoutCount*/ 49,
+                                      /*playoutLength*/ 2, /*pruningBreadth*/ 20))});
 
   cases.push_back({"Near top-out | level 19 | L piece | 13hz",
-                   makeInput(nearlyToppedOut(),
-                             makeArgs(19, 120, 2 /*L*/, 0 /*I*/, "X..X..X..X..", 30, 2, 20))});
+                   makeInput(nearlyToppedOut(), makeArgs(19, 120, /*L*/ 2, /*I*/ 0, "X..X..X..X..",
+                                                         /*playoutCount*/ 49, /*playoutLength*/ 2,
+                                                         /*pruningBreadth*/ 20))});
 
-  cases.push_back({"Near top-out | level 29 | T piece | 30hz (killscreen)",
-                   makeInput(nearlyToppedOut(), makeArgs(29, 220, 4 /*T*/, 5 /*S*/,
-                                                         "X.....X.....X..X.....", 30, 2, 20))});
+  cases.push_back(
+      {"Near top-out | level 29 | T piece | 30hz (killscreen)",
+       makeInput(nearlyToppedOut(),
+                 makeArgs(29, 220, /*T*/ 4, /*S*/ 5, "X.....X.....X..X.....", /*playoutCount*/ 49,
+                          /*playoutLength*/ 2, /*pruningBreadth*/ 20))});
 
   // --- High line counts (near-killscreen, different AI mode thresholds) ---
-  cases.push_back(
-      {"4-row fill | level 19 | lines=190 | I piece | 13hz",
-       makeInput(makeBoard(4, 9), makeArgs(19, 190, 0 /*I*/, 3 /*J*/, "X..X..X..X..", 30, 2, 20))});
+  cases.push_back({"4-row fill | level 19 | lines=190 | I piece | 13hz",
+                   makeInput(makeBoard(4, 9), makeArgs(19, 190, /*I*/ 0, /*J*/ 3, "X..X..X..X..",
+                                                       /*playoutCount*/ 49, /*playoutLength*/ 2,
+                                                       /*pruningBreadth*/ 20))});
 
-  cases.push_back(
-      {"8-row fill | level 19 | lines=200 | Z piece | 13hz",
-       makeInput(makeBoard(8, 9), makeArgs(19, 200, 6 /*Z*/, 1 /*O*/, "X..X..X..X..", 30, 2, 20))});
+  cases.push_back({"8-row fill | level 19 | lines=200 | Z piece | 13hz",
+                   makeInput(makeBoard(8, 9), makeArgs(19, 200, /*Z*/ 6, /*O*/ 1, "X..X..X..X..",
+                                                       /*playoutCount*/ 49, /*playoutLength*/ 2,
+                                                       /*pruningBreadth*/ 20))});
 
   // --- No next piece (-1) — forces shallower search ---
-  cases.push_back({"Empty board | level 18 | I piece | no next | 20hz",
-                   makeInput(emptyBoard(), makeArgs(18, 0, 0 /*I*/, -1, "X.....", 30, 2, 20))});
-
   cases.push_back(
-      {"8-row fill | level 19 | T piece | no next | 13hz",
-       makeInput(makeBoard(8, 9), makeArgs(19, 40, 4 /*T*/, -1, "X..X..X..X..", 30, 2, 20))});
+      {"Empty board | level 18 | I piece | no next | 20hz",
+       makeInput(emptyBoard(), makeArgs(18, 0, /*I*/ 0, /*none*/ -1, "X.....", /*playoutCount*/ 49,
+                                        /*playoutLength*/ 2, /*pruningBreadth*/ 20))});
+
+  cases.push_back({"8-row fill | level 19 | T piece | no next | 13hz",
+                   makeInput(makeBoard(8, 9), makeArgs(19, 40, /*T*/ 4, /*none*/ -1, "X..X..X..X..",
+                                                       /*playoutCount*/ 49, /*playoutLength*/ 2,
+                                                       /*pruningBreadth*/ 20))});
 
   // --- Wider pruning breadth — stresses the search tree more ---
   cases.push_back(
       {"4-row fill | level 18 | T piece | breadth=33",
-       makeInput(makeBoard(4, 9), makeArgs(18, 0, 4 /*T*/, 0 /*I*/, "X.....", 30, 2, 33))});
+       makeInput(makeBoard(4, 9), makeArgs(18, 0, /*T*/ 4, /*I*/ 0, "X.....", /*playoutCount*/ 49,
+                                           /*playoutLength*/ 2, /*pruningBreadth*/ 33))});
 
   cases.push_back(
       {"Jagged board | level 18 | J piece | breadth=33",
-       makeInput(jaggedBoard(), makeArgs(18, 20, 3 /*J*/, 5 /*S*/, "X.....", 30, 2, 33))});
+       makeInput(jaggedBoard(), makeArgs(18, 20, /*J*/ 3, /*S*/ 5, "X.....", /*playoutCount*/ 49,
+                                         /*playoutLength*/ 2, /*pruningBreadth*/ 33))});
 
   // --- Deeper playouts ---
   cases.push_back(
       {"4-row fill | level 18 | I piece | playoutLen=3",
-       makeInput(makeBoard(4, 9), makeArgs(18, 0, 0 /*I*/, 4 /*T*/, "X.....", 30, 3, 20))});
+       makeInput(makeBoard(4, 9), makeArgs(18, 0, /*I*/ 0, /*T*/ 4, "X.....", /*playoutCount*/ 30,
+                                           /*playoutLength*/ 3, /*pruningBreadth*/ 20))});
 
-  cases.push_back(
-      {"8-row fill | level 19 | L piece | playoutLen=3",
-       makeInput(makeBoard(8, 9), makeArgs(19, 40, 2 /*L*/, 3 /*J*/, "X..X..X..X..", 30, 3, 20))});
+  cases.push_back({"8-row fill | level 19 | L piece | playoutLen=3",
+                   makeInput(makeBoard(8, 9),
+                             makeArgs(19, 40, /*L*/ 2, /*J*/ 3, "X..X..X..X..", /*playoutCount*/ 30,
+                                      /*playoutLength*/ 3, /*pruningBreadth*/ 20))});
 
   return cases;
 }
