@@ -69,6 +69,7 @@ struct AsyncSlot {
   std::mutex mutex;
   std::condition_variable jobReady;
   State state = State::IDLE;
+  std::chrono::steady_clock::time_point requestReceived;
   std::string pipe; // input of the request being computed
   bool hasPartial = false;
   std::string partial; // backup response, stored a few ms after the kick
@@ -90,6 +91,11 @@ void storeFull(const std::string &response) {
   std::lock_guard<std::mutex> lock(g_slot.mutex);
   g_slot.full = response;
   g_slot.hasFull = true;
+  double elapsedMs = std::chrono::duration<double, std::milli>(
+                         std::chrono::steady_clock::now() - g_slot.requestReceived)
+                         .count();
+  printf("Precompute computation: %.2fms\n", elapsedMs);
+  fflush(stdout);
 }
 
 void storeError(const std::string &message) {
@@ -260,6 +266,7 @@ struct RouteResult {
 // computation; the agent's waitingOnAsyncRequest gate never overlaps requests,
 // so this path is defensive only.
 RouteResult handlePrecomputeKick(const std::string &query) {
+  auto received = std::chrono::steady_clock::now();
   std::string encodedPipe;
   if (!extractPipeParam(query, encodedPipe)) {
     return {400, "Missing required query parameter: p"};
@@ -270,6 +277,7 @@ RouteResult handlePrecomputeKick(const std::string &query) {
     if (g_slot.state == AsyncSlot::State::RUNNING) {
       return {503, "Busy"};
     }
+    g_slot.requestReceived = received;
     g_slot.pipe = pipe;
     g_slot.partial.clear();
     g_slot.hasPartial = false;
@@ -456,7 +464,11 @@ void handleConnection(int fd) {
     result = {500, "Unknown server error"};
   }
   sendResponse(fd, result.status, result.body);
-  printf("GET %s %d %.2fms\n", path.c_str(), result.status, elapsedMs());
+  if (result.status == 200) {
+    printf("GET %s\n", path.c_str());
+  } else {
+    printf("GET %s %d\n", path.c_str(), result.status);
+  }
   fflush(stdout);
 }
 

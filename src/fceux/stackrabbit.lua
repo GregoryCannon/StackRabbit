@@ -46,8 +46,8 @@ REACTION_TIME_FRAMES = 18
 -- placement starts.
 FIRST_PIECE_RESULT_FRAMES = 20
 INPUT_TIMELINE = TIMELINE_20_HZ;
-PLAYOUT_COUNT = 3100
-PLAYOUT_LENGTH = 6
+PLAYOUT_COUNT = 4200
+PLAYOUT_LENGTH = 8
 PRUNING_BREADTH = -1
 MOVIE_PATH = "C:\\Users\\Greg\\Desktop\\VODs\\" -- Where to store the fm2 VODS (absolute path)
 SCORES_TEXT_PATH = "C:\\Users\\Greg\\Desktop\\sr-test-scores.txt"
@@ -210,7 +210,7 @@ function requestPrecompute()
   end
 
   -- 28 Hotfix
-  if reqLevel == 28 then
+  if reqLevel >= 27 then
     reqLevel = reqLevel - 1
     reqLines = reqLines - 10
   end

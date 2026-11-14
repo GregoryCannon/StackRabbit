@@ -15,7 +15,7 @@ float getAggressionBurnCoef(AggressionLevel aggressionLevel) {
   case AGGRO:
     return -15;
   case HYPER:
-    return -25;
+    return -30;
   default:
     return -9;
   }
