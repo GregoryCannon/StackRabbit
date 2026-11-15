@@ -23,12 +23,13 @@
 //                                 engine run surfaces as 500 + message
 //   anything else              -> 200 "Unknown request type. Received: <path>"
 //
-// The pipe is the raw 12-field engine pipe string; mainProcess's parser (in
-// main.cpp) is the single input boundary — there is no URL-argument layer.
-// Percent-encoded `|` separators are also accepted and decoded (the raw form
-// keeps agent URLs readable). The agent's flow: kick /precompute as soon as
-// the upcoming piece is known, then poll /async-result once, right before
-// that piece spawns (~160ms later).
+// The `p` parameter is the 12-field request string delimited by `,` so URLs
+// work unencoded in browsers and stay readable (percent-encoded `,` is also
+// accepted and decoded; `|` is rejected at the HTTP boundary). Internally the
+// server translates `,` to `|` and delegates validation to mainProcess (in
+// main.cpp). The agent's flow: kick /precompute as soon as the upcoming piece
+// is known, then poll /async-result once, right before that piece spawns (~160ms
+// later).
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -192,6 +193,24 @@ double calibratePrecomputeSpeed7T() {
   return blendedRate;
 }
 
+// Translates the URL's comma-delimited 12-field query value into the
+// engine's internal '|'-delimited pipe string. Rejects '|' so the HTTP
+// boundary enforces commas strictly rather than silently accepting both.
+bool urlQueryToEnginePipe(const std::string &queryInput, std::string &enginePipe,
+                          std::string &errorOut) {
+  if (queryInput.find('|') != std::string::npos) {
+    errorOut = "Error: invalid delimiter '|' (expected ',' between fields).";
+    return false;
+  }
+  enginePipe = queryInput;
+  for (char &ch : enginePipe) {
+    if (ch == ',') {
+      ch = '|';
+    }
+  }
+  return true;
+}
+
 // Computes one request in two tiers:
 //   1. the backup response (a few ms: one move search plus cheap evals), so a
 //      poll landing before the full result is answered with it instead of
@@ -215,23 +234,29 @@ void workerLoop(double calibratedMovesPerMs7T) {
     // One line per request with the input and the compute time of each stage,
     // so a live session's log can be replayed request-by-request.
     auto backupStarted = std::chrono::steady_clock::now();
+    std::string enginePipe;
+    std::string convError;
     double fullMs = -1;
     std::string backup;
     bool backupUsable = false;
-    try {
-      backup = mainProcess(pipe.c_str(), PRECOMPUTE_BACKUP);
-      if (isEngineRejection(backup)) {
-        // Both request types share the same pipe validation, so a rejection
-        // here means the full run would be rejected identically: fail fast.
-        storeError(backup);
-      } else {
-        storePartial(backup);
-        backupUsable = true;
+    if (!urlQueryToEnginePipe(pipe, enginePipe, convError)) {
+      storeError(convError);
+    } else {
+      try {
+        backup = mainProcess(enginePipe.c_str(), PRECOMPUTE_BACKUP);
+        if (isEngineRejection(backup)) {
+          // Both request types share the same pipe validation, so a rejection
+          // here means the full run would be rejected identically: fail fast.
+          storeError(backup);
+        } else {
+          storePartial(backup);
+          backupUsable = true;
+        }
+      } catch (const std::exception &e) {
+        storeError(e.what());
+      } catch (...) {
+        storeError("Unknown engine error (non-std exception)");
       }
-    } catch (const std::exception &e) {
-      storeError(e.what());
-    } catch (...) {
-      storeError("Unknown engine error (non-std exception)");
     }
     double backupMs =
         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - backupStarted)
@@ -244,7 +269,7 @@ void workerLoop(double calibratedMovesPerMs7T) {
       timing.requestReceived = requestReceived;
       timing.calibratedMovesPerMs7T = calibratedMovesPerMs7T;
       try {
-        std::string full = mainProcess(pipe.c_str(), PRECOMPUTE, &timing);
+        std::string full = mainProcess(enginePipe.c_str(), PRECOMPUTE, &timing);
         if (isEngineRejection(full)) {
           storeError(full);
         } else {

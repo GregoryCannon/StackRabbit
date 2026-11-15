@@ -175,19 +175,28 @@ end
 
   
 
--- Build the C++ engine's own pipe string (all 12 fields required; see
--- docs/engine_endpoints.md). nextPiece is always -1 because precompute searches
--- all seven next pieces itself; the C++ pipe parser is the input boundary and
--- rejects anything malformed. The pipe goes on the wire raw -- the HTTP clients
--- in play (libcurl / luasocket) pass query bytes verbatim and the server reads
--- the raw request line, so the URL stays readable (percent-encoding also works).
-function buildPrecomputePipe(board, level, lines, pieceName, dasCharge, reactionTime)
+-- Convert remaining emulator frames into a backend timed-search deadline (ms).
+-- Subtracts 2 frames (current frame + lock/gamePhase == 8 transition offset)
+-- plus a small HTTP/scheduling margin; clamps so playoutCount stays positive.
+function framesToDeadlineMs(remainingFrames)
+  local msPerFrame = IS_PAL and (1000 / 50.007) or (1000 / 60.0988)
+  local marginMs = 5
+  local deadlineMs = math.floor((remainingFrames - 2) * msPerFrame - marginMs)
+  return math.max(10, deadlineMs)
+end
+
+-- Build the live-server `/precompute?p=` query string (all 12 fields required;
+-- see docs/engine_endpoints.md). Fields are delimited by `,` so URLs stay valid
+-- unencoded in browsers and match the server's `[compute] input=` replay logs.
+-- nextPiece is always -1 because precompute searches all seven next pieces
+-- itself; live_game_server translates `,` to `|` for main.cpp's parser.
+function buildPrecomputePipe(board, level, lines, pieceName, dasCharge, reactionTime, playoutCount)
   local pipe = board
-      .. "|" .. level .. "|" .. lines
-      .. "|" .. PIECE_INDEX[pieceName] .. "|-1"
-      .. "|" .. INPUT_TIMELINE
-      .. "|" .. PLAYOUT_COUNT .. "|" .. PLAYOUT_LENGTH .. "|" .. PRUNING_BREADTH
-      .. "|" .. AGGRESSION_LEVEL .. "|" .. dasCharge .. "|" .. reactionTime .. "|"
+      .. "," .. level .. "," .. lines
+      .. "," .. PIECE_INDEX[pieceName] .. ",-1"
+      .. "," .. INPUT_TIMELINE
+      .. "," .. playoutCount .. "," .. PLAYOUT_LENGTH .. "," .. PRUNING_BREADTH
+      .. "," .. AGGRESSION_LEVEL .. "," .. dasCharge .. "," .. reactionTime .. ","
   return pipe
 end
 
@@ -222,9 +231,17 @@ function requestPrecompute()
     return
   end
 
+  local playoutCount = PLAYOUT_COUNT
+  if PRUNING_BREADTH == -2 then
+    local remainingFrames = math.max(0, string.len(inputSequence) - inputSequenceIndex)
+    playoutCount = framesToDeadlineMs(remainingFrames)
+    print("Precompute deadline: " .. playoutCount .. "ms (" .. remainingFrames .. " frames left)")
+  end
+
   local reqStr = LIVE_SERVER_URL .. "/precompute?p="
       .. buildPrecomputePipe(stateForNextPiece.board, reqLevel, reqLines,
-                             orientToPiece[pnext], reqDasCharge, REACTION_TIME_FRAMES)
+                             orientToPiece[pnext], reqDasCharge, REACTION_TIME_FRAMES,
+                             playoutCount)
 
   local response = makeHttpRequest(reqStr)
   if response.code ~= 200 then
@@ -240,9 +257,11 @@ end
 -- the standard shape (nextPiece = -1) -- the result is indexed for the known
 -- piece when it is fetched, same as every other precompute.
 function requestFirstPlacement()
+  local playoutCount =
+      (PRUNING_BREADTH == -2) and framesToDeadlineMs(FIRST_PIECE_RESULT_FRAMES) or PLAYOUT_COUNT
   local reqStr = LIVE_SERVER_URL .. "/precompute?p="
       .. buildPrecomputePipe(getEncodedBoard(), level, numLines, orientToPiece[pcur],
-                             (USE_DAS and 0 or -1), 0)
+                             (USE_DAS and 0 or -1), 0, playoutCount)
 
   local response = makeHttpRequest(reqStr)
   if response.code ~= 200 then

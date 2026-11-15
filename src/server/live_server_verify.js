@@ -31,29 +31,31 @@ const MAX_DIFF_EXAMPLES = 5;
 const POLL_INTERVAL_MS = 10;
 const POLL_TIMEOUT_MS = 30000; // full results take tens of ms; this is ~1000x headroom
 const REQUEST_TIMEOUT_MS = 10000;
-const JUNK_PIPE = "junk|pipe|that|fails|validation|x";
+const JUNK_PIPE = "junk,pipe,that,fails,validation,x";
 
 function fail(message) {
   console.error("\n[live_server_verify] FAIL: " + message);
   process.exit(1);
 }
 
-function buildPipeString(record) {
+function buildPipeString(record, delimiter = ",") {
   const curPieceIndex = PIECE_LOOKUP.indexOf(record.currentPiece);
-  return [
-    record.board,
-    record.level,
-    record.lines,
-    curPieceIndex,
-    -1, // nextPiece: precompute searches all seven next pieces
-    record.inputFrameTimeline,
-    record.playoutCount,
-    record.playoutLength,
-    record.pruningBreadth,
-    record.aggressionLevel,
-    record.dasCharge,
-    record.reactionTime,
-  ].join("|") + "|";
+  return (
+    [
+      record.board,
+      record.level,
+      record.lines,
+      curPieceIndex,
+      -1, // nextPiece: precompute searches all seven next pieces
+      record.inputFrameTimeline,
+      record.playoutCount,
+      record.playoutLength,
+      record.pruningBreadth,
+      record.aggressionLevel,
+      record.dasCharge,
+      record.reactionTime,
+    ].join(delimiter) + delimiter
+  );
 }
 
 // True when the body is the backup (partial-result) response shape rather
@@ -127,8 +129,9 @@ function get(host, port, requestPath) {
 // note a full result can share the backup's exact shape, e.g. an
 // all-seven-`continue` response) or when it is no longer backup-shaped.
 // Returns the final response plus how many backup-shaped 200s were seen.
-async function kickAndAwaitFull(host, port, pipe, golden) {
-  const kick = await get(host, port, "/precompute?p=" + encodeURIComponent(pipe));
+async function kickAndAwaitFull(host, port, pipe, golden, { encodeQuery = false } = {}) {
+  const queryValue = encodeQuery ? encodeURIComponent(pipe) : pipe;
+  const kick = await get(host, port, "/precompute?p=" + queryValue);
   if (kick.status !== 200 || kick.body !== "Request accepted.") {
     return {
       error: `kick returned ${kick.status} ${JSON.stringify(kick.body)} (expected 200 "Request accepted.")`,
@@ -251,13 +254,36 @@ async function run(host, port, fixtures) {
   let fixturesThatSawBackup = 0;
   const started = Date.now();
 
-  // Error path first: a junk pipe is accepted at the kick (validation happens
-  // on the worker thread) and must surface as a 500 with a message; the next
-  // valid kick — fixture 0's, verified below — must clear it.
+  // Error paths first: a junk pipe and a legacy `|`-delimited pipe must each
+  // surface as a 500 with a message; the next valid kick (fixture 0's `%2C`
+  // check and the 42 raw-comma fixtures below) must clear the error state.
   console.log("Error-path check: junk pipe ...");
   const errorMessage = await expectEngineRejection(host, port, JUNK_PIPE);
   console.log("  500 with message: " + JSON.stringify(errorMessage));
-  console.log("");
+
+  console.log("Error-path check: legacy '|' delimiter rejected ...");
+  const pipeDelimiterError = await expectEngineRejection(
+    host,
+    port,
+    buildPipeString(fixtures[0], "|")
+  );
+  console.log("  500 with message: " + JSON.stringify(pipeDelimiterError));
+
+  console.log("Percent-encoded comma check (fixture 0) ...");
+  const encodedResult = await kickAndAwaitFull(
+    host,
+    port,
+    buildPipeString(fixtures[0]),
+    fixtures[0].output,
+    { encodeQuery: true }
+  );
+  if (encodedResult.error || encodedResult.response.body !== fixtures[0].output) {
+    fail(
+      encodedResult.error ||
+        `percent-encoded comma check mismatched golden on fixture 0`
+    );
+  }
+  console.log("  200 byte-identical.\n");
 
   for (const [index, fixture] of fixtures.entries()) {
     const pipe = buildPipeString(fixture);

@@ -46,14 +46,12 @@ Routes:
   else 404 `No previous async request has been made`. A rejected/failed engine
   run surfaces as 500 + message and sticks until the next valid kick.
 
-The pipe-direct contract: the `p` parameter is the 12-field engine pipe string,
-sent **raw** by the agent (the HTTP clients in play — libcurl / luasocket — pass
-query bytes verbatim, keeping URLs readable; percent-encoded `|` is also
-accepted and decoded) — there is **no URL-argument layer**; `mainProcess`'s pipe
-parser is the single input boundary, so the server inherits the engine's strict
-field validation verbatim. Each request's input pipe and compute times are
-logged to stdout as one `[compute] backup=<ms> full=<ms> input=<pipe>` line for
-replay.
+The comma-delimited URL contract: the `p` parameter is the 12-field request
+string delimited by `,` so queries are valid unencoded in browsers and match the
+server's `[compute] backup=<ms> full=<ms> input=<query>` replay logs (raw `,`
+is preferred; percent-encoded `%2C` is also accepted and decoded, while `|` is
+rejected at the HTTP boundary). Internally `live_game_server.cpp` translates `,`
+to `|` and delegates to `mainProcess`'s strict field validation in `main.cpp`.
 
 Backup tier semantics: the worker computes the backup response first (one move
 search plus cheap evals, a few ms) so a poll landing before the full result is
