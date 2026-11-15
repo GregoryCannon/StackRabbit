@@ -26,14 +26,15 @@ using namespace std;
  *
  *   1. One full move search for the current piece with the player's real
  *      timeline, DAS charge and reaction time. No legal move ends the request.
- *   2. One lock value lookup per next piece, run in-process on the same game
- *      state. Each map value is rounded to two decimals first, because the
- *      collapse sums the values the way they arrive over the wire.
- *   3. Phantom placements: the placements whose input prefix still fits inside
+ *   2. Phantom placements: the placements whose input prefix still fits inside
  *      the reaction time, each carrying the mid-air state captured at the
  *      reaction-time frame. A reaction time of zero means the piece has not
  *      been placed yet, so the single phantom starts from the spawn state.
- *   4. One adjustment move search per phantom from its mid-air state.
+ *   3. One adjustment move search per phantom from its mid-air state.
+ *   4. One lock value lookup per next piece, run in-process on the same game
+ *      state (seven concurrent threads). Each map value is rounded to two
+ *      decimals first, because the collapse sums values the way they arrive
+ *      over the wire.
  *   5. The collapse: per phantom, the best value per next piece weighted by
  *      the NES piece-transition probabilities and averaged over the seven
  *      pieces; the phantom with the highest average wins.
@@ -360,8 +361,10 @@ PrecomputeState preparePrecomputeState(GameState gameState, const Piece *curPiec
                                        char const *inputFrameTimeline, int dasCharge,
                                        int reactionTime, int pruningBreadth, int playoutCount,
                                        int playoutLength, const EvalContext *evalContext,
-                                       const PieceRangeContext pieceRangeContextLookup[3]) {
+                                       const PieceRangeContext pieceRangeContextLookup[3],
+                                       const SearchBudget *budget) {
   const int numOrientations = numOrientationsOf(curPiece);
+  const std::chrono::steady_clock::time_point entryNow = std::chrono::steady_clock::now();
 
   // Step 1: the current piece's placements, with the mid-air snapshots.
   std::vector<FullMovePossibility> initialResults;
@@ -376,57 +379,9 @@ PrecomputeState preparePrecomputeState(GameState gameState, const Piece *curPiec
 
   PrecomputeState state;
   state.reactionTime = reactionTime;
-
-  // Step 2: one lock value lookup per next piece, values rounded for the
-  // collapse. The seven lookups are independent: one thread per next piece,
-  // each writing only its own slot, so no shared mutable state is touched.
-  // The playouts inside one lookup stay serial, so the slowest single lookup
-  // floors the pipeline's wall time — relevant when tuning the playout config.
   state.useDAS = dasCharge != -1;
-  // Precompute the first piece's placements and resulting boards once so all seven next-piece
-  // threads (and every DAS charge bucket) share them read-only.
-  const FirstMoveSearchResult firstMoves = buildFirstMoveBranches(
-      gameState, curPiece, state.useDAS ? DAS_CHARGE_MAX : -1,
-      state.useDAS ? inputFrameTimeline : evalContext->pieceRangeContext.inputFrameTimeline,
-      evalContext);
-  std::exception_ptr lookupErrors[7] = {};
-  std::thread lookupThreads[7];
-  for (int i = 0; i < 7; i++) {
-    lookupThreads[i] = std::thread([i, &state, &firstMoves, inputFrameTimeline, pruningBreadth,
-                                    playoutCount, playoutLength, evalContext,
-                                    &pieceRangeContextLookup, &lookupErrors]() {
-      try {
-        const Piece *nextPiece = &PIECE_LIST[i];
-        if (state.useDAS) {
-          const DasLockValueMaps maps = getLockValueLookupDasMapsWithFirstMoves(
-              firstMoves, nextPiece, pruningBreadth, playoutCount, playoutLength,
-              inputFrameTimeline, evalContext, pieceRangeContextLookup);
-          roundCopyMap(maps.partialPenalty, state.partialPenalties[i]);
-          roundCopyMap(maps.minPenalty, state.minPenalties[i]);
-          roundCopyMap(maps.lockValue, state.lockValues[i]);
-        } else {
-          roundCopyMap(getLockValueLookupMappedWithFirstMoves(firstMoves, nextPiece, pruningBreadth,
-                                                              playoutCount, playoutLength,
-                                                              evalContext, pieceRangeContextLookup),
-                       state.lockValues[i]);
-        }
-      } catch (...) {
-        lookupErrors[i] = std::current_exception();
-      }
-    });
-  }
-  for (std::thread &lookupThread : lookupThreads) {
-    lookupThread.join();
-  }
-  // All threads are joined before rethrowing, so a failure surfaces as a JS
-  // error with the first failing piece's diagnostic (piece 0 first).
-  for (int i = 0; i < 7; i++) {
-    if (lookupErrors[i]) {
-      std::rethrow_exception(lookupErrors[i]);
-    }
-  }
 
-  // Step 3: the phantom placements.
+  // Step 2: the phantom placements.
   if (reactionTime == 0) {
     // The piece is still unplaced at the reaction time, so the single phantom
     // starts from the spawn state and has no initial placement to show.
@@ -483,7 +438,9 @@ PrecomputeState preparePrecomputeState(GameState gameState, const Piece *curPiec
     }
   }
 
-  // Step 4: one adjustment search per phantom that captured a mid-air state.
+  // Step 3: one adjustment search per phantom that captured a mid-air state. Running this before
+  // Step 4 ensures timed lock lookups observe the exact remaining budget and only the collapse
+  // remains afterwards.
   for (PrecomputePhantom &phantom : state.phantoms) {
     if (!phantom.hasAdjustmentState) {
       continue;
@@ -497,6 +454,67 @@ PrecomputeState preparePrecomputeState(GameState gameState, const Piece *curPiec
       phantom.possibleAdjustments.push_back(toPrecomputePossibility(
           result, phantom.adjustmentCtx.existingRotation, INITIAL_X + phantom.adjustmentCtx.existingXOffset,
           curPiece->initialY + phantom.adjustmentCtx.existingYOffset, numOrientations));
+    }
+  }
+
+  // Step 4: one lock value lookup per next piece, values rounded for the collapse. The seven
+  // lookups are independent: one thread per next piece, each writing only its own slot, so no
+  // shared mutable state is touched. The playouts inside one lookup stay serial, so the slowest
+  // single lookup floors the pipeline's wall time — relevant when tuning the playout config.
+  // Precompute the first piece's placements and resulting boards once so all seven next-piece
+  // threads (and every DAS charge bucket) share them read-only.
+  const FirstMoveSearchResult firstMoves = buildFirstMoveBranches(
+      gameState, curPiece, state.useDAS ? DAS_CHARGE_MAX : -1,
+      state.useDAS ? inputFrameTimeline : evalContext->pieceRangeContext.inputFrameTimeline,
+      evalContext);
+  SearchBudget lookupBudget =
+      budget != nullptr ? *budget : SearchBudget::fromWire(pruningBreadth, playoutCount);
+  if (lookupBudget.mode == BUDGET_TIME_MS) {
+    if (!lookupBudget.hasDeadline) {
+      lookupBudget.hasDeadline = true;
+      lookupBudget.deadline =
+          entryNow + std::chrono::milliseconds(std::max(0, lookupBudget.timeBudgetMs));
+    }
+    int reserveMs =
+        std::min(PRECOMPUTE_COLLAPSE_RESERVE_MS, std::max(0, lookupBudget.timeBudgetMs / 3));
+    lookupBudget.deadline -= std::chrono::milliseconds(reserveMs);
+  }
+  const SearchBudget *lookupBudgetPtr =
+      lookupBudget.mode == BUDGET_TIME_MS ? &lookupBudget : budget;
+  std::exception_ptr lookupErrors[7] = {};
+  std::thread lookupThreads[7];
+  for (int i = 0; i < 7; i++) {
+    lookupThreads[i] = std::thread([i, &state, &firstMoves, inputFrameTimeline, pruningBreadth,
+                                    playoutCount, playoutLength, evalContext,
+                                    &pieceRangeContextLookup, lookupBudgetPtr, &lookupErrors]() {
+      try {
+        const Piece *nextPiece = &PIECE_LIST[i];
+        if (state.useDAS) {
+          const DasLockValueMaps maps = getLockValueLookupDasMapsWithFirstMoves(
+              firstMoves, nextPiece, pruningBreadth, playoutCount, playoutLength,
+              inputFrameTimeline, evalContext, pieceRangeContextLookup, lookupBudgetPtr);
+          roundCopyMap(maps.partialPenalty, state.partialPenalties[i]);
+          roundCopyMap(maps.minPenalty, state.minPenalties[i]);
+          roundCopyMap(maps.lockValue, state.lockValues[i]);
+        } else {
+          roundCopyMap(getLockValueLookupMappedWithFirstMoves(
+                           firstMoves, nextPiece, pruningBreadth, playoutCount, playoutLength,
+                           evalContext, pieceRangeContextLookup, lookupBudgetPtr),
+                       state.lockValues[i]);
+        }
+      } catch (...) {
+        lookupErrors[i] = std::current_exception();
+      }
+    });
+  }
+  for (std::thread &lookupThread : lookupThreads) {
+    lookupThread.join();
+  }
+  // All threads are joined before rethrowing, so a failure surfaces as a JS
+  // error with the first failing piece's diagnostic (piece 0 first).
+  for (int i = 0; i < 7; i++) {
+    if (lookupErrors[i]) {
+      std::rethrow_exception(lookupErrors[i]);
     }
   }
 
@@ -576,10 +594,11 @@ std::string runPrecompute(GameState gameState, const Piece *curPiece,
                           char const *inputFrameTimeline, int dasCharge, int reactionTime,
                           int pruningBreadth, int playoutCount, int playoutLength,
                           const EvalContext *evalContext,
-                          const PieceRangeContext pieceRangeContextLookup[3]) {
+                          const PieceRangeContext pieceRangeContextLookup[3],
+                          const SearchBudget *budget) {
   const PrecomputeState state = preparePrecomputeState(
-      gameState, curPiece, inputFrameTimeline, dasCharge, reactionTime, pruningBreadth, playoutCount,
-      playoutLength, evalContext, pieceRangeContextLookup);
+      gameState, curPiece, inputFrameTimeline, dasCharge, reactionTime, pruningBreadth,
+      playoutCount, playoutLength, evalContext, pieceRangeContextLookup, budget);
   return collapseAndFormatPrecompute(state, gameState.board, curPiece, gameState.level,
                                      gameState.lines, SHOULD_PUSHDOWN);
 }

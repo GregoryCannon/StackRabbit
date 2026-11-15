@@ -18,6 +18,7 @@
 
 #define NO_TUCK_NOTATION '.'
 
+#include <chrono>
 #include <string>
 #include <vector>
 
@@ -235,6 +236,67 @@ struct EngineMoveData {
   PlayoutData playout7;        // Worst case
   std::string evalExplanation; // Concatenated non‑zero factor contributions
   bool isPlayerMove; // True when this move matches the player's move (from playerBoardAfter)
+};
+
+enum SearchBudgetMode {
+  BUDGET_PLAYOUT_COUNT,
+  BUDGET_TIME_MS,
+};
+
+/**
+ * Explicit playout-count vs millisecond wall-clock budget for tournament/lookup searches.
+ * Avoids overloading playoutCount inside internal engine functions.
+ */
+struct SearchBudget {
+  SearchBudgetMode mode;
+  int pruningBreadth; // >= 0 for legacy, -1 for fixed-playout tournament
+  int playoutCount;   // Playouts when mode == BUDGET_PLAYOUT_COUNT
+  int timeBudgetMs;   // Millisecond budget when mode == BUDGET_TIME_MS
+  bool hasDeadline;
+  std::chrono::steady_clock::time_point deadline;
+  double calibratedMovesPerMs; // 0 = fall back to built-in conservative default
+
+  static SearchBudget fromPlayoutCount(int pruningBreadth, int playoutCount) {
+    SearchBudget b{};
+    b.mode = BUDGET_PLAYOUT_COUNT;
+    b.pruningBreadth = pruningBreadth;
+    b.playoutCount = playoutCount;
+    return b;
+  }
+
+  static SearchBudget fromTimeMs(int timeBudgetMs, double calibratedMovesPerMs = 0.0) {
+    SearchBudget b{};
+    b.mode = BUDGET_TIME_MS;
+    b.pruningBreadth = -2;
+    b.timeBudgetMs = timeBudgetMs;
+    b.calibratedMovesPerMs = calibratedMovesPerMs;
+    return b;
+  }
+
+  static SearchBudget fromDeadline(int timeBudgetMs, std::chrono::steady_clock::time_point deadline,
+                                   double calibratedMovesPerMs = 0.0) {
+    SearchBudget b = fromTimeMs(timeBudgetMs, calibratedMovesPerMs);
+    b.hasDeadline = true;
+    b.deadline = deadline;
+    return b;
+  }
+
+  static SearchBudget fromWire(int pruningBreadth, int playoutCount) {
+    if (pruningBreadth == -2) {
+      return fromTimeMs(playoutCount);
+    }
+    return fromPlayoutCount(pruningBreadth, playoutCount);
+  }
+};
+
+/**
+ * Caller-supplied timing context for timed requests (used by live_game_server).
+ */
+struct EngineTimingContext {
+  bool hasRequestReceived = false;
+  std::chrono::steady_clock::time_point requestReceived{};
+  double calibratedMovesPerMs7T = 0.0; // Baseline rate across 7 concurrent precompute threads
+  double calibratedMovesPerMs1T = 0.0; // Baseline rate for single-threaded lookups
 };
 
 #endif

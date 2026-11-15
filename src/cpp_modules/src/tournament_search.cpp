@@ -3,10 +3,45 @@
 #include "high_level_search.hpp"
 #include "playout.hpp"
 #include <algorithm>
+#include <chrono>
 #include <math.h>
 #include <string>
 #include <vector>
 using namespace std;
+
+using SteadyClock = std::chrono::steady_clock;
+
+namespace {
+
+double msBetween(SteadyClock::time_point start, SteadyClock::time_point end) {
+  return std::chrono::duration<double, std::milli>(end - start).count();
+}
+
+/** Max fast-eval score per first placement, used for eval-only and expired-deadline fallbacks. */
+unordered_map<string, float> buildEvalOnlyLookupMap(const std::vector<Possibility> &possibilities) {
+  unordered_map<string, float> lockValueMap;
+  for (Possibility const &possibility : possibilities) {
+    string lockPosEncoded = encodeLockPosition(possibility.firstPlacement);
+    float evalScore = possibility.evalScoreInclReward;
+    if (lockValueMap.count(lockPosEncoded) == 0 || evalScore > lockValueMap[lockPosEncoded]) {
+      lockValueMap[lockPosEncoded] = evalScore;
+    }
+  }
+  return lockValueMap;
+}
+
+/** Per-entry sample count for timed mode that fits within `timeMs` without exceeding the batch. */
+int getTimedRoundSampleCount(double timeMs, double movesPerMs, int entryCount, int playoutLength,
+                             int remainingBatch) {
+  if (timeMs <= 0.5 || entryCount <= 0 || remainingBatch < TMT_MIN_PLAYOUTS) {
+    return 0;
+  }
+  long long capByTime = (long long)((timeMs * movesPerMs) / ((double)entryCount * playoutLength));
+  int count = (int)std::min<long long>(remainingBatch, capByTime);
+  return count < TMT_MIN_PLAYOUTS ? 0 : count;
+}
+
+} // namespace
 
 // Stage markers on stderr (unbuffered, so they are visible even if a later stage hangs)
 #define TMT_TRACE(...)                                                                             \
@@ -292,8 +327,8 @@ void playTournamentSamples(OUT TournamentCont &cont, int sampleCount, int batchO
 
 /** Runs the 3-round tournament over precomputed 2-ply possibilities. See block comment above. */
 unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
-    const std::vector<Possibility> &possibilities, const Piece *secondPiece, int pruningBreadth,
-    int playoutCount, int playoutLength, const EvalContext *evalContext,
+    const std::vector<Possibility> &possibilities, const Piece *secondPiece, int playoutLength,
+    const SearchBudget &budget, const EvalContext *evalContext,
     const PieceRangeContext pieceRangeContextLookup[3]) {
   unordered_map<string, float> lockValueMap;
 
@@ -301,16 +336,23 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
     return lockValueMap; // Topped out: no legal first placement
   }
 
-  // Eval-only shortcut (DAS shallow maps pass playoutCount=0): max eval per first placement.
-  if (playoutCount * playoutLength == 0) {
-    for (Possibility const &possibility : possibilities) {
-      string lockPosEncoded = encodeLockPosition(possibility.firstPlacement);
-      float evalScore = possibility.evalScoreInclReward;
-      if (lockValueMap.count(lockPosEncoded) == 0 || evalScore > lockValueMap[lockPosEncoded]) {
-        lockValueMap[lockPosEncoded] = evalScore;
-      }
-    }
-    return lockValueMap;
+  const bool isTimed = (budget.mode == BUDGET_TIME_MS);
+  const bool evalOnly =
+      playoutLength == 0 || (isTimed ? budget.timeBudgetMs <= 0 : budget.playoutCount == 0);
+  if (evalOnly) {
+    return buildEvalOnlyLookupMap(possibilities);
+  }
+
+  const double clockSafetyMs =
+      isTimed ? std::min<double>(TMT_CLOCK_SAFETY_MS, std::max(0.0, budget.timeBudgetMs * 0.15))
+              : 0.0;
+  const SteadyClock::time_point deadline =
+      isTimed ? (budget.hasDeadline
+                     ? budget.deadline
+                     : SteadyClock::now() + std::chrono::milliseconds(budget.timeBudgetMs))
+              : SteadyClock::time_point{};
+  if (isTimed && msBetween(SteadyClock::now(), deadline) - clockSafetyMs <= 0.5) {
+    return buildEvalOnlyLookupMap(possibilities);
   }
 
   // Sort pair pointers by eval desc so the per-candidate cont cap keeps the eval-best conts
@@ -344,16 +386,26 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
   }
   int candidateCount = (int)candidates.size();
 
-  // ---- Budget. Tournament mode (pruningBreadth == -1): playoutCount is the total budget;
-  // legacy-style: pruningBreadth * playoutCount. NB: the TMT_MIN_PLAYOUTS floor can push
-  // total spend past the budget (round 3's share is floored so finalists stay meaningful).
-  playoutCount = std::min(playoutCount, CANONICAL_SEQUENCE_BATCH_SIZE);
-  long long totalBudget;
-  if (pruningBreadth == -1) {
-    totalBudget = std::min((long long)playoutCount, (long long)CANONICAL_SEQUENCE_BATCH_SIZE * 64);
-  } else {
-    totalBudget = std::min((long long)pruningBreadth * playoutCount,
+  // ---- Budget. In playout-count mode (-1 or >= 0), compute the total playout count directly.
+  // In timed mode (-2), convert remaining wall-clock time via calibratedMovesPerMs for R1, then
+  // re-measure actual moves/ms after R1 and R2 against the real-time deadline.
+  double initMovesPerMs = DEFAULT_CALIBRATED_MOVES_PER_MS;
+  long long totalBudget = 0;
+  if (isTimed) {
+    initMovesPerMs = budget.calibratedMovesPerMs > 0.0 ? budget.calibratedMovesPerMs
+                                                       : DEFAULT_CALIBRATED_MOVES_PER_MS;
+    double remMs = msBetween(SteadyClock::now(), deadline) - clockSafetyMs;
+    totalBudget = std::min((long long)(remMs * initMovesPerMs / playoutLength),
                            (long long)CANONICAL_SEQUENCE_BATCH_SIZE * 64);
+  } else {
+    int clampedPlayoutCount = std::min(budget.playoutCount, CANONICAL_SEQUENCE_BATCH_SIZE);
+    if (budget.pruningBreadth == -1) {
+      totalBudget =
+          std::min((long long)clampedPlayoutCount, (long long)CANONICAL_SEQUENCE_BATCH_SIZE * 64);
+    } else {
+      totalBudget = std::min((long long)budget.pruningBreadth * clampedPlayoutCount,
+                             (long long)CANONICAL_SEQUENCE_BATCH_SIZE * 64);
+    }
   }
   auto getRoundSampleCount = [](long long budgetShare, int entryCount) {
     long long perEntry = budgetShare / std::max(entryCount, 1);
@@ -376,7 +428,29 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
                 <= (long long)(totalBudget * TMT_R1_BUDGET_SHARE)) {
     r1Conts++;
   }
-  int n1 = getRoundSampleCount(totalBudget * TMT_R1_BUDGET_SHARE, candidateCount * r1Conts);
+  int n1 = 0;
+  if (isTimed) {
+    double remMs = msBetween(SteadyClock::now(), deadline) - clockSafetyMs;
+    int r1Entries = 0;
+    for (auto const &candidate : candidates) {
+      r1Entries += std::min(r1Conts, (int)candidate.conts.size());
+    }
+    n1 = getTimedRoundSampleCount(remMs * TMT_R1_BUDGET_SHARE, initMovesPerMs, r1Entries,
+                                  playoutLength, CANONICAL_SEQUENCE_BATCH_SIZE);
+    if (n1 == 0) {
+      // Very tight deadlines can fail R1's 38% share threshold yet still fit TMT_MIN_PLAYOUTS
+      // inside the remaining window; otherwise return eval-only rather than noisy samples.
+      if (getTimedRoundSampleCount(remMs, initMovesPerMs, r1Entries, playoutLength,
+                                   CANONICAL_SEQUENCE_BATCH_SIZE)
+          >= TMT_MIN_PLAYOUTS) {
+        n1 = TMT_MIN_PLAYOUTS;
+      } else {
+        return buildEvalOnlyLookupMap(possibilities);
+      }
+    }
+  } else {
+    n1 = getRoundSampleCount(totalBudget * TMT_R1_BUDGET_SHARE, candidateCount * r1Conts);
+  }
   if (TMT_LOGGING_ENABLED) {
     printf("TMT setup: candidates=%d r1Conts=%d totalBudget=%lld playoutLength=%d\n",
            candidateCount, r1Conts, totalBudget, playoutLength);
@@ -388,6 +462,7 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
       }
     }
   }
+  SteadyClock::time_point r1Start = SteadyClock::now();
   for (auto &candidate : candidates) {
     int contsToPlay = std::min(r1Conts, (int)candidate.conts.size());
     for (int c = 0; c < contsToPlay; c++) {
@@ -396,6 +471,7 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
                             evalContext->aggressionLevel);
     }
   }
+  double playoutMsAccum = isTimed ? msBetween(r1Start, SteadyClock::now()) : 0.0;
   samplesSoFar += n1;
   TMT_TRACE("TRACE: R1 done (n1=%d)\n", n1);
   if (TMT_LOGGING_ENABLED) {
@@ -456,20 +532,54 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
     printf("\n");
   }
 
+  long long totalPlayoutsRun = spentSoFar;
+  auto getObservedMovesPerMs = [&]() {
+    double raw = (totalPlayoutsRun * (double)playoutLength) / std::max(0.05, playoutMsAccum);
+    // Avoid micro-timer upward inflation when elapsed wall time is under 2ms.
+    if (playoutMsAccum < 2.0) {
+      return std::min(initMovesPerMs, raw);
+    }
+    return raw;
+  };
+
   // ---- Round 2: sample every cont of each survivor (discovery: eval-best isn't always best).
-  int n2 = getRoundSampleCount(totalBudget * TMT_R2_BUDGET_SHARE,
-                               survivorsAfterCut1 * TMT_CONTINUATIONS_PER_CANDIDATE);
-  for (auto &candidate : candidates) {
-    if (candidate.eliminated) {
-      continue;
+  int n2 = 0;
+  if (isTimed) {
+    double remAfterR1 = msBetween(SteadyClock::now(), deadline) - clockSafetyMs;
+    int actualR2Entries = 0;
+    for (auto const &candidate : candidates) {
+      if (!candidate.eliminated) {
+        actualR2Entries += (int)candidate.conts.size();
+      }
     }
-    for (auto &cont : candidate.conts) {
-      playTournamentSamples(cont, n2, samplesSoFar, playoutLength, pieceRangeContextLookup,
-                            secondPieceIndex, evalContext->aggressionLevel);
-    }
+    constexpr double r2ShareOfRemaining = TMT_R2_BUDGET_SHARE / (1.0f - TMT_R1_BUDGET_SHARE);
+    n2 = getTimedRoundSampleCount(remAfterR1 * r2ShareOfRemaining, getObservedMovesPerMs(),
+                                  actualR2Entries, playoutLength,
+                                  CANONICAL_SEQUENCE_BATCH_SIZE - samplesSoFar);
+  } else {
+    n2 = getRoundSampleCount(totalBudget * TMT_R2_BUDGET_SHARE,
+                             survivorsAfterCut1 * TMT_CONTINUATIONS_PER_CANDIDATE);
   }
-  samplesSoFar += n2;
-  spentSoFar += survivorsAfterCut1 * TMT_CONTINUATIONS_PER_CANDIDATE * n2;
+  if (n2 > 0) {
+    SteadyClock::time_point r2Start = SteadyClock::now();
+    int r2PlayoutsRun = 0;
+    for (auto &candidate : candidates) {
+      if (candidate.eliminated) {
+        continue;
+      }
+      for (auto &cont : candidate.conts) {
+        playTournamentSamples(cont, n2, samplesSoFar, playoutLength, pieceRangeContextLookup,
+                              secondPieceIndex, evalContext->aggressionLevel);
+        r2PlayoutsRun += n2;
+      }
+    }
+    if (isTimed) {
+      playoutMsAccum += msBetween(r2Start, SteadyClock::now());
+      totalPlayoutsRun += r2PlayoutsRun;
+    }
+    samplesSoFar += n2;
+    spentSoFar += survivorsAfterCut1 * TMT_CONTINUATIONS_PER_CANDIDATE * n2;
+  }
   TMT_TRACE("TRACE: R2 done (n2=%d)\n", n2);
   if (TMT_LOGGING_ENABLED) {
     printf("TMT R2 done: n2=%d window=[%d,%d)\n", n2, n1, n1 + n2);
@@ -525,25 +635,82 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
   }
 
   // ---- Round 3: the remaining budget goes to each finalist's best cont, deeply.
-  int n3 = getRoundSampleCount(totalBudget - spentSoFar, finalists);
-  TMT_TRACE("TRACE: entering R3 (n3=%d)\n", n3);
+  int n3 = 0;
+  std::vector<int> finalistIndices;
+  std::vector<int> finalistBestContIndices;
+  for (int i = 0; i < candidateCount; i++) {
+    if (!candidates[i].eliminated) {
+      finalistIndices.push_back(i);
+      finalistBestContIndices.push_back(getTournamentCandidateBestContIndex(candidates[i]));
+    }
+  }
+  if (isTimed) {
+    // Run timed Round 3 in small horizontal chunks so fast boards fill remaining time and slow
+    // runs stop cleanly before the deadline (falling back to R2 or partial R3 results).
+    double lastChunkMs = 0.0;
+    const double finishMarginMs =
+        std::min<double>(TMT_R3_FINISH_MARGIN_MS, std::max(0.0, budget.timeBudgetMs * 0.05));
+    while (samplesSoFar < CANONICAL_SEQUENCE_BATCH_SIZE && !finalistIndices.empty()) {
+      int remainingBatch = CANONICAL_SEQUENCE_BATCH_SIZE - samplesSoFar;
+      int chunkSize = std::min(TMT_R3_CHUNK_SAMPLES, remainingBatch);
+      if (chunkSize == 7 && playoutLength == 1) {
+        chunkSize = 6; // Avoid playout.cpp's exhaustive-sequence special case mid-window.
+      }
+      if (chunkSize <= 0) {
+        break;
+      }
+      double estChunkMs = ((double)finalists * chunkSize * playoutLength) / getObservedMovesPerMs();
+      double guardMs = std::max(estChunkMs * 1.15, lastChunkMs * 1.05);
+      double msLeft = msBetween(SteadyClock::now(), deadline) - finishMarginMs;
+      if (msLeft < guardMs) {
+        break;
+      }
+
+      SteadyClock::time_point chunkStart = SteadyClock::now();
+      for (size_t f = 0; f < finalistIndices.size(); f++) {
+        TournamentCandidate &candidate = candidates[finalistIndices[f]];
+        int contIdx = finalistBestContIndices[f];
+        TMT_TRACE("TRACE: R3 chunk playing %s cont=%s\n", candidate.key.c_str(),
+                  candidate.conts[contIdx].contKey.c_str());
+        playTournamentSamples(candidate.conts[contIdx], chunkSize, samplesSoFar, playoutLength,
+                              pieceRangeContextLookup, secondPieceIndex,
+                              evalContext->aggressionLevel);
+      }
+      lastChunkMs = msBetween(chunkStart, SteadyClock::now());
+      playoutMsAccum += lastChunkMs;
+      totalPlayoutsRun += (long long)finalists * chunkSize;
+      samplesSoFar += chunkSize;
+      n3 += chunkSize;
+    }
+    if (TMT_LOGGING_ENABLED && n3 > 0) {
+      for (size_t f = 0; f < finalistIndices.size(); f++) {
+        TournamentCandidate const &candidate = candidates[finalistIndices[f]];
+        logTournamentCont("R3", candidate.key, candidate.conts[finalistBestContIndices[f]],
+                          n1 + n2);
+      }
+    }
+  } else {
+    n3 = getRoundSampleCount(totalBudget - spentSoFar, finalists);
+    if (n3 > 0) {
+      for (size_t f = 0; f < finalistIndices.size(); f++) {
+        TournamentCandidate &candidate = candidates[finalistIndices[f]];
+        int contIdx = finalistBestContIndices[f];
+        TMT_TRACE("TRACE: R3 playing %s cont=%s\n", candidate.key.c_str(),
+                  candidate.conts[contIdx].contKey.c_str());
+        playTournamentSamples(candidate.conts[contIdx], n3, samplesSoFar, playoutLength,
+                              pieceRangeContextLookup, secondPieceIndex,
+                              evalContext->aggressionLevel);
+        if (TMT_LOGGING_ENABLED) {
+          logTournamentCont("R3", candidate.key, candidate.conts[contIdx], n1 + n2);
+        }
+      }
+    }
+  }
+  TMT_TRACE("TRACE: R3 done (n3=%d)\n", n3);
   if (PLAYOUT_LOGGING_ENABLED || TMT_LOGGING_ENABLED) {
     printf("Tournament: candidates=%d r1Conts=%d n1=%d survivors1=%d n2=%d finalists=%d n3=%d "
            "samplesSoFar=%d\n",
-           candidateCount, r1Conts, n1, survivorsAfterCut1, n2, finalists, n3, samplesSoFar + n3);
-  }
-  for (auto &candidate : candidates) {
-    if (candidate.eliminated) {
-      continue;
-    }
-    int contIdx = getTournamentCandidateBestContIndex(candidate);
-    TMT_TRACE("TRACE: R3 playing %s cont=%s\n", candidate.key.c_str(),
-              candidate.conts[contIdx].contKey.c_str());
-    playTournamentSamples(candidate.conts[contIdx], n3, samplesSoFar, playoutLength,
-                          pieceRangeContextLookup, secondPieceIndex, evalContext->aggressionLevel);
-    if (TMT_LOGGING_ENABLED) {
-      logTournamentCont("R3", candidate.key, candidate.conts[contIdx], n1 + n2);
-    }
+           candidateCount, r1Conts, n1, survivorsAfterCut1, n2, finalists, n3, samplesSoFar);
   }
 
   // ---- Build the map: each first placement publishes the best LCB over its sampled conts;
@@ -562,7 +729,7 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
       }
     }
     lockValueMap[candidate.key] = bestScore;
-    if (TMT_LOGGING_ENABLED) {
+    if (TMT_LOGGING_ENABLED && bestContIdx >= 0) {
       float rawScore;
       getTournamentContPublishScore(candidate.conts[bestContIdx], &rawScore);
       printf("  final %-9s = %9.2f (cont=%-9s n=%d raw=%9.2f)\n", candidate.key.c_str(), bestScore,
@@ -573,6 +740,7 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
 
   if (TMT_LOGGING_ENABLED) {
     // Debug-only: re-estimate the top keys' winning conts legacy-style for direct comparison.
+    int validatePlayoutCount = isTimed ? (int)totalBudget : budget.playoutCount;
     std::vector<std::pair<float, std::string>> ranked;
     for (auto const &entry : lockValueMap) {
       ranked.push_back({entry.second, entry.first});
@@ -581,7 +749,7 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
               [](auto const &a, auto const &b) { return a.first > b.first; });
     int validateCount = std::min((int)ranked.size(), 3);
     printf("TMT validation: re-playing top %d keys' winning conts with %d playouts legacy-style\n",
-           validateCount, playoutCount);
+           validateCount, validatePlayoutCount);
     for (int r = 0; r < validateCount; r++) {
       for (auto const &candidate : candidates) {
         if (candidate.key != ranked[r].second) {
@@ -599,7 +767,7 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
         TournamentCont const &cont = candidate.conts[contIdx];
         std::vector<float> legacyScores;
         float legacyMean =
-            getPlayoutScore(cont.resultingState, playoutCount, playoutLength,
+            getPlayoutScore(cont.resultingState, validatePlayoutCount, playoutLength,
                             pieceRangeContextLookup, secondPieceIndex, evalContext->aggressionLevel,
                             /* playoutDataList */ NULL, &legacyScores);
         float legacySum = 0;
@@ -615,7 +783,7 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
                   / (legacyScores.size() - 1));
         printf("  validate %-9s cont=%-9s tournament=%9.2f legacy(%d)=%9.2f rew=%.2f "
                "legacyStd=%.1f legacyMin=%.1f\n",
-               candidate.key.c_str(), cont.contKey.c_str(), bestScore, playoutCount,
+               candidate.key.c_str(), cont.contKey.c_str(), bestScore, validatePlayoutCount,
                cont.immediateReward + legacyMean, cont.immediateReward, legacyStd, legacyMin);
         // Print the round-1 window's individual scores for direct comparison with the legacy tail
         printf("    r1scores:");
@@ -632,7 +800,7 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
 /** Runs the whole 3-round tournament. See the block comment above for the scheme. */
 unordered_map<string, float>
 getLockValueLookupTournament(GameState gameState, const Piece *firstPiece, const Piece *secondPiece,
-                             int pruningBreadth, int playoutCount, int playoutLength, int dasCharge,
+                             int playoutLength, const SearchBudget &budget, int dasCharge,
                              int secondPieceDasCharge, char const *dasInputFrameTimeline,
                              const EvalContext *evalContext,
                              const PieceRangeContext pieceRangeContextLookup[3]) {
@@ -643,7 +811,6 @@ getLockValueLookupTournament(GameState gameState, const Piece *firstPiece, const
   std::vector<Possibility> possibilities;
   searchDepth2(gameState, firstPiece, secondPiece, dasCharge, secondPieceDasCharge,
                dasInputFrameTimeline, evalContext, possibilities);
-  return getLockValueLookupTournamentFromPossibilities(possibilities, secondPiece, pruningBreadth,
-                                                       playoutCount, playoutLength, evalContext,
-                                                       pieceRangeContextLookup);
+  return getLockValueLookupTournamentFromPossibilities(
+      possibilities, secondPiece, playoutLength, budget, evalContext, pieceRangeContextLookup);
 }

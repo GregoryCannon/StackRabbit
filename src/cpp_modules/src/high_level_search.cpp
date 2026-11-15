@@ -780,40 +780,40 @@ std::string encodeMapToJSON(unordered_map<string, float> map) {
 
 /** Calculates the valuation of every possible terminal position for a given piece on a given board,
  * and returns it as a map (see getLockValueLookupEncoded, its JSON-encoding wrapper).
- * @param pruningBreadth - -1 = tournament mode: playoutCount is interpreted as the TOTAL playout
- * budget instead.
+ * @param pruningBreadth - -1 = fixed-playout tournament mode; -2 = timed tournament mode
+ * (overridden when an explicit SearchBudget is passed via `budget`).
  *
  * Thread-safety contract: precompute calls this once per next piece on concurrent threads. It must
  * remain thread-safe, along with everything reachable from it (enforced by `npm run
  * precompute_tsan`; see AGENTS.md's rule against new non-const file-scope statics and
  * thread-unsafe libc calls on this path).
  */
-unordered_map<string, float>
-getLockValueLookupMapped(GameState gameState, const Piece *firstPiece, const Piece *secondPiece,
-                         int pruningBreadth, int playoutCount, int playoutLength,
-                         const EvalContext *evalContext,
-                         const PieceRangeContext pieceRangeContextLookup[3]) {
+unordered_map<string, float> getLockValueLookupMapped(
+    GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int pruningBreadth,
+    int playoutCount, int playoutLength, const EvalContext *evalContext,
+    const PieceRangeContext pieceRangeContextLookup[3], const SearchBudget *budget) {
   const FirstMoveSearchResult firstMoves =
       buildFirstMoveBranches(gameState, firstPiece, /* firstPieceDasCharge= */ -1,
                              evalContext->pieceRangeContext.inputFrameTimeline, evalContext);
   return getLockValueLookupMappedWithFirstMoves(firstMoves, secondPiece, pruningBreadth,
                                                 playoutCount, playoutLength, evalContext,
-                                                pieceRangeContextLookup);
+                                                pieceRangeContextLookup, budget);
 }
 
-static unordered_map<string, float>
-dispatchLookupFromPossibilities(const std::vector<Possibility> &possibilities,
-                                const Piece *secondPiece, int pruningBreadth, int playoutCount,
-                                int playoutLength, const EvalContext *evalContext,
-                                const PieceRangeContext pieceRangeContextLookup[3]) {
-  if (pruningBreadth == -1) {
-    return getLockValueLookupTournamentFromPossibilities(possibilities, secondPiece, pruningBreadth,
-                                                         playoutCount, playoutLength, evalContext,
+static unordered_map<string, float> dispatchLookupFromPossibilities(
+    const std::vector<Possibility> &possibilities, const Piece *secondPiece, int pruningBreadth,
+    int playoutCount, int playoutLength, const EvalContext *evalContext,
+    const PieceRangeContext pieceRangeContextLookup[3], const SearchBudget *budget) {
+  const SearchBudget effectiveBudget =
+      budget != nullptr ? *budget : SearchBudget::fromWire(pruningBreadth, playoutCount);
+  if (effectiveBudget.mode == BUDGET_TIME_MS || effectiveBudget.pruningBreadth == -1) {
+    return getLockValueLookupTournamentFromPossibilities(possibilities, secondPiece, playoutLength,
+                                                         effectiveBudget, evalContext,
                                                          pieceRangeContextLookup);
   }
-  return getLockValueLookupFromPossibilities(possibilities, pruningBreadth, playoutCount,
-                                             playoutLength, secondPiece, evalContext,
-                                             pieceRangeContextLookup);
+  return getLockValueLookupFromPossibilities(possibilities, effectiveBudget.pruningBreadth,
+                                             effectiveBudget.playoutCount, playoutLength,
+                                             secondPiece, evalContext, pieceRangeContextLookup);
 }
 
 /** Variant of getLockValueLookupMapped using precomputed tap-mode firstMoves shared read-only
@@ -822,7 +822,7 @@ dispatchLookupFromPossibilities(const std::vector<Possibility> &possibilities,
 unordered_map<string, float> getLockValueLookupMappedWithFirstMoves(
     const FirstMoveSearchResult &firstMoves, const Piece *secondPiece, int pruningBreadth,
     int playoutCount, int playoutLength, const EvalContext *evalContext,
-    const PieceRangeContext pieceRangeContextLookup[3]) {
+    const PieceRangeContext pieceRangeContextLookup[3], const SearchBudget *budget) {
   if (firstMoves.useDas) {
     fprintf(stderr,
             "Error: getLockValueLookupMappedWithFirstMoves expects tap-mode first moves.\n");
@@ -833,17 +833,19 @@ unordered_map<string, float> getLockValueLookupMappedWithFirstMoves(
                              evalContext->pieceRangeContext.inputFrameTimeline, evalContext,
                              possibilities);
   return dispatchLookupFromPossibilities(possibilities, secondPiece, pruningBreadth, playoutCount,
-                                         playoutLength, evalContext, pieceRangeContextLookup);
+                                         playoutLength, evalContext, pieceRangeContextLookup,
+                                         budget);
 }
 
 std::string getLockValueLookupEncoded(GameState gameState, const Piece *firstPiece,
                                       const Piece *secondPiece, int pruningBreadth,
                                       int playoutCount, int playoutLength,
                                       const EvalContext *evalContext,
-                                      const PieceRangeContext pieceRangeContextLookup[3]) {
+                                      const PieceRangeContext pieceRangeContextLookup[3],
+                                      const SearchBudget *budget) {
   return encodeMapToJSON(getLockValueLookupMapped(gameState, firstPiece, secondPiece,
                                                   pruningBreadth, playoutCount, playoutLength,
-                                                  evalContext, pieceRangeContextLookup));
+                                                  evalContext, pieceRangeContextLookup, budget));
 }
 
 /** Runs the full DAS-penalty lookup for one next piece: three low-depth bucket lookups (full /
@@ -860,12 +862,13 @@ DasLockValueMaps getLockValueLookupDasMaps(GameState gameState, const Piece *fir
                                            int playoutCount, int playoutLength,
                                            char const *dasInputFrameTimeline,
                                            const EvalContext *evalContext,
-                                           const PieceRangeContext pieceRangeContextLookup[3]) {
+                                           const PieceRangeContext pieceRangeContextLookup[3],
+                                           const SearchBudget *budget) {
   const FirstMoveSearchResult firstMoves = buildFirstMoveBranches(
       gameState, firstPiece, DAS_CHARGE_MAX, dasInputFrameTimeline, evalContext);
   return getLockValueLookupDasMapsWithFirstMoves(firstMoves, secondPiece, pruningBreadth,
                                                  playoutCount, playoutLength, dasInputFrameTimeline,
-                                                 evalContext, pieceRangeContextLookup);
+                                                 evalContext, pieceRangeContextLookup, budget);
 }
 
 /** Variant of getLockValueLookupDasMaps using precomputed full-charge firstMoves shared read-only
@@ -875,7 +878,8 @@ DasLockValueMaps getLockValueLookupDasMaps(GameState gameState, const Piece *fir
 DasLockValueMaps getLockValueLookupDasMapsWithFirstMoves(
     const FirstMoveSearchResult &firstMoves, const Piece *secondPiece, int pruningBreadth,
     int playoutCount, int playoutLength, char const *dasInputFrameTimeline,
-    const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3]) {
+    const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3],
+    const SearchBudget *budget) {
   if (!firstMoves.useDas) {
     fprintf(stderr,
             "Error: getLockValueLookupDasMapsWithFirstMoves expects DAS-mode first moves.\n");
@@ -898,7 +902,7 @@ DasLockValueMaps getLockValueLookupDasMapsWithFirstMoves(
                              dasInputFrameTimeline, evalContext, fullChargePossibilities);
   maps.lockValue = dispatchLookupFromPossibilities(
       fullChargePossibilities, secondPiece, pruningBreadth, /* playoutCount= */ 0,
-      /* playoutLength= */ 0, evalContext, pieceRangeContextLookup);
+      /* playoutLength= */ 0, evalContext, pieceRangeContextLookup, /* budget= */ nullptr);
 
   // Partial charge: 10 is the post-shift charge of a standard DAS shift (5 held
   // frames away from the next shift).
@@ -907,7 +911,7 @@ DasLockValueMaps getLockValueLookupDasMapsWithFirstMoves(
                              dasInputFrameTimeline, evalContext, bucketPossibilities);
   maps.partialPenalty = dispatchLookupFromPossibilities(
       bucketPossibilities, secondPiece, pruningBreadth, /* playoutCount= */ 0,
-      /* playoutLength= */ 0, evalContext, pieceRangeContextLookup);
+      /* playoutLength= */ 0, evalContext, pieceRangeContextLookup, /* budget= */ nullptr);
 
   // Minimum charge: 5 is the worst useful charge, since even with 0 charge you can
   // just first-frame tap without holding during ARE, and it ends up being exactly equivalent:
@@ -918,7 +922,7 @@ DasLockValueMaps getLockValueLookupDasMapsWithFirstMoves(
                              dasInputFrameTimeline, evalContext, bucketPossibilities);
   maps.minPenalty = dispatchLookupFromPossibilities(
       bucketPossibilities, secondPiece, pruningBreadth, /* playoutCount= */ 0,
-      /* playoutLength= */ 0, evalContext, pieceRangeContextLookup);
+      /* playoutLength= */ 0, evalContext, pieceRangeContextLookup, /* budget= */ nullptr);
 
   // Replace the raw value maps with maps of the penalty relative to the best placement (as negative
   // numbers). NB: all four lookups share one first-piece search, so their key sets match; the guard
@@ -945,10 +949,13 @@ DasLockValueMaps getLockValueLookupDasMapsWithFirstMoves(
   }
 
   // Then, do one deep search to see what the actual best move is, irrespective of DAS.
-  if (playoutCount * playoutLength != 0) {
+  const int deepAmount = budget != nullptr ? (budget->mode == BUDGET_TIME_MS ? budget->timeBudgetMs
+                                                                             : budget->playoutCount)
+                                           : playoutCount;
+  if (deepAmount > 0 && playoutLength > 0) {
     maps.lockValue = dispatchLookupFromPossibilities(fullChargePossibilities, secondPiece,
                                                      pruningBreadth, playoutCount, playoutLength,
-                                                     evalContext, pieceRangeContextLookup);
+                                                     evalContext, pieceRangeContextLookup, budget);
   }
 
   return maps;
@@ -958,10 +965,11 @@ std::string getLockValueLookupDas(GameState gameState, const Piece *firstPiece,
                                   const Piece *secondPiece, int pruningBreadth, int playoutCount,
                                   int playoutLength, char const *dasInputFrameTimeline,
                                   const EvalContext *evalContext,
-                                  const PieceRangeContext pieceRangeContextLookup[3]) {
+                                  const PieceRangeContext pieceRangeContextLookup[3],
+                                  const SearchBudget *budget) {
   const DasLockValueMaps maps = getLockValueLookupDasMaps(
       gameState, firstPiece, secondPiece, pruningBreadth, playoutCount, playoutLength,
-      dasInputFrameTimeline, evalContext, pieceRangeContextLookup);
+      dasInputFrameTimeline, evalContext, pieceRangeContextLookup, budget);
 
   // Compile result as array of JSONs
   std::string resultStr = std::string("[\n");

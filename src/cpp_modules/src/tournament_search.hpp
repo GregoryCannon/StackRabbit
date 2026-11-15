@@ -39,9 +39,18 @@ constexpr int TMT_FINALIST_COUNT = 8;
 // The cap on how many candidates reach round 3 (deepening)
 constexpr int TMT_R3_COUNT = 4;
 
-// Floor on playouts per placement (below this, estimates are too noisy). NB: flooring can
-// make a round overspend its share and starve later rounds.
+// Floor on playouts per placement (below this, estimates are too noisy). NB: in fixed-playout
+// mode this floor can push total spend past budget; in timed mode rounds below this floor are
+// skipped (falling back to eval-only if Round 1 cannot reach it).
 constexpr int TMT_MIN_PLAYOUTS = 30;
+
+// Safety margin (ms) reserved before the tournament deadline when sizing Rounds 1 and 2.
+constexpr double TMT_CLOCK_SAFETY_MS = 8.0;
+
+// Timed Round 3 runs in small paired chunks so it can fill remaining time up to the deadline and
+// stop cleanly on partial R3 (or R2) results if execution slows down.
+constexpr int TMT_R3_CHUNK_SAMPLES = 10;
+constexpr double TMT_R3_FINISH_MARGIN_MS = 2.5;
 
 // Shares of the total budget for rounds 1 and 2 (round 3 gets the remainder). R1 plays
 // r1Conts conts per candidate; R2 plays all of a finalist's conts.
@@ -57,13 +66,13 @@ constexpr float TMT_PAIRED_TEST_Z = 1.96f;
 constexpr float TMT_CUT1_VETO_Z = 0;
 
 std::unordered_map<std::string, float> getLockValueLookupTournamentFromPossibilities(
-    const std::vector<Possibility> &possibilities, const Piece *secondPiece, int pruningBreadth,
-    int playoutCount, int playoutLength, const EvalContext *evalContext,
+    const std::vector<Possibility> &possibilities, const Piece *secondPiece, int playoutLength,
+    const SearchBudget &budget, const EvalContext *evalContext,
     const PieceRangeContext pieceRangeContextLookup[3]);
 
 std::unordered_map<std::string, float>
 getLockValueLookupTournament(GameState gameState, const Piece *firstPiece, const Piece *secondPiece,
-                             int pruningBreadth, int playoutCount, int playoutLength, int dasCharge,
+                             int playoutLength, const SearchBudget &budget, int dasCharge,
                              int secondPieceDasCharge, char const *dasInputFrameTimeline,
                              const EvalContext *evalContext,
                              const PieceRangeContext pieceRangeContextLookup[3]);

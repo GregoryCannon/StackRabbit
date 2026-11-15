@@ -88,7 +88,9 @@ and every hardcoded caller pass them explicitly):
   empty fields are rejected instead of silently becoming 0 -- a silent 0 would
   mean a degenerate game state, the I piece, or DAS mode).
 - `nextPiece = -1` explicitly means no-next-box; `pruningBreadth = -1` means
-  tournament mode.
+  fixed-playout tournament mode (`playoutCount` = total playouts), and
+  `pruningBreadth = -2` means timed tournament mode (`playoutCount` =
+  wall-clock budget in milliseconds, for lock-value lookups and precompute).
 - `inputFrameTimeline`: non-empty, `X`/`.` characters only, at least one `X`
   (an empty timeline used to make the engine never tap via `x % 0`, and a
   no-`X` timeline used to hang the move search -- finding 4 below).

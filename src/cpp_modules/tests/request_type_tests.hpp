@@ -686,4 +686,94 @@ TEST_CASE("PRECOMPUTE_BACKUP shares PRECOMPUTE's reaction-time field validation"
   }
 }
 
+TEST_CASE("Timed tournament mode (pruningBreadth == -2) supports lookup and precompute") {
+  // 0ms budget falls back to the exact eval-only result for lookups and precompute.
+  std::string evalOnlyLookup = runRequest(
+      GET_LOCK_VALUE_LOOKUP,
+      InputBuilder().withBoard1(makeFlatBoard(4)).withCurPiece(IDX_O).withPlayoutCount(0).build());
+  std::string zeroMsLookup = runRequest(GET_LOCK_VALUE_LOOKUP, InputBuilder()
+                                                                   .withBoard1(makeFlatBoard(4))
+                                                                   .withCurPiece(IDX_O)
+                                                                   .withPruningBreadth(-2)
+                                                                   .withPlayoutCount(0)
+                                                                   .build());
+  CHECK(zeroMsLookup == evalOnlyLookup);
+
+  // Non-zero timed lookup produces a valid JSON map without uninitialized scores.
+  std::string timedLookup = runRequest(GET_LOCK_VALUE_LOOKUP, InputBuilder()
+                                                                  .withBoard1(makeFlatBoard(4))
+                                                                  .withCurPiece(IDX_O)
+                                                                  .withPruningBreadth(-2)
+                                                                  .withPlayoutCount(25)
+                                                                  .build());
+  CHECK(timedLookup.size() >= 2);
+  CHECK(timedLookup.front() == '{');
+  CHECK(timedLookup.back() == '}');
+  CHECK(timedLookup.find("-999999") == std::string::npos);
+
+  // DAS timed lookup produces the three-map JSON array cleanly.
+  std::string timedDas = runRequest(GET_LOCK_VALUE_LOOKUP_DAS, InputBuilder()
+                                                                   .withBoard1(makeFlatBoard(4))
+                                                                   .withCurPiece(IDX_O)
+                                                                   .withDasCharge(16)
+                                                                   .withPruningBreadth(-2)
+                                                                   .withPlayoutCount(25)
+                                                                   .build());
+  CHECK(timedDas.front() == '[');
+  CHECK(timedDas.back() == ']');
+  CHECK(countOccurrences(timedDas, ",\n") == 2);
+
+  // PRECOMPUTE with 0ms matches fixed-playout 0-playout PRECOMPUTE byte-for-byte.
+  std::string fixedZeroPre = runRequest(PRECOMPUTE, InputBuilder()
+                                                            .withBoard1(makeWellBoard(4, 4, 9))
+                                                            .withCurPiece(IDX_I)
+                                                            .withNextPiece(-1)
+                                                            .withTimeline("X.....")
+                                                            .withPruningBreadth(-1)
+                                                            .withPlayoutCount(0)
+                                                            .withPlayoutLength(4)
+                                                            .build()
+                                                        + "10|");
+  std::string timedZeroPre = runRequest(PRECOMPUTE, InputBuilder()
+                                                            .withBoard1(makeWellBoard(4, 4, 9))
+                                                            .withCurPiece(IDX_I)
+                                                            .withNextPiece(-1)
+                                                            .withTimeline("X.....")
+                                                            .withPruningBreadth(-2)
+                                                            .withPlayoutCount(0)
+                                                            .withPlayoutLength(4)
+                                                            .build()
+                                                        + "10|");
+  CHECK(timedZeroPre == fixedZeroPre);
+
+  // Already-expired requestReceived deadline falls back cleanly to eval-only PRECOMPUTE.
+  std::string timed30Pipe = InputBuilder()
+                                .withBoard1(makeWellBoard(4, 4, 9))
+                                .withCurPiece(IDX_I)
+                                .withNextPiece(-1)
+                                .withTimeline("X.....")
+                                .withPruningBreadth(-2)
+                                .withPlayoutCount(30)
+                                .withPlayoutLength(4)
+                                .build()
+                            + "10|";
+  EngineTimingContext expiredTiming;
+  expiredTiming.hasRequestReceived = true;
+  expiredTiming.requestReceived = std::chrono::steady_clock::now() - std::chrono::milliseconds(100);
+  expiredTiming.calibratedMovesPerMs7T = 150.0;
+  std::string expiredOut = mainProcess(timed30Pipe.c_str(), PRECOMPUTE, &expiredTiming);
+  CHECK(expiredOut == fixedZeroPre);
+
+  // Tight non-zero deadline that cannot reach TMT_MIN_PLAYOUTS falls back cleanly to eval-only
+  // rather than running noisy sub-30-sample Round 1 playouts.
+  std::string tinyMsLookup = runRequest(GET_LOCK_VALUE_LOOKUP, InputBuilder()
+                                                                   .withBoard1(makeFlatBoard(4))
+                                                                   .withCurPiece(IDX_O)
+                                                                   .withPruningBreadth(-2)
+                                                                   .withPlayoutCount(8)
+                                                                   .withPlayoutLength(8)
+                                                                   .build());
+  CHECK(tinyMsLookup == evalOnlyLookup);
+}
+
 #endif // SR_REQUEST_TYPE_TESTS

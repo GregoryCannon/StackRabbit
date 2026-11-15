@@ -22,7 +22,8 @@ std::string getLockValueLookupEncoded(GameState gameState, const Piece *firstPie
                                       const Piece *secondPiece, int pruningBreadth,
                                       int playoutCount, int playoutLength,
                                       const EvalContext *evalContext,
-                                      const PieceRangeContext pieceRangeContextLookup[3]);
+                                      const PieceRangeContext pieceRangeContextLookup[3],
+                                      const SearchBudget *budget = nullptr);
 
 /**
  * The three value maps behind a DAS lock value lookup: the partial-charge and
@@ -57,31 +58,33 @@ FirstMoveSearchResult buildFirstMoveBranches(const GameState &gameState, const P
 DasLockValueMaps getLockValueLookupDasMapsWithFirstMoves(
     const FirstMoveSearchResult &firstMoves, const Piece *secondPiece, int pruningBreadth,
     int playoutCount, int playoutLength, char const *dasInputFrameTimeline,
-    const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3]);
+    const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3],
+    const SearchBudget *budget = nullptr);
 
 DasLockValueMaps getLockValueLookupDasMaps(GameState gameState, const Piece *firstPiece,
                                            const Piece *secondPiece, int pruningBreadth,
                                            int playoutCount, int playoutLength,
                                            char const *dasInputFrameTimeline,
                                            const EvalContext *evalContext,
-                                           const PieceRangeContext pieceRangeContextLookup[3]);
+                                           const PieceRangeContext pieceRangeContextLookup[3],
+                                           const SearchBudget *budget = nullptr);
 
 std::string getLockValueLookupDas(GameState gameState, const Piece *firstPiece,
                                   const Piece *secondPiece, int pruningBreadth, int playoutCount,
                                   int playoutLength, char const *dasInputFrameTimeline,
                                   const EvalContext *evalContext,
-                                  const PieceRangeContext pieceRangeContextLookup[3]);
+                                  const PieceRangeContext pieceRangeContextLookup[3],
+                                  const SearchBudget *budget = nullptr);
 
 unordered_map<string, float> getLockValueLookupMappedWithFirstMoves(
     const FirstMoveSearchResult &firstMoves, const Piece *secondPiece, int pruningBreadth,
     int playoutCount, int playoutLength, const EvalContext *evalContext,
-    const PieceRangeContext pieceRangeContextLookup[3]);
+    const PieceRangeContext pieceRangeContextLookup[3], const SearchBudget *budget = nullptr);
 
-unordered_map<string, float> getLockValueLookupMapped(GameState gameState, const Piece *firstPiece,
-                                                      const Piece *secondPiece, int pruningBreadth,
-                                                      int playoutCount, int playoutLength,
-                                                      const EvalContext *evalContext,
-                                                      const PieceRangeContext pieceRangeContextLookup[3]);
+unordered_map<string, float> getLockValueLookupMapped(
+    GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int pruningBreadth,
+    int playoutCount, int playoutLength, const EvalContext *evalContext,
+    const PieceRangeContext pieceRangeContextLookup[3], const SearchBudget *budget = nullptr);
 
 std::vector<const Possibility *>
 sortPossibilitiesDesc(const std::vector<Possibility> &possibilities);

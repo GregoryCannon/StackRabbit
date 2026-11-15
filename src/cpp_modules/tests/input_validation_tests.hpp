@@ -37,6 +37,13 @@ TEST_CASE("Engine-level range limits apply to every request type") {
   auto badBreadth = InputBuilder().withPruningBreadth(1157).build();
   CHECK(runRequest(GET_MOVE, badBreadth) ==
         "Error: invalid pruning breadth (max is 1156, or 34x34): 1157");
+  auto tooLowBreadth = InputBuilder().withPruningBreadth(-3).build();
+  CHECK(runRequest(GET_MOVE, tooLowBreadth)
+        == "Error: invalid pruning breadth (expected -2, -1, or 0-1156): -3");
+  auto timedNonTournament = InputBuilder().withPruningBreadth(-2).withPlayoutCount(50).build();
+  CHECK(runRequest(GET_MOVE, timedNonTournament)
+        == "Error: timed tournament mode (pruningBreadth == -2) is only supported for lock value "
+           "lookup and precompute requests.");
 }
 
 TEST_CASE("A missing next piece (-1) is valid and runs in no-next-box mode") {

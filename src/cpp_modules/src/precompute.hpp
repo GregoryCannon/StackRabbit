@@ -62,17 +62,20 @@ struct PrecomputeState {
 
 /**
  * Steps 1-4 of the pipeline: the current piece's full move search with the
- * player's real timeline, DAS charge and reaction time; one lock value lookup
- * per next piece (seven concurrent threads, one per piece); the phantom
- * placements; and one adjustment search per phantom that captured a mid-air
- * state. A current piece with no legal placement yields a state with no
- * phantoms (the lookups are skipped entirely).
+ * player's real timeline, DAS charge and reaction time; the phantom placements;
+ * one adjustment search per phantom that captured a mid-air state; and finally
+ * one lock value lookup per next piece (seven concurrent threads, one per piece).
+ * Running the phantom and adjustment searches before the timed lock lookups lets
+ * timed requests measure their exact duration against the deadline before
+ * sizing playouts. A current piece with no legal placement yields a state with
+ * no phantoms (the adjustment and lookup steps are skipped entirely).
  */
 PrecomputeState preparePrecomputeState(GameState gameState, const Piece *curPiece,
                                        char const *inputFrameTimeline, int dasCharge,
                                        int reactionTime, int pruningBreadth, int playoutCount,
                                        int playoutLength, const EvalContext *evalContext,
-                                       const PieceRangeContext pieceRangeContextLookup[3]);
+                                       const PieceRangeContext pieceRangeContextLookup[3],
+                                       const SearchBudget *budget = nullptr);
 
 /**
  * Steps 5-6: the collapse and the response formatting. Per phantom, the best
@@ -92,7 +95,8 @@ std::string runPrecompute(GameState gameState, const Piece *curPiece,
                           char const *inputFrameTimeline, int dasCharge, int reactionTime,
                           int pruningBreadth, int playoutCount, int playoutLength,
                           const EvalContext *evalContext,
-                          const PieceRangeContext pieceRangeContextLookup[3]);
+                          const PieceRangeContext pieceRangeContextLookup[3],
+                          const SearchBudget *budget = nullptr);
 
 /**
  * The backup response for the live game server: the best-eval placement of the

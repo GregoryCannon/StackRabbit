@@ -37,9 +37,15 @@
 // Engine API params
 #define NUM_ENGINE_MOVES 8
 #define NUM_ENGINE_MOVES_ADJUSTMENTS 3
-// Playout-volume cap for a single request. In tournament mode (pruningBreadth == -1) the
-// volume is the playoutCount alone; otherwise playoutCount * playoutLength.
+// Playout-volume cap for a single request. In tournament mode (pruningBreadth == -1 or -2) the
+// wire count field isn't multiplied by playoutLength (budget count or milliseconds respectively).
 #define MAX_CPP_PLAYOUT_MOVES 99999999LL
+// Conservative fallback speed (playout moves / ms) used for -2 timed mode when no startup
+// calibration is provided by the host (e.g., direct CLI/addon calls or unit tests).
+#define DEFAULT_CALIBRATED_MOVES_PER_MS 180.0
+// Safety reserve (ms) subtracted from precompute deadlines for the final collapse/formatting +
+// HTTP margin after the concurrent lock value lookups join.
+#define PRECOMPUTE_COLLAPSE_RESERVE_MS 2
 
 // Whether precompute responses apply the push-down input rewrite to per-piece lines
 // (only ever in combination with level 18; see the precompute pipeline).

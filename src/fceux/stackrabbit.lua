@@ -46,9 +46,9 @@ REACTION_TIME_FRAMES = 18
 -- placement starts.
 FIRST_PIECE_RESULT_FRAMES = 20
 INPUT_TIMELINE = TIMELINE_20_HZ;
-PLAYOUT_COUNT = 4200
+PLAYOUT_COUNT = 160
 PLAYOUT_LENGTH = 8
-PRUNING_BREADTH = -1
+PRUNING_BREADTH = -2
 MOVIE_PATH = "C:\\Users\\Greg\\Desktop\\VODs\\" -- Where to store the fm2 VODS (absolute path)
 SCORES_TEXT_PATH = "C:\\Users\\Greg\\Desktop\\sr-test-scores.txt"
 if IS_MAC then 

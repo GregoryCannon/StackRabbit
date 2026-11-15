@@ -89,11 +89,13 @@ keyed by lock position.
   where `getDasPenalty` (precompute.ts) applies `>=15` → no penalty, `>=10` → partial
   penalty, else → min penalty. The algebra resolves to exactly `V_tier` for the tier the
   player's actual placement ends in.
-- **Tournament mode** (`pruningBreadth = -1`): `getLockValueLookupTournament` receives
-  the same charges and threads them through its `searchDepth2` pair enumeration; the
-  tournament rounds/playouts themselves stay tap-based. The eval-only bucket maps are
-  identical between tournament and legacy paths; only the deep map differs (tournament
-  publishes conservative lower-confidence-bound scores).
+- **Tournament mode** (`pruningBreadth = -1` for fixed playout count,
+  `pruningBreadth = -2` for millisecond wall-clock budget):
+  `getLockValueLookupTournament` receives the same charges and threads them
+  through its `searchDepth2` pair enumeration; the tournament rounds/playouts
+  themselves stay tap-based. The eval-only bucket maps are identical between
+  tournament and legacy paths; only the deep map differs (tournament publishes
+  conservative lower-confidence-bound scores).
 
 ## Where DAS is modeled exactly vs approximated
 

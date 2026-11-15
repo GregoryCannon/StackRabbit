@@ -54,7 +54,8 @@ static bool isIntegerString(std::string const &arg) {
   return true;
 }
 
-std::string mainProcess(char const *inputStr, RequestType requestType) {
+std::string mainProcess(char const *inputStr, RequestType requestType,
+                        const EngineTimingContext *timing = nullptr) {
   maybePrint("Input string %s, requestType %d\n", inputStr, requestType);
 
   // Init empty data structures
@@ -229,12 +230,15 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
       fieldProvided[6] = true;
       break;
     case 7:
-      // -1 = tournament mode (playoutCount is the total playout budget instead of the
-      // per-candidate count; see getLockValueLookupTournament in tournament_search.cpp)
+      // -1 = fixed-playout tournament mode (playoutCount is total playout budget)
+      // -2 = timed tournament mode (playoutCount is wall-clock budget in milliseconds)
       if (!isIntegerString(arg)) {
         return "Error: invalid pruningBreadth value (expected an integer): " + arg;
       }
-      if (argAsInt < -1 || argAsInt > 1156) {
+      if (argAsInt < -2) {
+        return "Error: invalid pruning breadth (expected -2, -1, or 0-1156): " + arg;
+      }
+      if (argAsInt > 1156) {
         return "Error: invalid pruning breadth (max is 1156, or 34x34): " + arg;
       }
       pruningBreadth = argAsInt;
@@ -298,12 +302,18 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
       return std::string("Error: please provide a value for ") + fieldNames[i] + ".";
     }
   }
+  if (pruningBreadth == -2
+      && requestType != GET_LOCK_VALUE_LOOKUP
+      && requestType != GET_LOCK_VALUE_LOOKUP_DAS
+      && !isPrecomputePipeRequest(requestType)) {
+    return "Error: timed tournament mode (pruningBreadth == -2) is only supported for lock "
+           "value lookup and precompute requests.";
+  }
   if (isPrecomputePipeRequest(requestType)) {
-    // In tournament mode (pruningBreadth == -1) the count is the total playout
-    // budget; otherwise the volume is count * length.
-    long long totalPlayoutVolume = pruningBreadth == -1
-                                       ? playoutCount
-                                       : static_cast<long long>(playoutCount) * playoutLength;
+    // In tournament mode (pruningBreadth < 0) the wire field is the total playout
+    // budget (-1) or milliseconds (-2); otherwise the volume is count * length.
+    long long totalPlayoutVolume =
+        pruningBreadth < 0 ? playoutCount : static_cast<long long>(playoutCount) * playoutLength;
     if (totalPlayoutVolume > MAX_CPP_PLAYOUT_MOVES) {
       return "Error: playout volume exceeds the current limit of "
              + std::to_string(MAX_CPP_PLAYOUT_MOVES)
@@ -359,11 +369,26 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
       && nextPiece == NULL) {
     return "Error: lock value lookup requests require a value for nextPiece.";
   }
+
+  SearchBudget timedBudget{};
+  const SearchBudget *budgetPtr = nullptr;
+  if (pruningBreadth == -2) {
+    const auto anchor = (timing != nullptr && timing->hasRequestReceived)
+                            ? timing->requestReceived
+                            : std::chrono::steady_clock::now();
+    const double calibratedRate = requestType == PRECOMPUTE
+                                      ? (timing != nullptr ? timing->calibratedMovesPerMs7T : 0.0)
+                                      : (timing != nullptr ? timing->calibratedMovesPerMs1T : 0.0);
+    timedBudget = SearchBudget::fromDeadline(
+        playoutCount, anchor + std::chrono::milliseconds(playoutCount), calibratedRate);
+    budgetPtr = &timedBudget;
+  }
+
   switch (requestType) {
   case GET_LOCK_VALUE_LOOKUP: {
     return getLockValueLookupEncoded(startingGameState, curPiece, nextPiece, pruningBreadth,
-                                     playoutCount, playoutLength, &context,
-                                     pieceRangeContextLookup);
+                                     playoutCount, playoutLength, &context, pieceRangeContextLookup,
+                                     budgetPtr);
   }
 
   case GET_LOCK_VALUE_LOOKUP_DAS: {
@@ -371,7 +396,7 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
     // contexts above already hold the derived tapper approximation.
     return getLockValueLookupDas(startingGameState, curPiece, nextPiece, pruningBreadth,
                                  playoutCount, playoutLength, inputFrameTimeline.c_str(), &context,
-                                 pieceRangeContextLookup);
+                                 pieceRangeContextLookup, budgetPtr);
   }
 
   case GET_TOP_MOVES: {
@@ -468,7 +493,7 @@ std::string mainProcess(char const *inputStr, RequestType requestType) {
     if (requestType == PRECOMPUTE) {
       return runPrecompute(startingGameState, curPiece, inputFrameTimeline.c_str(), dasCharge,
                            reactionTime, pruningBreadth, playoutCount, playoutLength, &context,
-                           pieceRangeContextLookup);
+                           pieceRangeContextLookup, budgetPtr);
     }
     return runPrecomputeBackup(startingGameState, curPiece, inputFrameTimeline.c_str(), dasCharge,
                                reactionTime, pruningBreadth, playoutCount, playoutLength, &context,

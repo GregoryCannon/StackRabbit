@@ -134,7 +134,7 @@ export function parseUrlArguments(
 
       case "pruningBreadth":
         const breadth = parseInt(value);
-        if (breadth < -1) {
+        if (isNaN(breadth) || breadth < -2) {
           throw new Error("Invalid pruning breadth: " + breadth);
         }
         if (breadth > 1156) {
@@ -168,10 +168,20 @@ export function parseUrlArguments(
     }
   }
 
-  // Playout volume check. In tournament mode (pruningBreadth == -1), playoutCount is the
-  // total playout budget; otherwise the volume is playoutCount * playoutLength.
+  if (
+    result.pruningBreadth === -2 &&
+    !requestType.includes("precompute") &&
+    !requestType.includes("lock-value")
+  ) {
+    throw new Error(
+      "Timed tournament mode (pruningBreadth == -2) is only supported for lock value lookup and precompute requests."
+    );
+  }
+
+  // Playout volume check. In tournament mode (pruningBreadth < 0), playoutCount is the
+  // total playout budget (-1) or millisecond budget (-2); otherwise count * length.
   const totalPlayoutVolume =
-    result.pruningBreadth === -1
+    result.pruningBreadth < 0
       ? result.playoutCount
       : result.playoutCount * result.playoutLength;
   if (totalPlayoutVolume > MAX_CPP_PLAYOUT_MOVES) {

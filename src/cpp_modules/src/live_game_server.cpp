@@ -77,6 +77,8 @@ struct AsyncSlot {
   std::string full; // full precompute response
   bool hasError = false;
   std::string error; // engine rejection message or exception message
+  bool backupUsedForRequest = false;
+  long long totalBackupsUsed = 0;
 };
 
 AsyncSlot g_slot;
@@ -91,10 +93,11 @@ void storeFull(const std::string &response) {
   std::lock_guard<std::mutex> lock(g_slot.mutex);
   g_slot.full = response;
   g_slot.hasFull = true;
-  double elapsedMs = std::chrono::duration<double, std::milli>(
-                         std::chrono::steady_clock::now() - g_slot.requestReceived)
+  double elapsedMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now()
+                                                               - g_slot.requestReceived)
                          .count();
-  printf("Precompute computation: %.2fms\n", elapsedMs);
+  printf("Precompute time: %.2fms       Total backups used: %lld\n", elapsedMs,
+         g_slot.totalBackupsUsed);
   fflush(stdout);
 }
 
@@ -118,8 +121,76 @@ void markDone() {
 bool isEngineRejection(const std::string &response) { return response.rfind("Error:", 0) == 0; }
 
 // ---------------------------------------------------------------------------
-// Worker thread
+// Startup calibration & worker thread
 // ---------------------------------------------------------------------------
+
+// Benchmarks 7-thread precompute throughput at startup so Round 1 of timed (-2)
+// requests starts with an accurate hardware/load estimate before Round 1's own
+// runtime measurement takes over for Rounds 2-3.
+double calibratePrecomputeSpeed7T() {
+  const auto started = std::chrono::steady_clock::now();
+  const int calibPlayouts = 1200;
+  const int calibLength = 8;
+
+  std::string flatBoard(200, '0');
+  for (int r = 14; r < 20; r++) {
+    for (int c = 0; c < 9; c++) {
+      flatBoard[r * 10 + c] = '1';
+    }
+  }
+
+  std::string overhangBoard(200, '0');
+  for (int r = 8; r < 20; r++) {
+    for (int c = 0; c < 9; c++) {
+      overhangBoard[r * 10 + c] = '1';
+    }
+  }
+  // Carve overhang pockets under filled minos to exercise tuck detection + fastEval.
+  overhangBoard[9 * 10 + 2] = '0';
+  overhangBoard[10 * 10 + 5] = '0';
+  overhangBoard[11 * 10 + 7] = '0';
+
+  auto measureBoard = [&](const std::string &board) {
+    auto makePipe = [&](int playouts, int breadth) {
+      return board
+             + "|18|20|4|-1|X..|"
+             + std::to_string(playouts)
+             + "|"
+             + std::to_string(calibLength)
+             + "|"
+             + std::to_string(breadth)
+             + "|safe|16|18|";
+    };
+    const std::string zeroPipe = makePipe(0, -1);
+    const std::string workPipe = makePipe(calibPlayouts, -1);
+
+    auto t0 = std::chrono::steady_clock::now();
+    mainProcess(zeroPipe.c_str(), PRECOMPUTE);
+    double baselineMs =
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+
+    auto t1 = std::chrono::steady_clock::now();
+    mainProcess(workPipe.c_str(), PRECOMPUTE);
+    double workMs =
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t1).count();
+
+    double playoutMs = std::max(1.0, workMs - baselineMs);
+    return (calibPlayouts * (double)calibLength) / playoutMs;
+  };
+
+  // Warm up on the first pass and take the peak of two runs per board so a single startup
+  // OS scheduling pause doesn't lock calibration abnormally low for the session.
+  double flatRate = std::max(measureBoard(flatBoard), measureBoard(flatBoard));
+  double overhangRate = std::max(measureBoard(overhangBoard), measureBoard(overhangBoard));
+  double blendedRate = (2.0 * flatRate * overhangRate) / (flatRate + overhangRate);
+  double totalMs =
+      std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
+  printf("live_game_server: calibrated 7T speed=%.1f moves/ms (flat=%.1f, overhang=%.1f) in "
+         "%.1fms\n",
+         blendedRate, flatRate, overhangRate, totalMs);
+  fflush(stdout);
+  return blendedRate;
+}
 
 // Computes one request in two tiers:
 //   1. the backup response (a few ms: one move search plus cheap evals), so a
@@ -130,13 +201,15 @@ bool isEngineRejection(const std::string &response) { return response.rfind("Err
 // The first failure (engine rejection or thrown exception) wins: the message
 // is stored as the slot's error, the remaining tiers are skipped, and the
 // slot is marked done. Nothing escapes this thread.
-void workerLoop() {
+void workerLoop(double calibratedMovesPerMs7T) {
   for (;;) {
     std::string pipe;
+    std::chrono::steady_clock::time_point requestReceived;
     {
       std::unique_lock<std::mutex> lock(g_slot.mutex);
       g_slot.jobReady.wait(lock, [] { return g_slot.state == AsyncSlot::State::RUNNING; });
       pipe = g_slot.pipe;
+      requestReceived = g_slot.requestReceived;
     }
 
     // One line per request with the input and the compute time of each stage,
@@ -166,8 +239,12 @@ void workerLoop() {
 
     if (backupUsable) {
       auto fullStarted = std::chrono::steady_clock::now();
+      EngineTimingContext timing;
+      timing.hasRequestReceived = true;
+      timing.requestReceived = requestReceived;
+      timing.calibratedMovesPerMs7T = calibratedMovesPerMs7T;
       try {
-        std::string full = mainProcess(pipe.c_str(), PRECOMPUTE);
+        std::string full = mainProcess(pipe.c_str(), PRECOMPUTE, &timing);
         if (isEngineRejection(full)) {
           storeError(full);
         } else {
@@ -256,6 +333,7 @@ bool extractPipeParam(const std::string &query, std::string &value) {
 struct RouteResult {
   int status;
   std::string body;
+  std::string logSuffix;
 };
 
 // Kicks off an async precompute: hands the decoded pipe to the worker and
@@ -269,13 +347,13 @@ RouteResult handlePrecomputeKick(const std::string &query) {
   auto received = std::chrono::steady_clock::now();
   std::string encodedPipe;
   if (!extractPipeParam(query, encodedPipe)) {
-    return {400, "Missing required query parameter: p"};
+    return {400, "Missing required query parameter: p", ""};
   }
   std::string pipe = percentDecode(encodedPipe);
   {
     std::lock_guard<std::mutex> lock(g_slot.mutex);
     if (g_slot.state == AsyncSlot::State::RUNNING) {
-      return {503, "Busy"};
+      return {503, "Busy", ""};
     }
     g_slot.requestReceived = received;
     g_slot.pipe = pipe;
@@ -285,10 +363,11 @@ RouteResult handlePrecomputeKick(const std::string &query) {
     g_slot.hasFull = false;
     g_slot.error.clear();
     g_slot.hasError = false;
+    g_slot.backupUsedForRequest = false;
     g_slot.state = AsyncSlot::State::RUNNING;
   }
   g_slot.jobReady.notify_one();
-  return {200, "Request accepted."};
+  return {200, "Request accepted.", ""};
 }
 
 // The slot state machine. Once a request finishes, the full result supersedes
@@ -296,25 +375,39 @@ RouteResult handlePrecomputeKick(const std::string &query) {
 // kick resets it. A failed run (rejection or exception) reports 500 with the
 // message and takes priority over any stored result.
 RouteResult handleAsyncResult() {
+  const auto now = std::chrono::steady_clock::now();
   std::lock_guard<std::mutex> lock(g_slot.mutex);
+  if (g_slot.state == AsyncSlot::State::IDLE) {
+    return {404, "No previous async request has been made", ""};
+  }
+  double sincePrecomputeMs =
+      std::chrono::duration<double, std::milli>(now - g_slot.requestReceived).count();
+  char elapsedBuf[64];
+  snprintf(elapsedBuf, sizeof(elapsedBuf), "%.2fms after /precompute", sincePrecomputeMs);
+
   if (g_slot.hasError) {
-    return {500, g_slot.error};
+    return {500, g_slot.error, std::string(" (") + elapsedBuf + ")"};
   }
   if (g_slot.hasFull) {
-    return {200, g_slot.full};
+    return {200, g_slot.full, std::string(" (") + elapsedBuf + ")"};
   }
   if (g_slot.hasPartial) {
-    return {200, g_slot.partial};
+    if (!g_slot.backupUsedForRequest) {
+      g_slot.backupUsedForRequest = true;
+      g_slot.totalBackupsUsed++;
+    }
+    return {200, g_slot.partial,
+            std::string(" (")
+                + elapsedBuf
+                + ", backup)       Total backups used: "
+                + std::to_string(g_slot.totalBackupsUsed)};
   }
-  if (g_slot.state == AsyncSlot::State::RUNNING) {
-    return {504, "Still calculating"};
-  }
-  return {404, "No previous async request has been made"};
+  return {504, "Still calculating", std::string(" (") + elapsedBuf + ")"};
 }
 
 RouteResult routeRequest(const std::string &path, const std::string &query) {
   if (path == "/ping") {
-    return {200, "pong"};
+    return {200, "pong", ""};
   }
   if (path == "/precompute") {
     return handlePrecomputeKick(query);
@@ -322,7 +415,7 @@ RouteResult routeRequest(const std::string &path, const std::string &query) {
   if (path == "/async-result") {
     return handleAsyncResult();
   }
-  return {200, "Unknown request type. Received: " + path};
+  return {200, "Unknown request type. Received: " + path, ""};
 }
 
 // ---------------------------------------------------------------------------
@@ -464,10 +557,11 @@ void handleConnection(int fd) {
     result = {500, "Unknown server error"};
   }
   sendResponse(fd, result.status, result.body);
+  const char *prefix = (path == "/precompute") ? "\n" : "";
   if (result.status == 200) {
-    printf("GET %s\n", path.c_str());
+    printf("%sGET %s%s\n", prefix, path.c_str(), result.logSuffix.c_str());
   } else {
-    printf("GET %s %d\n", path.c_str(), result.status);
+    printf("%sGET %s %d%s\n", prefix, path.c_str(), result.status, result.logSuffix.c_str());
   }
   fflush(stdout);
 }
@@ -535,7 +629,8 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  std::thread worker(workerLoop);
+  double calibratedMovesPerMs7T = calibratePrecomputeSpeed7T();
+  std::thread worker(workerLoop, calibratedMovesPerMs7T);
   worker.detach();
 
   printf("live_game_server: listening on 127.0.0.1:%d\n", port);
