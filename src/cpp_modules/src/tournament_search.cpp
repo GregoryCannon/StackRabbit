@@ -290,29 +290,20 @@ void playTournamentSamples(OUT TournamentCont &cont, int sampleCount, int batchO
                   batchOffset);
 }
 
-/** Runs the whole 3-round tournament. See the block comment above for the scheme. */
-unordered_map<string, float>
-getLockValueLookupTournament(GameState gameState, const Piece *firstPiece, const Piece *secondPiece,
-                             int pruningBreadth, int playoutCount, int playoutLength, int dasCharge,
-                             int secondPieceDasCharge, char const *dasInputFrameTimeline,
-                             const EvalContext *evalContext,
-                             const PieceRangeContext pieceRangeContextLookup[3]) {
+/** Runs the 3-round tournament over precomputed 2-ply possibilities. See block comment above. */
+unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
+    const std::vector<Possibility> &possibilities, const Piece *secondPiece, int pruningBreadth,
+    int playoutCount, int playoutLength, const EvalContext *evalContext,
+    const PieceRangeContext pieceRangeContextLookup[3]) {
   unordered_map<string, float> lockValueMap;
 
-  // Enumerate every (first, second) pair with a fast eval (same first pass as legacy).
-  // DAS bucket mode (secondPieceDasCharge >= 0, dasCharge = -1) prescribes the second
-  // piece's starting charge for the pair enumeration (on dasInputFrameTimeline, the
-  // player's real timeline); the tournament rounds/playouts themselves stay tap-based.
-  list<Possibility> possibilityList;
-  searchDepth2(gameState, firstPiece, secondPiece, dasCharge, secondPieceDasCharge,
-               dasInputFrameTimeline, evalContext, possibilityList);
-  if (possibilityList.size() == 0) {
+  if (possibilities.empty()) {
     return lockValueMap; // Topped out: no legal first placement
   }
 
   // Eval-only shortcut (DAS shallow maps pass playoutCount=0): max eval per first placement.
   if (playoutCount * playoutLength == 0) {
-    for (Possibility const &possibility : possibilityList) {
+    for (Possibility const &possibility : possibilities) {
       string lockPosEncoded = encodeLockPosition(possibility.firstPlacement);
       float evalScore = possibility.evalScoreInclReward;
       if (lockValueMap.count(lockPosEncoded) == 0 || evalScore > lockValueMap[lockPosEncoded]) {
@@ -322,18 +313,15 @@ getLockValueLookupTournament(GameState gameState, const Piece *firstPiece, const
     return lockValueMap;
   }
 
-  // Sort pairs by eval desc so the per-candidate cont cap keeps the eval-best conts
-  // (searchDepth2's order is unsorted, tucks last).
-  std::vector<Possibility> sortedPossibilities(possibilityList.begin(), possibilityList.end());
-  std::stable_sort(sortedPossibilities.begin(), sortedPossibilities.end(),
-                   [](Possibility const &a, Possibility const &b) {
-                     return a.evalScoreInclReward > b.evalScoreInclReward;
-                   });
+  // Sort pair pointers by eval desc so the per-candidate cont cap keeps the eval-best conts
+  // (searchDepth2's order is unsorted, tucks last) without copying the full Possibility structs.
+  const std::vector<const Possibility *> sortedPossibilities = sortPossibilitiesDesc(possibilities);
 
   // Group pairs into candidates (one per distinct first placement), keeping eval-best conts.
   std::vector<TournamentCandidate> candidates;
   unordered_map<string, int> candidateIndexByKey;
-  for (Possibility const &possibility : sortedPossibilities) {
+  for (const Possibility *possibilityPtr : sortedPossibilities) {
+    Possibility const &possibility = *possibilityPtr;
     string key = encodeLockPosition(possibility.firstPlacement);
     int candidateIdx;
     auto found = candidateIndexByKey.find(key);
@@ -639,4 +627,23 @@ getLockValueLookupTournament(GameState gameState, const Piece *firstPiece, const
     }
   }
   return lockValueMap;
+}
+
+/** Runs the whole 3-round tournament. See the block comment above for the scheme. */
+unordered_map<string, float>
+getLockValueLookupTournament(GameState gameState, const Piece *firstPiece, const Piece *secondPiece,
+                             int pruningBreadth, int playoutCount, int playoutLength, int dasCharge,
+                             int secondPieceDasCharge, char const *dasInputFrameTimeline,
+                             const EvalContext *evalContext,
+                             const PieceRangeContext pieceRangeContextLookup[3]) {
+  // Enumerate every (first, second) pair with a fast eval (same first pass as legacy).
+  // DAS bucket mode (secondPieceDasCharge >= 0, dasCharge = -1) prescribes the second
+  // piece's starting charge for the pair enumeration (on dasInputFrameTimeline, the
+  // player's real timeline); the tournament rounds/playouts themselves stay tap-based.
+  std::vector<Possibility> possibilities;
+  searchDepth2(gameState, firstPiece, secondPiece, dasCharge, secondPieceDasCharge,
+               dasInputFrameTimeline, evalContext, possibilities);
+  return getLockValueLookupTournamentFromPossibilities(possibilities, secondPiece, pruningBreadth,
+                                                       playoutCount, playoutLength, evalContext,
+                                                       pieceRangeContextLookup);
 }

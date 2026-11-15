@@ -280,21 +280,21 @@ TEST_CASE("searchDepth2 rejects dasCharge + secondPieceDasCharge passed together
   const Piece *J = &PIECE_LIST[IDX_J];
   const Piece *I = &PIECE_LIST[IDX_I];
 
-  list<Possibility> rejected;
+  std::vector<Possibility> rejected;
   CHECK(searchDepth2(g, J, I, /* dasCharge= */ 16, /* secondPieceDasCharge= */ 10, "X..", &ctx,
                      rejected)
         == 0);
   CHECK(rejected.size() == 0);
 
-  list<Possibility> genericMode;
+  std::vector<Possibility> genericMode;
   CHECK(searchDepth2(g, J, I, /* dasCharge= */ 16, /* secondPieceDasCharge= */ -1, "X..", &ctx,
                      genericMode)
         > 0);
-  list<Possibility> bucketMode;
+  std::vector<Possibility> bucketMode;
   CHECK(searchDepth2(g, J, I, /* dasCharge= */ -1, /* secondPieceDasCharge= */ 10, "X..", &ctx,
                      bucketMode)
         > 0);
-  list<Possibility> tapMode;
+  std::vector<Possibility> tapMode;
   CHECK(searchDepth2(g, J, I, /* dasCharge= */ -1, /* secondPieceDasCharge= */ -1, "X..", &ctx,
                      tapMode)
         > 0);

@@ -4,9 +4,8 @@
 #include "config.hpp"
 #include "types.hpp"
 #include "utils.hpp"
-#include <algorithm>
-#include <list>
 #include <unordered_map>
+#include <vector>
 
 LockLocation playOneMove(GameState gameState, const Piece *firstPiece, const Piece *secondPiece,
                          int numCandidatesToPlayout, int playoutCount, int playoutLength,
@@ -39,6 +38,29 @@ struct DasLockValueMaps {
   std::unordered_map<std::string, float> lockValue;
 };
 
+/** Precomputed first-piece placement and post-placement state shared across next-piece lookups. */
+struct FirstMoveBranch {
+  LockPlacement firstPlacement;
+  int dasChargeAfter; // DAS mode only: leftover charge after first placement (-1 in tap mode)
+  GameState afterFirstMove;
+  float firstMoveReward;
+};
+
+struct FirstMoveSearchResult {
+  bool useDas = false;
+  std::vector<FirstMoveBranch> branches;
+};
+
+FirstMoveSearchResult buildFirstMoveBranches(const GameState &gameState, const Piece *firstPiece,
+                                             int firstPieceDasCharge,
+                                             char const *dasInputFrameTimeline,
+                                             const EvalContext *evalContext);
+
+DasLockValueMaps getLockValueLookupDasMapsWithFirstMoves(
+    const FirstMoveSearchResult &firstMoves, const Piece *secondPiece, int pruningBreadth,
+    int playoutCount, int playoutLength, char const *dasInputFrameTimeline,
+    const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3]);
+
 DasLockValueMaps getLockValueLookupDasMaps(GameState gameState, const Piece *firstPiece,
                                            const Piece *secondPiece, int pruningBreadth,
                                            int playoutCount, int playoutLength,
@@ -52,18 +74,26 @@ std::string getLockValueLookupDas(GameState gameState, const Piece *firstPiece,
                                   const EvalContext *evalContext,
                                   const PieceRangeContext pieceRangeContextLookup[3]);
 
+unordered_map<string, float> getLockValueLookupMappedWithFirstMoves(
+    const FirstMoveSearchResult &firstMoves, const Piece *secondPiece, int pruningBreadth,
+    int playoutCount, int playoutLength, const EvalContext *evalContext,
+    const PieceRangeContext pieceRangeContextLookup[3]);
+
 unordered_map<string, float> getLockValueLookupMapped(GameState gameState, const Piece *firstPiece,
                                                       const Piece *secondPiece, int pruningBreadth,
                                                       int playoutCount, int playoutLength,
                                                       const EvalContext *evalContext,
                                                       const PieceRangeContext pieceRangeContextLookup[3]);
 
+std::vector<const Possibility *>
+sortPossibilitiesDesc(const std::vector<Possibility> &possibilities);
+
 int searchDepth1(GameState gameState, const Piece *firstPiece, const EvalContext *evalContext,
-                 OUT std::list<Possibility> &possibilityList, bool generateExplanation = false);
+                 OUT std::vector<Possibility> &possibilities, bool generateExplanation = false);
 
 int searchDepth2(GameState gameState, const Piece *firstPiece, const Piece *secondPiece,
                  int dasCharge, int secondPieceDasCharge, char const *dasInputFrameTimeline,
-                 const EvalContext *evalContext, OUT std::list<Possibility> &possibilityList,
+                 const EvalContext *evalContext, OUT std::vector<Possibility> &possibilities,
                  bool generateExplanation = false);
 
 #endif

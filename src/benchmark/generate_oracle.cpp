@@ -109,7 +109,7 @@ void computeOracleForPosition(const BenchmarkPosition &pos, OUT OracleResult &re
   const Piece *nextPiece = &PIECE_LIST[pos.nextPiece];
 
   // Full depth-2 search: all (first, second) placement pairs
-  list<Possibility> possibilities;
+  std::vector<Possibility> possibilities;
   searchDepth2(gameState, curPiece, nextPiece, /* dasCharge= */ -1, /* secondPieceDasCharge= */ -1,
                timeline.c_str(), evalContext, possibilities, /* generateExplanation= */ false);
 

@@ -5,6 +5,7 @@
 #include "tournament_search.hpp"
 #include <algorithm>
 #include <limits>
+#include <list>
 #include <math.h>
 #include <string>
 #include <unordered_map>
@@ -12,64 +13,31 @@ using namespace std;
 
 #define MAP_OFFSET 5000 // An offset to make any placement better than the default 0 in the map
 
-/**
- * Performs a partial insertion sort such that the highest N elements of the list are guaranteed to
- * be sorted and kept at the front of the list. The other elements can be anywhere.
- */
-void partiallySortPossibilityList(list<Possibility> &possibilityList, int pruningBreadth,
-                                  OUT list<Possibility> &sortedList) {
-  auto cutoffPossibility =
-      possibilityList
-          .begin(); // The node on the "cutoff" between being in the top N placements and not
-  int size = 0;     // Tracking manually is cheaper than doing the O(n) operation each iteration
-
-  for (auto it = begin(possibilityList); it != end(possibilityList); it++) {
-    Possibility newPossibility = *it;
-    if (size < pruningBreadth
-        || newPossibility.evalScoreInclReward > cutoffPossibility->evalScoreInclReward) {
-      // Insert into the list in its correct sorted place
-      for (auto it2 = sortedList.begin(); true; it2++) {
-        if (it2 == sortedList.end()) {
-          sortedList.push_back(newPossibility);
-          size++;
-          break;
-        }
-        if (newPossibility.evalScoreInclReward > it2->evalScoreInclReward) {
-          sortedList.insert(it2, newPossibility);
-          size++;
-          break;
-        }
-      }
-
-      // Update the cutoff node
-      if (size == pruningBreadth) {
-        // Get the Nth elt
-        auto ptr = sortedList.begin();
-        advance(ptr, pruningBreadth - 1);
-        cutoffPossibility = ptr;
-      }
-      if (size > pruningBreadth) {
-        // Use the predecessor of the one that just got pushed out
-        cutoffPossibility = prev(cutoffPossibility);
-      }
-
-    } else {
-      // Add it at the end of the list (sorting not important)
-      sortedList.push_back(newPossibility);
-    }
+/** Returns pointers to possibilities sorted descending by eval score, preserving tie order. */
+std::vector<const Possibility *>
+sortPossibilitiesDesc(const std::vector<Possibility> &possibilities) {
+  std::vector<const Possibility *> sorted;
+  sorted.reserve(possibilities.size());
+  for (Possibility const &p : possibilities) {
+    sorted.push_back(&p);
   }
+  std::stable_sort(sorted.begin(), sorted.end(), [](const Possibility *a, const Possibility *b) {
+    return a->evalScoreInclReward > b->evalScoreInclReward;
+  });
+  return sorted;
 }
 
 /** Searches 1-ply from a starting state, and performs an eval on each resulting state.
- * @returns an UNSORTED list of evaluated possibilities
+ * @returns the number of possibilities found
  * @param generateExplanation - when true, captures a per-move evalExplanation string
  *   (only used by GET_TOP_MOVES / GET_TOP_MOVES_HYBRID / GET_MOVE_AB_TEST paths).
  */
 int searchDepth1(GameState gameState, const Piece *firstPiece, const EvalContext *evalContext,
-                 OUT list<Possibility> &possibilityList, bool generateExplanation) {
+                 OUT std::vector<Possibility> &possibilities, bool generateExplanation) {
   vector<LockPlacement> firstLockPlacements;
   fastMoveSearch(gameState, firstPiece, evalContext->pieceRangeContext.inputFrameTimeline,
                  firstLockPlacements);
+  possibilities.reserve(possibilities.size() + firstLockPlacements.size());
   for (auto it = begin(firstLockPlacements); it != end(firstLockPlacements); ++it) {
     LockPlacement firstPlacement = *it;
 
@@ -92,14 +60,153 @@ int searchDepth1(GameState gameState, const Piece *firstPiece, const EvalContext
         resultingState,
         evalScoreInclReward,
         reward,
-        explanation};
-    possibilityList.push_back(newPossibility);
+        std::move(explanation)};
+    possibilities.push_back(std::move(newPossibility));
   }
-  return (int)possibilityList.size();
+  return (int)possibilities.size();
+}
+
+/** Precomputes first-piece placements, post-placement game states, and line-clear rewards. */
+FirstMoveSearchResult buildFirstMoveBranches(const GameState &gameState, const Piece *firstPiece,
+                                             int firstPieceDasCharge,
+                                             char const *dasInputFrameTimeline,
+                                             const EvalContext *evalContext) {
+  FirstMoveSearchResult result;
+  result.useDas = firstPieceDasCharge >= 0;
+
+  auto appendBranch = [&](const LockPlacement &firstPlacement, int dasChargeAfter) {
+    GameState afterFirstMove = advanceGameState(gameState, firstPlacement, evalContext);
+    if (SHOULD_PLAY_PERFECT && ((afterFirstMove.lines - gameState.lines) % 4) != 0) {
+      return; // While playing perfect, ignore any placements that burn lines
+    }
+    float firstMoveReward =
+        getLineClearFactor(afterFirstMove.lines - gameState.lines, evalContext->weights,
+                           evalContext->shouldRewardLineClears);
+    result.branches.push_back({firstPlacement, dasChargeAfter, afterFirstMove, firstMoveReward});
+  };
+
+  // Get the placements of the first piece. In DAS mode the results come out of
+  // fullMoveSearch as DasPossibilities and are converted BY VALUE into
+  // LockPlacements -- LockPlacement itself is unchanged (a struct edit regressed
+  // the playout benchmark once already; see TESTING.md's benchmarking methodology).
+  if (result.useDas) {
+    vector<FullMovePossibility> firstFullMovePossibilities;
+    firstFullMovePossibilities.reserve(64);
+    fullMoveSearch(gameState, firstPiece, dasInputFrameTimeline, firstPieceDasCharge,
+                   /* trackInputSequences= */ false, firstFullMovePossibilities);
+    result.branches.reserve(firstFullMovePossibilities.size());
+    for (FullMovePossibility const &fullMovePossibility : firstFullMovePossibilities) {
+      appendBranch({fullMovePossibility.x, fullMovePossibility.y, fullMovePossibility.rotationIndex,
+                    -1, fullMovePossibility.tuckInput, firstPiece},
+                   fullMovePossibility.dasChargeAfter);
+    }
+  } else {
+    vector<LockPlacement> firstLockPlacements;
+    firstLockPlacements.reserve(48);
+    fastMoveSearch(gameState, firstPiece, evalContext->pieceRangeContext.inputFrameTimeline,
+                   firstLockPlacements);
+    result.branches.reserve(firstLockPlacements.size());
+    for (LockPlacement const &firstPlacement : firstLockPlacements) {
+      appendBranch(firstPlacement, -1);
+    }
+  }
+  return result;
+}
+
+/** Runs the second-ply move search and fast eval against precomputed first-piece branches. */
+static int searchDepth2FromFirstMoves(const FirstMoveSearchResult &firstMoves,
+                                      const Piece *secondPiece, int secondPieceDasCharge,
+                                      char const *dasInputFrameTimeline,
+                                      const EvalContext *evalContext,
+                                      OUT std::vector<Possibility> &possibilities,
+                                      bool generateExplanation = false) {
+  if (!firstMoves.useDas && secondPieceDasCharge >= 0) {
+    fprintf(stderr,
+            "Error: searchDepth2FromFirstMoves received secondPieceDasCharge (%d) for tap-mode "
+            "first branches.\n",
+            secondPieceDasCharge);
+    return 0;
+  }
+
+  possibilities.reserve(possibilities.size() + firstMoves.branches.size() * 32);
+
+  // Hoist per-branch scratch vectors outside the loop to avoid repeated heap allocations.
+  vector<FullMovePossibility> secondFullMovePossibilities;
+  secondFullMovePossibilities.reserve(64);
+  vector<LockPlacement> secondLockPlacements;
+  secondLockPlacements.reserve(64);
+
+  for (FirstMoveBranch const &branch : firstMoves.branches) {
+    const LockPlacement &firstPlacement = branch.firstPlacement;
+    const GameState &afterFirstMove = branch.afterFirstMove;
+    float firstMoveReward = branch.firstMoveReward;
+    maybePrint("\n\n\n\nNEW FIRST MOVE: rot=%d x=%d\n", firstPlacement.rotationIndex,
+               firstPlacement.x);
+
+    for (int i = 0; i < 19; i++) {
+      maybePrint("%d ", (afterFirstMove.board[i] & ALL_TUCK_SETUP_BITS) >> 20);
+    }
+    maybePrint("%d end of post first move\n",
+               (afterFirstMove.board[19] & ALL_TUCK_SETUP_BITS) >> 20);
+    if (LOGGING_ENABLED) {
+      printBoard(afterFirstMove.board);
+    }
+
+    auto appendSecondPlacement = [&](const LockPlacement &secondPlacement) {
+      GameState resultingState = advanceGameState(afterFirstMove, secondPlacement, evalContext);
+      if (SHOULD_PLAY_PERFECT && ((resultingState.lines - afterFirstMove.lines) % 4) != 0) {
+        return; // While playing perfect, ignore any placements that burn lines
+      }
+      // Only allocate an explanation string when the caller requested it, to avoid overhead
+      // otherwise.
+      std::string explanation;
+      std::string *explanationPtr = generateExplanation ? &explanation : nullptr;
+      float evalScore =
+          firstMoveReward
+          + fastEval(afterFirstMove, resultingState, secondPlacement, evalContext, explanationPtr);
+      float secondMoveReward =
+          getLineClearFactor(resultingState.lines - afterFirstMove.lines, evalContext->weights,
+                             evalContext->shouldRewardLineClears);
+
+      possibilities.push_back(
+          {{firstPlacement.x, firstPlacement.y, firstPlacement.rotationIndex},
+           {secondPlacement.x, secondPlacement.y, secondPlacement.rotationIndex},
+           resultingState,
+           evalScore,
+           firstMoveReward + secondMoveReward,
+           std::move(explanation)});
+    };
+
+    // Get the placements of the second piece
+    if (firstMoves.useDas) {
+      // DAS mode: the second piece spawns with the first placement's leftover charge
+      // by default (generic semantics), or with secondPieceDasCharge when the caller
+      // prescribes it.
+      secondFullMovePossibilities.clear();
+      int effectiveSecondPieceDasCharge =
+          secondPieceDasCharge >= 0 ? secondPieceDasCharge : branch.dasChargeAfter;
+      fullMoveSearch(afterFirstMove, secondPiece, dasInputFrameTimeline,
+                     effectiveSecondPieceDasCharge,
+                     /* trackInputSequences= */ false, secondFullMovePossibilities);
+      for (FullMovePossibility const &fullMovePossibility : secondFullMovePossibilities) {
+        appendSecondPlacement({fullMovePossibility.x, fullMovePossibility.y,
+                               fullMovePossibility.rotationIndex, -1, fullMovePossibility.tuckInput,
+                               secondPiece});
+      }
+    } else {
+      secondLockPlacements.clear();
+      fastMoveSearch(afterFirstMove, secondPiece, evalContext->pieceRangeContext.inputFrameTimeline,
+                     secondLockPlacements);
+      for (LockPlacement const &secondPlacement : secondLockPlacements) {
+        appendSecondPlacement(secondPlacement);
+      }
+    }
+  }
+  return (int)possibilities.size();
 }
 
 /** Searches 2-ply from a starting state, and performs a fast eval on each of the resulting states.
- * @returns an UNSORTED list of evaluated possibilities (0 if the arguments are invalid)
+ * @returns the number of possibilities found (0 if the arguments are invalid)
  * @param dasCharge - the first piece's incoming DAS charge: -1 = tap mode, 0..16 = DAS
  *   mode (searches run through fullMoveSearch on dasInputFrameTimeline, the player's real
  *   timeline). In DAS mode the second piece inherits each first placement's dasChargeAfter.
@@ -115,9 +222,8 @@ int searchDepth1(GameState gameState, const Piece *firstPiece, const EvalContext
  */
 int searchDepth2(GameState gameState, const Piece *firstPiece, const Piece *secondPiece,
                  int dasCharge, int secondPieceDasCharge, char const *dasInputFrameTimeline,
-                 const EvalContext *evalContext, OUT list<Possibility> &possibilityList,
+                 const EvalContext *evalContext, OUT std::vector<Possibility> &possibilities,
                  bool generateExplanation) {
-
   // The two DAS modes are mutually exclusive: dasCharge describes the first piece's
   // incoming charge (second piece inherits), secondPieceDasCharge prescribes the second
   // piece's charge for the bucket hypothesis. Passing both is a programmer error.
@@ -127,115 +233,22 @@ int searchDepth2(GameState gameState, const Piece *firstPiece, const Piece *seco
     // (throw, surfacing as a 500) or define a documented precedence.
     fprintf(stderr,
             "Error: searchDepth2 received both dasCharge (%d) and secondPieceDasCharge (%d) -- "
-            "they are mutually "
-            "exclusive. Pass dasCharge for a generic DAS search, or secondPieceDasCharge for the "
-            "DAS bucket hypothesis.\n",
+            "they are mutually exclusive. Pass dasCharge for a generic DAS search, or "
+            "secondPieceDasCharge for the DAS bucket hypothesis.\n",
             dasCharge, secondPieceDasCharge);
     return 0;
   }
   const bool useDas = dasCharge >= 0 || secondPieceDasCharge >= 0;
+  // Bucket mode (secondPieceDasCharge >= 0) always searches the first piece from a
+  // full charge so every bucket/deep lookup enumerates the same set of lock cells.
+  const int firstPieceDasCharge =
+      useDas ? (secondPieceDasCharge >= 0 ? DAS_CHARGE_MAX : dasCharge) : -1;
 
-  // Get the placements of the first piece. In DAS mode the results come out of
-  // fullMoveSearch as DasPossibilities and are converted BY VALUE into
-  // LockPlacements -- LockPlacement itself is unchanged (a struct edit regressed
-  // the playout benchmark once already; see TESTING.md's benchmarking methodology).
-  vector<LockPlacement> firstLockPlacements;
-  // DAS mode only: the charge left over after each first placement, index-aligned
-  // with firstLockPlacements. By default the second piece spawns with it; the
-  // secondPieceDasCharge override (bucket searches) replaces it.
-  vector<int> firstDasChargeAfters;
-  if (useDas) {
-    // Bucket mode (secondPieceDasCharge >= 0) always searches the first piece from a
-    // full charge so every bucket/deep lookup enumerates the same set of lock cells.
-    int firstPieceDasCharge = secondPieceDasCharge >= 0 ? DAS_CHARGE_MAX : dasCharge;
-    vector<FullMovePossibility> firstFullMovePossibilities;
-    fullMoveSearch(gameState, firstPiece, dasInputFrameTimeline, firstPieceDasCharge,
-                   /* trackInputSequences= */ false, firstFullMovePossibilities);
-    for (FullMovePossibility const &fullMovePossibility : firstFullMovePossibilities) {
-      firstLockPlacements.push_back({fullMovePossibility.x, fullMovePossibility.y,
-                                     fullMovePossibility.rotationIndex, -1, fullMovePossibility.tuckInput,
-                                     firstPiece});
-      firstDasChargeAfters.push_back(fullMovePossibility.dasChargeAfter);
-    }
-  } else {
-    fastMoveSearch(gameState, firstPiece, evalContext->pieceRangeContext.inputFrameTimeline,
-                   firstLockPlacements);
-  }
-  int firstPlacementIndex = -1;
-  for (auto it = begin(firstLockPlacements); it != end(firstLockPlacements); ++it) {
-    firstPlacementIndex++;
-    LockPlacement firstPlacement = *it;
-    maybePrint("\n\n\n\nNEW FIRST MOVE: rot=%d x=%d\n", firstPlacement.rotationIndex,
-               firstPlacement.x);
-
-    GameState afterFirstMove = advanceGameState(gameState, firstPlacement, evalContext);
-    if (SHOULD_PLAY_PERFECT && ((afterFirstMove.lines - gameState.lines) % 4) != 0) {
-      continue; // While playing perfect, ignore any placements that burn lines
-    }
-    for (int i = 0; i < 19; i++) {
-      maybePrint("%d ", (afterFirstMove.board[i] & ALL_TUCK_SETUP_BITS) >> 20);
-    }
-    maybePrint("%d end of post first move\n",
-               (afterFirstMove.board[19] & ALL_TUCK_SETUP_BITS) >> 20);
-    if (LOGGING_ENABLED) {
-      printBoard(afterFirstMove.board);
-    }
-
-    float firstMoveReward =
-        getLineClearFactor(afterFirstMove.lines - gameState.lines, evalContext->weights,
-                           evalContext->shouldRewardLineClears);
-
-    // Get the placements of the second piece
-    vector<LockPlacement> secondLockPlacements;
-    if (useDas) {
-      // DAS mode: the second piece spawns with the first placement's leftover charge
-      // by default (generic semantics), or with secondPieceDasCharge when the caller
-      // prescribes it.
-      vector<FullMovePossibility> secondFullMovePossibilities;
-      int effectiveSecondPieceDasCharge = secondPieceDasCharge >= 0
-                                              ? secondPieceDasCharge
-                                              : firstDasChargeAfters[firstPlacementIndex];
-      fullMoveSearch(afterFirstMove, secondPiece, dasInputFrameTimeline,
-                     effectiveSecondPieceDasCharge,
-                     /* trackInputSequences= */ false, secondFullMovePossibilities);
-      for (FullMovePossibility const &fullMovePossibility : secondFullMovePossibilities) {
-        secondLockPlacements.push_back({fullMovePossibility.x, fullMovePossibility.y,
-                                        fullMovePossibility.rotationIndex, -1, fullMovePossibility.tuckInput,
-                                        secondPiece});
-      }
-    } else {
-      fastMoveSearch(afterFirstMove, secondPiece, evalContext->pieceRangeContext.inputFrameTimeline,
-                     secondLockPlacements);
-    }
-
-    for (auto secondPlacement : secondLockPlacements) {
-      GameState resultingState = advanceGameState(afterFirstMove, secondPlacement, evalContext);
-      if (SHOULD_PLAY_PERFECT && ((resultingState.lines - afterFirstMove.lines) % 4) != 0) {
-        continue; // While playing perfect, ignore any placements that burn lines
-      }
-      // Only allocate an explanation string when the caller requested it, to avoid overhead
-      // otherwise.
-      std::string explanation;
-      std::string *explanationPtr = generateExplanation ? &explanation : nullptr;
-      float evalScore =
-          firstMoveReward
-          + fastEval(afterFirstMove, resultingState, secondPlacement, evalContext, explanationPtr);
-      float secondMoveReward =
-          getLineClearFactor(resultingState.lines - afterFirstMove.lines, evalContext->weights,
-                             evalContext->shouldRewardLineClears);
-
-      Possibility newPossibility = {
-          {firstPlacement.x, firstPlacement.y, firstPlacement.rotationIndex},
-          {secondPlacement.x, secondPlacement.y, secondPlacement.rotationIndex},
-          resultingState,
-          evalScore,
-          firstMoveReward + secondMoveReward,
-          explanation};
-
-      possibilityList.push_back(newPossibility);
-    }
-  }
-  return (int)possibilityList.size();
+  const FirstMoveSearchResult firstMoves = buildFirstMoveBranches(
+      gameState, firstPiece, firstPieceDasCharge, dasInputFrameTimeline, evalContext);
+  return searchDepth2FromFirstMoves(firstMoves, secondPiece, secondPieceDasCharge,
+                                    dasInputFrameTimeline, evalContext, possibilities,
+                                    generateExplanation);
 }
 
 /** Plays one move from a given state, with or without knowledge of the next box.
@@ -248,36 +261,34 @@ LockLocation playOneMove(GameState gameState, const Piece *firstPiece, const Pie
                          const EvalContext *evalContext,
                          const PieceRangeContext pieceRangeContextLookup[3],
                          std::string *outExplanation) {
-  // Get the list of evaluated possibilities
-  list<Possibility> possibilityList;
-  list<Possibility> sortedList;
+  std::vector<Possibility> possibilities;
   // Only capture explanations when the caller asked for them (AB-test path).
   bool generateExplanation = (outExplanation != nullptr);
 
   // Search depth either 1 or 2 depending on whether a next piece was provided
   const Piece *lastSeenPiece;
   if (secondPiece == NULL) {
-    searchDepth1(gameState, firstPiece, evalContext, possibilityList, generateExplanation);
+    searchDepth1(gameState, firstPiece, evalContext, possibilities, generateExplanation);
     lastSeenPiece = firstPiece;
   } else {
     searchDepth2(gameState, firstPiece, secondPiece, /* dasCharge= */ -1,
                  /* secondPieceDasCharge= */ -1, evalContext->pieceRangeContext.inputFrameTimeline,
-                 evalContext, possibilityList, generateExplanation);
+                 evalContext, possibilities, generateExplanation);
     lastSeenPiece = secondPiece;
   }
 
-  if (possibilityList.size() == 0) {
+  if (possibilities.empty()) {
     if (outExplanation != nullptr) {
       *outExplanation = "";
     }
     return NULL_LOCK_LOCATION; // Return an invalid lock location to indicate the agent has topped
                                // out
   }
-  partiallySortPossibilityList(possibilityList, numCandidatesToPlayout, sortedList);
+  const std::vector<const Possibility *> sorted = sortPossibilitiesDesc(possibilities);
 
   if (playoutCount * playoutLength == 0) {
-    // Return the first element in the preliminary sorted list
-    const Possibility &best = *sortedList.begin();
+    // Return the highest-eval possibility
+    const Possibility &best = *sorted[0];
     if (outExplanation != nullptr) {
       *outExplanation = best.evalExplanation;
     }
@@ -288,10 +299,11 @@ LockLocation playOneMove(GameState gameState, const Piece *firstPiece, const Pie
   float bestPossibilityScore = FLOAT_MIN;
   std::string bestExplanation;
   int numPlayedOut = 0;
-  for (auto possibility : sortedList) {
+  for (const Possibility *possibilityPtr : sorted) {
     if (numPlayedOut >= numCandidatesToPlayout) {
       break;
     }
+    Possibility const &possibility = *possibilityPtr;
     float overallScore =
         possibility.immediateReward
         + getPlayoutScore(possibility.resultingState, playoutCount, playoutLength,
@@ -342,10 +354,10 @@ bool boardMatchesPlayerBoard(const GameState &gameState, unsigned int playerBoar
  * Finds the possibility whose resulting board equals the player's resulting board.
  * @returns true and sets outPossibility on match, false otherwise.
  */
-bool findPossibilityByPlayerBoard(list<Possibility> const &possibilityList,
+bool findPossibilityByPlayerBoard(std::vector<Possibility> const &possibilities,
                                   unsigned int playerBoardAfter[20],
                                   OUT Possibility &outPossibility) {
-  for (auto const &possibility : possibilityList) {
+  for (auto const &possibility : possibilities) {
     if (boardMatchesPlayerBoard(possibility.resultingState, playerBoardAfter)) {
       outPossibility = possibility;
       return true;
@@ -355,15 +367,16 @@ bool findPossibilityByPlayerBoard(list<Possibility> const &possibilityList,
 }
 
 /**
- * Finds the move out of a list of possibilities that has the resulting board equal to the player's
- * resulting board. NB: REMOVES THE ELEMENT FROM THE LIST IN-PLACE (to avoid re-running its playouts
+ * Finds the move out of possibilities that has the resulting board equal to the player's
+ * resulting board. NB: REMOVES THE ELEMENT IN-PLACE (to avoid re-running its playouts
  * later in rateMove()).
  */
-Possibility findPlayerMove(list<Possibility> &possibilityList, unsigned int playerBoardAfter[20]) {
-  for (auto iter = possibilityList.begin(); iter != possibilityList.end(); iter++) {
+Possibility findPlayerMove(std::vector<Possibility> &possibilities,
+                           unsigned int playerBoardAfter[20]) {
+  for (auto iter = possibilities.begin(); iter != possibilities.end(); iter++) {
     if (boardMatchesPlayerBoard(iter->resultingState, playerBoardAfter)) {
       Possibility match = *iter;
-      possibilityList.erase(iter);
+      possibilities.erase(iter);
       return match;
     }
   }
@@ -375,36 +388,34 @@ std::string rateMove(GameState gameState, const Piece *firstPiece, const Piece *
                      unsigned int playerBoardAfter[20], int numCandidatesToPlayout,
                      int playoutCount, int playoutLength, const EvalContext *evalContext,
                      const PieceRangeContext pieceRangeContextLookup[3]) {
-  list<Possibility> possibilityListD1;
-  list<Possibility> possibilityListD2;
-  list<Possibility> sortedListD1; // Does not include player move
-  list<Possibility> sortedListD2; // Includes player move
+  std::vector<Possibility> possibilitiesD1;
+  std::vector<Possibility> possibilitiesD2;
   bool hasNb = secondPiece != NULL;
 
   // Search depth 1
-  searchDepth1(gameState, firstPiece, evalContext, possibilityListD1);
+  searchDepth1(gameState, firstPiece, evalContext, possibilitiesD1);
   if (hasNb) {
     searchDepth2(gameState, firstPiece, secondPiece, /* dasCharge= */ -1,
                  /* secondPieceDasCharge= */ -1, evalContext->pieceRangeContext.inputFrameTimeline,
-                 evalContext, possibilityListD2);
+                 evalContext, possibilitiesD2);
   }
-  if (possibilityListD1.size() == 0 || (hasNb && possibilityListD2.size() == 0)) {
+  if (possibilitiesD1.empty() || (hasNb && possibilitiesD2.empty())) {
     return std::string("Error: no legal moves found");
   }
 
-  // Find the player move (and remove it from the D1 possibility list)
-  Possibility playerMove = findPlayerMove(possibilityListD1, playerBoardAfter);
+  // Find the player move (and remove it from the D1 possibility vector)
+  Possibility playerMove = findPlayerMove(possibilitiesD1, playerBoardAfter);
   if (playerMove.firstPlacement.x
       == NONE) { // Check for the particular error value supplied by the function
     return std::string("Error: player move not found");
   }
 
   // Sort the rest of the possibilities
-  partiallySortPossibilityList(possibilityListD1, numCandidatesToPlayout, sortedListD1);
-  if (hasNb) {
-    partiallySortPossibilityList(possibilityListD2, 999999,
-                                 sortedListD2); // Large numCandidatesToPlayout = full sort
-  }
+  const std::vector<const Possibility *> sortedD1 =
+      sortPossibilitiesDesc(possibilitiesD1); // Does not include player move
+  const std::vector<const Possibility *> sortedD2 =
+      hasNb ? sortPossibilitiesDesc(possibilitiesD2)
+            : std::vector<const Possibility *>{}; // Includes player move
 
   float playerValNoAdj = FLOAT_MIN;
   float bestValNoAdj = FLOAT_MIN;
@@ -417,8 +428,8 @@ std::string rateMove(GameState gameState, const Piece *firstPiece, const Piece *
     // If no playouts are requested, add the NNB values based on the already sorted list
     playerValNoAdj = playerMove.evalScoreInclReward;
     bestValNoAdj = playerValNoAdj;
-    if (sortedListD1.size() > 0) {
-      float bestOtherVal = (*sortedListD1.begin()).evalScoreInclReward;
+    if (!sortedD1.empty()) {
+      float bestOtherVal = sortedD1[0]->evalScoreInclReward;
       bestValNoAdj = std::max(playerValNoAdj, bestOtherVal);
     }
 
@@ -426,10 +437,10 @@ std::string rateMove(GameState gameState, const Piece *firstPiece, const Piece *
       // WITH NB
       // Find the best NB values, as well as the best NB value that uses the player move for the
       // first move
-      bestValAfterAdj = (*sortedListD2.begin()).evalScoreInclReward;
-      for (auto possibility : sortedListD2) {
-        if (lockLocationEquals(possibility.firstPlacement, playerMove.firstPlacement)) {
-          playerValAfterAdj = possibility.evalScoreInclReward;
+      bestValAfterAdj = sortedD2[0]->evalScoreInclReward;
+      for (const Possibility *possibilityPtr : sortedD2) {
+        if (lockLocationEquals(possibilityPtr->firstPlacement, playerMove.firstPlacement)) {
+          playerValAfterAdj = possibilityPtr->evalScoreInclReward;
           break;
         }
       }
@@ -445,10 +456,11 @@ std::string rateMove(GameState gameState, const Piece *firstPiece, const Piece *
 
     bestValNoAdj = playerValNoAdj;
     int numPlayedOut = 0;
-    for (auto possibility : sortedListD1) {
+    for (const Possibility *possibilityPtr : sortedD1) {
       if (numPlayedOut >= numCandidatesToPlayout) {
         break;
       }
+      Possibility const &possibility = *possibilityPtr;
       float overallScore =
           possibility.immediateReward
           + getPlayoutScore(possibility.resultingState, playoutCount, playoutLength,
@@ -469,7 +481,8 @@ std::string rateMove(GameState gameState, const Piece *firstPiece, const Piece *
       // whose first placement matches the player's (the sorted list is fully scanned
       // to find them, but scanning without playouts is cheap). The player's move can
       // rank arbitrarily low in this list, so it must never gate early termination.
-      for (auto possibility : sortedListD2) {
+      for (const Possibility *possibilityPtr : sortedD2) {
+        Possibility const &possibility = *possibilityPtr;
         bool inTopSet = numPlayedOut < numCandidatesToPlayout;
         bool isPlayerSibling =
             lockLocationEquals(playerMove.firstPlacement, possibility.firstPlacement);
@@ -553,39 +566,33 @@ std::string getTopMoveList(GameState gameState, const Piece *firstPiece, const P
                            const EvalContext *evalContext,
                            const PieceRangeContext pieceRangeContextLookup[3],
                            bool generateExplanation, unsigned int *playerBoardAfter) {
-  // Keep a running list of the top X possibilities as the move search is happening.
-  // Keep twice as many as we'll eventually need, since some duplicates may be removed before
-  // playouts start
-  int numSorted = pruningBreadth * 2;
-
-  // Get the list of evaluated possibilities
-  list<Possibility> possibilityList;
-  list<Possibility> initiallySortedList;
+  std::vector<Possibility> possibilities;
   list<EngineMoveData> sortedList;
 
   // Search depth either 1 or 2 depending on whether a next piece was provided
   const Piece *lastSeenPiece;
   if (secondPiece == NULL) {
-    searchDepth1(gameState, firstPiece, evalContext, possibilityList, generateExplanation);
+    searchDepth1(gameState, firstPiece, evalContext, possibilities, generateExplanation);
     lastSeenPiece = firstPiece;
   } else {
     searchDepth2(gameState, firstPiece, secondPiece, /* dasCharge= */ -1,
                  /* secondPieceDasCharge= */ -1, evalContext->pieceRangeContext.inputFrameTimeline,
-                 evalContext, possibilityList, generateExplanation);
+                 evalContext, possibilities, generateExplanation);
     lastSeenPiece = secondPiece;
   }
 
-  if (possibilityList.size() == 0) {
+  if (possibilities.empty()) {
     return "No legal moves";
   }
-  partiallySortPossibilityList(possibilityList, numSorted, initiallySortedList);
+  const std::vector<const Possibility *> initiallySorted = sortPossibilitiesDesc(possibilities);
 
   // Perform playouts on the promising possibilities
   int numAdded = 0;
-  for (Possibility const &possibility : initiallySortedList) {
+  for (const Possibility *possibilityPtr : initiallySorted) {
     if (numAdded >= pruningBreadth) {
       break;
     }
+    Possibility const &possibility = *possibilityPtr;
     // printf("Doing playout for: %s %s\n", encodeLockPosition(possibility.firstPlacement).c_str(),
     // encodeLockPosition(possibility.secondPlacement).c_str());
     if (playoutAndInsert(possibility, playoutCount, playoutLength, pieceRangeContextLookup,
@@ -603,22 +610,22 @@ std::string getTopMoveList(GameState gameState, const Piece *firstPiece, const P
     if (secondPiece == NULL) {
       // Depth-1: match the resulting board directly.
       foundPlayer =
-          findPossibilityByPlayerBoard(possibilityList, playerBoardAfter, playerPossibility);
+          findPossibilityByPlayerBoard(possibilities, playerBoardAfter, playerPossibility);
     } else {
       // Depth-2: secondBoard only describes the board after the *first* piece.
       // First resolve the player's first placement via a depth-1 search, then pick
       // the best depth-2 continuation sharing that first placement.
-      list<Possibility> depth1List;
-      searchDepth1(gameState, firstPiece, evalContext, depth1List, generateExplanation);
+      std::vector<Possibility> depth1Possibilities;
+      searchDepth1(gameState, firstPiece, evalContext, depth1Possibilities, generateExplanation);
       Possibility depth1PlayerMove = {};
       LockLocation playerFirstPlacement = NULL_LOCK_LOCATION;
-      if (findPossibilityByPlayerBoard(depth1List, playerBoardAfter, depth1PlayerMove)) {
+      if (findPossibilityByPlayerBoard(depth1Possibilities, playerBoardAfter, depth1PlayerMove)) {
         playerFirstPlacement = depth1PlayerMove.firstPlacement;
       }
       if (playerFirstPlacement.x != NONE) {
         bool bestUnset = true;
         float bestEval = FLOAT_MIN;
-        for (auto const &possibility : possibilityList) {
+        for (auto const &possibility : possibilities) {
           if (lockLocationEquals(possibility.firstPlacement, playerFirstPlacement)) {
             if (bestUnset || possibility.evalScoreInclReward > bestEval) {
               bestUnset = false;
@@ -653,43 +660,16 @@ std::string getTopMoveList(GameState gameState, const Piece *firstPiece, const P
   return formatEngineMoveList(sortedList, firstPiece, secondPiece);
 }
 
-/** Calculates the valuation of every possible terminal position for a given piece on a given board,
- * and stores it in a map.
- * @param pruningBreadth - How many possibilities to evaluate via a full set of playouts, as opposed
- * to just the eval function.
- * @param dasCharge - First piece's incoming DAS charge: -1 = tap mode, 0..16 = DAS mode (see
- * searchDepth2). Mutually exclusive with secondPieceDasCharge (searchDepth2 errors out if both are
- * >= 0).
- * @param secondPieceDasCharge - DAS bucket mode: forces the second piece's starting charge (the
- * bucket hypothesis) instead of inheriting the first placement's dasChargeAfter; the first piece is
- * then searched from DAS_CHARGE_MAX. -1 = not in bucket mode.
- * @param dasInputFrameTimeline - The player's real input frame timeline, consumed by the DAS move
- * search in DAS mode.
- */
-unordered_map<string, float>
-getLockValueLookup(GameState gameState, const Piece *firstPiece, const Piece *secondPiece,
-                   int pruningBreadth, int playoutCount, int playoutLength, int dasCharge,
-                   int secondPieceDasCharge, char const *dasInputFrameTimeline,
-                   const EvalContext *evalContext,
-                   const PieceRangeContext pieceRangeContextLookup[3]) {
+static unordered_map<string, float>
+getLockValueLookupFromPossibilities(const std::vector<Possibility> &possibilities,
+                                    int pruningBreadth, int playoutCount, int playoutLength,
+                                    const Piece *secondPiece, const EvalContext *evalContext,
+                                    const PieceRangeContext pieceRangeContextLookup[3]) {
   unordered_map<string, float> lockValueMap;
-  unordered_map<string, int> lockValueRepeatMap;
-
-  // Keep a running list of the top X possibilities as the move search is happening.
-  // Keep twice as many as we'll eventually need, since some duplicates may be removed before
-  // playouts start
-  int numSorted = 99999;
-
-  // Get the list of evaluated possibilities
-  list<Possibility> possibilityList;
-  list<Possibility> sortedList;
-  searchDepth2(gameState, firstPiece, secondPiece, dasCharge, secondPieceDasCharge,
-               dasInputFrameTimeline, evalContext, possibilityList);
-  partiallySortPossibilityList(possibilityList, numSorted, sortedList);
 
   // If no playouts, just use the eval
   if (playoutCount * playoutLength == 0) {
-    for (Possibility const &possibility : sortedList) {
+    for (Possibility const &possibility : possibilities) {
       string lockPosEncoded = encodeLockPosition(possibility.firstPlacement);
       float overallScore = possibility.evalScoreInclReward;
       if (lockValueMap.count(lockPosEncoded) == 0 || overallScore > lockValueMap[lockPosEncoded]) {
@@ -697,13 +677,19 @@ getLockValueLookup(GameState gameState, const Piece *firstPiece, const Piece *se
       }
     }
   } else {
+    unordered_map<string, int> lockValueRepeatMap;
+    int numSorted = 99999;
+
+    const std::vector<const Possibility *> sortedPtrs = sortPossibilitiesDesc(possibilities);
+
     // Perform playouts on the promising possibilities
     int i = 0;
     int numPlayedOut = 0;
     // The repeat cap is a fraction of the breadth, but a cap of 0 would disqualify every
     // possibility from playouts entirely (leaving the whole map at the deathCoef sentinel),
     // so small breadths always allow at least one pair per lock position.
-    for (Possibility const &possibility : sortedList) {
+    for (const Possibility *possibilityPtr : sortedPtrs) {
+      Possibility const &possibility = *possibilityPtr;
       string lockPosEncoded = encodeLockPosition(possibility.firstPlacement);
       // Cap the number of times a lock position can be repeated (despite differing second
       // placements)
@@ -748,6 +734,31 @@ getLockValueLookup(GameState gameState, const Piece *firstPiece, const Piece *se
   return lockValueMap;
 }
 
+/** Calculates the valuation of every possible terminal position for a given piece on a given board,
+ * and stores it in a map.
+ * @param dasCharge - First piece's incoming DAS charge: -1 = tap mode, 0..16 = DAS mode (see
+ * searchDepth2). Mutually exclusive with secondPieceDasCharge (searchDepth2 errors out if both are
+ * >= 0).
+ * @param secondPieceDasCharge - DAS bucket mode: forces the second piece's starting charge (the
+ * bucket hypothesis) instead of inheriting the first placement's dasChargeAfter; the first piece is
+ * then searched from DAS_CHARGE_MAX. -1 = not in bucket mode.
+ * @param dasInputFrameTimeline - The player's real input frame timeline, consumed by the DAS move
+ * search in DAS mode.
+ */
+unordered_map<string, float>
+getLockValueLookup(GameState gameState, const Piece *firstPiece, const Piece *secondPiece,
+                   int pruningBreadth, int playoutCount, int playoutLength, int dasCharge,
+                   int secondPieceDasCharge, char const *dasInputFrameTimeline,
+                   const EvalContext *evalContext,
+                   const PieceRangeContext pieceRangeContextLookup[3]) {
+  std::vector<Possibility> possibilities;
+  searchDepth2(gameState, firstPiece, secondPiece, dasCharge, secondPieceDasCharge,
+               dasInputFrameTimeline, evalContext, possibilities);
+  return getLockValueLookupFromPossibilities(possibilities, pruningBreadth, playoutCount,
+                                             playoutLength, secondPiece, evalContext,
+                                             pieceRangeContextLookup);
+}
+
 std::string encodeMapToJSON(unordered_map<string, float> map) {
   // Encode lookup to JSON
   std::string mapEncoded = std::string("{");
@@ -772,8 +783,7 @@ std::string encodeMapToJSON(unordered_map<string, float> map) {
 
 /** Calculates the valuation of every possible terminal position for a given piece on a given board,
  * and returns it as a map (see getLockValueLookupEncoded, its JSON-encoding wrapper).
- * @param pruningBreadth - How many possibilities to evaluate via a full set of playouts, as opposed
- * to just the eval function. -1 = tournament mode: playoutCount is interpreted as the TOTAL playout
+ * @param pruningBreadth - -1 = tournament mode: playoutCount is interpreted as the TOTAL playout
  * budget instead.
  *
  * Thread-safety contract: precompute calls this once per next piece on concurrent threads. It must
@@ -781,22 +791,52 @@ std::string encodeMapToJSON(unordered_map<string, float> map) {
  * precompute_tsan`; see AGENTS.md's rule against new non-const file-scope statics and
  * thread-unsafe libc calls on this path).
  */
-unordered_map<string, float> getLockValueLookupMapped(GameState gameState, const Piece *firstPiece,
-                                                      const Piece *secondPiece, int pruningBreadth,
-                                                      int playoutCount, int playoutLength,
-                                                      const EvalContext *evalContext,
-                                                      const PieceRangeContext pieceRangeContextLookup[3]) {
+unordered_map<string, float>
+getLockValueLookupMapped(GameState gameState, const Piece *firstPiece, const Piece *secondPiece,
+                         int pruningBreadth, int playoutCount, int playoutLength,
+                         const EvalContext *evalContext,
+                         const PieceRangeContext pieceRangeContextLookup[3]) {
+  const FirstMoveSearchResult firstMoves =
+      buildFirstMoveBranches(gameState, firstPiece, /* firstPieceDasCharge= */ -1,
+                             evalContext->pieceRangeContext.inputFrameTimeline, evalContext);
+  return getLockValueLookupMappedWithFirstMoves(firstMoves, secondPiece, pruningBreadth,
+                                                playoutCount, playoutLength, evalContext,
+                                                pieceRangeContextLookup);
+}
+
+static unordered_map<string, float>
+dispatchLookupFromPossibilities(const std::vector<Possibility> &possibilities,
+                                const Piece *secondPiece, int pruningBreadth, int playoutCount,
+                                int playoutLength, const EvalContext *evalContext,
+                                const PieceRangeContext pieceRangeContextLookup[3]) {
   if (pruningBreadth == -1) {
-    return getLockValueLookupTournament(
-        gameState, firstPiece, secondPiece, pruningBreadth, playoutCount, playoutLength,
-        /* dasCharge= */ -1, /* secondPieceDasCharge= */ -1,
-        evalContext->pieceRangeContext.inputFrameTimeline, evalContext, pieceRangeContextLookup);
+    return getLockValueLookupTournamentFromPossibilities(possibilities, secondPiece, pruningBreadth,
+                                                         playoutCount, playoutLength, evalContext,
+                                                         pieceRangeContextLookup);
   }
-  return getLockValueLookup(gameState, firstPiece, secondPiece, pruningBreadth, playoutCount,
-                            playoutLength,
-                            /* dasCharge= */ -1, /* secondPieceDasCharge= */ -1,
-                            evalContext->pieceRangeContext.inputFrameTimeline, evalContext,
-                            pieceRangeContextLookup);
+  return getLockValueLookupFromPossibilities(possibilities, pruningBreadth, playoutCount,
+                                             playoutLength, secondPiece, evalContext,
+                                             pieceRangeContextLookup);
+}
+
+/** Variant of getLockValueLookupMapped using precomputed tap-mode firstMoves shared read-only
+ * across concurrent per-next-piece precompute threads (see thread-safety contract above).
+ */
+unordered_map<string, float> getLockValueLookupMappedWithFirstMoves(
+    const FirstMoveSearchResult &firstMoves, const Piece *secondPiece, int pruningBreadth,
+    int playoutCount, int playoutLength, const EvalContext *evalContext,
+    const PieceRangeContext pieceRangeContextLookup[3]) {
+  if (firstMoves.useDas) {
+    fprintf(stderr,
+            "Error: getLockValueLookupMappedWithFirstMoves expects tap-mode first moves.\n");
+    return {};
+  }
+  std::vector<Possibility> possibilities;
+  searchDepth2FromFirstMoves(firstMoves, secondPiece, /* secondPieceDasCharge= */ -1,
+                             evalContext->pieceRangeContext.inputFrameTimeline, evalContext,
+                             possibilities);
+  return dispatchLookupFromPossibilities(possibilities, secondPiece, pruningBreadth, playoutCount,
+                                         playoutLength, evalContext, pieceRangeContextLookup);
 }
 
 std::string getLockValueLookupEncoded(GameState gameState, const Piece *firstPiece,
@@ -804,36 +844,9 @@ std::string getLockValueLookupEncoded(GameState gameState, const Piece *firstPie
                                       int playoutCount, int playoutLength,
                                       const EvalContext *evalContext,
                                       const PieceRangeContext pieceRangeContextLookup[3]) {
-  return encodeMapToJSON(getLockValueLookupMapped(gameState, firstPiece, secondPiece, pruningBreadth,
-                                                  playoutCount, playoutLength, evalContext,
-                                                  pieceRangeContextLookup));
-}
-
-/**
- * Runs one lock value lookup for a DAS bucket, in either the tournament or legacy style
- * depending on pruningBreadth (see getLockValueLookupDas). The bucket prescribes the
- * second piece's starting charge; searchDepth2 then searches the first piece from a full
- * charge (DAS_CHARGE_MAX), so every bucket/deep lookup enumerates the same lock cells.
- *
- * These method calls pass in values for the SECOND piece DAS charge since we're concerned
- * with how bad the DAS can be *after* the first piece without sacrificing eval quality.
- */
-static unordered_map<string, float>
-getLockValueLookupForDasBucket(GameState gameState, const Piece *firstPiece,
-                               const Piece *secondPiece, int pruningBreadth, int playoutCount,
-                               int playoutLength, int secondPieceDasCharge,
-                               char const *dasInputFrameTimeline, const EvalContext *evalContext,
-                               const PieceRangeContext pieceRangeContextLookup[3]) {
-  if (pruningBreadth == -1) {
-    return getLockValueLookupTournament(
-        gameState, firstPiece, secondPiece, pruningBreadth, playoutCount, playoutLength,
-        /* dasCharge= */ -1, secondPieceDasCharge, dasInputFrameTimeline, evalContext,
-        pieceRangeContextLookup);
-  }
-  return getLockValueLookup(gameState, firstPiece, secondPiece, pruningBreadth, playoutCount,
-                            playoutLength,
-                            /* dasCharge= */ -1, secondPieceDasCharge, dasInputFrameTimeline,
-                            evalContext, pieceRangeContextLookup);
+  return encodeMapToJSON(getLockValueLookupMapped(gameState, firstPiece, secondPiece,
+                                                  pruningBreadth, playoutCount, playoutLength,
+                                                  evalContext, pieceRangeContextLookup));
 }
 
 /** Runs the full DAS-penalty lookup for one next piece: three low-depth bucket lookups (full /
@@ -851,6 +864,26 @@ DasLockValueMaps getLockValueLookupDasMaps(GameState gameState, const Piece *fir
                                            char const *dasInputFrameTimeline,
                                            const EvalContext *evalContext,
                                            const PieceRangeContext pieceRangeContextLookup[3]) {
+  const FirstMoveSearchResult firstMoves = buildFirstMoveBranches(
+      gameState, firstPiece, DAS_CHARGE_MAX, dasInputFrameTimeline, evalContext);
+  return getLockValueLookupDasMapsWithFirstMoves(firstMoves, secondPiece, pruningBreadth,
+                                                 playoutCount, playoutLength, dasInputFrameTimeline,
+                                                 evalContext, pieceRangeContextLookup);
+}
+
+/** Variant of getLockValueLookupDasMaps using precomputed full-charge firstMoves shared read-only
+ * across concurrent per-next-piece precompute threads (see thread-safety contract above), reusing
+ * the full-charge (15) possibility vector for the deep playouts when playouts are enabled.
+ */
+DasLockValueMaps getLockValueLookupDasMapsWithFirstMoves(
+    const FirstMoveSearchResult &firstMoves, const Piece *secondPiece, int pruningBreadth,
+    int playoutCount, int playoutLength, char const *dasInputFrameTimeline,
+    const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3]) {
+  if (!firstMoves.useDas) {
+    fprintf(stderr,
+            "Error: getLockValueLookupDasMapsWithFirstMoves expects DAS-mode first moves.\n");
+    return {};
+  }
   DasLockValueMaps maps;
   // First, do multiple shallow searches at low depth to check if finishing the first placement with
   // partial or no DAS charge sabotages the next piece's placements. E.g. if the next piece will
@@ -862,27 +895,33 @@ DasLockValueMaps getLockValueLookupDasMaps(GameState gameState, const Piece *fir
   // These method calls pass in values for the SECOND piece DAS charge since we're concerned with
   // how bad the DAS can be *after* the first piece without sacrificing eval quality.
   // Full charge baseline that the penalties are measured against. (Low-depth to be a fair
-  // comparison).
-  maps.lockValue = getLockValueLookupForDasBucket(
-      gameState, firstPiece, secondPiece, pruningBreadth, /* playoutCount= */ 0,
-      /* playoutLength= */ 0,
-      /* secondPieceDasCharge= */ 15, dasInputFrameTimeline, evalContext, pieceRangeContextLookup);
+  // comparison). Also reused below for the deep playouts when enabled.
+  std::vector<Possibility> fullChargePossibilities;
+  searchDepth2FromFirstMoves(firstMoves, secondPiece, /* secondPieceDasCharge= */ 15,
+                             dasInputFrameTimeline, evalContext, fullChargePossibilities);
+  maps.lockValue = dispatchLookupFromPossibilities(
+      fullChargePossibilities, secondPiece, pruningBreadth, /* playoutCount= */ 0,
+      /* playoutLength= */ 0, evalContext, pieceRangeContextLookup);
 
   // Partial charge: 10 is the post-shift charge of a standard DAS shift (5 held
   // frames away from the next shift).
-  maps.partialPenalty = getLockValueLookupForDasBucket(
-      gameState, firstPiece, secondPiece, pruningBreadth, /* playoutCount= */ 0,
-      /* playoutLength= */ 0,
-      /* secondPieceDasCharge= */ 10, dasInputFrameTimeline, evalContext, pieceRangeContextLookup);
+  std::vector<Possibility> bucketPossibilities;
+  searchDepth2FromFirstMoves(firstMoves, secondPiece, /* secondPieceDasCharge= */ 10,
+                             dasInputFrameTimeline, evalContext, bucketPossibilities);
+  maps.partialPenalty = dispatchLookupFromPossibilities(
+      bucketPossibilities, secondPiece, pruningBreadth, /* playoutCount= */ 0,
+      /* playoutLength= */ 0, evalContext, pieceRangeContextLookup);
 
   // Minimum charge: 5 is the worst useful charge, since even with 0 charge you can
   // just first-frame tap without holding during ARE, and it ends up being exactly equivalent:
   // Charge < 5 : shift->0  1  2  3   4  5  6  7  8  9    10
   // Charge = 5:   6       7  8  9  10 11 12 13 14 15 shift->10
-  maps.minPenalty = getLockValueLookupForDasBucket(
-      gameState, firstPiece, secondPiece, pruningBreadth, /* playoutCount= */ 0,
-      /* playoutLength= */ 0,
-      /* secondPieceDasCharge= */ 5, dasInputFrameTimeline, evalContext, pieceRangeContextLookup);
+  bucketPossibilities.clear();
+  searchDepth2FromFirstMoves(firstMoves, secondPiece, /* secondPieceDasCharge= */ 5,
+                             dasInputFrameTimeline, evalContext, bucketPossibilities);
+  maps.minPenalty = dispatchLookupFromPossibilities(
+      bucketPossibilities, secondPiece, pruningBreadth, /* playoutCount= */ 0,
+      /* playoutLength= */ 0, evalContext, pieceRangeContextLookup);
 
   // Replace the raw value maps with maps of the penalty relative to the best placement (as negative
   // numbers). NB: all four lookups share one first-piece search, so their key sets match; the guard
@@ -909,9 +948,11 @@ DasLockValueMaps getLockValueLookupDasMaps(GameState gameState, const Piece *fir
   }
 
   // Then, do one deep search to see what the actual best move is, irrespective of DAS.
-  maps.lockValue = getLockValueLookupForDasBucket(
-      gameState, firstPiece, secondPiece, pruningBreadth, playoutCount, playoutLength,
-      /* secondPieceDasCharge= */ 15, dasInputFrameTimeline, evalContext, pieceRangeContextLookup);
+  if (playoutCount * playoutLength != 0) {
+    maps.lockValue = dispatchLookupFromPossibilities(fullChargePossibilities, secondPiece,
+                                                     pruningBreadth, playoutCount, playoutLength,
+                                                     evalContext, pieceRangeContextLookup);
+  }
 
   return maps;
 }

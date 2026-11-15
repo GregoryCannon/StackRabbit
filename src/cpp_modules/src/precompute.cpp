@@ -383,25 +383,31 @@ PrecomputeState preparePrecomputeState(GameState gameState, const Piece *curPiec
   // The playouts inside one lookup stay serial, so the slowest single lookup
   // floors the pipeline's wall time — relevant when tuning the playout config.
   state.useDAS = dasCharge != -1;
+  // Precompute the first piece's placements and resulting boards once so all seven next-piece
+  // threads (and every DAS charge bucket) share them read-only.
+  const FirstMoveSearchResult firstMoves = buildFirstMoveBranches(
+      gameState, curPiece, state.useDAS ? DAS_CHARGE_MAX : -1,
+      state.useDAS ? inputFrameTimeline : evalContext->pieceRangeContext.inputFrameTimeline,
+      evalContext);
   std::exception_ptr lookupErrors[7] = {};
   std::thread lookupThreads[7];
   for (int i = 0; i < 7; i++) {
-    lookupThreads[i] = std::thread([i, &state, &gameState, curPiece, inputFrameTimeline,
-                                    pruningBreadth, playoutCount, playoutLength, evalContext,
+    lookupThreads[i] = std::thread([i, &state, &firstMoves, inputFrameTimeline, pruningBreadth,
+                                    playoutCount, playoutLength, evalContext,
                                     &pieceRangeContextLookup, &lookupErrors]() {
       try {
         const Piece *nextPiece = &PIECE_LIST[i];
         if (state.useDAS) {
-          const DasLockValueMaps maps = getLockValueLookupDasMaps(
-              gameState, curPiece, nextPiece, pruningBreadth, playoutCount, playoutLength,
+          const DasLockValueMaps maps = getLockValueLookupDasMapsWithFirstMoves(
+              firstMoves, nextPiece, pruningBreadth, playoutCount, playoutLength,
               inputFrameTimeline, evalContext, pieceRangeContextLookup);
           roundCopyMap(maps.partialPenalty, state.partialPenalties[i]);
           roundCopyMap(maps.minPenalty, state.minPenalties[i]);
           roundCopyMap(maps.lockValue, state.lockValues[i]);
         } else {
-          roundCopyMap(getLockValueLookupMapped(gameState, curPiece, nextPiece, pruningBreadth,
-                                                playoutCount, playoutLength, evalContext,
-                                                pieceRangeContextLookup),
+          roundCopyMap(getLockValueLookupMappedWithFirstMoves(firstMoves, nextPiece, pruningBreadth,
+                                                              playoutCount, playoutLength,
+                                                              evalContext, pieceRangeContextLookup),
                        state.lockValues[i]);
         }
       } catch (...) {
