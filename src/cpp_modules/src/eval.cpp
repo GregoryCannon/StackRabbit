@@ -1,13 +1,9 @@
 #include "eval.hpp"
 #include "../data/ranks_base_7.hpp"
-#include "../data/ranks_output.hpp"
-#include "eval_context.hpp"
-#include "move_result.hpp"
 #include "utils.hpp"
 #include <cstdio>
 #include <math.h>
 #include <string>
-#include <vector>
 using namespace std;
 
 /**

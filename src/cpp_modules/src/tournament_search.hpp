@@ -1,9 +1,7 @@
 #ifndef TOURNAMENT_SEARCH
 #define TOURNAMENT_SEARCH
 
-#include "config.hpp"
 #include "types.hpp"
-#include "utils.hpp"
 #include <unordered_map>
 #include <vector>
 

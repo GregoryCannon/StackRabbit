@@ -18,7 +18,6 @@
 #include "../cpp_modules/src/main.cpp"
 #include "benchmark_common.hpp"
 #include <fstream>
-#include <iostream>
 #include <random>
 #include <sstream>
 #include <string>

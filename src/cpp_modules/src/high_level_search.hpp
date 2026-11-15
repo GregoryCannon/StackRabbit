@@ -1,9 +1,7 @@
 #ifndef HIGH_LEVEL_SEARCH
 #define HIGH_LEVEL_SEARCH
 
-#include "config.hpp"
 #include "types.hpp"
-#include "utils.hpp"
 #include <unordered_map>
 #include <vector>
 

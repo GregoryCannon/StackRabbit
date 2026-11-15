@@ -2,7 +2,6 @@
 #define MOVE_SEARCH
 
 #include "types.hpp"
-#include "utils.hpp"
 #include <vector>
 
 int fastMoveSearch(const GameState &gameState, const Piece *piece, char const *inputFrameTimeline,

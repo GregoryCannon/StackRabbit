@@ -28,7 +28,6 @@
 // adjTimeSimState snapshot slot. NO sorting here -- the reaction-time section
 // is compared in result order (the result-to-snapshot mapping is part of the
 // golden).
-#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>

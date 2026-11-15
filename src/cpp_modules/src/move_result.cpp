@@ -1,5 +1,4 @@
 #include "move_result.hpp"
-#include <stdexcept>
 #include <utility>
 
 /**

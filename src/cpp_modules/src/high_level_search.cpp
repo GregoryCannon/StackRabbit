@@ -1,12 +1,9 @@
 #include "high_level_search.hpp"
 #include "full_move_search.hpp"
 #include "formatting.hpp"
-#include "params.hpp"
 #include "tournament_search.hpp"
 #include <algorithm>
-#include <limits>
 #include <list>
-#include <math.h>
 #include <string>
 #include <unordered_map>
 using namespace std;

@@ -2,7 +2,6 @@
 #define MOVE_RESULT
 
 #include "types.hpp"
-#include "utils.hpp"
 
 std::pair<int, float> getNewSurfaceAndNumNewHoles(const int surfaceArray[10], unsigned int board[20],
                                                   const LockPlacement &lockPlacement,

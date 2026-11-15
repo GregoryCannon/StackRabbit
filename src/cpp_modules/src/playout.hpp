@@ -2,8 +2,6 @@
 #define PLAYOUT
 
 #include "types.hpp"
-#include "utils.hpp"
-#include <list>
 #include <vector>
 
 LockPlacement pickLockPlacement(GameState gameState, const EvalContext *evalContext,

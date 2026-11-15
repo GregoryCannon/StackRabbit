@@ -17,14 +17,10 @@
 
 #include "../cpp_modules/src/main.cpp"
 #include "benchmark_common.hpp"
-#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <fstream>
-#include <iomanip>
-#include <iostream>
 #include <numeric>
-#include <sstream>
 #include <thread>
 
 const char *ORACLE_PATH = "src/benchmark/data/oracle_positions.jsonl";

@@ -11,7 +11,6 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
-#include <cstring>
 #include <numeric>
 #include <string>
 #include <vector>

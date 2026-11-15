@@ -3,7 +3,6 @@
 
 #include "types.hpp"
 #include <string>
-#include <vector>
 
 inline float getLineClearFactor(int numLinesCleared, const FastEvalWeights &weights, int shouldRewardLineClears) {
   return numLinesCleared == 4

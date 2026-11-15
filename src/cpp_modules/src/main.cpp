@@ -1,10 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdlib.h> /* srand, rand */
-#include <time.h>   /* time */
 #include <string.h>
 
-#include "params.hpp"
 // I have to include the C++ files here due to a complication of node-gyp. Consider this the
 // equivalent of listing all the C++ sources in the makefile (Node-gyp seems to only work with 1
 // source rn).

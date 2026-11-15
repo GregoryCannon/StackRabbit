@@ -1,7 +1,7 @@
 #include "eval_context.hpp"
 #include "config.hpp"
+#include "params.hpp"
 #include <algorithm>
-#include <math.h>
 
 int hasHoleBlockingTetrisReady(unsigned int board[20], int col10Height) {
   if (col10Height > 16) {
