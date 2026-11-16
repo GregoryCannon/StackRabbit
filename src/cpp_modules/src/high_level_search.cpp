@@ -318,7 +318,8 @@ LockLocation playOneMove(GameState gameState, const Piece *firstPiece, const Pie
         possibility.immediateReward
         + getPlayoutScore(possibility.resultingState, playoutCount, playoutLength,
                           pieceRangeContextLookup, lastSeenPiece->index,
-                          evalContext->aggressionLevel, /* playoutDataList */ NULL);
+                          evalContext->aggressionLevel, evalContext->aiMode,
+                          /* playoutDataList */ NULL);
 
     maybePrint("Possibility %d %d has overallscore %f %f\n",
                possibility.firstPlacement.rotationIndex, possibility.firstPlacement.x - 3,
@@ -462,7 +463,8 @@ std::string rateMove(GameState gameState, const Piece *firstPiece, const Piece *
     playerValNoAdj = playerMove.immediateReward
                      + getPlayoutScore(playerMove.resultingState, playoutCount, playoutLength,
                                        pieceRangeContextLookup, firstPiece->index,
-                                       evalContext->aggressionLevel, /* playoutDataList */ NULL);
+                                       evalContext->aggressionLevel, evalContext->aiMode,
+                                       /* playoutDataList */ NULL);
 
     bestValNoAdj = playerValNoAdj;
     int numPlayedOut = 0;
@@ -475,7 +477,8 @@ std::string rateMove(GameState gameState, const Piece *firstPiece, const Piece *
           possibility.immediateReward
           + getPlayoutScore(possibility.resultingState, playoutCount, playoutLength,
                             pieceRangeContextLookup, firstPiece->index,
-                            evalContext->aggressionLevel, /* playoutDataList */ NULL);
+                            evalContext->aggressionLevel, evalContext->aiMode,
+                            /* playoutDataList */ NULL);
       if (overallScore > bestValNoAdj) {
         bestValNoAdj = overallScore;
       }
@@ -501,7 +504,8 @@ std::string rateMove(GameState gameState, const Piece *firstPiece, const Piece *
               possibility.immediateReward
               + getPlayoutScore(possibility.resultingState, playoutCount, playoutLength,
                                 pieceRangeContextLookup, secondPiece->index,
-                                evalContext->aggressionLevel, /* playoutDataList */ NULL);
+                                evalContext->aggressionLevel, evalContext->aiMode,
+                                /* playoutDataList */ NULL);
           if (overallScore > bestValAfterAdj) {
             bestValAfterAdj = overallScore;
           }
@@ -524,13 +528,14 @@ std::string rateMove(GameState gameState, const Piece *firstPiece, const Piece *
  */
 bool playoutAndInsert(Possibility const &possibility, int playoutCount, int playoutLength,
                       const PieceRangeContext pieceRangeContextLookup[3], int lastSeenPieceIndex,
-                      AggressionLevel aggressionLevel, bool generateExplanation, bool isPlayerMove,
+                      AggressionLevel aggressionLevel, AiMode originalAiMode,
+                      bool generateExplanation, bool isPlayerMove,
                       OUT list<EngineMoveData> &sortedList) {
   vector<PlayoutData> playoutDataList = {};
   float overallScore = possibility.immediateReward
                        + getPlayoutScore(possibility.resultingState, playoutCount, playoutLength,
                                          pieceRangeContextLookup, lastSeenPieceIndex,
-                                         aggressionLevel, &playoutDataList);
+                                         aggressionLevel, originalAiMode, &playoutDataList);
 
   // If this position has no legal playouts, ignore it
   if (playoutDataList.size() == 0) {
@@ -606,8 +611,8 @@ std::string getTopMoveList(GameState gameState, const Piece *firstPiece, const P
     // printf("Doing playout for: %s %s\n", encodeLockPosition(possibility.firstPlacement).c_str(),
     // encodeLockPosition(possibility.secondPlacement).c_str());
     if (playoutAndInsert(possibility, playoutCount, playoutLength, pieceRangeContextLookup,
-                         lastSeenPiece->index, evalContext->aggressionLevel, generateExplanation,
-                         /* isPlayerMove= */ false, sortedList)) {
+                         lastSeenPiece->index, evalContext->aggressionLevel, evalContext->aiMode,
+                         generateExplanation, /* isPlayerMove= */ false, sortedList)) {
       numAdded++;
     }
   }
@@ -661,8 +666,8 @@ std::string getTopMoveList(GameState gameState, const Piece *firstPiece, const P
       // If the player move wasn't already played out, do the playouts now
       if (!playerMoveInTopN) {
         playoutAndInsert(playerPossibility, playoutCount, playoutLength, pieceRangeContextLookup,
-                         lastSeenPiece->index, evalContext->aggressionLevel, generateExplanation,
-                         /* isPlayerMove= */ true, sortedList);
+                         lastSeenPiece->index, evalContext->aggressionLevel, evalContext->aiMode,
+                         generateExplanation, /* isPlayerMove= */ true, sortedList);
       }
     }
   }
@@ -747,7 +752,8 @@ getLockValueLookupFromPossibilities(const std::vector<Possibility> &possibilitie
                ? possibility.immediateReward
                      + getPlayoutScore(possibility.resultingState, playoutCount, playoutLength,
                                        pieceRangeContextLookup, secondPiece->index,
-                                       evalContext->aggressionLevel, /* playoutDataList */ NULL)
+                                       evalContext->aggressionLevel, evalContext->aiMode,
+                                       /* playoutDataList */ NULL)
                : (SHOULD_PLAY_PERFECT ? 0 : evalContext->weights.deathCoef));
 
       if (lockValueMap.count(lockPosEncoded) == 0 || overallScore > lockValueMap[lockPosEncoded]) {

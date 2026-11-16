@@ -30,13 +30,8 @@ LockPlacement pickLockPlacement(GameState gameState, const EvalContext *evalCont
  */
 float playSequence(GameState gameState, const PieceRangeContext pieceRangeContextLookup[3],
                    const int pieceSequence[SEQUENCE_LENGTH], int playoutLength,
-                   AggressionLevel aggressionLevel, OUT vector<PlayoutData> *playoutDataList) {
-  // Note down the original AI mode to prevent the AI from putting itself in alternate modes to
-  // affect the valuations
-  AiMode originalAiMode = getEvalContext(gameState, pieceRangeContextLookup,
-                                         /* useTestWeights= */ false, aggressionLevel)
-                              .aiMode;
-
+                   AggressionLevel aggressionLevel, AiMode originalAiMode,
+                   OUT vector<PlayoutData> *playoutDataList) {
   PlayoutData newPlayoutData;
   const bool trackPlayouts = playoutDataList != NULL;
 
@@ -69,9 +64,8 @@ float playSequence(GameState gameState, const PieceRangeContext pieceRangeContex
 
     // On the last move, do a final evaluation
     if (i == playoutLength - 1) {
-      GameState nextState = advanceGameState(gameState, bestMove, evalContext);
-
       if (SHOULD_PLAY_PERFECT) {
+        GameState nextState = advanceGameState(gameState, bestMove, evalContext);
         float eval = evalForPerfectPlay(gameState, nextState, bestMove, evalContext);
         if (trackPlayouts) {
           newPlayoutData.totalScore = totalReward + eval;
@@ -81,12 +75,19 @@ float playSequence(GameState gameState, const PieceRangeContext pieceRangeContex
         return eval;
       }
 
-      // In some contexts, override the current aiMode such that the end of a playout is always
-      // compared fairly against other playouts
+      // Override the current aiMode (unless the playout has entered killscreen LINEOUT)
+      // such that the end of a playout is always compared fairly against other playouts.
       EvalContext contextRaw = *evalContext;
-      if (originalAiMode == DIG || originalAiMode == STANDARD) {
+      if (evalContext->aiMode != LINEOUT
+          && (originalAiMode == DIG || originalAiMode == STANDARD
+              || originalAiMode == NEAR_KILLSCREEN || originalAiMode == DIRTY_NEAR_KILLSCREEN)) {
         contextRaw.aiMode = originalAiMode;
+        contextRaw.weights =
+            getWeights(originalAiMode, /* useTestWeights= */ false, aggressionLevel);
+        contextRaw.shouldRewardLineClears =
+            (originalAiMode == LINEOUT || originalAiMode == DIRTY_NEAR_KILLSCREEN);
       }
+      GameState nextState = advanceGameState(gameState, bestMove, &contextRaw);
       float evalScore = fastEval(gameState, nextState, bestMove, &contextRaw);
       if (PLAYOUT_LOGGING_ENABLED) {
         gameState = nextState;
@@ -114,13 +115,16 @@ float playSequence(GameState gameState, const PieceRangeContext pieceRangeContex
         return 0; // 0% chance of continuing perfect
       }
     } else {
+      AiMode rewardMode = evalContext->aiMode == LINEOUT ? LINEOUT : originalAiMode;
       FastEvalWeights rewardWeights =
-          evalContext->aiMode == DIG
+          (rewardMode == DIG || evalContext->aiMode == DIG)
               ? getWeights(STANDARD, /* useTestWeights= */ false, aggressionLevel)
-              : weights; // When the AI is digging, still deduct from the overall value of
-                         // the sequence at standard amounts
-      totalReward += getLineClearFactor(gameState.lines - oldLines, rewardWeights,
-                                        evalContext->shouldRewardLineClears);
+              : getWeights(rewardMode, /* useTestWeights= */ false,
+                           aggressionLevel); // When the AI is digging, still deduct from the
+                                             // overall value of the sequence at standard amounts
+      int shouldRewardClears = (rewardMode == LINEOUT || rewardMode == DIRTY_NEAR_KILLSCREEN);
+      totalReward +=
+          getLineClearFactor(gameState.lines - oldLines, rewardWeights, shouldRewardClears);
       if (PLAYOUT_LOGGING_ENABLED) {
         printBoard(gameState.board);
         printf("Best placement: %c %d, %d\n\n", bestMove.piece->id, bestMove.rotationIndex,
@@ -133,7 +137,8 @@ float playSequence(GameState gameState, const PieceRangeContext pieceRangeContex
 
 float getPlayoutScore(GameState gameState, int playoutCount, int playoutLength,
                       const PieceRangeContext pieceRangeContextLookup[3], int firstPieceIndex,
-                      AggressionLevel aggressionLevel, OUT vector<PlayoutData> *playoutDataList,
+                      AggressionLevel aggressionLevel, AiMode originalAiMode,
+                      OUT vector<PlayoutData> *playoutDataList,
                       OUT vector<float> *outPlayoutScores, int sequenceOffset) {
   // // Don't perform playouts if logging is enabled
   // if (LOGGING_ENABLED) {
@@ -170,8 +175,9 @@ float getPlayoutScore(GameState gameState, int playoutCount, int playoutLength,
                   + (i + sequenceOffset)
                         * SEQUENCE_LENGTH; // Index into the batch for this last-known piece (offset
                                            // rows are skipped);
-    float resultScore = playSequence(gameState, pieceRangeContextLookup, pieceSequence,
-                                     playoutLength, aggressionLevel, playoutDataList);
+    float resultScore =
+        playSequence(gameState, pieceRangeContextLookup, pieceSequence, playoutLength,
+                     aggressionLevel, originalAiMode, playoutDataList);
     playoutScores.push_back(resultScore);
     playoutScore += resultScore;
     if (outPlayoutScores != nullptr) {

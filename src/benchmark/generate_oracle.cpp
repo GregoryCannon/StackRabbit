@@ -124,8 +124,8 @@ void computeOracleForPosition(const BenchmarkPosition &pos, OUT OracleResult &re
   // Round 1: playout every pair
   for (PairWork &w : work) {
     getPlayoutScore(w.possibility->resultingState, ROUND1_PLAYOUTS, ROUND1_LENGTH,
-                    pieceRangeContextLookup, nextPiece->index, SAFE, /* playoutDataList= */ NULL,
-                    &w.round1Scores, /* sequenceOffset= */ 0);
+                    pieceRangeContextLookup, nextPiece->index, SAFE, evalContext->aiMode,
+                    /* playoutDataList= */ NULL, &w.round1Scores, /* sequenceOffset= */ 0);
     float round1Mean = 0;
     float unusedSe;
     pooledStats(w.round1Scores, {}, round1Mean, unusedSe);
@@ -141,8 +141,8 @@ void computeOracleForPosition(const BenchmarkPosition &pos, OUT OracleResult &re
   for (int i = 0; i < numRound3; i++) {
     PairWork &w = work[order[i]];
     getPlayoutScore(w.possibility->resultingState, ROUND3_PLAYOUTS, ROUND1_LENGTH,
-                    pieceRangeContextLookup, nextPiece->index, SAFE, /* playoutDataList= */ NULL,
-                    &w.round3Scores,
+                    pieceRangeContextLookup, nextPiece->index, SAFE, evalContext->aiMode,
+                    /* playoutDataList= */ NULL, &w.round3Scores,
                     /* sequenceOffset= */ ROUND1_PLAYOUTS);
   }
 

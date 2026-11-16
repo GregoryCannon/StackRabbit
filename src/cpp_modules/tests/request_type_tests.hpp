@@ -849,4 +849,197 @@ TEST_CASE("Timed tournament mode (pruningBreadth == -2) supports lookup and prec
   CHECK(tinyMsLookup == evalOnlyLookup);
 }
 
+TEST_CASE("playSequence preserves originalAiMode weights across mid-playout mode transitions") {
+  const char *dasTimeline = getDasEquivalentInputTimeline("X.....");
+  const PieceRangeContext contexts[4] = {
+      getPieceRangeContext(dasTimeline, 1, /* gravityDoubled= */ true),
+      getPieceRangeContext(dasTimeline, 1, /* gravityDoubled= */ false),
+      getPieceRangeContext(dasTimeline, 2, /* gravityDoubled= */ false),
+      getPieceRangeContext(dasTimeline, 3, /* gravityDoubled= */ false),
+  };
+
+  SUBCASE("STANDARD playout that creates a hole mid-playout still uses STANDARD weights at leaf") {
+    // Sawtooth surface [2, 1, 2, 1, 2, 1, 2, 1, 9, 0] with 0 existing holes -> STANDARD mode.
+    // Every placement of an O piece on this surface overhangs a step and creates a true hole,
+    // flipping the state into DIG mode on ply 1.
+    GameState g = {};
+    g.level = 18;
+    g.lines = 0;
+    const int heights[10] = {2, 1, 2, 1, 2, 1, 2, 1, 9, 0};
+    for (int col = 0; col < 10; col++) {
+      for (int r = 20 - heights[col]; r < 20; r++) {
+        g.board[r] |= (1U << (9 - col));
+      }
+    }
+    getSurfaceArray(g.board, g.surfaceArray);
+    std::pair<int, float> holes = updateSurfaceAndHoles(g.surfaceArray, g.board, 9, false);
+    g.numTrueHoles = holes.first;
+    g.numPartialHoles = holes.second;
+    REQUIRE(g.numTrueHoles == 0);
+
+    const EvalContext initialCtx = getEvalContext(g, contexts, /* useTestWeights= */ false, SAFE);
+    REQUIRE(initialCtx.aiMode == STANDARD);
+
+    int seq[SEQUENCE_LENGTH] = {};
+    seq[0] = IDX_O;
+    seq[1] = IDX_O;
+
+    // Trace the 2-ply playout manually to verify ply 0 enters DIG and compute the true STANDARD leaf eval.
+    std::vector<LockPlacement> locks0;
+    fastMoveSearch(g, &PIECE_LIST[seq[0]], initialCtx.pieceRangeContext.inputFrameTimeline, locks0);
+    REQUIRE(!locks0.empty());
+    LockPlacement best0 = pickLockPlacement(g, &initialCtx, locks0);
+    GameState after0 = advanceGameState(g, best0, &initialCtx);
+    REQUIRE(after0.numTrueHoles >= 1);
+    float reward0 =
+        getLineClearFactor(after0.lines - g.lines, initialCtx.weights, initialCtx.shouldRewardLineClears);
+
+    const EvalContext ply1Ctx = getEvalContext(after0, contexts, /* useTestWeights= */ false, SAFE);
+    REQUIRE(ply1Ctx.aiMode == DIG);
+    std::vector<LockPlacement> locks1;
+    fastMoveSearch(after0, &PIECE_LIST[seq[1]], ply1Ctx.pieceRangeContext.inputFrameTimeline, locks1);
+    REQUIRE(!locks1.empty());
+    LockPlacement best1 = pickLockPlacement(after0, &ply1Ctx, locks1);
+
+    EvalContext expectedLeafCtx = ply1Ctx;
+    expectedLeafCtx.aiMode = STANDARD;
+    expectedLeafCtx.weights = getWeights(STANDARD, /* useTestWeights= */ false, SAFE);
+    expectedLeafCtx.shouldRewardLineClears = false;
+    GameState after1 = advanceGameState(after0, best1, &expectedLeafCtx);
+    float expectedStandardEval = fastEval(after0, after1, best1, &expectedLeafCtx);
+    float buggyDigEval = fastEval(after0, after1, best1, &ply1Ctx);
+    REQUIRE(expectedStandardEval != doctest::Approx(buggyDigEval));
+
+    float actualScore = playSequence(g, contexts, seq, /* playoutLength= */ 2, SAFE,
+                                     initialCtx.aiMode, /* playoutDataList= */ nullptr);
+    CHECK(actualScore == doctest::Approx(reward0 + expectedStandardEval));
+  }
+
+  SUBCASE("DIG playout that clears its hole mid-playout still uses DIG weights at leaf") {
+    // Row 19 has a hole at col 0 under a 1-cell roof at (row 18, col 0), with cols 4-7 empty in
+    // row 18 and a tall stack in col 8 (height 11). Dropping a horizontal I into cols 4-7 of row 18
+    // clears row 18, removing the roof over col 0 so numTrueHoles becomes 0 (STANDARD mode) on ply 1.
+    GameState g = {};
+    g.level = 18;
+    g.lines = 0;
+    // Row 19: cols 1..8 filled, col 0 and col 9 empty
+    for (int col = 1; col <= 8; col++) {
+      g.board[19] |= (1U << (9 - col));
+    }
+    // Row 18: cols 0..3 and 8..9 filled, cols 4..7 empty (horizontal I slot)
+    for (int col : {0, 1, 2, 3, 8, 9}) {
+      g.board[18] |= (1U << (9 - col));
+    }
+    // Col 8 stacked up to height 11 (rows 9..17)
+    for (int r = 9; r <= 17; r++) {
+      g.board[r] |= (1U << (9 - 8));
+    }
+    getSurfaceArray(g.board, g.surfaceArray);
+    std::pair<int, float> holes = updateSurfaceAndHoles(g.surfaceArray, g.board, 9, true);
+    g.numTrueHoles = holes.first;
+    g.numPartialHoles = holes.second;
+    REQUIRE(g.numTrueHoles == 1);
+
+    const EvalContext initialCtx = getEvalContext(g, contexts, /* useTestWeights= */ false, SAFE);
+    REQUIRE(initialCtx.aiMode == DIG);
+
+    int seq[SEQUENCE_LENGTH] = {};
+    seq[0] = IDX_I;
+    seq[1] = IDX_O;
+
+    std::vector<LockPlacement> locks0;
+    fastMoveSearch(g, &PIECE_LIST[seq[0]], initialCtx.pieceRangeContext.inputFrameTimeline, locks0);
+    REQUIRE(!locks0.empty());
+    LockPlacement best0 = pickLockPlacement(g, &initialCtx, locks0);
+    GameState after0 = advanceGameState(g, best0, &initialCtx);
+    REQUIRE(after0.numTrueHoles == 0);
+    FastEvalWeights stdWeights = getWeights(STANDARD, /* useTestWeights= */ false, SAFE);
+    float reward0 = getLineClearFactor(after0.lines - g.lines, stdWeights, false);
+
+    const EvalContext ply1Ctx = getEvalContext(after0, contexts, /* useTestWeights= */ false, SAFE);
+    REQUIRE(ply1Ctx.aiMode == STANDARD);
+    std::vector<LockPlacement> locks1;
+    fastMoveSearch(after0, &PIECE_LIST[seq[1]], ply1Ctx.pieceRangeContext.inputFrameTimeline, locks1);
+    REQUIRE(!locks1.empty());
+    LockPlacement best1 = pickLockPlacement(after0, &ply1Ctx, locks1);
+
+    EvalContext expectedLeafCtx = ply1Ctx;
+    expectedLeafCtx.aiMode = DIG;
+    expectedLeafCtx.weights = getWeights(DIG, /* useTestWeights= */ false, SAFE);
+    expectedLeafCtx.shouldRewardLineClears = false;
+    GameState after1 = advanceGameState(after0, best1, &expectedLeafCtx);
+    float expectedDigEval = fastEval(after0, after1, best1, &expectedLeafCtx);
+    float buggyStandardEval = fastEval(after0, after1, best1, &ply1Ctx);
+    REQUIRE(expectedDigEval != doctest::Approx(buggyStandardEval));
+
+    float actualScore = playSequence(g, contexts, seq, /* playoutLength= */ 2, SAFE,
+                                     initialCtx.aiMode, /* playoutDataList= */ nullptr);
+    CHECK(actualScore == doctest::Approx(reward0 + expectedDigEval));
+
+    // Also verify that when the hole is cleared on the root candidate move before getPlayoutScore
+    // is called (so after0 already has numTrueHoles == 0), passing initialCtx.aiMode (DIG) into
+    // getPlayoutScore still evaluates the playout leaf with DIG weights rather than STANDARD.
+    int seqFromAfter0[SEQUENCE_LENGTH] = {};
+    seqFromAfter0[0] = IDX_O;
+    float scoreFromPostRootMove = playSequence(after0, contexts, seqFromAfter0,
+                                               /* playoutLength= */ 1, SAFE, initialCtx.aiMode,
+                                               /* playoutDataList= */ nullptr);
+    CHECK(scoreFromPostRootMove == doctest::Approx(expectedDigEval));
+  }
+
+  SUBCASE("STANDARD playout transitioning from Level 28 into Level 29 LINEOUT keeps LINEOUT at leaf") {
+    // At level 28, lines = 219, originalAiMode is STANDARD. Clearing 1 line advances to level 29
+    // (LINEOUT). With right-side columns at height 6 (above level 29's maxAccessibleRightSurface),
+    // overwriting contextRaw.aiMode to STANDARD falsely disables isKillscreenLineout and triggers
+    // the -200 inaccessibleRight penalty on level 29.
+    GameState g = {};
+    g.level = 28;
+    g.lines = 219;
+    // Row 19: cols 0..3 empty (horizontal I slot), cols 4..9 filled
+    for (int col = 4; col <= 9; col++) {
+      g.board[19] |= (1U << (9 - col));
+    }
+    // Cols 4..8 stacked to height 6 (rows 14..18)
+    for (int r = 14; r <= 18; r++) {
+      for (int col = 4; col <= 8; col++) {
+        g.board[r] |= (1U << (9 - col));
+      }
+    }
+    getSurfaceArray(g.board, g.surfaceArray);
+    std::pair<int, float> holes = updateSurfaceAndHoles(g.surfaceArray, g.board, 9, false);
+    g.numTrueHoles = holes.first;
+    g.numPartialHoles = holes.second;
+    REQUIRE(g.numTrueHoles == 0);
+
+    const EvalContext initialCtx = getEvalContext(g, contexts, /* useTestWeights= */ false, SAFE);
+    REQUIRE(initialCtx.aiMode == STANDARD);
+
+    int seq[SEQUENCE_LENGTH] = {};
+    seq[0] = IDX_I;
+    seq[1] = IDX_O;
+
+    std::vector<LockPlacement> locks0;
+    fastMoveSearch(g, &PIECE_LIST[seq[0]], initialCtx.pieceRangeContext.inputFrameTimeline, locks0);
+    REQUIRE(!locks0.empty());
+    LockPlacement best0 = pickLockPlacement(g, &initialCtx, locks0);
+    GameState after0 = advanceGameState(g, best0, &initialCtx);
+    REQUIRE(after0.level == 29);
+    float reward0 =
+        getLineClearFactor(after0.lines - g.lines, initialCtx.weights, initialCtx.shouldRewardLineClears);
+
+    const EvalContext ply1Ctx = getEvalContext(after0, contexts, /* useTestWeights= */ false, SAFE);
+    REQUIRE(ply1Ctx.aiMode == LINEOUT);
+    std::vector<LockPlacement> locks1;
+    fastMoveSearch(after0, &PIECE_LIST[seq[1]], ply1Ctx.pieceRangeContext.inputFrameTimeline, locks1);
+    REQUIRE(!locks1.empty());
+    LockPlacement best1 = pickLockPlacement(after0, &ply1Ctx, locks1);
+    GameState after1 = advanceGameState(after0, best1, &ply1Ctx);
+    float expectedLineoutEval = fastEval(after0, after1, best1, &ply1Ctx);
+
+    float actualScore = playSequence(g, contexts, seq, /* playoutLength= */ 2, SAFE,
+                                     initialCtx.aiMode, /* playoutDataList= */ nullptr);
+    CHECK(actualScore == doctest::Approx(reward0 + expectedLineoutEval));
+  }
+}
+
 #endif // SR_REQUEST_TYPE_TESTS

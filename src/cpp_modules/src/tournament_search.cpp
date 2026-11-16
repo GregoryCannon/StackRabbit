@@ -318,11 +318,12 @@ void cutTournamentCandidatesByRank(OUT std::vector<TournamentCandidate> &candida
 /** Appends `sampleCount` playouts from the shared window at `batchOffset` to the cont's pool. */
 void playTournamentSamples(OUT TournamentCont &cont, int sampleCount, int batchOffset,
                            int playoutLength, const PieceRangeContext pieceRangeContextLookup[3],
-                           int secondPieceIndex, AggressionLevel aggressionLevel) {
+                           int secondPieceIndex, AggressionLevel aggressionLevel,
+                           AiMode originalAiMode) {
   cont.seqScores.reserve(cont.seqScores.size() + sampleCount);
   getPlayoutScore(cont.resultingState, sampleCount, playoutLength, pieceRangeContextLookup,
-                  secondPieceIndex, aggressionLevel, /* playoutDataList */ NULL, &cont.seqScores,
-                  batchOffset);
+                  secondPieceIndex, aggressionLevel, originalAiMode, /* playoutDataList */ NULL,
+                  &cont.seqScores, batchOffset);
 }
 
 /** Runs the 3-round tournament over precomputed 2-ply possibilities. See block comment above. */
@@ -468,7 +469,7 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
     for (int c = 0; c < contsToPlay; c++) {
       playTournamentSamples(candidate.conts[c], n1, samplesSoFar, playoutLength,
                             pieceRangeContextLookup, secondPieceIndex,
-                            evalContext->aggressionLevel);
+                            evalContext->aggressionLevel, evalContext->aiMode);
     }
   }
   double playoutMsAccum = isTimed ? msBetween(r1Start, SteadyClock::now()) : 0.0;
@@ -569,7 +570,7 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
       }
       for (auto &cont : candidate.conts) {
         playTournamentSamples(cont, n2, samplesSoFar, playoutLength, pieceRangeContextLookup,
-                              secondPieceIndex, evalContext->aggressionLevel);
+                              secondPieceIndex, evalContext->aggressionLevel, evalContext->aiMode);
         r2PlayoutsRun += n2;
       }
     }
@@ -674,7 +675,7 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
                   candidate.conts[contIdx].contKey.c_str());
         playTournamentSamples(candidate.conts[contIdx], chunkSize, samplesSoFar, playoutLength,
                               pieceRangeContextLookup, secondPieceIndex,
-                              evalContext->aggressionLevel);
+                              evalContext->aggressionLevel, evalContext->aiMode);
       }
       lastChunkMs = msBetween(chunkStart, SteadyClock::now());
       playoutMsAccum += lastChunkMs;
@@ -699,7 +700,7 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
                   candidate.conts[contIdx].contKey.c_str());
         playTournamentSamples(candidate.conts[contIdx], n3, samplesSoFar, playoutLength,
                               pieceRangeContextLookup, secondPieceIndex,
-                              evalContext->aggressionLevel);
+                              evalContext->aggressionLevel, evalContext->aiMode);
         if (TMT_LOGGING_ENABLED) {
           logTournamentCont("R3", candidate.key, candidate.conts[contIdx], n1 + n2);
         }
@@ -769,7 +770,7 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
         float legacyMean =
             getPlayoutScore(cont.resultingState, validatePlayoutCount, playoutLength,
                             pieceRangeContextLookup, secondPieceIndex, evalContext->aggressionLevel,
-                            /* playoutDataList */ NULL, &legacyScores);
+                            evalContext->aiMode, /* playoutDataList */ NULL, &legacyScores);
         float legacySum = 0;
         float legacySumSquared = 0;
         float legacyMin = 1e9;
