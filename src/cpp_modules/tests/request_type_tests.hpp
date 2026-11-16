@@ -249,6 +249,79 @@ TEST_CASE("GET_LOCK_VALUE_LOOKUP_DAS clamps out-of-scope maneuver deltas to zero
   CHECK(lookupMapValue(minPenalties, "0|-1|9") == 0.0f);
 }
 
+TEST_CASE("thirdPieceDasPenalty scales linearly below 15 and caps at charge 5") {
+  CHECK(thirdPieceDasPenalty(-1) == doctest::Approx(0.0f));
+  CHECK(thirdPieceDasPenalty(0) == doctest::Approx(-20.0f));
+  CHECK(thirdPieceDasPenalty(4) == doctest::Approx(-20.0f));
+  CHECK(thirdPieceDasPenalty(5) == doctest::Approx(-20.0f));
+  CHECK(thirdPieceDasPenalty(6) == doctest::Approx(-18.0f));
+  CHECK(thirdPieceDasPenalty(10) == doctest::Approx(-10.0f));
+  CHECK(thirdPieceDasPenalty(14) == doctest::Approx(-2.0f));
+  CHECK(thirdPieceDasPenalty(15) == doctest::Approx(0.0f));
+  CHECK(thirdPieceDasPenalty(16) == doctest::Approx(0.0f));
+}
+
+TEST_CASE("getLockValueLookupDasMaps penalizes third-piece DAS loss without mutating shallow lockValue") {
+  // On a tall level-19 stack, a flat-dropped O leaves an open board where an O next piece
+  // wants to drop near spawn or shift once; starting piece 2 at partial/min charge lowers
+  // piece 2's ending DAS charge (penalizing piece 3) even when the same cell is reachable,
+  // while shallow maps.lockValue (playoutCount = 0) stays equal to raw evalScoreInclReward.
+  GameState g = {};
+  g.level = 19;
+  g.lines = 0;
+  std::string board = makeFlatBoard(14);
+  encodeBoard(board.c_str(), g.board);
+  getSurfaceArray(g.board, g.surfaceArray);
+  updateSurfaceAndHoles(g.surfaceArray, g.board, 9, false);
+  const PieceRangeContext contexts[4] = {
+      getPieceRangeContext("X..", 1, /* gravityDoubled= */ true),
+      getPieceRangeContext("X..", 1, /* gravityDoubled= */ false),
+      getPieceRangeContext("X..", 2, /* gravityDoubled= */ false),
+      getPieceRangeContext("X..", 3, /* gravityDoubled= */ false),
+  };
+  const EvalContext ctx = getEvalContext(g, contexts, /* useTestWeights= */ false, SAFE);
+  const Piece *O = &PIECE_LIST[IDX_O];
+
+  const DasLockValueMaps maps = getLockValueLookupDasMaps(
+      g, O, O, /* pruningBreadth= */ 20, /* playoutCount= */ 0, /* playoutLength= */ 0, "X..",
+      &ctx, contexts);
+
+  // Verify shallow maps.lockValue equals unpenalized full-charge searchDepth2 max eval.
+  std::vector<Possibility> rawFull;
+  searchDepth2(g, O, O, /* dasCharge= */ -1, /* secondPieceDasCharge= */ 15, "X..", &ctx, rawFull);
+  std::unordered_map<std::string, float> expectedRaw;
+  for (const Possibility &p : rawFull) {
+    const std::string key = encodeLockPosition(p.firstPlacement);
+    auto it = expectedRaw.find(key);
+    if (it == expectedRaw.end() || p.evalScoreInclReward > it->second) {
+      expectedRaw[key] = p.evalScoreInclReward;
+    }
+  }
+  REQUIRE(maps.lockValue.size() == expectedRaw.size());
+  for (const auto &entry : expectedRaw) {
+    CHECK(maps.lockValue.at(entry.first) == doctest::Approx(entry.second));
+  }
+
+  // With the third-piece penalty applied to all three shallow maps, every penalty stays <= 0
+  // and at least one placement reflects a non-zero partial/min penalty.
+  bool sawPartialPenalty = false;
+  bool sawMinPenalty = false;
+  for (const auto &entry : maps.partialPenalty) {
+    CHECK(entry.second <= 0.0f);
+    if (entry.second < 0.0f) {
+      sawPartialPenalty = true;
+    }
+  }
+  for (const auto &entry : maps.minPenalty) {
+    CHECK(entry.second <= 0.0f);
+    if (entry.second < 0.0f) {
+      sawMinPenalty = true;
+    }
+  }
+  CHECK(sawPartialPenalty);
+  CHECK(sawMinPenalty);
+}
+
 TEST_CASE("GET_MOVE_AB_TEST always reports agree/disagree with an explanation") {
   auto input = InputBuilder().build();
   std::string output = runRequest(GET_MOVE_AB_TEST, input);

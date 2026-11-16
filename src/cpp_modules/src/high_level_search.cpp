@@ -110,13 +110,17 @@ FirstMoveSearchResult buildFirstMoveBranches(const GameState &gameState, const P
   return result;
 }
 
-/** Runs the second-ply move search and fast eval against precomputed first-piece branches. */
+/** Runs the second-ply move search and fast eval against precomputed first-piece branches.
+ * When `dasChargesForThirdPiece` is non-null, appends each second placement's post-lock DAS
+ * charge index-aligned with `possibilities` (-1 in tap mode).
+ */
 static int searchDepth2FromFirstMoves(const FirstMoveSearchResult &firstMoves,
                                       const Piece *secondPiece, int secondPieceDasCharge,
                                       char const *dasInputFrameTimeline,
                                       const EvalContext *evalContext,
                                       OUT std::vector<Possibility> &possibilities,
-                                      bool generateExplanation = false) {
+                                      bool generateExplanation = false,
+                                      OUT std::vector<int> *dasChargesForThirdPiece = nullptr) {
   if (!firstMoves.useDas && secondPieceDasCharge >= 0) {
     fprintf(stderr,
             "Error: searchDepth2FromFirstMoves received secondPieceDasCharge (%d) for tap-mode "
@@ -126,6 +130,10 @@ static int searchDepth2FromFirstMoves(const FirstMoveSearchResult &firstMoves,
   }
 
   possibilities.reserve(possibilities.size() + firstMoves.branches.size() * 32);
+  if (dasChargesForThirdPiece != nullptr) {
+    dasChargesForThirdPiece->reserve(dasChargesForThirdPiece->size()
+                                     + firstMoves.branches.size() * 32);
+  }
 
   // Hoist per-branch scratch vectors outside the loop to avoid repeated heap allocations.
   vector<FullMovePossibility> secondFullMovePossibilities;
@@ -149,7 +157,8 @@ static int searchDepth2FromFirstMoves(const FirstMoveSearchResult &firstMoves,
       printBoard(afterFirstMove.board);
     }
 
-    auto appendSecondPlacement = [&](const LockPlacement &secondPlacement) {
+    auto appendSecondPlacement = [&](const LockPlacement &secondPlacement,
+                                     int dasChargeForThirdPiece) {
       GameState resultingState = advanceGameState(afterFirstMove, secondPlacement, evalContext);
       if (SHOULD_PLAY_PERFECT && ((resultingState.lines - afterFirstMove.lines) % 4) != 0) {
         return; // While playing perfect, ignore any placements that burn lines
@@ -172,6 +181,9 @@ static int searchDepth2FromFirstMoves(const FirstMoveSearchResult &firstMoves,
            evalScore,
            firstMoveReward + secondMoveReward,
            std::move(explanation)});
+      if (dasChargesForThirdPiece != nullptr) {
+        dasChargesForThirdPiece->push_back(dasChargeForThirdPiece);
+      }
     };
 
     // Get the placements of the second piece
@@ -188,14 +200,15 @@ static int searchDepth2FromFirstMoves(const FirstMoveSearchResult &firstMoves,
       for (FullMovePossibility const &fullMovePossibility : secondFullMovePossibilities) {
         appendSecondPlacement({fullMovePossibility.x, fullMovePossibility.y,
                                fullMovePossibility.rotationIndex, -1, fullMovePossibility.tuckInput,
-                               secondPiece});
+                               secondPiece},
+                              fullMovePossibility.dasChargeAfter);
       }
     } else {
       secondLockPlacements.clear();
       fastMoveSearch(afterFirstMove, secondPiece, evalContext->pieceRangeContext.inputFrameTimeline,
                      secondLockPlacements);
       for (LockPlacement const &secondPlacement : secondLockPlacements) {
-        appendSecondPlacement(secondPlacement);
+        appendSecondPlacement(secondPlacement, -1);
       }
     }
   }
@@ -657,23 +670,53 @@ std::string getTopMoveList(GameState gameState, const Piece *firstPiece, const P
   return formatEngineMoveList(sortedList, firstPiece, secondPiece);
 }
 
+/**
+ * Static penalty for leaving the third piece below full DAS charge (15) in the shallow
+ * DAS bucket lookups: -2 points per charge point below 15, capped at charge 5 (-20), since
+ * charges <= 5 all trigger a tap-reset to 0 on the first shift and behave equivalently.
+ */
+static float thirdPieceDasPenalty(int dasChargeAfter) {
+  if (dasChargeAfter < 0 || dasChargeAfter >= 15) {
+    return 0.0f;
+  }
+  const int effectiveCharge = std::max(5, dasChargeAfter);
+  return -2.0f * static_cast<float>(15 - effectiveCharge);
+}
+
+/** Builds a shallow (eval-only) lock-value map, optionally adding thirdPieceDasPenalty per
+ * index-aligned second-placement charge.
+ */
+static unordered_map<string, float>
+buildShallowLockValueMap(const std::vector<Possibility> &possibilities,
+                         const std::vector<int> *dasChargesForThirdPiece) {
+  unordered_map<string, float> lockValueMap;
+  for (size_t i = 0; i < possibilities.size(); i++) {
+    Possibility const &possibility = possibilities[i];
+    const string lockPosEncoded = encodeLockPosition(possibility.firstPlacement);
+    const float penalty = dasChargesForThirdPiece != nullptr
+                              ? thirdPieceDasPenalty((*dasChargesForThirdPiece)[i])
+                              : 0.0f;
+    const float overallScore = possibility.evalScoreInclReward + penalty;
+    auto it = lockValueMap.find(lockPosEncoded);
+    if (it == lockValueMap.end() || overallScore > it->second) {
+      lockValueMap[lockPosEncoded] = overallScore;
+    }
+  }
+  return lockValueMap;
+}
+
 static unordered_map<string, float>
 getLockValueLookupFromPossibilities(const std::vector<Possibility> &possibilities,
                                     int pruningBreadth, int playoutCount, int playoutLength,
                                     const Piece *secondPiece, const EvalContext *evalContext,
                                     const PieceRangeContext pieceRangeContextLookup[3]) {
-  unordered_map<string, float> lockValueMap;
-
   // If no playouts, just use the eval
   if (playoutCount * playoutLength == 0) {
-    for (Possibility const &possibility : possibilities) {
-      string lockPosEncoded = encodeLockPosition(possibility.firstPlacement);
-      float overallScore = possibility.evalScoreInclReward;
-      if (lockValueMap.count(lockPosEncoded) == 0 || overallScore > lockValueMap[lockPosEncoded]) {
-        lockValueMap[lockPosEncoded] = overallScore;
-      }
-    }
-  } else {
+    return buildShallowLockValueMap(possibilities, /* dasChargesForThirdPiece= */ nullptr);
+  }
+
+  unordered_map<string, float> lockValueMap;
+  {
     unordered_map<string, int> lockValueRepeatMap;
     int numSorted = 99999;
 
@@ -894,43 +937,46 @@ DasLockValueMaps getLockValueLookupDasMapsWithFirstMoves(
   // zero and the agent has free reign to lose DAS during the first piece.
   //
   // These method calls pass in values for the SECOND piece DAS charge since we're concerned with
-  // how bad the DAS can be *after* the first piece without sacrificing eval quality.
+  // how bad the DAS can be *after* the first piece without sacrificing eval quality. All three
+  // shallow lookups include thirdPieceDasPenalty so that unavoidable third-piece DAS losses
+  // cancel out against the full-charge baseline while newly forced losses are penalized.
   // Full charge baseline that the penalties are measured against. (Low-depth to be a fair
   // comparison). Also reused below for the deep playouts when enabled.
   std::vector<Possibility> fullChargePossibilities;
+  std::vector<int> dasChargesForThirdPiece;
   searchDepth2FromFirstMoves(firstMoves, secondPiece, /* secondPieceDasCharge= */ 15,
-                             dasInputFrameTimeline, evalContext, fullChargePossibilities);
-  maps.lockValue = dispatchLookupFromPossibilities(
-      fullChargePossibilities, secondPiece, pruningBreadth, /* playoutCount= */ 0,
-      /* playoutLength= */ 0, evalContext, pieceRangeContextLookup, /* budget= */ nullptr);
+                             dasInputFrameTimeline, evalContext, fullChargePossibilities,
+                             /* generateExplanation= */ false, &dasChargesForThirdPiece);
+  const unordered_map<string, float> shallowFullBaseline =
+      buildShallowLockValueMap(fullChargePossibilities, &dasChargesForThirdPiece);
 
   // Partial charge: 10 is the post-shift charge of a standard DAS shift (5 held
   // frames away from the next shift).
   std::vector<Possibility> bucketPossibilities;
+  dasChargesForThirdPiece.clear();
   searchDepth2FromFirstMoves(firstMoves, secondPiece, /* secondPieceDasCharge= */ 10,
-                             dasInputFrameTimeline, evalContext, bucketPossibilities);
-  maps.partialPenalty = dispatchLookupFromPossibilities(
-      bucketPossibilities, secondPiece, pruningBreadth, /* playoutCount= */ 0,
-      /* playoutLength= */ 0, evalContext, pieceRangeContextLookup, /* budget= */ nullptr);
+                             dasInputFrameTimeline, evalContext, bucketPossibilities,
+                             /* generateExplanation= */ false, &dasChargesForThirdPiece);
+  maps.partialPenalty = buildShallowLockValueMap(bucketPossibilities, &dasChargesForThirdPiece);
 
   // Minimum charge: 5 is the worst useful charge, since even with 0 charge you can
   // just first-frame tap without holding during ARE, and it ends up being exactly equivalent:
   // Charge < 5 : shift->0  1  2  3   4  5  6  7  8  9    10
   // Charge = 5:   6       7  8  9  10 11 12 13 14 15 shift->10
   bucketPossibilities.clear();
+  dasChargesForThirdPiece.clear();
   searchDepth2FromFirstMoves(firstMoves, secondPiece, /* secondPieceDasCharge= */ 5,
-                             dasInputFrameTimeline, evalContext, bucketPossibilities);
-  maps.minPenalty = dispatchLookupFromPossibilities(
-      bucketPossibilities, secondPiece, pruningBreadth, /* playoutCount= */ 0,
-      /* playoutLength= */ 0, evalContext, pieceRangeContextLookup, /* budget= */ nullptr);
+                             dasInputFrameTimeline, evalContext, bucketPossibilities,
+                             /* generateExplanation= */ false, &dasChargesForThirdPiece);
+  maps.minPenalty = buildShallowLockValueMap(bucketPossibilities, &dasChargesForThirdPiece);
 
   // Replace the raw value maps with maps of the penalty relative to the best placement (as negative
   // numbers). NB: all four lookups share one first-piece search, so their key sets match; the guard
   // below is a safety net. Skipped keys carry no penalty, matching the
   // consumer's missing-key -> no-penalty rule.
-  for (const auto &pair : maps.lockValue) {
-    string key = pair.first;
-    float value = pair.second;
+  for (const auto &pair : shallowFullBaseline) {
+    const string &key = pair.first;
+    const float value = pair.second;
     if (maps.partialPenalty.count(key) == 0 || maps.minPenalty.count(key) == 0) {
       continue;
     }
@@ -956,6 +1002,9 @@ DasLockValueMaps getLockValueLookupDasMapsWithFirstMoves(
     maps.lockValue = dispatchLookupFromPossibilities(fullChargePossibilities, secondPiece,
                                                      pruningBreadth, playoutCount, playoutLength,
                                                      evalContext, pieceRangeContextLookup, budget);
+  } else {
+    maps.lockValue = buildShallowLockValueMap(fullChargePossibilities,
+                                              /* dasChargesForThirdPiece= */ nullptr);
   }
 
   return maps;
