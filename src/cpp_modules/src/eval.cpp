@@ -1,10 +1,26 @@
 #include "eval.hpp"
 #include "../data/ranks_base_7.hpp"
+#include "params.hpp"
 #include "utils.hpp"
 #include <cstdio>
 #include <math.h>
 #include <string>
 using namespace std;
+
+float getLineClearFactor(int numLinesCleared, const FastEvalWeights &weights,
+                         int shouldRewardLineClears, int oldLines, bool lineoutAt29) {
+  if (numLinesCleared == 4) {
+    // Apply a one-time offset to the static KILLSCREEN_PENALTY when a Tetris crosses into 29.
+    // This works as a one-time hack b/c playouts are halted after crossing into 29 mid-playout.
+    bool isTetrisIntoKillscreenLineout = !SHOULD_PLAY_PERFECT
+                                         && !shouldRewardLineClears
+                                         && lineoutAt29
+                                         && oldLines >= 226
+                                         && oldLines < 230;
+    return weights.tetrisCoef - (isTetrisIntoKillscreenLineout ? KILLSCREEN_PENALTY : 0.0f);
+  }
+  return weights.burnCoef * numLinesCleared * (shouldRewardLineClears ? -0.25 : 1);
+}
 
 /**
  * A crude way to evaluate a surface for when I'm debugging and don't want to load the surfaces
@@ -96,8 +112,8 @@ static inline float getAverageHeightFactor(float avgHeight, float scareHeight) {
   return diff * diff;
 }
 
-static inline float getBuiltOutLeftFactor(const int surfaceArray[10], const unsigned int board[20], float avgHeight,
-                                          float scareHeight, bool hasHoles) {
+static inline float getBuiltOutLeftFactor(const int surfaceArray[10], const unsigned int board[20],
+                                          float avgHeight, float scareHeight, bool hasHoles) {
   if (!USE_RIGHT_WELL_FEATURES) {
     return 0;
   }
@@ -132,7 +148,8 @@ static inline float getBuiltOutLeftFactor(const int surfaceArray[10], const unsi
   return heightRatio * heightDiff;
 }
 
-static inline float getLeftSurfaceFactor(const unsigned int board[20], const int surfaceArray[10], int max5TapHeight) {
+static inline float getLeftSurfaceFactor(const unsigned int board[20], const int surfaceArray[10],
+                                         int max5TapHeight) {
   max5TapHeight = max(0, max5TapHeight);
   for (int r = 20 - surfaceArray[0]; r < 20; r++) {
     if (board[r] & HOLE_BIT(0)) {
@@ -156,7 +173,8 @@ static inline float getCol9Factor(int col9Height, float maxSafeCol9Height) {
   return diff * diff;
 }
 
-static inline float getCoveredWellFactor(const unsigned int board[20], const int surfaceArray[10], int wellColumn, float scareHeight) {
+static inline float getCoveredWellFactor(const unsigned int board[20], const int surfaceArray[10],
+                                         int wellColumn, float scareHeight) {
   if (wellColumn == -1 || surfaceArray[wellColumn] <= 0 || surfaceArray[wellColumn] > 20) {
     return 0;
   }
@@ -175,9 +193,10 @@ struct BurnAndHoleWeightCounts {
  * Counts guaranteed burns (covered well cells and rows with holes) and hole weight
  * in a single pass over the board.
  */
-static inline BurnAndHoleWeightCounts getGuaranteedBurnsAndHoleWeight(
-    const unsigned int board[20], const int surfaceArray[10], int wellColumn,
-    bool hasHoles, bool countHoleWeight) {
+static inline BurnAndHoleWeightCounts getGuaranteedBurnsAndHoleWeight(const unsigned int board[20],
+                                                                      const int surfaceArray[10],
+                                                                      int wellColumn, bool hasHoles,
+                                                                      bool countHoleWeight) {
   if (wellColumn == -1) {
     return {0, 0};
   }
@@ -210,7 +229,8 @@ static inline BurnAndHoleWeightCounts getGuaranteedBurnsAndHoleWeight(
   return {guaranteedBurns, countHoleWeight ? holeWeight : 0};
 }
 
-static inline float getLikelyBurnsFactor(const int surfaceArray[10], int wellColumn, int maxSafeCol9) {
+static inline float getLikelyBurnsFactor(const int surfaceArray[10], int wellColumn,
+                                         int maxSafeCol9) {
   if (wellColumn != 9 || !USE_RIGHT_WELL_FEATURES) {
     return 0;
   }
@@ -234,10 +254,11 @@ static inline float getLikelyBurnsFactor(const int surfaceArray[10], int wellCol
  * are possible, or a float around 1.0 or higher (depending on how many lines would need to clear
  * for the left to be accessible).
  */
-static inline float getInaccessibleLeftFactor(const unsigned int board[20], const int surfaceArray[10],
+static inline float getInaccessibleLeftFactor(const unsigned int board[20],
+                                              const int surfaceArray[10],
                                               int const maxAccessibleLeft5Surface[10],
-                                              int const maxAccessibleLeftLPieceSurface[10], int wellColumn,
-                                              AiMode aiMode, bool hasHoles) {
+                                              int const maxAccessibleLeftLPieceSurface[10],
+                                              int wellColumn, AiMode aiMode, bool hasHoles) {
   // Check if the agent even needs to get a piece left first.
   int highestRowOfCol1 = 19 - surfaceArray[0];
   int needs5TapForDig = (hasHoles && highestRowOfCol1 >= 0 && highestRowOfCol1 < 20)
@@ -290,7 +311,8 @@ static inline float getInaccessibleLeftFactor(const unsigned int board[20], cons
   return highestAbove == 0 ? 0 : (1.0 + 0.2 * highestAbove * highestAbove);
 }
 
-static inline float getInaccessibleRightFactor(const int surfaceArray[10], int const maxAccessibleRightSurface[10]) {
+static inline float getInaccessibleRightFactor(const int surfaceArray[10],
+                                               int const maxAccessibleRightSurface[10]) {
   // Check if the agent even needs to get a piece right first.
   // If column 10 is higher than column 9, this feature doesn't matter.
   int needsRightTap = surfaceArray[9] < surfaceArray[8];
@@ -308,9 +330,9 @@ static inline float getInaccessibleRightFactor(const int surfaceArray[10], int c
   return highestAbove == 0 ? 0 : 1.0 + 0.2 * highestAbove * highestAbove;
 }
 
-
 /** Calculate how hard it will be to fill in the middle of the board enough to burn. */
-static inline float getUnableToBurnFactor(const unsigned int board[20], const int surfaceArray[10], float scareHeight, bool hasHoles) {
+static inline float getUnableToBurnFactor(const unsigned int board[20], const int surfaceArray[10],
+                                          float scareHeight, bool hasHoles) {
   if (!USE_RIGHT_WELL_FEATURES) {
     return 0;
   }
@@ -367,7 +389,8 @@ static inline float getUnableToBurnFactor(const unsigned int board[20], const in
   return totalPenalty * heightMultiplier;
 }
 
-static inline int isTetrisReady(const unsigned int board[20], const int surfaceArray[10], int wellColumn) {
+static inline int isTetrisReady(const unsigned int board[20], const int surfaceArray[10],
+                                int wellColumn) {
   int wellColHeight = surfaceArray[wellColumn];
   if (wellColHeight > 16) {
     return 0;
@@ -411,7 +434,8 @@ static inline float rateSurfaceForPerfectPlay(const int surfaceArray[10], int we
 
 /** Custom evaluation function designed for perfect play. The score it returns is aimed to emulate
  * the percent chance of maintaining a perfect board throughout all the playouts. */
-static inline float evalForPerfectPlay(const GameState &gameState, const GameState &newState, const LockPlacement &lockPlacement,
+static inline float evalForPerfectPlay(const GameState &gameState, const GameState &newState,
+                                       const LockPlacement &lockPlacement,
                                        const EvalContext *evalContext) {
   // Check for burns
   if (newState.lines != gameState.lines && newState.lines - gameState.lines != 4) {
@@ -468,8 +492,9 @@ static inline float evalForPerfectPlay(const GameState &gameState, const GameSta
 // Short-circuits factor calculation to 0.0f when its weight coefficient is zero.
 #define EVAL_FACTOR(coef, expr) ((coef) != 0.0f ? ((coef) * (expr)) : 0.0f)
 
-float fastEval(const GameState &gameState, const GameState &newState, const LockPlacement &lockPlacement,
-               const EvalContext *evalContext, std::string *outExplanation) {
+float fastEval(const GameState &gameState, const GameState &newState,
+               const LockPlacement &lockPlacement, const EvalContext *evalContext,
+               std::string *outExplanation) {
   if (SHOULD_PLAY_PERFECT) {
     return evalForPerfectPlay(gameState, newState, lockPlacement, evalContext);
   }
@@ -484,49 +509,74 @@ float fastEval(const GameState &gameState, const GameState &newState, const Lock
   // Calculate all the factors
   float avgHeightFactor = EVAL_FACTOR(weights.avgHeightCoef,
                                       getAverageHeightFactor(avgHeight, evalContext->scareHeight));
-  float builtOutLeftFactor = EVAL_FACTOR(weights.builtOutLeftCoef,
-                                         getBuiltOutLeftFactor(newState.surfaceArray, newState.board, avgHeight,
-                                                               evalContext->scareHeight, hasHolesOrTucks));
-  float coveredWellFactor = EVAL_FACTOR(weights.coveredWellCoef,
-                                        getCoveredWellFactor(newState.board, newState.surfaceArray,
-                                                             evalContext->wellColumn, evalContext->scareHeight));
+  float builtOutLeftFactor =
+      EVAL_FACTOR(weights.builtOutLeftCoef,
+                  getBuiltOutLeftFactor(newState.surfaceArray, newState.board, avgHeight,
+                                        evalContext->scareHeight, hasHolesOrTucks));
+  float coveredWellFactor =
+      EVAL_FACTOR(weights.coveredWellCoef,
+                  getCoveredWellFactor(newState.board, newState.surfaceArray,
+                                       evalContext->wellColumn, evalContext->scareHeight));
 
-  BurnAndHoleWeightCounts burnAndHole =
-      getGuaranteedBurnsAndHoleWeight(newState.board, newState.surfaceArray, evalContext->wellColumn,
-                                     hasHoles, std::abs(weights.holeWeightCoef) > FLOAT_EPSILON);
+  BurnAndHoleWeightCounts burnAndHole = getGuaranteedBurnsAndHoleWeight(
+      newState.board, newState.surfaceArray, evalContext->wellColumn, hasHoles,
+      std::abs(weights.holeWeightCoef) > FLOAT_EPSILON);
   float guaranteedBurnsFactor = weights.burnCoef * burnAndHole.guaranteedBurns;
   float holeWeightFactor = weights.holeWeightCoef * burnAndHole.holeWeight;
 
-  float likelyBurnsFactor = EVAL_FACTOR(weights.burnCoef,
-                                        getLikelyBurnsFactor(newState.surfaceArray, evalContext->wellColumn,
-                                                             evalContext->maxSafeCol9));
-  float highCol9Factor = EVAL_FACTOR(weights.col9Coef,
-                                     getCol9Factor(newState.surfaceArray[8], evalContext->maxSafeCol9));
+  float likelyBurnsFactor = EVAL_FACTOR(
+      weights.burnCoef, getLikelyBurnsFactor(newState.surfaceArray, evalContext->wellColumn,
+                                             evalContext->maxSafeCol9));
+  float highCol9Factor = EVAL_FACTOR(
+      weights.col9Coef, getCol9Factor(newState.surfaceArray[8], evalContext->maxSafeCol9));
   float holeFactor = weights.holeCoef * (newState.numTrueHoles + newState.numPartialHoles);
 
-  float inaccessibleLeftFactor = isKillscreenLineout ? 0.0f : EVAL_FACTOR(weights.inaccessibleLeftCoef,
-      getInaccessibleLeftFactor(newState.board, newState.surfaceArray,
-                                evalContext->pieceRangeContext.maxAccessibleLeft5Surface,
-                                evalContext->pieceRangeContext.maxAccessibleLeftLPieceSurface,
-                                evalContext->wellColumn, evalContext->aiMode, hasHoles));
+  float inaccessibleLeftFactor =
+      isKillscreenLineout
+          ? 0.0f
+          : EVAL_FACTOR(weights.inaccessibleLeftCoef,
+                        getInaccessibleLeftFactor(
+                            newState.board, newState.surfaceArray,
+                            evalContext->pieceRangeContext.maxAccessibleLeft5Surface,
+                            evalContext->pieceRangeContext.maxAccessibleLeftLPieceSurface,
+                            evalContext->wellColumn, evalContext->aiMode, hasHoles));
 
-  float inaccessibleRightFactor = isKillscreenLineout ? 0.0f : EVAL_FACTOR(weights.inaccessibleRightCoef,
-      getInaccessibleRightFactor(newState.surfaceArray, evalContext->pieceRangeContext.maxAccessibleRightSurface));
+  float inaccessibleRightFactor =
+      isKillscreenLineout
+          ? 0.0f
+          : EVAL_FACTOR(weights.inaccessibleRightCoef,
+                        getInaccessibleRightFactor(
+                            newState.surfaceArray,
+                            evalContext->pieceRangeContext.maxAccessibleRightSurface));
 
   float lineClearFactor = getLineClearFactor(newState.lines - gameState.lines, weights,
-                                             evalContext->shouldRewardLineClears);
+                                             evalContext->shouldRewardLineClears, gameState.lines,
+                                             evalContext->lineoutAt29);
   float surfaceFactor = weights.surfaceCoef * rateSurface(newState.surfaceArray, evalContext);
 
-  float surfaceLeftFactor = isKillscreenLineout ? EVAL_FACTOR(weights.surfaceLeftCoef,
-      getLeftSurfaceFactor(newState.board, newState.surfaceArray, evalContext->pieceRangeContext.max5TapHeight)) : 0.0f;
+  float surfaceLeftFactor =
+      isKillscreenLineout
+          ? EVAL_FACTOR(weights.surfaceLeftCoef,
+                        getLeftSurfaceFactor(newState.board, newState.surfaceArray,
+                                             evalContext->pieceRangeContext.max5TapHeight))
+          : 0.0f;
 
-  float tetrisReadyFactor = (evalContext->wellColumn >= 0 && weights.tetrisReadyCoef != 0.0f
-                             && isTetrisReady(newState.board, newState.surfaceArray, evalContext->wellColumn))
-                                ? weights.tetrisReadyCoef
-                                : 0.0f;
+  float tetrisReadyFactor =
+      (evalContext->wellColumn >= 0
+       && weights.tetrisReadyCoef != 0.0f
+       && isTetrisReady(newState.board, newState.surfaceArray, evalContext->wellColumn))
+          ? weights.tetrisReadyCoef
+          : 0.0f;
 
-  float unableToBurnFactor = EVAL_FACTOR(weights.unableToBurnCoef,
-      getUnableToBurnFactor(newState.board, newState.surfaceArray, evalContext->scareHeight, hasHoles));
+  float unableToBurnFactor = EVAL_FACTOR(
+      weights.unableToBurnCoef, getUnableToBurnFactor(newState.board, newState.surfaceArray,
+                                                      evalContext->scareHeight, hasHoles));
+
+  float killscreenFactor = (evalContext->aiMode != LINEOUT
+                            && evalContext->lineoutAt29
+                            && newState.lines + burnAndHole.guaranteedBurns >= 230)
+                               ? KILLSCREEN_PENALTY
+                               : 0.0f;
 
   float total = surfaceFactor
                 + surfaceLeftFactor
@@ -542,7 +592,8 @@ float fastEval(const GameState &gameState, const GameState &newState, const Lock
                 + highCol9Factor
                 + tetrisReadyFactor
                 + builtOutLeftFactor
-                + unableToBurnFactor;
+                + unableToBurnFactor
+                + killscreenFactor;
   total = max(weights.deathCoef, total); // Can't be worse than death
 
   // Build a human-readable explanation of the non-zero eval factors.
@@ -573,6 +624,7 @@ float fastEval(const GameState &gameState, const GameState &newState, const Lock
     addFactor("tetrisReady", tetrisReadyFactor);
     addFactor("builtOutLeft", builtOutLeftFactor);
     addFactor("unableToBurn", unableToBurnFactor);
+    addFactor("onKillscreen", killscreenFactor);
     if (!explanation.empty() && explanation.back() == ';') {
       explanation.pop_back(); // Remove trailing separator
     }
@@ -618,4 +670,3 @@ float fastEval(const GameState &gameState, const GameState &newState, const Lock
 }
 
 #undef EVAL_FACTOR
-

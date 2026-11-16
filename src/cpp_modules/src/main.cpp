@@ -382,6 +382,12 @@ std::string mainProcess(char const *inputStr, RequestType requestType,
     timedBudget = SearchBudget::fromDeadline(
         playoutCount, anchor + std::chrono::milliseconds(playoutCount), calibratedRate);
     budgetPtr = &timedBudget;
+  } else if (timing != nullptr && timing->cancelFlag != nullptr) {
+    timedBudget = SearchBudget::fromWire(pruningBreadth, playoutCount);
+    budgetPtr = &timedBudget;
+  }
+  if (budgetPtr != nullptr && timing != nullptr) {
+    timedBudget.cancelFlag = timing->cancelFlag;
   }
 
   switch (requestType) {

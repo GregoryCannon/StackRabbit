@@ -1,6 +1,7 @@
 #include "playout.hpp"
 #include "../data/canonical_sequences.hpp"
 #include "eval.hpp"
+#include "eval_context.hpp"
 #include "params.hpp"
 #include "utils.hpp"
 #include <algorithm>
@@ -31,9 +32,31 @@ LockPlacement pickLockPlacement(GameState gameState, const EvalContext *evalCont
 float playSequence(GameState gameState, const PieceRangeContext pieceRangeContextLookup[3],
                    const int pieceSequence[SEQUENCE_LENGTH], int playoutLength,
                    AggressionLevel aggressionLevel, AiMode originalAiMode,
-                   OUT vector<PlayoutData> *playoutDataList) {
+                   OUT vector<PlayoutData> *playoutDataList, OUT int *outMovesExecuted = nullptr) {
   PlayoutData newPlayoutData;
   const bool trackPlayouts = playoutDataList != NULL;
+
+  // ----- Special into-killscreen playout behavior -----
+  // If a pre-killscreen search already crossed into killscreen LINEOUT on the root move,
+  // evaluate the resulting board immediately in its pre-killscreen context without simulating
+  // playout moves at killscreen speed.
+  if (originalAiMode != LINEOUT && getAiMode(gameState, pieceRangeContextLookup) == LINEOUT) {
+    GameState preKillscreenState = gameState;
+    preKillscreenState.level = 28;
+    preKillscreenState.lines = std::min(gameState.lines, 226);
+    EvalContext contextRaw = getEvalContext(preKillscreenState, pieceRangeContextLookup,
+                                            /* useTestWeights= */ false, aggressionLevel);
+    contextRaw.aiMode = originalAiMode;
+    contextRaw.weights = getWeights(originalAiMode, /* useTestWeights= */ false, aggressionLevel);
+    contextRaw.shouldRewardLineClears = false;
+    float evalScore = fastEval(gameState, gameState, NO_PLACEMENT, &contextRaw);
+    if (trackPlayouts) {
+      newPlayoutData.totalScore = evalScore;
+      copyBoard(gameState.board, newPlayoutData.resultingBoard);
+      insertIntoList(newPlayoutData, playoutDataList);
+    }
+    return evalScore;
+  }
 
   float totalReward = 0;
   for (int i = 0; i < playoutLength; i++) {
@@ -49,6 +72,9 @@ float playSequence(GameState gameState, const PieceRangeContext pieceRangeContex
     const Piece *piece = &PIECE_LIST[pieceSequence[i]];
     fastMoveSearch(gameState, piece, evalContext->pieceRangeContext.inputFrameTimeline,
                    lockPlacements);
+    if (outMovesExecuted != nullptr) {
+      (*outMovesExecuted)++;
+    }
 
     if (lockPlacements.size() == 0) {
       return weights.deathCoef;
@@ -62,10 +88,15 @@ float playSequence(GameState gameState, const PieceRangeContext pieceRangeContex
       newPlayoutData.placements.push_back(bestMoveLocation);
     }
 
+    GameState nextState = advanceGameState(gameState, bestMove, evalContext);
+    const bool reachedKillscreenLineout =
+        originalAiMode != LINEOUT && getAiMode(nextState, pieceRangeContextLookup) == LINEOUT;
+
     // On the last move, do a final evaluation
-    if (i == playoutLength - 1) {
+    // (Special case: if an agent that is too low-Hz to seriously play on killscreen transitions
+    // into killscreen, the playout stops early and we do the final eval.
+    if (i == playoutLength - 1 || reachedKillscreenLineout) {
       if (SHOULD_PLAY_PERFECT) {
-        GameState nextState = advanceGameState(gameState, bestMove, evalContext);
         float eval = evalForPerfectPlay(gameState, nextState, bestMove, evalContext);
         if (trackPlayouts) {
           newPlayoutData.totalScore = totalReward + eval;
@@ -75,19 +106,16 @@ float playSequence(GameState gameState, const PieceRangeContext pieceRangeContex
         return eval;
       }
 
-      // Override the current aiMode (unless the playout has entered killscreen LINEOUT)
-      // such that the end of a playout is always compared fairly against other playouts.
+      // Override the current aiMode such that the end of a playout is always compared fairly
+      // against other playouts using the root search's mode.
       EvalContext contextRaw = *evalContext;
-      if (evalContext->aiMode != LINEOUT
-          && (originalAiMode == DIG || originalAiMode == STANDARD
-              || originalAiMode == NEAR_KILLSCREEN || originalAiMode == DIRTY_NEAR_KILLSCREEN)) {
+      if (contextRaw.aiMode != originalAiMode) {
         contextRaw.aiMode = originalAiMode;
         contextRaw.weights =
             getWeights(originalAiMode, /* useTestWeights= */ false, aggressionLevel);
-        contextRaw.shouldRewardLineClears =
-            (originalAiMode == LINEOUT || originalAiMode == DIRTY_NEAR_KILLSCREEN);
+        contextRaw.shouldRewardLineClears = (originalAiMode == LINEOUT);
+        nextState = advanceGameState(gameState, bestMove, &contextRaw);
       }
-      GameState nextState = advanceGameState(gameState, bestMove, &contextRaw);
       float evalScore = fastEval(gameState, nextState, bestMove, &contextRaw);
       if (PLAYOUT_LOGGING_ENABLED) {
         gameState = nextState;
@@ -108,23 +136,22 @@ float playSequence(GameState gameState, const PieceRangeContext pieceRangeContex
 
     // Otherwise, update the state to keep playing
     int oldLines = gameState.lines;
-    gameState = advanceGameState(gameState, bestMove, evalContext);
+    gameState = nextState;
 
     if (SHOULD_PLAY_PERFECT) {
       if ((gameState.lines - oldLines) % 4 != 0) {
         return 0; // 0% chance of continuing perfect
       }
     } else {
-      AiMode rewardMode = evalContext->aiMode == LINEOUT ? LINEOUT : originalAiMode;
       FastEvalWeights rewardWeights =
-          (rewardMode == DIG || evalContext->aiMode == DIG)
+          (originalAiMode == DIG || evalContext->aiMode == DIG)
               ? getWeights(STANDARD, /* useTestWeights= */ false, aggressionLevel)
-              : getWeights(rewardMode, /* useTestWeights= */ false,
+              : getWeights(originalAiMode, /* useTestWeights= */ false,
                            aggressionLevel); // When the AI is digging, still deduct from the
                                              // overall value of the sequence at standard amounts
-      int shouldRewardClears = (rewardMode == LINEOUT || rewardMode == DIRTY_NEAR_KILLSCREEN);
-      totalReward +=
-          getLineClearFactor(gameState.lines - oldLines, rewardWeights, shouldRewardClears);
+      int shouldRewardClears = (originalAiMode == LINEOUT);
+      totalReward += getLineClearFactor(gameState.lines - oldLines, rewardWeights,
+                                        shouldRewardClears, oldLines, evalContext->lineoutAt29);
       if (PLAYOUT_LOGGING_ENABLED) {
         printBoard(gameState.board);
         printf("Best placement: %c %d, %d\n\n", bestMove.piece->id, bestMove.rotationIndex,
@@ -138,8 +165,9 @@ float playSequence(GameState gameState, const PieceRangeContext pieceRangeContex
 float getPlayoutScore(GameState gameState, int playoutCount, int playoutLength,
                       const PieceRangeContext pieceRangeContextLookup[3], int firstPieceIndex,
                       AggressionLevel aggressionLevel, AiMode originalAiMode,
-                      OUT vector<PlayoutData> *playoutDataList,
-                      OUT vector<float> *outPlayoutScores, int sequenceOffset) {
+                      OUT vector<PlayoutData> *playoutDataList, OUT vector<float> *outPlayoutScores,
+                      int sequenceOffset, OUT int *outMovesExecuted,
+                      const std::atomic<bool> *cancelFlag) {
   // // Don't perform playouts if logging is enabled
   // if (LOGGING_ENABLED) {
   //   return 0;
@@ -165,6 +193,9 @@ float getPlayoutScore(GameState gameState, int playoutCount, int playoutLength,
   float playoutScore = 0;
   vector<float> playoutScores;
   for (int i = 0; i < playoutCount; i++) {
+    if (cancelFlag != nullptr && cancelFlag->load(std::memory_order_relaxed)) {
+      break;
+    }
     // Do one playout
     const int *pieceSequence =
         useExhaustiveSequences
@@ -177,7 +208,7 @@ float getPlayoutScore(GameState gameState, int playoutCount, int playoutLength,
                                            // rows are skipped);
     float resultScore =
         playSequence(gameState, pieceRangeContextLookup, pieceSequence, playoutLength,
-                     aggressionLevel, originalAiMode, playoutDataList);
+                     aggressionLevel, originalAiMode, playoutDataList, outMovesExecuted);
     playoutScores.push_back(resultScore);
     playoutScore += resultScore;
     if (outPlayoutScores != nullptr) {

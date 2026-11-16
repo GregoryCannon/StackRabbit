@@ -892,7 +892,8 @@ TEST_CASE("playSequence preserves originalAiMode weights across mid-playout mode
     GameState after0 = advanceGameState(g, best0, &initialCtx);
     REQUIRE(after0.numTrueHoles >= 1);
     float reward0 =
-        getLineClearFactor(after0.lines - g.lines, initialCtx.weights, initialCtx.shouldRewardLineClears);
+        getLineClearFactor(after0.lines - g.lines, initialCtx.weights,
+                           initialCtx.shouldRewardLineClears, g.lines, initialCtx.lineoutAt29);
 
     const EvalContext ply1Ctx = getEvalContext(after0, contexts, /* useTestWeights= */ false, SAFE);
     REQUIRE(ply1Ctx.aiMode == DIG);
@@ -954,7 +955,8 @@ TEST_CASE("playSequence preserves originalAiMode weights across mid-playout mode
     GameState after0 = advanceGameState(g, best0, &initialCtx);
     REQUIRE(after0.numTrueHoles == 0);
     FastEvalWeights stdWeights = getWeights(STANDARD, /* useTestWeights= */ false, SAFE);
-    float reward0 = getLineClearFactor(after0.lines - g.lines, stdWeights, false);
+    float reward0 = getLineClearFactor(after0.lines - g.lines, stdWeights, false, g.lines,
+                                       initialCtx.lineoutAt29);
 
     const EvalContext ply1Ctx = getEvalContext(after0, contexts, /* useTestWeights= */ false, SAFE);
     REQUIRE(ply1Ctx.aiMode == STANDARD);
@@ -987,24 +989,17 @@ TEST_CASE("playSequence preserves originalAiMode weights across mid-playout mode
     CHECK(scoreFromPostRootMove == doctest::Approx(expectedDigEval));
   }
 
-  SUBCASE("STANDARD playout transitioning from Level 28 into Level 29 LINEOUT keeps LINEOUT at leaf") {
-    // At level 28, lines = 219, originalAiMode is STANDARD. Clearing 1 line advances to level 29
-    // (LINEOUT). With right-side columns at height 6 (above level 29's maxAccessibleRightSurface),
-    // overwriting contextRaw.aiMode to STANDARD falsely disables isKillscreenLineout and triggers
-    // the -200 inaccessibleRight penalty on level 29.
+  SUBCASE("Pre-killscreen playout stops immediately upon reaching Level 29 LINEOUT and evaluates in Level 28 context") {
+    // At level 28, lines = 226, a 4-deep right well with height 10 on cols 0..8 is Tetris-ready.
+    // Dropping a vertical I into col 9 on ply 0 clears 4 lines (226 -> 230, advancing to level 29
+    // LINEOUT). Even when playoutLength = 6, playSequence must terminate immediately after ply 0
+    // and evaluate the post-Tetris board using the Level 28 STANDARD EvalContext rather than
+    // simulating 5 more plies under Level 29 gravity or applying LINEOUT's scareHeight = 0.
     GameState g = {};
     g.level = 28;
-    g.lines = 219;
-    // Row 19: cols 0..3 empty (horizontal I slot), cols 4..9 filled
-    for (int col = 4; col <= 9; col++) {
-      g.board[19] |= (1U << (9 - col));
-    }
-    // Cols 4..8 stacked to height 6 (rows 14..18)
-    for (int r = 14; r <= 18; r++) {
-      for (int col = 4; col <= 8; col++) {
-        g.board[r] |= (1U << (9 - col));
-      }
-    }
+    g.lines = 226;
+    std::string wellBoard = makeWellBoard(/* height= */ 8, /* wellDepth= */ 8, /* wellCol= */ 9);
+    encodeBoard(wellBoard.c_str(), g.board);
     getSurfaceArray(g.board, g.surfaceArray);
     std::pair<int, float> holes = updateSurfaceAndHoles(g.surfaceArray, g.board, 9, false);
     g.numTrueHoles = holes.first;
@@ -1014,9 +1009,7 @@ TEST_CASE("playSequence preserves originalAiMode weights across mid-playout mode
     const EvalContext initialCtx = getEvalContext(g, contexts, /* useTestWeights= */ false, SAFE);
     REQUIRE(initialCtx.aiMode == STANDARD);
 
-    int seq[SEQUENCE_LENGTH] = {};
-    seq[0] = IDX_I;
-    seq[1] = IDX_O;
+    int seq[SEQUENCE_LENGTH] = {IDX_I, IDX_Z, IDX_S, IDX_O, IDX_T, IDX_L};
 
     std::vector<LockPlacement> locks0;
     fastMoveSearch(g, &PIECE_LIST[seq[0]], initialCtx.pieceRangeContext.inputFrameTimeline, locks0);
@@ -1024,21 +1017,180 @@ TEST_CASE("playSequence preserves originalAiMode weights across mid-playout mode
     LockPlacement best0 = pickLockPlacement(g, &initialCtx, locks0);
     GameState after0 = advanceGameState(g, best0, &initialCtx);
     REQUIRE(after0.level == 29);
-    float reward0 =
-        getLineClearFactor(after0.lines - g.lines, initialCtx.weights, initialCtx.shouldRewardLineClears);
+    REQUIRE(after0.lines == 230);
+    float expectedEarlyStopEval = fastEval(g, after0, best0, &initialCtx);
 
-    const EvalContext ply1Ctx = getEvalContext(after0, contexts, /* useTestWeights= */ false, SAFE);
-    REQUIRE(ply1Ctx.aiMode == LINEOUT);
-    std::vector<LockPlacement> locks1;
-    fastMoveSearch(after0, &PIECE_LIST[seq[1]], ply1Ctx.pieceRangeContext.inputFrameTimeline, locks1);
-    REQUIRE(!locks1.empty());
-    LockPlacement best1 = pickLockPlacement(after0, &ply1Ctx, locks1);
-    GameState after1 = advanceGameState(after0, best1, &ply1Ctx);
-    float expectedLineoutEval = fastEval(after0, after1, best1, &ply1Ctx);
+    std::vector<PlayoutData> playoutDataList;
+    float actualScore = playSequence(g, contexts, seq, /* playoutLength= */ 6, SAFE,
+                                     initialCtx.aiMode, &playoutDataList);
+    CHECK(actualScore == doctest::Approx(expectedEarlyStopEval));
+    REQUIRE(playoutDataList.size() == 1);
+    CHECK(playoutDataList[0].placements.size() == 1);
 
-    float actualScore = playSequence(g, contexts, seq, /* playoutLength= */ 2, SAFE,
-                                     initialCtx.aiMode, /* playoutDataList= */ nullptr);
-    CHECK(actualScore == doctest::Approx(reward0 + expectedLineoutEval));
+    // If the root move itself already crossed into Level 29 (so playSequence is entered with
+    // after0.level == 29 while originalAiMode == STANDARD), playSequence stops on entry (0 plies
+    // played on Level 29) and returns the Level 28 board evaluation (excluding the root move's
+    // immediateReward, which the caller adds).
+    float rootImmediateReward =
+        getLineClearFactor(after0.lines - g.lines, initialCtx.weights,
+                           initialCtx.shouldRewardLineClears, g.lines, initialCtx.lineoutAt29);
+    std::vector<PlayoutData> postRootPlayoutData;
+    float postRootScore = playSequence(after0, contexts, seq, /* playoutLength= */ 6, SAFE,
+                                       initialCtx.aiMode, &postRootPlayoutData);
+    CHECK(rootImmediateReward + postRootScore == doctest::Approx(expectedEarlyStopEval));
+    REQUIRE(postRootPlayoutData.size() == 1);
+    CHECK(postRootPlayoutData[0].placements.empty());
+
+    // Conversely, a search that *starts* on Level 29 (originalAiMode == LINEOUT) runs all requested
+    // playout plies in LINEOUT mode.
+    const EvalContext level29Ctx =
+        getEvalContext(after0, contexts, /* useTestWeights= */ false, SAFE);
+    REQUIRE(level29Ctx.aiMode == LINEOUT);
+    std::vector<PlayoutData> lineoutPlayoutData;
+    playSequence(after0, contexts, seq, /* playoutLength= */ 2, SAFE, level29Ctx.aiMode,
+                 &lineoutPlayoutData);
+    REQUIRE(lineoutPlayoutData.size() == 1);
+    CHECK(lineoutPlayoutData[0].placements.size() == 2);
+  }
+
+  SUBCASE("Level 28 playouts prefer scoring Tetrises into 29 over burning or digging into 29") {
+    // At level 28, lines = 228, build a clean height-8 stack with a right well (col 9 empty) and
+    // row 12 having cols 0..6 filled and cols 7..9 empty (so an L piece can either burn 1 line by
+    // filling cols 7..9 or stack cleanly on the left while keeping the Tetris well open).
+    GameState g = {};
+    g.level = 28;
+    g.lines = 228;
+    // Rows 13..19 (7 rows): cols 0..8 filled, col 9 empty (7-deep right well)
+    for (int r = 13; r < 20; r++) {
+      for (int col = 0; col <= 8; col++) {
+        g.board[r] |= (1U << (9 - col));
+      }
+    }
+    getSurfaceArray(g.board, g.surfaceArray);
+    std::pair<int, float> holes = updateSurfaceAndHoles(g.surfaceArray, g.board, 9, false);
+    g.numTrueHoles = holes.first;
+    g.numPartialHoles = holes.second;
+    REQUIRE(g.numTrueHoles == 0);
+
+    const EvalContext ctx = getEvalContext(g, contexts, /* useTestWeights= */ false, SAFE);
+    REQUIRE(ctx.aiMode == STANDARD);
+
+    // Compare a candidate placement that keeps the board clean and Tetris-ready vs a candidate
+    // placement that creates a hole over the well to enter DIG mode.
+    LockPlacement cleanPlacement = {/* x= */ 0, /* y= */ 10, /* rotationIndex= */ 0,
+                                    /* tuckFrame= */ -1, NO_TUCK_NOTATION, &PIECE_LIST[IDX_O]};
+    LockPlacement holePlacement = {/* x= */ 7, /* y= */ 10, /* rotationIndex= */ 2,
+                                   /* tuckFrame= */ -1, NO_TUCK_NOTATION, &PIECE_LIST[IDX_L]};
+    GameState cleanState = advanceGameState(g, cleanPlacement, &ctx);
+    GameState holeState = advanceGameState(g, holePlacement, &ctx);
+    REQUIRE(cleanState.numTrueHoles == 0);
+    REQUIRE(holeState.numTrueHoles >= 1);
+
+    float cleanScore = getPlayoutScore(cleanState, /* playoutCount= */ 49, /* playoutLength= */ 6,
+                                       contexts, IDX_O, SAFE, ctx.aiMode, nullptr);
+    float holeScore = getPlayoutScore(holeState, /* playoutCount= */ 49, /* playoutLength= */ 6,
+                                      contexts, IDX_L, SAFE, ctx.aiMode, nullptr);
+    CHECK(cleanScore > holeScore);
+  }
+
+  SUBCASE("Timed precompute at lines=229 does not inflate moves/ms from early-stopped playouts") {
+    // Regression pin: at level 28, lines = 229, any line clear crosses into level 29 and stops
+    // playSequence early (0 or 1 ply instead of 8). Counting totalPlayoutsRun * playoutLength
+    // instead of actual plies executed inflated getObservedMovesPerMs() by ~5x-10x after Round 1,
+    // causing Round 2 to schedule 8000-sample full-length playouts and overrun a 60ms deadline by
+    // >500ms.
+    std::string board =
+        "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        "000000000000000000000000000000000000000011000000001110000000111100100011111111101111111110"
+        "11111111101111111110";
+    std::string pipe = InputBuilder()
+                           .withBoard1(board)
+                           .withLevel(28)
+                           .withLines(229)
+                           .withCurPiece(IDX_S)
+                           .withNextPiece(-1)
+                           .withTimeline("X..")
+                           .withPlayoutCount(60)
+                           .withPlayoutLength(8)
+                           .withPruningBreadth(-2)
+                           .withAggression("aggro")
+                           .withDasCharge(16)
+                           .build()
+                       + "18|";
+    auto start = std::chrono::steady_clock::now();
+    std::string out = runRequest(PRECOMPUTE, pipe);
+    double elapsedMs =
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+    CHECK(out.rfind("Default:", 0) == 0);
+    CHECK(elapsedMs < 150.0);
+  }
+
+  SUBCASE("EngineTimingContext::cancelFlag halts in-flight PRECOMPUTE immediately") {
+    std::string board =
+        "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        "000000000000000000000000000000000000000011000000001110000000111100100011111111101111111110"
+        "11111111101111111110";
+    std::string pipe = InputBuilder()
+                           .withBoard1(board)
+                           .withLevel(18)
+                           .withLines(0)
+                           .withCurPiece(IDX_T)
+                           .withNextPiece(-1)
+                           .withTimeline("X..")
+                           .withPlayoutCount(2000)
+                           .withPlayoutLength(8)
+                           .withPruningBreadth(-2)
+                           .withAggression("safe")
+                           .withDasCharge(16)
+                           .build()
+                       + "18|";
+    std::atomic<bool> cancelRequested{false};
+    EngineTimingContext timing;
+    timing.cancelFlag = &cancelRequested;
+
+    std::thread canceller([&cancelRequested]() {
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+      cancelRequested.store(true, std::memory_order_relaxed);
+    });
+    auto start = std::chrono::steady_clock::now();
+    std::string out = mainProcess(pipe.c_str(), PRECOMPUTE, &timing);
+    double elapsedMs =
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+    canceller.join();
+    CHECK(out == "none");
+    CHECK(elapsedMs < 100.0);
+  }
+
+  SUBCASE("Precompute at lines=228 avoids burning to 229 with a covered well on S -> O") {
+    // Regression pin from live gameplay: at level 28, lines = 228, S current and O next,
+    // burning 1 line into 229 while covering the right well (S=1|6|14, leaving guaranteedBurns=1
+    // so lines + guaranteedBurns == 230) must be heavily penalized by KILLSCREEN_PENALTY so the
+    // engine keeps the board at 228 lines with an open well instead.
+    std::string board =
+        "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        "000000000000000000000000000000000000000000000100000011110000011111110011111111101111111110"
+        "11111111101111111110";
+    std::string pipe = InputBuilder()
+                           .withBoard1(board)
+                           .withLevel(28)
+                           .withLines(228)
+                           .withCurPiece(IDX_S)
+                           .withNextPiece(-1)
+                           .withTimeline("X..")
+                           .withPlayoutCount(100)
+                           .withPlayoutLength(8)
+                           .withPruningBreadth(-1)
+                           .withAggression("aggro")
+                           .withDasCharge(16)
+                           .build()
+                       + "18|";
+    std::string out = runRequest(PRECOMPUTE, pipe);
+    // Extract the O: line and verify it stays at 228 lines rather than burning to 229
+    size_t oPos = out.find("\nO:");
+    REQUIRE(oPos != std::string::npos);
+    size_t oEnd = out.find('\n', oPos + 1);
+    std::string oLine = out.substr(oPos + 1, oEnd - (oPos + 1));
+    CHECK(oLine.find("|28|228|") != std::string::npos);
   }
 }
 

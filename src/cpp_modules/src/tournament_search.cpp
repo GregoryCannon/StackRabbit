@@ -315,15 +315,19 @@ void cutTournamentCandidatesByRank(OUT std::vector<TournamentCandidate> &candida
   }
 }
 
-/** Appends `sampleCount` playouts from the shared window at `batchOffset` to the cont's pool. */
-void playTournamentSamples(OUT TournamentCont &cont, int sampleCount, int batchOffset,
-                           int playoutLength, const PieceRangeContext pieceRangeContextLookup[3],
-                           int secondPieceIndex, AggressionLevel aggressionLevel,
-                           AiMode originalAiMode) {
+/** Appends `sampleCount` playouts from the shared window at `batchOffset` to the cont's pool.
+ * @returns the number of individual playout moves (plies) executed.
+ */
+int playTournamentSamples(OUT TournamentCont &cont, int sampleCount, int batchOffset,
+                          int playoutLength, const PieceRangeContext pieceRangeContextLookup[3],
+                          int secondPieceIndex, AggressionLevel aggressionLevel,
+                          AiMode originalAiMode, const std::atomic<bool> *cancelFlag = nullptr) {
   cont.seqScores.reserve(cont.seqScores.size() + sampleCount);
+  int movesExecuted = 0;
   getPlayoutScore(cont.resultingState, sampleCount, playoutLength, pieceRangeContextLookup,
                   secondPieceIndex, aggressionLevel, originalAiMode, /* playoutDataList */ NULL,
-                  &cont.seqScores, batchOffset);
+                  &cont.seqScores, batchOffset, &movesExecuted, cancelFlag);
+  return movesExecuted;
 }
 
 /** Runs the 3-round tournament over precomputed 2-ply possibilities. See block comment above. */
@@ -340,7 +344,7 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
   const bool isTimed = (budget.mode == BUDGET_TIME_MS);
   const bool evalOnly =
       playoutLength == 0 || (isTimed ? budget.timeBudgetMs <= 0 : budget.playoutCount == 0);
-  if (evalOnly) {
+  if (evalOnly || budget.isCancelled()) {
     return buildEvalOnlyLookupMap(possibilities);
   }
 
@@ -464,12 +468,16 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
     }
   }
   SteadyClock::time_point r1Start = SteadyClock::now();
+  long long totalPlayoutMovesRun = 0;
   for (auto &candidate : candidates) {
+    if (budget.isCancelled()) {
+      return lockValueMap;
+    }
     int contsToPlay = std::min(r1Conts, (int)candidate.conts.size());
     for (int c = 0; c < contsToPlay; c++) {
-      playTournamentSamples(candidate.conts[c], n1, samplesSoFar, playoutLength,
-                            pieceRangeContextLookup, secondPieceIndex,
-                            evalContext->aggressionLevel, evalContext->aiMode);
+      totalPlayoutMovesRun += playTournamentSamples(
+          candidate.conts[c], n1, samplesSoFar, playoutLength, pieceRangeContextLookup,
+          secondPieceIndex, evalContext->aggressionLevel, evalContext->aiMode, budget.cancelFlag);
     }
   }
   double playoutMsAccum = isTimed ? msBetween(r1Start, SteadyClock::now()) : 0.0;
@@ -533,9 +541,11 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
     printf("\n");
   }
 
-  long long totalPlayoutsRun = spentSoFar;
   auto getObservedMovesPerMs = [&]() {
-    double raw = (totalPlayoutsRun * (double)playoutLength) / std::max(0.05, playoutMsAccum);
+    if (totalPlayoutMovesRun == 0) {
+      return initMovesPerMs;
+    }
+    double raw = (double)totalPlayoutMovesRun / std::max(0.05, playoutMsAccum);
     // Avoid micro-timer upward inflation when elapsed wall time is under 2ms.
     if (playoutMsAccum < 2.0) {
       return std::min(initMovesPerMs, raw);
@@ -563,20 +573,24 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
   }
   if (n2 > 0) {
     SteadyClock::time_point r2Start = SteadyClock::now();
-    int r2PlayoutsRun = 0;
+    long long r2MovesRun = 0;
     for (auto &candidate : candidates) {
+      if (budget.isCancelled()) {
+        return lockValueMap;
+      }
       if (candidate.eliminated) {
         continue;
       }
       for (auto &cont : candidate.conts) {
-        playTournamentSamples(cont, n2, samplesSoFar, playoutLength, pieceRangeContextLookup,
-                              secondPieceIndex, evalContext->aggressionLevel, evalContext->aiMode);
-        r2PlayoutsRun += n2;
+        r2MovesRun += playTournamentSamples(cont, n2, samplesSoFar, playoutLength,
+                                            pieceRangeContextLookup, secondPieceIndex,
+                                            evalContext->aggressionLevel, evalContext->aiMode,
+                                            budget.cancelFlag);
       }
     }
     if (isTimed) {
       playoutMsAccum += msBetween(r2Start, SteadyClock::now());
-      totalPlayoutsRun += r2PlayoutsRun;
+      totalPlayoutMovesRun += r2MovesRun;
     }
     samplesSoFar += n2;
     spentSoFar += survivorsAfterCut1 * TMT_CONTINUATIONS_PER_CANDIDATE * n2;
@@ -668,18 +682,23 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
       }
 
       SteadyClock::time_point chunkStart = SteadyClock::now();
+      long long chunkMovesRun = 0;
       for (size_t f = 0; f < finalistIndices.size(); f++) {
+        if (budget.isCancelled()) {
+          return lockValueMap;
+        }
         TournamentCandidate &candidate = candidates[finalistIndices[f]];
         int contIdx = finalistBestContIndices[f];
         TMT_TRACE("TRACE: R3 chunk playing %s cont=%s\n", candidate.key.c_str(),
                   candidate.conts[contIdx].contKey.c_str());
-        playTournamentSamples(candidate.conts[contIdx], chunkSize, samplesSoFar, playoutLength,
-                              pieceRangeContextLookup, secondPieceIndex,
-                              evalContext->aggressionLevel, evalContext->aiMode);
+        chunkMovesRun += playTournamentSamples(
+            candidate.conts[contIdx], chunkSize, samplesSoFar, playoutLength,
+            pieceRangeContextLookup, secondPieceIndex, evalContext->aggressionLevel,
+            evalContext->aiMode, budget.cancelFlag);
       }
       lastChunkMs = msBetween(chunkStart, SteadyClock::now());
       playoutMsAccum += lastChunkMs;
-      totalPlayoutsRun += (long long)finalists * chunkSize;
+      totalPlayoutMovesRun += chunkMovesRun;
       samplesSoFar += chunkSize;
       n3 += chunkSize;
     }
@@ -694,13 +713,17 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
     n3 = getRoundSampleCount(totalBudget - spentSoFar, finalists);
     if (n3 > 0) {
       for (size_t f = 0; f < finalistIndices.size(); f++) {
+        if (budget.isCancelled()) {
+          return lockValueMap;
+        }
         TournamentCandidate &candidate = candidates[finalistIndices[f]];
         int contIdx = finalistBestContIndices[f];
         TMT_TRACE("TRACE: R3 playing %s cont=%s\n", candidate.key.c_str(),
                   candidate.conts[contIdx].contKey.c_str());
         playTournamentSamples(candidate.conts[contIdx], n3, samplesSoFar, playoutLength,
                               pieceRangeContextLookup, secondPieceIndex,
-                              evalContext->aggressionLevel, evalContext->aiMode);
+                              evalContext->aggressionLevel, evalContext->aiMode,
+                              budget.cancelFlag);
         if (TMT_LOGGING_ENABLED) {
           logTournamentCont("R3", candidate.key, candidate.conts[contIdx], n1 + n2);
         }

@@ -43,7 +43,8 @@ int searchDepth1(GameState gameState, const Piece *firstPiece, const EvalContext
       continue; // While playing perfect, ignore any placements that burn lines
     }
     float reward = getLineClearFactor(resultingState.lines - gameState.lines, evalContext->weights,
-                                      evalContext->shouldRewardLineClears);
+                                      evalContext->shouldRewardLineClears, gameState.lines,
+                                      evalContext->lineoutAt29);
     // Only allocate an explanation string when the caller requested it, to avoid overhead
     // otherwise.
     std::string explanation;
@@ -78,7 +79,8 @@ FirstMoveSearchResult buildFirstMoveBranches(const GameState &gameState, const P
     }
     float firstMoveReward =
         getLineClearFactor(afterFirstMove.lines - gameState.lines, evalContext->weights,
-                           evalContext->shouldRewardLineClears);
+                           evalContext->shouldRewardLineClears, gameState.lines,
+                           evalContext->lineoutAt29);
     result.branches.push_back({firstPlacement, dasChargeAfter, afterFirstMove, firstMoveReward});
   };
 
@@ -120,7 +122,8 @@ static int searchDepth2FromFirstMoves(const FirstMoveSearchResult &firstMoves,
                                       const EvalContext *evalContext,
                                       OUT std::vector<Possibility> &possibilities,
                                       bool generateExplanation = false,
-                                      OUT std::vector<int> *dasChargesForThirdPiece = nullptr) {
+                                      OUT std::vector<int> *dasChargesForThirdPiece = nullptr,
+                                      const std::atomic<bool> *cancelFlag = nullptr) {
   if (!firstMoves.useDas && secondPieceDasCharge >= 0) {
     fprintf(stderr,
             "Error: searchDepth2FromFirstMoves received secondPieceDasCharge (%d) for tap-mode "
@@ -142,6 +145,9 @@ static int searchDepth2FromFirstMoves(const FirstMoveSearchResult &firstMoves,
   secondLockPlacements.reserve(64);
 
   for (FirstMoveBranch const &branch : firstMoves.branches) {
+    if (cancelFlag != nullptr && cancelFlag->load(std::memory_order_relaxed)) {
+      return 0;
+    }
     const LockPlacement &firstPlacement = branch.firstPlacement;
     const GameState &afterFirstMove = branch.afterFirstMove;
     float firstMoveReward = branch.firstMoveReward;
@@ -172,7 +178,8 @@ static int searchDepth2FromFirstMoves(const FirstMoveSearchResult &firstMoves,
           + fastEval(afterFirstMove, resultingState, secondPlacement, evalContext, explanationPtr);
       float secondMoveReward =
           getLineClearFactor(resultingState.lines - afterFirstMove.lines, evalContext->weights,
-                             evalContext->shouldRewardLineClears);
+                             evalContext->shouldRewardLineClears, afterFirstMove.lines,
+                             evalContext->lineoutAt29);
 
       possibilities.push_back(
           {{firstPlacement.x, firstPlacement.y, firstPlacement.rotationIndex},
@@ -714,7 +721,8 @@ static unordered_map<string, float>
 getLockValueLookupFromPossibilities(const std::vector<Possibility> &possibilities,
                                     int pruningBreadth, int playoutCount, int playoutLength,
                                     const Piece *secondPiece, const EvalContext *evalContext,
-                                    const PieceRangeContext pieceRangeContextLookup[3]) {
+                                    const PieceRangeContext pieceRangeContextLookup[3],
+                                    const std::atomic<bool> *cancelFlag = nullptr) {
   // If no playouts, just use the eval
   if (playoutCount * playoutLength == 0) {
     return buildShallowLockValueMap(possibilities, /* dasChargesForThirdPiece= */ nullptr);
@@ -734,6 +742,9 @@ getLockValueLookupFromPossibilities(const std::vector<Possibility> &possibilitie
     // possibility from playouts entirely (leaving the whole map at the deathCoef sentinel),
     // so small breadths always allow at least one pair per lock position.
     for (const Possibility *possibilityPtr : sortedPtrs) {
+      if (cancelFlag != nullptr && cancelFlag->load(std::memory_order_relaxed)) {
+        break;
+      }
       Possibility const &possibility = *possibilityPtr;
       string lockPosEncoded = encodeLockPosition(possibility.firstPlacement);
       // Cap the number of times a lock position can be repeated (despite differing second
@@ -753,7 +764,9 @@ getLockValueLookupFromPossibilities(const std::vector<Possibility> &possibilitie
                      + getPlayoutScore(possibility.resultingState, playoutCount, playoutLength,
                                        pieceRangeContextLookup, secondPiece->index,
                                        evalContext->aggressionLevel, evalContext->aiMode,
-                                       /* playoutDataList */ NULL)
+                                       /* playoutDataList */ NULL, /* outPlayoutScores= */ nullptr,
+                                       /* sequenceOffset= */ 0, /* outMovesExecuted= */ nullptr,
+                                       cancelFlag)
                : (SHOULD_PLAY_PERFECT ? 0 : evalContext->weights.deathCoef));
 
       if (lockValueMap.count(lockPosEncoded) == 0 || overallScore > lockValueMap[lockPosEncoded]) {
@@ -860,9 +873,9 @@ static unordered_map<string, float> dispatchLookupFromPossibilities(
                                                          effectiveBudget, evalContext,
                                                          pieceRangeContextLookup);
   }
-  return getLockValueLookupFromPossibilities(possibilities, effectiveBudget.pruningBreadth,
-                                             effectiveBudget.playoutCount, playoutLength,
-                                             secondPiece, evalContext, pieceRangeContextLookup);
+  return getLockValueLookupFromPossibilities(
+      possibilities, effectiveBudget.pruningBreadth, effectiveBudget.playoutCount, playoutLength,
+      secondPiece, evalContext, pieceRangeContextLookup, effectiveBudget.cancelFlag);
 }
 
 /** Variant of getLockValueLookupMapped using precomputed tap-mode firstMoves shared read-only
@@ -877,10 +890,12 @@ unordered_map<string, float> getLockValueLookupMappedWithFirstMoves(
             "Error: getLockValueLookupMappedWithFirstMoves expects tap-mode first moves.\n");
     return {};
   }
+  const std::atomic<bool> *cancelFlag = budget != nullptr ? budget->cancelFlag : nullptr;
   std::vector<Possibility> possibilities;
   searchDepth2FromFirstMoves(firstMoves, secondPiece, /* secondPieceDasCharge= */ -1,
                              evalContext->pieceRangeContext.inputFrameTimeline, evalContext,
-                             possibilities);
+                             possibilities, /* generateExplanation= */ false,
+                             /* dasChargesForThirdPiece= */ nullptr, cancelFlag);
   return dispatchLookupFromPossibilities(possibilities, secondPiece, pruningBreadth, playoutCount,
                                          playoutLength, evalContext, pieceRangeContextLookup,
                                          budget);
@@ -935,6 +950,7 @@ DasLockValueMaps getLockValueLookupDasMapsWithFirstMoves(
     return {};
   }
   DasLockValueMaps maps;
+  const std::atomic<bool> *cancelFlag = budget != nullptr ? budget->cancelFlag : nullptr;
   // First, do multiple shallow searches at low depth to check if finishing the first placement with
   // partial or no DAS charge sabotages the next piece's placements. E.g. if the next piece will
   // need full DAS (i.e. an I piece going all the way to the right), losing DAS during the first
@@ -952,7 +968,8 @@ DasLockValueMaps getLockValueLookupDasMapsWithFirstMoves(
   std::vector<int> dasChargesForThirdPiece;
   searchDepth2FromFirstMoves(firstMoves, secondPiece, /* secondPieceDasCharge= */ 15,
                              dasInputFrameTimeline, evalContext, fullChargePossibilities,
-                             /* generateExplanation= */ false, &dasChargesForThirdPiece);
+                             /* generateExplanation= */ false, &dasChargesForThirdPiece,
+                             cancelFlag);
   const unordered_map<string, float> shallowFullBaseline =
       buildShallowLockValueMap(fullChargePossibilities, &dasChargesForThirdPiece);
 
@@ -962,7 +979,8 @@ DasLockValueMaps getLockValueLookupDasMapsWithFirstMoves(
   dasChargesForThirdPiece.clear();
   searchDepth2FromFirstMoves(firstMoves, secondPiece, /* secondPieceDasCharge= */ 10,
                              dasInputFrameTimeline, evalContext, bucketPossibilities,
-                             /* generateExplanation= */ false, &dasChargesForThirdPiece);
+                             /* generateExplanation= */ false, &dasChargesForThirdPiece,
+                             cancelFlag);
   maps.partialPenalty = buildShallowLockValueMap(bucketPossibilities, &dasChargesForThirdPiece);
 
   // Minimum charge: 5 is the worst useful charge, since even with 0 charge you can
@@ -973,7 +991,8 @@ DasLockValueMaps getLockValueLookupDasMapsWithFirstMoves(
   dasChargesForThirdPiece.clear();
   searchDepth2FromFirstMoves(firstMoves, secondPiece, /* secondPieceDasCharge= */ 5,
                              dasInputFrameTimeline, evalContext, bucketPossibilities,
-                             /* generateExplanation= */ false, &dasChargesForThirdPiece);
+                             /* generateExplanation= */ false, &dasChargesForThirdPiece,
+                             cancelFlag);
   maps.minPenalty = buildShallowLockValueMap(bucketPossibilities, &dasChargesForThirdPiece);
 
   // Replace the raw value maps with maps of the penalty relative to the best placement (as negative

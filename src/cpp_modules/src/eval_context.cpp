@@ -3,33 +3,19 @@
 #include "params.hpp"
 #include <algorithm>
 
-int hasHoleBlockingTetrisReady(unsigned int board[20], int col10Height) {
-  if (col10Height > 16) {
-    return 0;
-  }
-  // Check that the four rows where a right well tetris would happen have no holes
-  for (int r = 0; r <= 4; r++) {
-    if (board[19 - col10Height - r] & ALL_HOLE_BITS) {
-      return true;
-    }
-  }
-  return false;
-}
-
-AiMode getAiMode(GameState gameState, int currentMax5TapHeight, int max5TapHeight29) {
+AiMode getAiMode(const GameState &gameState, int currentMax5TapHeight) {
   if ((ALWAYS_LINEOUT_29 && gameState.lines > 226) || currentMax5TapHeight < 4 || ALWAYS_LINEOUT) {
     return LINEOUT;
-  }
-  if (max5TapHeight29 < 2 && gameState.lines > 220 && gameState.level < 29) {
-    if (hasHoleBlockingTetrisReady(gameState.board, gameState.surfaceArray[9])) {
-      return DIRTY_NEAR_KILLSCREEN;
-    }
-    return NEAR_KILLSCREEN;
   }
   if (gameState.numTrueHoles >= 1) {
     return DIG;
   }
   return STANDARD;
+}
+
+AiMode getAiMode(const GameState &gameState, const PieceRangeContext pieceRangeContextLookup[]) {
+  int idx = isGravityDoubled(gameState.level) ? 0 : getGravity(gameState.level);
+  return getAiMode(gameState, pieceRangeContextLookup[idx].max5TapHeight);
 }
 
 const EvalContext getEvalContext(GameState gameState,
@@ -45,11 +31,13 @@ const EvalContext getEvalContext(GameState gameState,
   context.pieceRangeContext = pieceRangeContextLookup[pieceRangeContextIndex];
 
   // Set the mode
-  AiMode aiMode = getAiMode(gameState, context.pieceRangeContext.max5TapHeight,
-                            pieceRangeContextLookup[0].max5TapHeight);
+  AiMode aiMode = getAiMode(gameState, context.pieceRangeContext.max5TapHeight);
   context.aiMode = aiMode;
   context.aggressionLevel = aggressionLevel;
   context.weights = getWeights(context.aiMode, useTestWeights, aggressionLevel);
+  // Index 1 holds the level 29 (1-frame-per-row gravity) piece ranges.
+  context.lineoutAt29 =
+      ALWAYS_LINEOUT_29 || pieceRangeContextLookup[1].max5TapHeight < 4 || ALWAYS_LINEOUT;
 
   // Set the scare heights
   if (aiMode == LINEOUT) {
@@ -92,7 +80,7 @@ const EvalContext getEvalContext(GameState gameState,
   // context.countWellHoles = context.aiMode == DIG   // This turns out to not work in practice, it
   // prevents filling the well to clear holes.
   context.countWellHoles = false;
-  context.shouldRewardLineClears = (aiMode == LINEOUT || aiMode == DIRTY_NEAR_KILLSCREEN);
+  context.shouldRewardLineClears = (aiMode == LINEOUT);
 
   return context;
 }

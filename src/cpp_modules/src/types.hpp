@@ -18,6 +18,7 @@
 
 #define NO_TUCK_NOTATION '.'
 
+#include <atomic>
 #include <chrono>
 #include <string>
 #include <vector>
@@ -132,8 +133,6 @@ enum AiMode {
   STANDARD,
   DIG,
   LINEOUT,
-  NEAR_KILLSCREEN,
-  DIRTY_NEAR_KILLSCREEN,
 };
 
 /**
@@ -199,6 +198,7 @@ struct EvalContext {
   float scareHeight;
   int shouldRewardLineClears;
   int wellColumn; // Equals -1 if lining out
+  bool lineoutAt29;
 };
 
 struct Possibility {
@@ -255,6 +255,11 @@ struct SearchBudget {
   bool hasDeadline;
   std::chrono::steady_clock::time_point deadline;
   double calibratedMovesPerMs; // 0 = fall back to built-in conservative default
+  const std::atomic<bool> *cancelFlag = nullptr; // Optional cancellation token (live_game_server)
+
+  bool isCancelled() const {
+    return cancelFlag != nullptr && cancelFlag->load(std::memory_order_relaxed);
+  }
 
   static SearchBudget fromPlayoutCount(int pruningBreadth, int playoutCount) {
     SearchBudget b{};
@@ -297,6 +302,7 @@ struct EngineTimingContext {
   std::chrono::steady_clock::time_point requestReceived{};
   double calibratedMovesPerMs7T = 0.0; // Baseline rate across 7 concurrent precompute threads
   double calibratedMovesPerMs1T = 0.0; // Baseline rate for single-threaded lookups
+  const std::atomic<bool> *cancelFlag = nullptr; // Set when backup is served to abort in-flight work
 };
 
 #endif

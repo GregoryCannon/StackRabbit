@@ -11,6 +11,8 @@ float getPlayoutScore(GameState gameState, int playoutCount, int playoutLength,
                       const PieceRangeContext pieceRangeContextLookup[3], int pieceOffsetIndex,
                       AggressionLevel aggressionLevel, AiMode originalAiMode,
                       OUT vector<PlayoutData> *playoutDataList,
-                      OUT vector<float> *outPlayoutScores = nullptr, int sequenceOffset = 0);
+                      OUT vector<float> *outPlayoutScores = nullptr, int sequenceOffset = 0,
+                      OUT int *outMovesExecuted = nullptr,
+                      const std::atomic<bool> *cancelFlag = nullptr);
 
 #endif

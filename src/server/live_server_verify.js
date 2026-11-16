@@ -8,14 +8,13 @@
  * error path once per run: a junk pipe must surface as a 500 with a message,
  * and the next valid kick must clear it.
  *
- * The poll loop waits for the FULL result: a 200 whose body is backup-shaped
- * (`Default:...` + exactly 7 `<piece>:continue` lines, or the whole-body
- * `none`) is recorded as a backup observation and the polling continues until
- * the body equals the golden (byte-identity is the gate; a full result can
- * share the backup's exact shape) or is otherwise not backup-shaped. The 504
- * "Still calculating" transient (the window before the backup lands) is
- * retried within the timeout; 500 and 404 are sticky states that can never
- * resolve by retrying, so they fail immediately.
+ * The poll loop waits for the FULL result: because serving a backup response at
+ * /async-result halts the in-flight computation on the server, kickAndAwaitFull
+ * waits INITIAL_FULL_WAIT_MS before polling (re-kicking with exponential backoff
+ * if a slow fixture was still in its backup tier when polled). A dedicated
+ * backup-and-halt check verifies that polling /async-result early returns a
+ * backup-shaped response and halts a 500ms computation within milliseconds so
+ * the slot stays on the backup and immediately accepts the next /precompute.
  *
  * Usage: node src/server/live_server_verify.js [--host <h>] [--port <p>]
  * Host/port also come from LIVE_SERVER_HOST / LIVE_SERVER_PORT; default
@@ -28,10 +27,15 @@ const path = require("path");
 const FIXTURES_PATH = path.join(__dirname, "data/precompute_fixtures.jsonl");
 const PIECE_LOOKUP = ["I", "O", "L", "J", "T", "S", "Z"];
 const MAX_DIFF_EXAMPLES = 5;
+const INITIAL_FULL_WAIT_MS = 25; // production fixtures finish in ~6-14ms; avoid triggering backup halt
 const POLL_INTERVAL_MS = 10;
 const POLL_TIMEOUT_MS = 30000; // full results take tens of ms; this is ~1000x headroom
 const REQUEST_TIMEOUT_MS = 10000;
 const JUNK_PIPE = "junk,pipe,that,fails,validation,x";
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function fail(message) {
   console.error("\n[live_server_verify] FAIL: " + message);
@@ -124,58 +128,125 @@ function get(host, port, requestPath) {
   });
 }
 
-// Kicks one request and polls /async-result until the full result is in:
-// the loop exits when the body equals the golden (byte-identity is the gate —
-// note a full result can share the backup's exact shape, e.g. an
-// all-seven-`continue` response) or when it is no longer backup-shaped.
-// Returns the final response plus how many backup-shaped 200s were seen.
+// Kicks one request and waits for the full result before polling /async-result.
+// Because serving a backup response at /async-result halts the in-flight full
+// computation on the server, we wait `waitMs` before polling; if a CPU pause
+// causes the poll to hit the backup tier anyway (halting that attempt), we let
+// the worker finish unwinding and re-kick with a doubled wait.
 async function kickAndAwaitFull(host, port, pipe, golden, { encodeQuery = false } = {}) {
   const queryValue = encodeQuery ? encodeURIComponent(pipe) : pipe;
-  const kick = await get(host, port, "/precompute?p=" + queryValue);
+  const deadline = Date.now() + POLL_TIMEOUT_MS;
+  let waitMs = INITIAL_FULL_WAIT_MS;
+  let backupObservations = 0;
+  let lastBackupBody = null;
+
+  for (;;) {
+    const kick = await get(host, port, "/precompute?p=" + queryValue);
+    if (kick.status !== 200 || kick.body !== "Request accepted.") {
+      return {
+        error: `kick returned ${kick.status} ${JSON.stringify(kick.body)} (expected 200 "Request accepted.")`,
+      };
+    }
+
+    await sleep(waitMs);
+
+    for (;;) {
+      let response;
+      try {
+        response = await get(host, port, "/async-result");
+      } catch (err) {
+        return { error: `poll failed: ${err.message}` };
+      }
+      if (response.status === 504) {
+        if (Date.now() > deadline) {
+          return { error: `timed out waiting for the full result (last status 504)` };
+        }
+        await sleep(POLL_INTERVAL_MS);
+        continue;
+      }
+      if (response.status !== 200) {
+        // 500 and 404 are sticky slot states; retrying cannot change them.
+        return { error: `poll returned ${response.status}: ${JSON.stringify(response.body)}` };
+      }
+      if (response.body === golden) {
+        return { response, backupObservations, lastBackupBody };
+      }
+      if (isBackupShaped(response.body)) {
+        // Polling while still in the backup tier halted the in-flight search;
+        // wait briefly for the worker to mark DONE and re-kick with a longer wait.
+        backupObservations++;
+        lastBackupBody = response.body;
+        if (Date.now() > deadline) {
+          return {
+            error: `timed out waiting for the full result; still backup-shaped: ${JSON.stringify(response.body)}`,
+          };
+        }
+        await sleep(5);
+        waitMs = Math.min(waitMs * 2, 1000);
+        break;
+      }
+      return { response, backupObservations, lastBackupBody };
+    }
+  }
+}
+
+// Verifies the backup tier and its computation-halt contract: kicks a heavy
+// timed precompute (500ms deadline), polls /async-result immediately to trigger
+// the backup response, and checks that (1) the response is backup-shaped and
+// (2) the 500ms computation halts within 15ms so the slot stays on the backup
+// and the subsequent kick is immediately accepted rather than 503 "Busy".
+async function verifyBackupHaltsComputation(host, port, fixture) {
+  const heavyRecord = {
+    ...fixture,
+    playoutCount: 500,
+    playoutLength: 8,
+    pruningBreadth: -2,
+  };
+  const pipe = buildPipeString(heavyRecord);
+  const kick = await get(host, port, "/precompute?p=" + pipe);
   if (kick.status !== 200 || kick.body !== "Request accepted.") {
-    return {
-      error: `kick returned ${kick.status} ${JSON.stringify(kick.body)} (expected 200 "Request accepted.")`,
-    };
+    fail(
+      `backup-halt check: kick returned ${kick.status} ${JSON.stringify(kick.body)} ` +
+        `(expected 200 "Request accepted.")`
+    );
   }
 
   const deadline = Date.now() + POLL_TIMEOUT_MS;
-  let backupObservations = 0;
-  let lastBackupBody = null;
+  let backupBody = null;
   for (;;) {
-    let response;
-    try {
-      response = await get(host, port, "/async-result");
-    } catch (err) {
-      return { error: `poll failed: ${err.message}` };
-    }
+    const response = await get(host, port, "/async-result");
     if (response.status === 504) {
-      // Transient "Still calculating": the backup has not landed yet. Keep
-      // polling within the timeout — never past it.
       if (Date.now() > deadline) {
-        return { error: `timed out waiting for the full result (last status 504)` };
+        fail("backup-halt check: timed out waiting for backup response (last status 504)");
       }
-      await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+      await sleep(1);
       continue;
     }
     if (response.status !== 200) {
-      // 500 and 404 are sticky slot states; retrying cannot change them.
-      return { error: `poll returned ${response.status}: ${JSON.stringify(response.body)}` };
+      fail(
+        `backup-halt check: expected 200 backup response, got ${response.status} ` +
+          `${JSON.stringify(response.body)}`
+      );
     }
-    if (response.body === golden) {
-      return { response, backupObservations, lastBackupBody };
+    if (!isBackupShaped(response.body)) {
+      fail(
+        `backup-halt check: expected backup-shaped response on early poll, got ` +
+          `${JSON.stringify(response.body)}`
+      );
     }
-    if (isBackupShaped(response.body)) {
-      backupObservations++;
-      lastBackupBody = response.body;
-      if (Date.now() > deadline) {
-        return {
-          error: `timed out waiting for the full result; still backup-shaped: ${JSON.stringify(response.body)}`,
-        };
-      }
-      await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
-      continue;
-    }
-    return { response, backupObservations, lastBackupBody };
+    backupBody = response.body;
+    break;
+  }
+
+  // Wait 15ms (far short of the 500ms deadline): the worker must have halted
+  // and left the backup in place without overwriting it with a full result.
+  await sleep(15);
+  const afterHalt = await get(host, port, "/async-result");
+  if (afterHalt.status !== 200 || afterHalt.body !== backupBody) {
+    fail(
+      `backup-halt check: expected slot to retain backup response after halt, got ` +
+        `${afterHalt.status} ${JSON.stringify(afterHalt.body)}`
+    );
   }
 }
 
@@ -268,6 +339,10 @@ async function run(host, port, fixtures) {
     buildPipeString(fixtures[0], "|")
   );
   console.log("  500 with message: " + JSON.stringify(pipeDelimiterError));
+
+  console.log("Backup-and-halt check (500ms timed request halted on backup poll) ...");
+  await verifyBackupHaltsComputation(host, port, fixtures[0]);
+  console.log("  200 backup served and in-flight search halted.");
 
   console.log("Percent-encoded comma check (fixture 0) ...");
   const encodedResult = await kickAndAwaitFull(

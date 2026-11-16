@@ -90,32 +90,6 @@ const FastEvalWeights DIG_WEIGHTS = {MAIN_WEIGHTS.avgHeightCoef,
                                      MAIN_WEIGHTS.surfaceLeftCoef,
                                      /* unableToBurnCoef= */ 0};
 
-const FastEvalWeights NEAR_KILLSCREEN_WEIGHTS = {MAIN_WEIGHTS.avgHeightCoef,
-                                                 MAIN_WEIGHTS.builtOutLeftCoef,
-                                                 MAIN_WEIGHTS.burnCoef,
-                                                 MAIN_WEIGHTS.coveredWellCoef,
-                                                 MAIN_WEIGHTS.col9Coef,
-                                                 MAIN_WEIGHTS.deathCoef,
-                                                 MAIN_WEIGHTS.extremeGapCoef,
-                                                 MAIN_WEIGHTS.holeCoef,
-                                                 MAIN_WEIGHTS.holeWeightCoef,
-                                                 MAIN_WEIGHTS.inaccessibleLeftCoef,
-                                                 MAIN_WEIGHTS.inaccessibleRightCoef,
-                                                 /* tetrisCoef= */ 100,
-                                                 MAIN_WEIGHTS.tetrisReadyCoef,
-                                                 MAIN_WEIGHTS.surfaceCoef,
-                                                 MAIN_WEIGHTS.surfaceLeftCoef,
-                                                 MAIN_WEIGHTS.unableToBurnCoef};
-
-const FastEvalWeights DIRTY_NEAR_KILLSCREEN_WEIGHTS = {
-    MAIN_WEIGHTS.avgHeightCoef,     MAIN_WEIGHTS.builtOutLeftCoef, MAIN_WEIGHTS.burnCoef,
-    MAIN_WEIGHTS.coveredWellCoef,   MAIN_WEIGHTS.col9Coef,         MAIN_WEIGHTS.deathCoef,
-    MAIN_WEIGHTS.extremeGapCoef,    MAIN_WEIGHTS.holeCoef,         MAIN_WEIGHTS.holeWeightCoef,
-    /* inaccessibleLeftCoef= */ 0,
-    /* inaccessibleRightCoef= */ 0,
-    /* tetrisCoef= */ 1000,         MAIN_WEIGHTS.tetrisReadyCoef,  MAIN_WEIGHTS.surfaceCoef,
-    MAIN_WEIGHTS.surfaceLeftCoef,   MAIN_WEIGHTS.unableToBurnCoef};
-
 // set to avgHeight=-20, builtLeft=8 when testing 20hz killscreen linout
 
 const FastEvalWeights LINEOUT_WEIGHTS = {
@@ -137,6 +111,8 @@ const FastEvalWeights LINEOUT_WEIGHTS = {
     /* unableToBurnCoef= */ 0,
 };
 
+const float KILLSCREEN_PENALTY = -250.0f;
+
 FastEvalWeights getWeights(AiMode mode, bool useTestWeights, AggressionLevel aggressionLevel) {
   if (SHOULD_PLAY_PERFECT) {
     return PLAY_PERFECT_WEIGHTS;
@@ -145,12 +121,6 @@ FastEvalWeights getWeights(AiMode mode, bool useTestWeights, AggressionLevel agg
   switch (mode) {
   case DIG:
     weights = DIG_WEIGHTS;
-    break;
-  case NEAR_KILLSCREEN:
-    weights = NEAR_KILLSCREEN_WEIGHTS;
-    break;
-  case DIRTY_NEAR_KILLSCREEN:
-    weights = DIRTY_NEAR_KILLSCREEN_WEIGHTS;
     break;
   case LINEOUT:
     weights = LINEOUT_WEIGHTS;
@@ -163,7 +133,7 @@ FastEvalWeights getWeights(AiMode mode, bool useTestWeights, AggressionLevel agg
     return {};
   }
   // The aggression level parameter overrides the burnCoef of all MAIN_WEIGHTS-derived sets
-  if (mode == STANDARD || mode == NEAR_KILLSCREEN || mode == DIRTY_NEAR_KILLSCREEN) {
+  if (mode == STANDARD) {
     weights.burnCoef = getAggressionBurnCoef(aggressionLevel);
   }
   return weights;

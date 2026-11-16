@@ -218,12 +218,6 @@ function requestPrecompute()
     end
   end
 
-  -- 28 Hotfix
-  if reqLevel >= 27 then
-    reqLevel = reqLevel - 1
-    reqLines = reqLines - 10
-  end
-
   if stateForNextPiece == nil or stateForNextPiece.board == nil
         or stateForNextPiece.lines == nil or stateForNextPiece.level == nil then
     print("GAME OVER - unknown state")
@@ -244,8 +238,12 @@ function requestPrecompute()
                              playoutCount)
 
   local response = makeHttpRequest(reqStr)
-  if response.code ~= 200 then
-    error("Request not acknowledged by backend")
+  -- On Mac, httpFetch hardcodes code=200 and returns the body in response.data
+  -- (e.g. "Busy" on 503 when the previous precompute overran its deadline).
+  if response.code ~= 200 or response.data ~= "Request accepted." then
+    emu.pause()
+    error("Request not acknowledged by backend (code=" .. tostring(response.code)
+          .. ", body=" .. tostring(response.data) .. ")")
   end
   waitingOnAsyncRequest = true;
   return response.data
@@ -264,8 +262,10 @@ function requestFirstPlacement()
                              (USE_DAS and 0 or -1), 0, playoutCount)
 
   local response = makeHttpRequest(reqStr)
-  if response.code ~= 200 then
-    error("Request not acknowledged by backend")
+  if response.code ~= 200 or response.data ~= "Request accepted." then
+    emu.pause()
+    error("Request not acknowledged by backend (code=" .. tostring(response.code)
+          .. ", body=" .. tostring(response.data) .. ")")
   end
   waitingOnAsyncRequest = true;
   return response.data
@@ -277,11 +277,17 @@ function fetchAsyncResult()
 
   -- Only use the response if the server indicated that it sent the async result
   if response.code ~= 200 then
+    emu.pause()
     error("RECEIVED BAD RESPONSE CODE:" .. response.code)
     return nil
   end 
   if (response.data == nil or response.data == '') then
+    emu.pause()
     error("NO RESPONSE FROM SERVER (is it running?)")
+  end
+  if response.data ~= "none" and string.sub(response.data, 1, 8) ~= "Default:" then
+    emu.pause()
+    error("Unexpected /async-result response from server: " .. tostring(response.data))
   end
 
   waitingOnAsyncRequest = false;
@@ -289,7 +295,7 @@ function fetchAsyncResult()
 end
 
 function makeHttpRequest(requestUrl)
-  print(requestUrl)
+  print("Making http request:", requestUrl)
 
   -- On Mac, use custom C library for HTTP requests
   if IS_MAC then

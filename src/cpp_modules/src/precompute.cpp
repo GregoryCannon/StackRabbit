@@ -442,6 +442,9 @@ PrecomputeState preparePrecomputeState(GameState gameState, const Piece *curPiec
   // Step 4 ensures timed lock lookups observe the exact remaining budget and only the collapse
   // remains afterwards.
   for (PrecomputePhantom &phantom : state.phantoms) {
+    if (budget != nullptr && budget->isCancelled()) {
+      return PrecomputeState();
+    }
     if (!phantom.hasAdjustmentState) {
       continue;
     }
@@ -463,6 +466,9 @@ PrecomputeState preparePrecomputeState(GameState gameState, const Piece *curPiec
   // single lookup floors the pipeline's wall time — relevant when tuning the playout config.
   // Precompute the first piece's placements and resulting boards once so all seven next-piece
   // threads (and every DAS charge bucket) share them read-only.
+  if (budget != nullptr && budget->isCancelled()) {
+    return PrecomputeState();
+  }
   const FirstMoveSearchResult firstMoves = buildFirstMoveBranches(
       gameState, curPiece, state.useDAS ? DAS_CHARGE_MAX : -1,
       state.useDAS ? inputFrameTimeline : evalContext->pieceRangeContext.inputFrameTimeline,
@@ -599,6 +605,9 @@ std::string runPrecompute(GameState gameState, const Piece *curPiece,
   const PrecomputeState state = preparePrecomputeState(
       gameState, curPiece, inputFrameTimeline, dasCharge, reactionTime, pruningBreadth,
       playoutCount, playoutLength, evalContext, pieceRangeContextLookup, budget);
+  if (budget != nullptr && budget->isCancelled()) {
+    return "none";
+  }
   return collapseAndFormatPrecompute(state, gameState.board, curPiece, gameState.level,
                                      gameState.lines, SHOULD_PUSHDOWN);
 }

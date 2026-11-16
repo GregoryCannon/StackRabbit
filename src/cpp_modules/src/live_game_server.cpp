@@ -37,6 +37,7 @@
 #include <sys/time.h>
 #include <unistd.h>
 
+#include <atomic>
 #include <cerrno>
 #include <chrono>
 #include <condition_variable>
@@ -80,6 +81,7 @@ struct AsyncSlot {
   std::string error; // engine rejection message or exception message
   bool backupUsedForRequest = false;
   long long totalBackupsUsed = 0;
+  std::atomic<bool> cancelRequested{false};
 };
 
 AsyncSlot g_slot;
@@ -268,17 +270,26 @@ void workerLoop(double calibratedMovesPerMs7T) {
       timing.hasRequestReceived = true;
       timing.requestReceived = requestReceived;
       timing.calibratedMovesPerMs7T = calibratedMovesPerMs7T;
+      timing.cancelFlag = &g_slot.cancelRequested;
       try {
         std::string full = mainProcess(enginePipe.c_str(), PRECOMPUTE, &timing);
-        if (isEngineRejection(full)) {
+        if (g_slot.cancelRequested.load(std::memory_order_relaxed)) {
+          printf("Precompute halted (backup already served)       Total backups used: %lld\n",
+                 g_slot.totalBackupsUsed);
+          fflush(stdout);
+        } else if (isEngineRejection(full)) {
           storeError(full);
         } else {
           storeFull(full);
         }
       } catch (const std::exception &e) {
-        storeError(e.what());
+        if (!g_slot.cancelRequested.load(std::memory_order_relaxed)) {
+          storeError(e.what());
+        }
       } catch (...) {
-        storeError("Unknown engine error (non-std exception)");
+        if (!g_slot.cancelRequested.load(std::memory_order_relaxed)) {
+          storeError("Unknown engine error (non-std exception)");
+        }
       }
       fullMs =
           std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - fullStarted)
@@ -389,6 +400,7 @@ RouteResult handlePrecomputeKick(const std::string &query) {
     g_slot.error.clear();
     g_slot.hasError = false;
     g_slot.backupUsedForRequest = false;
+    g_slot.cancelRequested.store(false, std::memory_order_relaxed);
     g_slot.state = AsyncSlot::State::RUNNING;
   }
   g_slot.jobReady.notify_one();
@@ -421,6 +433,7 @@ RouteResult handleAsyncResult() {
       g_slot.backupUsedForRequest = true;
       g_slot.totalBackupsUsed++;
     }
+    g_slot.cancelRequested.store(true, std::memory_order_relaxed);
     return {200, g_slot.partial,
             std::string(" (")
                 + elapsedBuf
