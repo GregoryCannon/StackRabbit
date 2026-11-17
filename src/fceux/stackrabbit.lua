@@ -3,9 +3,11 @@ local os = require("os")
 -- Manual global config
 USE_DAS = true -- When playing DAS, use the regular INPUT_TIMELINE to choose the level of quicktaps. 20Hz+ = 8 high quicktap, 12Hz+ = 7 high quicktap
 IS_PAL = false
+EMULATION_SPEED_PERCENT = 100 -- Must match FCEUX's "Emulation Speed" setting (e.g. 200 for 200%)
 USE_PUSHDOWN = true
 DEBUG_MODE = true
 SHOULD_RECORD_GAMES = true
+SAVE_SCORES = true
 AGGRESSION_LEVEL = "aggro" -- How much the agent values burning lines: "safe", "aggro", or "hyper"
 -- The C++ live server serving precompute (docs/engine_endpoints.md). The TS server
 -- stays on 3000 until the first-move flow is ported to /precompute as well.
@@ -49,13 +51,13 @@ INPUT_TIMELINE = TIMELINE_20_HZ;
 PLAYOUT_COUNT = 160
 PLAYOUT_LENGTH = 8
 PRUNING_BREADTH = -2
+GAME_OVER_DELAY_SECONDS = 10
 MOVIE_PATH = "C:\\Users\\Greg\\Desktop\\VODs\\" -- Where to store the fm2 VODS (absolute path)
-SCORES_TEXT_PATH = "C:\\Users\\Greg\\Desktop\\sr-test-scores.txt"
+SCORES_PATH = "C:\\Users\\Greg\\Desktop\\sr-test-scores.txt"
 if IS_MAC then 
   MOVIE_PATH = "/Users/gregcannon/Documents/AiVods/" 
   SCORES_PATH = "/Users/gregcannon/Desktop/sr-test-scores.txt"
 end
--- file = io.open(SCORES_PATH, "StackRabbit Game Scores:")
 
 
 function resetGameScopedVariables()
@@ -66,6 +68,9 @@ function resetGameScopedVariables()
   numLines = 0
   waitingOnAsyncRequest = false
   gameOver = false
+  enteredGameOverScreen = false
+  gameOverScreenFrames = 0
+  gameStartTimestamp = nil
   pcur = 0
   pnext = 0
   dasCharge = 0
@@ -80,6 +85,7 @@ function resetPieceScopedVars()
   inputSequence = ""
   stateForNextPiece = {board=nil, level=nil, lines=nil, dasCharge=nil}
 end
+resetPieceScopedVars();
 
 --[[--------------------------------------- 
 ------------ Helper Functions ------------- 
@@ -93,10 +99,10 @@ orientToNum = {[0]="none", [2]=1, [7]=2, [8]=3, [10]=4, [11]=5, [14]=6, [18]=7}
 PIECE_INDEX = {I=0, O=1, L=2, J=3, T=4, S=5, Z=6}
 
 function startRecording()
+  gameStartTimestamp = os.date("%m-%d %H %M %S")
   if(SHOULD_RECORD_GAMES) then
-    local dateStr = os.date("%m-%d %H %M")
-    print(dateStr)
-    movieName = "StackRabbit" .. dateStr
+    print(gameStartTimestamp)
+    movieName = "StackRabbit" .. gameStartTimestamp
     print(movieName)
     movie.record(MOVIE_PATH .. movieName .. ".fm2", 1)
   end
@@ -175,14 +181,21 @@ end
 
   
 
--- Convert remaining emulator frames into a backend timed-search deadline (ms).
+-- Convert remaining emulator frames into a backend timed-search deadline (ms),
+-- scaled by EMULATION_SPEED_PERCENT (e.g. 200% speed halves ms per frame).
 -- Subtracts 2 frames (current frame + lock/gamePhase == 8 transition offset)
 -- plus a small HTTP/scheduling margin; clamps so playoutCount stays positive.
 function framesToDeadlineMs(remainingFrames)
-  local msPerFrame = IS_PAL and (1000 / 50.007) or (1000 / 60.0988)
+  if type(EMULATION_SPEED_PERCENT) ~= "number" or EMULATION_SPEED_PERCENT <= 0 then
+    error("EMULATION_SPEED_PERCENT must be a positive number")
+  end
+  local speedRatio = EMULATION_SPEED_PERCENT / 100
+  local baseMsPerFrame = IS_PAL and (1000 / 50.007) or (1000 / 60.0988)
+  local msPerFrame = baseMsPerFrame / speedRatio
   local marginMs = 5
   local deadlineMs = math.floor((remainingFrames - 2) * msPerFrame - marginMs)
-  return math.max(10, deadlineMs)
+  local minDeadlineMs = math.max(1, math.floor(10 / speedRatio))
+  return math.max(minDeadlineMs, deadlineMs)
 end
 
 -- Build the live-server `/precompute?p=` query string (all 12 fields required;
@@ -229,7 +242,8 @@ function requestPrecompute()
   if PRUNING_BREADTH == -2 then
     local remainingFrames = math.max(0, string.len(inputSequence) - inputSequenceIndex)
     playoutCount = framesToDeadlineMs(remainingFrames)
-    print("Precompute deadline: " .. playoutCount .. "ms (" .. remainingFrames .. " frames left)")
+    print("Precompute deadline: " .. playoutCount .. "ms (" .. remainingFrames
+          .. " frames left @ " .. EMULATION_SPEED_PERCENT .. "%)")
   end
 
   local reqStr = LIVE_SERVER_URL .. "/precompute?p="
@@ -444,6 +458,41 @@ function bcdToDecimal(a)
   return 10 * (a - (a % 16)) / 16 + (a % 16)
 end
 
+function isValidBcdByte(b)
+  return (b % 16) < 10 and math.floor(b / 16) < 10
+end
+
+function getScore()
+  -- TetrisGYM (v5+) stores the uncapped 32-bit binary score at $0008..$000B
+  -- and the 8-digit BCD score at $000C..$000F (repurposing vanilla's $0053..$0055).
+  local gymBinScore = memory.readbyte(0x08)
+      + memory.readbyte(0x09) * 256
+      + memory.readbyte(0x0A) * 65536
+      + memory.readbyte(0x0B) * 16777216
+  local c0, c1, c2, c3 =
+      memory.readbyte(0x0C), memory.readbyte(0x0D), memory.readbyte(0x0E), memory.readbyte(0x0F)
+  if gymBinScore > 0 and isValidBcdByte(c0) and isValidBcdByte(c1)
+        and isValidBcdByte(c2) and isValidBcdByte(c3) then
+    local gymBcdScore = bcdToDecimal(c0)
+        + bcdToDecimal(c1) * 100
+        + bcdToDecimal(c2) * 10000
+        + bcdToDecimal(c3) * 1000000
+    if gymBinScore == gymBcdScore or gymBinScore >= 100000000 then
+      return gymBinScore
+    end
+  end
+
+  -- Vanilla NES Tetris and DAS Trainer store score at $0053..$0055 (packed BCD).
+  -- With Game Genie codes XNAOOK / ENEOOGEZ, the high nibble of $0055 continues
+  -- past 9 into hex A..F (up to 1,599,999) while its low nibble stays 0..9;
+  -- bcdToDecimal(s2) handles 0x00..0xF9 directly (e.g. 0xB2 -> 112 -> 1,125,000).
+  local s0, s1, s2 = memory.readbyte(0x53), memory.readbyte(0x54), memory.readbyte(0x55)
+  if isValidBcdByte(s0) and isValidBcdByte(s1) and (s2 % 16) < 10 then
+    return bcdToDecimal(s0) + bcdToDecimal(s1) * 100 + bcdToDecimal(s2) * 10000
+  end
+  return 0
+end
+
 function readFromMemory()
   pcur = memory.readbyte(0x42) -- Stores current/next pieces before they even appear onscreen
   pnext = memory.readbyte(0x19)
@@ -520,8 +569,20 @@ function processFirstAdjustment()
 end
 
 function onGameOver()
-  -- file:write("hello", "\n")
-  -- file:write("hello", "\n")
+  readFromMemory()
+  local finalScore = getScore()
+  local timestamp = gameStartTimestamp or os.date("%m-%d %H %M %S")
+  print("Game over! Score: " .. finalScore .. " (" .. timestamp .. ")")
+
+  if SAVE_SCORES then
+    local file, err = io.open(SCORES_PATH, "a")
+    if file == nil then
+      emu.pause()
+      error("Failed to open scores file (" .. tostring(SCORES_PATH) .. "): " .. tostring(err))
+    end
+    file:write(timestamp .. "\t" .. tostring(finalScore) .. "\n")
+    file:close()
+  end
 end
 
 --[[------------------------------------ 
@@ -536,25 +597,42 @@ function runGameFrame()
     return
   end
 
-  if (gameOver) then
-    return
-  end
-
-  if (gamePhase == 10) then
-    -- Quit to menu
-    startBtnVal = false;
-    if emu.framecount() % 10 == 1 then
-      startBtnVal = true
-    end
-    joypad.set(1, {A=false,B=false,left=false,right=false,up=false,down=false,select=false,start=startBtnVal});
-    return
-  end
-
   local gamePhaseLastFrame = gamePhase
   gamePhase = memory.readbyte(0x0048)
   -- print("gamePhase" .. gamePhase)
-  if (gamePhase == 8) then
-    -- Last phase of lock delay, look up next piece stuff from server
+
+  if gamePhase == 10 or enteredGameOverScreen then
+    if not enteredGameOverScreen then
+      enteredGameOverScreen = true
+      gameOver = true
+      gameOverScreenFrames = 0
+      onGameOver()
+    end
+
+    if SAVE_SCORES then
+      local fps = IS_PAL and 50.007 or 60.0988
+      local delayFrames = math.ceil(GAME_OVER_DELAY_SECONDS * fps)
+      local startBtnVal = false
+      if gameOverScreenFrames < delayFrames then
+        gameOverScreenFrames = gameOverScreenFrames + 1
+      elseif emu.framecount() % 10 == 1 then
+        startBtnVal = true
+      end
+      joypad.set(1, {A=false,B=false,left=false,right=false,up=false,down=false,select=false,start=startBtnVal})
+    end
+    return
+  end
+
+  if (gameOver) then
+    joypad.set(1, {A=false,B=false,left=false,right=false,up=false,down=false,select=false,start=false})
+    return
+  end
+  -- Wait for the final frame of ARE (gamePhase == 8 with vramRow 0x0049 == 16,
+  -- one frame before vramRow hits 0x20 and spawns the next piece). Polling on
+  -- the first frame of gamePhase == 8 fires 1 frame early on non-clears
+  -- (vramRow == 12) and 2 frames early on line clears (vramRow == 8).
+  if (gamePhase == 8 and memory.readbyte(0x0049) >= 16) then
+    -- Last frame of lock/entry delay, look up next piece stuff from server
     if (waitingOnAsyncRequest) then
       print("\n------ " .. orientToPiece[pnext] .. " ------")
       resetPieceScopedVars()
@@ -636,16 +714,19 @@ function eachFrame()
   -- print("Metastate" .. metaGameState)
 
   --Game starts
-  if(metaGameStateLastFrame == 3 and metaGameState == 4) then
+  if(metaGameStateLastFrame > 0 and metaGameStateLastFrame < 4 and metaGameState == 4) then
     startRecording()
   end
 
   --Game ends, clean up data
-  if(metaGameStateLastFrame == 4 and metaGameState == 3) then
-  resetGameScopedVariables()
-  if movie.active() then
+  if(metaGameStateLastFrame == 4 and metaGameState < 4) then
+    local currentMetaState = metaGameState
+    resetGameScopedVariables()
+    resetPieceScopedVars()
+    metaGameState = currentMetaState
+    if movie.active() then
       movie.stop()
-      end
+    end
   end
 
   if(metaGameState < 4) then
