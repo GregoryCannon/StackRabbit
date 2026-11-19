@@ -4,6 +4,8 @@
 #include "playout.hpp"
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
+#include <cstring>
 #include <math.h>
 #include <string>
 #include <vector>
@@ -40,6 +42,43 @@ int getTimedRoundSampleCount(double timeMs, double movesPerMs, int entryCount, i
   int count = (int)std::min<long long>(remainingBatch, capByTime);
   return count < TMT_MIN_PLAYOUTS ? 0 : count;
 }
+
+uint64_t hashGameState(const GameState &gs) {
+  uint64_t h = 14695981039346656037ULL;
+  auto mix = [&h](uint64_t v) {
+    h ^= v;
+    h *= 1099511628211ULL;
+  };
+  for (int r = 0; r < 20; r += 2) {
+    mix((static_cast<uint64_t>(gs.board[r]) << 32) | gs.board[r + 1]);
+  }
+  mix((static_cast<uint64_t>(static_cast<uint32_t>(gs.lines)) << 32)
+      | static_cast<uint32_t>(gs.level));
+  uint32_t partialBits = 0;
+  if (gs.numPartialHoles != 0.0f) {
+    memcpy(&partialBits, &gs.numPartialHoles, sizeof(partialBits));
+  }
+  mix((static_cast<uint64_t>(static_cast<uint32_t>(gs.numTrueHoles)) << 32) | partialBits);
+  h ^= h >> 33;
+  h *= 0xff51afd7ed558ccdULL;
+  h ^= h >> 33;
+  return h;
+}
+
+bool gameStateEquals(const GameState &a, const GameState &b) {
+  return a.lines == b.lines && a.level == b.level && a.numTrueHoles == b.numTrueHoles
+         && a.numPartialHoles == b.numPartialHoles
+         && memcmp(a.board, b.board, sizeof(a.board)) == 0
+         && memcmp(a.surfaceArray, b.surfaceArray, sizeof(a.surfaceArray)) == 0;
+}
+
+struct GameStatePtrHash {
+  size_t operator()(const GameState *gs) const { return static_cast<size_t>(hashGameState(*gs)); }
+};
+
+struct GameStatePtrEqual {
+  bool operator()(const GameState *a, const GameState *b) const { return gameStateEquals(*a, *b); }
+};
 
 } // namespace
 
@@ -737,28 +776,57 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
            candidateCount, r1Conts, n1, survivorsAfterCut1, n2, finalists, n3, samplesSoFar);
   }
 
-  // ---- Build the map: each first placement publishes the best LCB over its sampled conts;
-  // unproven keys may publish low -- correct and intended.
+  // ---- Build the map: record the highest-sample-count playout estimate per distinct
+  // post-2-piece GameState so transposed positions replace lower-sample estimates with their
+  // deeper counterparts, then publish each first placement's best LCB across all possibilities
+  // whose resulting state was sampled.
+  struct StatePlayoutEstimate {
+    int count = 0;
+    float mean = 0.0f;
+    float lcbPenalty = 0.0f;
+  };
+  std::unordered_map<const GameState *, StatePlayoutEstimate, GameStatePtrHash, GameStatePtrEqual>
+      stateEstimates;
+  stateEstimates.reserve(static_cast<size_t>(candidateCount * TMT_CONTINUATIONS_PER_CANDIDATE));
   for (auto const &candidate : candidates) {
-    int bestContIdx = -1;
-    float bestScore = FLOAT_MIN;
-    for (int i = 0; i < (int)candidate.conts.size(); i++) {
-      if (candidate.conts[i].seqScores.empty()) {
+    for (auto const &cont : candidate.conts) {
+      const int n = static_cast<int>(cont.seqScores.size());
+      if (n == 0) {
         continue; // Never sampled (cut before its round): no playout-backed estimate exists
       }
-      float score = getTournamentContPublishScore(candidate.conts[i]);
-      if (bestContIdx == -1 || score > bestScore) {
-        bestScore = score;
-        bestContIdx = i;
+      const float mean = getTournamentPlayoutMean(cont);
+      const float lcbPenalty =
+          n < 2 ? 0.0f : (2.0f + 4.5f / (n - 1)) * getTournamentContStandardError(cont);
+      const auto it = stateEstimates.find(&cont.resultingState);
+      if (it == stateEstimates.end() || n > it->second.count
+          || (n == it->second.count
+              && (mean - lcbPenalty) > (it->second.mean - it->second.lcbPenalty))) {
+        stateEstimates[&cont.resultingState] = {n, mean, lcbPenalty};
       }
     }
-    lockValueMap[candidate.key] = bestScore;
-    if (TMT_LOGGING_ENABLED && bestContIdx >= 0) {
-      float rawScore;
-      getTournamentContPublishScore(candidate.conts[bestContIdx], &rawScore);
-      printf("  final %-9s = %9.2f (cont=%-9s n=%d raw=%9.2f)\n", candidate.key.c_str(), bestScore,
-             candidate.conts[bestContIdx].contKey.c_str(),
-             (int)candidate.conts[bestContIdx].seqScores.size(), rawScore);
+  }
+
+  for (auto const &candidate : candidates) {
+    lockValueMap[candidate.key] = FLOAT_MIN;
+  }
+  for (const Possibility *possibilityPtr : sortedPossibilities) {
+    const Possibility &possibility = *possibilityPtr;
+    const auto estIt = stateEstimates.find(&possibility.resultingState);
+    if (estIt == stateEstimates.end()) {
+      continue;
+    }
+    const StatePlayoutEstimate &est = estIt->second;
+    const float rawScore = possibility.immediateReward + est.mean;
+    const float score = est.count < 2 ? rawScore : rawScore - est.lcbPenalty;
+    const std::string key = encodeLockPosition(possibility.firstPlacement);
+    float &bestScore = lockValueMap[key];
+    if (score > bestScore) {
+      bestScore = score;
+    }
+  }
+  if (TMT_LOGGING_ENABLED) {
+    for (auto const &candidate : candidates) {
+      printf("  final %-9s = %9.2f\n", candidate.key.c_str(), lockValueMap[candidate.key]);
     }
   }
 

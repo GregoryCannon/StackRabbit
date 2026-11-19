@@ -39,7 +39,7 @@ struct PrecomputePossibility {
 
 /** One candidate initial placement and its adjustment search. */
 struct PrecomputePhantom {
-  std::string inputSequence; // the dedupe prefix (up to the reaction-time slice)
+  std::string inputSequence; // pre-reaction input prefix (up to the reaction-time slice)
   bool hasInitialPlacement = false;
   PrecomputePossibility initial{};
   bool hasAdjustmentState = false;

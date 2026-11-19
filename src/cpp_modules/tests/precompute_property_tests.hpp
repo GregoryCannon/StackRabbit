@@ -194,7 +194,8 @@ static std::vector<double> recomputedPhantomTotals(const PrecomputeState &state,
           if (state.lockValues[i].find(key) == state.lockValues[i].end()) {
             continue;
           }
-          const double value = state.lockValues[i].at(key) + adjustmentInputCost(adjustment)
+          const double value = state.lockValues[i].at(key)
+                               + adjustmentInputCost(adjustment, phantom, state.reactionTime)
                                + recomputedDasPenalty(state.useDAS, adjustment.dasChargeAfter, key,
                                                       state.partialPenalties[i],
                                                       state.minPenalties[i]);
@@ -285,7 +286,16 @@ TEST_CASE("precompute pipeline invariants hold on every golden fixture") {
 
     for (const PrecomputePhantom &phantom : prepared.state.phantoms) {
       if (phantom.hasInitialPlacement && phantom.hasAdjustmentState) {
-        CHECK(phantom.inputSequence == phantom.adjustmentCtx.preAdjInputSequence);
+        const std::string &preAdj = phantom.adjustmentCtx.preAdjInputSequence;
+        REQUIRE(phantom.inputSequence.size() == preAdj.size());
+        if (phantom.inputSequence != preAdj && !preAdj.empty()) {
+          // A wall-charge tuck executed on the exact reaction-time frame rewrites the
+          // preceding gravity frame's '.' to 'l' or 'r' after the snapshot was recorded.
+          CHECK(phantom.inputSequence.substr(0, preAdj.size() - 1)
+                == preAdj.substr(0, preAdj.size() - 1));
+          CHECK(preAdj.back() == '.');
+          CHECK((phantom.inputSequence.back() == 'l' || phantom.inputSequence.back() == 'r'));
+        }
       }
     }
 

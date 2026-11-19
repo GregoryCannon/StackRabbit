@@ -715,4 +715,107 @@ TEST_CASE("dasChargeAfter passes through to the formatted das field") {
   }
 }
 
+TEST_CASE("adjustmentInputCost measures frame-by-frame deviation from the default move") {
+  SUBCASE("matching post-reaction inputs are discounted to zero and beat aborting early") {
+    // Default shifts left once more after reactionTime ("LLLLLLLL" + "L.." -> x=0).
+    // Even when x=0 and x=2 have identical lock values and x=2 ("...") appears LATER
+    // in possibleAdjustments (where value >= maxValue would otherwise pick x=2),
+    // matching the default's post-reaction 'L' costs 0.0 while omitting it costs -0.1.
+    PrecomputeState state = collapseState(
+        {adjustmentBranchPhantom(
+            oPlacement(0, "LLLLLLLLL..", '.', -1, 0),
+            {oPlacement(0, "L..", '.', -1, 0), oPlacement(2, "...", '.', -1, 0)})},
+        /* useDAS= */ false, /* reactionTime= */ 8);
+    putLockValueEverywhere(state, encodeLockCell(0, 0, 17), 10.0);
+    putLockValueEverywhere(state, encodeLockCell(0, 2, 17), 10.0);
+    const std::string expected = "Default:0,-3,18|LLLLLLLL~~L..|" + boardOAt(0) + "|18|0|-1"
+                                 + sevenPieceContent("0,-3,18|L..|" + boardOAt(0) + "|18|0|-1");
+    CHECK(runCollapse(state) == expected);
+  }
+
+  SUBCASE("compound inputs discount the shared component and charge only the added component") {
+    // Default post-reaction suffix starts with 'R' (active right shift).
+    // Adjustment 1 ("I.") shares the right shift on frame 0 and adds rotation A -> -0.2 only.
+    // Adjustment 2 (".L") omits 'R' on frame 0 (-0.1) and adds 'L' on frame 1 (-0.1) -> -0.2.
+    // Give cell 4 lockValue 5.00 and cell 2 lockValue 4.95:
+    //   - with 'R' discounted, "I." scores 5.00 - 0.20 = 4.80 and beats ".L" (4.95 - 0.20 = 4.75);
+    //   - if "I." paid the full -0.30 compound cost, it would score 4.70 and lose.
+    PrecomputeState state = collapseState(
+        {adjustmentBranchPhantom(
+            oPlacement(4, "RRRRRRRRR.", '.', -1, 0),
+            {oPlacement(4, "I.", '.', -1, 0), oPlacement(2, ".L", '.', -1, 0)})},
+        /* useDAS= */ false, /* reactionTime= */ 8);
+    putLockValueEverywhere(state, encodeLockCell(0, 4, 17), 5.0);
+    putLockValueEverywhere(state, encodeLockCell(0, 2, 17), 4.95);
+    const std::string expected = "Default:0,1,18|RRRRRRRR~~R.|" + boardOAt(4) + "|18|0|-1"
+                                 + sevenPieceContent("0,1,18|I.|" + boardOAt(4) + "|18|0|-1");
+    CHECK(runCollapse(state) == expected);
+  }
+
+  SUBCASE("executing the default move's own tuck discounts tuckInput as well") {
+    PrecomputeState state = collapseState(
+        {adjustmentBranchPhantom(
+            oPlacement(4, "RRRRRRRR..L", 'L', -1, 0),
+            {oPlacement(4, "..L", 'L', -1, 0), oPlacement(2, "...", '.', -1, 0)})},
+        /* useDAS= */ false, /* reactionTime= */ 8);
+    putLockValueEverywhere(state, encodeLockCell(0, 4, 17), 10.0);
+    putLockValueEverywhere(state, encodeLockCell(0, 2, 17), 10.0);
+    const std::string expected = "Default:0,1,18|RRRRRRRR~~..L|" + boardOAt(4) + "|18|0|-1"
+                                 + sevenPieceContent("0,1,18|..L|" + boardOAt(4) + "|18|0|-1");
+    CHECK(runCollapse(state) == expected);
+  }
+
+  SUBCASE("un-deduped phantoms sharing a prefix select the majority post-reaction trajectory") {
+    // Two phantoms share the pre-reaction prefix "RRRRRRRR" at reactionTime = 8:
+    //   - stopPhantom (fewer inputs, first): stops at x=4 ("RRRRRRRR...")
+    //   - tuckPhantom (second): tucks into x=6 ("RRRRRRRR..R", tuckInput='R')
+    // Both carry the same adjustment list {stopAdj -> x=4, tuckAdj -> x=6}.
+    const std::vector<PrecomputePossibility> adjustments = {
+        oPlacement(4, "...", '.', -1, 0),
+        oPlacement(6, "..R", 'R', -1, 0),
+    };
+    const PrecomputePhantom stopPhantom =
+        adjustmentBranchPhantom(oPlacement(4, "RRRRRRRR...", '.', -1, 0), adjustments);
+    const PrecomputePhantom tuckPhantom =
+        adjustmentBranchPhantom(oPlacement(6, "RRRRRRRR..R", 'R', -1, 0), adjustments);
+
+    // Minority tuck (only piece I = 10/64 wants x=6; the other 54/64 want x=4):
+    // symmetric omission cost keeps stopPhantom as Default instead of letting a 1-piece
+    // tuck hijack Default.
+    PrecomputeState minority =
+        collapseState({stopPhantom, tuckPhantom}, /* useDAS= */ false, /* reactionTime= */ 8);
+    putLockValueEverywhere(minority, encodeLockCell(0, 4, 17), 10.0);
+    putLockValueEverywhere(minority, encodeLockCell(0, 6, 17), 5.0);
+    putLockValueOnPiece(minority, IDX_I, encodeLockCell(0, 6, 17), 15.0);
+    CHECK(runCollapse(minority).rfind("Default:0,1,18|RRRRRRRR~~...|", 0) == 0);
+
+    // Majority tuck (6 of 7 pieces = 60/64 want x=6; only O = 4/64 wants x=4):
+    // tuckPhantom wins Default.
+    PrecomputeState majority =
+        collapseState({stopPhantom, tuckPhantom}, /* useDAS= */ false, /* reactionTime= */ 8);
+    putLockValueEverywhere(majority, encodeLockCell(0, 4, 17), 5.0);
+    putLockValueEverywhere(majority, encodeLockCell(0, 6, 17), 15.0);
+    putLockValueOnPiece(majority, IDX_O, encodeLockCell(0, 4, 17), 15.0);
+    putLockValueOnPiece(majority, IDX_O, encodeLockCell(0, 6, 17), 5.0);
+    CHECK(runCollapse(majority).rfind("Default:0,3,18|RRRRRRRR~~..R|", 0) == 0);
+  }
+
+  SUBCASE("reversing shift or rotation on the same frame pays a single penalty") {
+    // Default suffix has 'R' on frame 0. Reversing to 'L' on frame 0 costs a single -0.10
+    // (same as omitting 'R'), not -0.20. With lockValue 5.00 vs cell 4's 4.95 (".."),
+    // "L." scores 5.00 - 0.10 = 4.90 and beats ".." (4.95 - 0.10 = 4.85); a double -0.20
+    // reversal penalty would score 4.80 and lose.
+    PrecomputeState state = collapseState(
+        {adjustmentBranchPhantom(
+            oPlacement(4, "RRRRRRRRR.", '.', -1, 0),
+            {oPlacement(2, "L.", '.', -1, 0), oPlacement(4, "..", '.', -1, 0)})},
+        /* useDAS= */ false, /* reactionTime= */ 8);
+    putLockValueEverywhere(state, encodeLockCell(0, 2, 17), 5.00);
+    putLockValueEverywhere(state, encodeLockCell(0, 4, 17), 4.95);
+    const std::string expected = "Default:0,1,18|RRRRRRRR~~R.|" + boardOAt(4) + "|18|0|-1"
+                                 + sevenPieceContent("0,-1,18|L.|" + boardOAt(2) + "|18|0|-1");
+    CHECK(runCollapse(state) == expected);
+  }
+}
+
 #endif // SR_PRECOMPUTE_COLLAPSE_TESTS

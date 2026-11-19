@@ -16,7 +16,6 @@
 #include <string.h>
 #include <thread>
 #include <unordered_map>
-#include <unordered_set>
 
 using namespace std;
 
@@ -26,10 +25,10 @@ using namespace std;
  *
  *   1. One full move search for the current piece with the player's real
  *      timeline, DAS charge and reaction time. No legal move ends the request.
- *   2. Phantom placements: the placements whose input prefix still fits inside
- *      the reaction time, each carrying the mid-air state captured at the
- *      reaction-time frame. A reaction time of zero means the piece has not
- *      been placed yet, so the single phantom starts from the spawn state.
+ *   2. Phantom placements: each initial placement (fewest inputs first),
+ *      carrying the mid-air state captured at the reaction-time frame. A
+ *      reaction time of zero means the piece has not been placed yet, so the
+ *      single phantom starts from the spawn state.
  *   3. One adjustment move search per phantom from its mid-air state.
  *   4. One lock value lookup per next piece, run in-process on the same game
  *      state (seven concurrent threads). Each map value is rounded to two
@@ -168,44 +167,108 @@ double dasPenalty(bool useDas, int dasChargeAfter, const std::string &key,
   return minPenalties.at(key);
 }
 
+const double SHIFT_INPUT_COST = -0.1;
+const double ROT_INPUT_COST = -0.2;
+const double COMBINED_SHIFT_ROT_INPUT_COST = -0.3;
+
+int reactionSliceIndex(const std::string &inputSequence, int reactionTime) {
+  const bool holdsThroughAre = inputSequence.find('_') != std::string::npos;
+  return holdsThroughAre ? reactionTime + 1 : reactionTime;
+}
+
+int activeShiftDir(char c) {
+  switch (c) {
+  case 'L':
+  case 'E':
+  case 'F':
+    return -1;
+  case 'R':
+  case 'I':
+  case 'G':
+    return 1;
+  default:
+    return 0;
+  }
+}
+
+int activeRotDir(char c) {
+  switch (c) {
+  case 'A':
+  case 'E':
+  case 'I':
+  case 'e':
+  case 'i':
+    return 1;
+  case 'B':
+  case 'F':
+  case 'G':
+  case 'f':
+  case 'g':
+    return -1;
+  default:
+    return 0;
+  }
+}
+
 /**
- * Per-character input cost over the adjustment's full sequence, plus the
- * possibility's own cost. The tuck character's cost is therefore counted
- * twice: once in the per-character sum and once via inputCostX10.
+ * Input cost of an adjustment measured as symmetric frame-by-frame deviation
+ * from the phantom's post-reaction default move, plus symmetric tuck/spin
+ * deviation.
  *
- * TODO: the double count skews collapse values toward tuck/spin adjustments.
- * Fixing it is a deliberate behavior change: it flips the golden fixtures and
- * requires the re-baseline workflow (TESTING.md). Pinned by the collapse tests.
+ * Active shift and rotation components matching the default move on the same
+ * frame are discounted to zero; any differing component (whether added,
+ * omitted, or changed to the opposite direction) pays one standard cost
+ * (-0.1 shift, -0.2 rotation, -0.3 combined).
+ *
+ * TODO: non-default tuck/spin adjustments still count the tuck character twice
+ * (once in the per-frame loop and once via inputCostX10ForChar). Fixing it is a
+ * deliberate behavior change pinned by the collapse tests.
  */
-double adjustmentInputCost(const PrecomputePossibility &possibility) {
+double adjustmentInputCost(const PrecomputePossibility &possibility,
+                           const PrecomputePhantom &phantom, int reactionTime) {
+  const std::string *defSeqPtr = nullptr;
+  size_t defOffset = 0;
+  size_t defSuffixLen = 0;
+  if (phantom.hasInitialPlacement) {
+    const std::string &defSeq = phantom.initial.inputSequence;
+    defSeqPtr = &defSeq;
+    defOffset = static_cast<size_t>(
+        min(reactionSliceIndex(defSeq, reactionTime), static_cast<int>(defSeq.size())));
+    defSuffixLen = defSeq.size() - defOffset;
+  }
+
+  const std::string &adjSeq = possibility.inputSequence;
+  const size_t len = max(adjSeq.size(), defSuffixLen);
   double cost = 0;
-  for (const char c : possibility.inputSequence) {
-    switch (c) {
-    case 'E':
-    case 'F':
-    case 'I':
-    case 'G':
-      cost += -0.3;
-      break;
-    case 'L':
-    case 'R':
-      cost += -0.1;
-      break;
-    case 'A':
-    case 'B':
-      cost += -0.2;
-      break;
-    case 'e':
-    case 'f':
-    case 'i':
-    case 'g':
-      cost += -0.2;
-      break;
-    default:
-      break;
+  for (size_t k = 0; k < len; k++) {
+    const char adjChar = k < adjSeq.size() ? adjSeq[k] : '.';
+    const char defChar = k < defSuffixLen ? (*defSeqPtr)[defOffset + k] : '.';
+
+    const bool shiftDiffers = activeShiftDir(adjChar) != activeShiftDir(defChar);
+    const bool rotDiffers = activeRotDir(adjChar) != activeRotDir(defChar);
+
+    if (shiftDiffers && rotDiffers) {
+      cost += COMBINED_SHIFT_ROT_INPUT_COST;
+    } else if (shiftDiffers) {
+      cost += SHIFT_INPUT_COST;
+    } else if (rotDiffers) {
+      cost += ROT_INPUT_COST;
     }
   }
-  return cost + inputCostX10ForChar(possibility.tuckInput) / 10.0;
+
+  const int defTuckCostX10 =
+      (phantom.hasInitialPlacement && defSuffixLen > 0)
+          ? inputCostX10ForChar(phantom.initial.tuckInput)
+          : 0;
+  const bool sameDefaultTuck = defTuckCostX10 != 0
+                               && possibility.tuckInput == phantom.initial.tuckInput
+                               && possibility.rot == phantom.initial.rot
+                               && possibility.x == phantom.initial.x
+                               && possibility.y == phantom.initial.y;
+  const double tuckCost =
+      sameDefaultTuck ? 0.0
+                      : (inputCostX10ForChar(possibility.tuckInput) + defTuckCostX10) / 10.0;
+  return cost + tuckCost;
 }
 
 /** NES PRNG transition odds, indexed T J Z O S L I. */
@@ -271,11 +334,6 @@ std::string pushDownSequence(const std::string &inputString) {
     preLock += "D";
   }
   return preLock;
-}
-
-int reactionSliceIndex(const std::string &inputSequence, int reactionTime) {
-  const bool holdsThroughAre = inputSequence.find('_') != std::string::npos;
-  return holdsThroughAre ? reactionTime + 1 : reactionTime;
 }
 
 /** rot,x,y | sequence split at the reaction time | board | level | lines | das. */
@@ -413,22 +471,17 @@ PrecomputeState preparePrecomputeState(GameState gameState, const Piece *curPiec
              < countInputsOf(initialPlacements[b].relRot, initialPlacements[b].relX);
     });
 
-    std::unordered_set<std::string> seenPrefixes;
+    state.phantoms.reserve(order.size());
     for (const size_t index : order) {
       const std::string &seq = initialPlacements[index].inputSequence;
-      const std::string prefix = seq.substr(0, reactionSliceIndex(seq, reactionTime));
-      if (!seenPrefixes.insert(prefix).second) {
-        continue;
-      }
-
       PrecomputePhantom phantom;
-      phantom.inputSequence = prefix;
+      phantom.inputSequence = seq.substr(0, reactionSliceIndex(seq, reactionTime));
       phantom.hasInitialPlacement = true;
       phantom.initial = initialPlacements[index];
       const AdjTimeSimStateSlot &slot = captures[index];
+      phantom.hasAdjustmentState = slot.hasCapture;
       if (slot.hasCapture) {
         const AdjTimeSimState &capture = slot.capture;
-        phantom.hasAdjustmentState = true;
         phantom.adjustmentCtx.existingXOffset = capture.x - INITIAL_X;
         phantom.adjustmentCtx.existingYOffset = capture.y - curPiece->initialY;
         phantom.adjustmentCtx.framesAlreadyElapsed = capture.frameIndex;
@@ -439,7 +492,7 @@ PrecomputeState preparePrecomputeState(GameState gameState, const Piece *curPiec
         phantom.adjustmentCtx.preAdjInputSequence = capture.preAdjInputSequence;
         phantom.adjustmentDasCharge = capture.dasCharge;
       }
-      state.phantoms.push_back(phantom);
+      state.phantoms.push_back(std::move(phantom));
     }
   }
 
@@ -571,7 +624,8 @@ std::string collapseAndFormatPrecompute(const PrecomputeState &state, unsigned i
           if (state.lockValues[i].find(key) == state.lockValues[i].end()) {
             continue;
           }
-          const double value = state.lockValues[i].at(key) + adjustmentInputCost(adjustment)
+          const double value = state.lockValues[i].at(key)
+                               + adjustmentInputCost(adjustment, phantom, state.reactionTime)
                                + dasPenalty(state.useDAS, adjustment.dasChargeAfter, key,
                                             state.partialPenalties[i], state.minPenalties[i]);
           // A tie keeps the later adjustment.

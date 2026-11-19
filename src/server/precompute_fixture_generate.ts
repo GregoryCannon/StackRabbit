@@ -1,4 +1,3 @@
-import { PreComputeManager } from "./precompute";
 import { RequestHandler } from "./request_handler";
 import { getSearchStateFromUrlArguments, parseUrlArguments } from "./request_parser";
 import { PieceId } from "./types";
@@ -210,10 +209,8 @@ function buildFixtureSpecs(positions: LogPosition[]): FixtureSpec[] {
 }
 
 // ---------------------------------------------------------------------------
-// Golden computation via the real TS precompute path
+// Golden computation via the C++ precompute pipeline
 // ---------------------------------------------------------------------------
-
-const REQUEST_TIMEOUT_MS = 120000;
 
 function requestHasContinueLine(output: string): boolean {
   return /\n[IOLJTSZ]:continue(\n|$)/.test(output);
@@ -243,15 +240,7 @@ async function runFixture(
   const urlArgs = parseUrlArguments(params + extraParams, "precompute-sync");
   const searchState = getSearchStateFromUrlArguments(urlArgs);
 
-  const output = await Promise.race([
-    handler.handlePrecomputeRequestSync(searchState, urlArgs),
-    new Promise<never>((_, reject) =>
-      setTimeout(
-        () => reject(new Error(`Request timed out: ${JSON.stringify(spec)}`)),
-        REQUEST_TIMEOUT_MS
-      )
-    ),
-  ]);
+  const output = handler.handlePrecomputeCpp(searchState, urlArgs);
 
   // Recover the raw 200-char board from the parsed board (parseBoard already
   // decompressed the compressed log string).
@@ -284,9 +273,8 @@ async function runFixture(
 
 const outputPath = process.argv[2] || DEFAULT_OUTPUT;
 
-const manager = new PreComputeManager();
-manager.initialize(async () => {
-  const handler = new RequestHandler(manager);
+(async () => {
+  const handler = new RequestHandler(null as any);
   const totalStart = Date.now();
   try {
     const { timeline, positions } = loadPositions();
@@ -425,11 +413,8 @@ manager.initialize(async () => {
     console.error("Generation failed:", err);
     process.exitCode = 1;
   } finally {
-    for (const worker of manager.workers) {
-      try { worker.kill(); } catch (e) { /* already dead */ }
-    }
     const totalMs = Date.now() - totalStart;
     console.log(`Total wall time: ${(totalMs / 1000).toFixed(1)}s`);
     process.exit(process.exitCode || 0);
   }
-});
+})();

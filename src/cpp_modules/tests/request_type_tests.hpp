@@ -1292,4 +1292,107 @@ TEST_CASE("2-ply intermediate eval tiebreak takes an immediate Tetris on I -> I"
   CHECK(xOff == 4);
 }
 
+TEST_CASE("preparePrecomputeState keeps all initial placements without prefix deduplication") {
+  // At reactionTime = 18 with full DAS (16) on an 8-high Tetris-ready right-well board,
+  // vertical I at col 8 (relRot=1, relX=3) and vertical I at col 9 (relRot=1, relX=4, Tetris)
+  // share the 19-char pre-reaction prefix "_IrrrrrRrrrrrRrrrrr" (the 4th 'R' into col 9 lands
+  // on frame 18). Both initial placements remain in state.phantoms (ordered by fewest inputs),
+  // and collapseAndFormatPrecompute selects the col-9 Tetris as Default because the majority
+  // of next pieces take the Tetris.
+  const std::string board = makeWellBoard(8, 8, 9);
+  std::string dasEquivalent = getDasEquivalentInputTimeline("X..");
+  PieceRangeContext contexts[4] = {
+      getPieceRangeContext(dasEquivalent.c_str(), 1, /* gravityDoubled= */ true),
+      getPieceRangeContext(dasEquivalent.c_str(), 1, /* gravityDoubled= */ false),
+      getPieceRangeContext(dasEquivalent.c_str(), 2, /* gravityDoubled= */ false),
+      getPieceRangeContext(dasEquivalent.c_str(), 3, /* gravityDoubled= */ false),
+  };
+  BackupProbe probe = probeStateFrom(board, 18, 20, dasEquivalent, "aggro");
+  PrecomputeState state = preparePrecomputeState(
+      probe.gameState, &PIECE_LIST[IDX_I], "X..", /* dasCharge= */ 16, /* reactionTime= */ 18,
+      /* pruningBreadth= */ 20, /* playoutCount= */ 0, /* playoutLength= */ 0, &probe.evalContext,
+      contexts);
+
+  int sawCol8Idx = -1;
+  int sawCol9TetrisIdx = -1;
+  for (int idx = 0; idx < static_cast<int>(state.phantoms.size()); idx++) {
+    const PrecomputePhantom &phantom = state.phantoms[idx];
+    if (phantom.inputSequence == "_IrrrrrRrrrrrRrrrrr" && phantom.initial.rot == 1) {
+      if (phantom.initial.x == 6) {
+        sawCol8Idx = idx;
+      } else if (phantom.initial.x == 7 && phantom.initial.numLinesCleared == 4) {
+        sawCol9TetrisIdx = idx;
+      }
+    }
+  }
+  CHECK(sawCol8Idx != -1);
+  CHECK(sawCol9TetrisIdx != -1);
+  CHECK(sawCol8Idx < sawCol9TetrisIdx);
+
+  const std::string response = collapseAndFormatPrecompute(
+      state, probe.gameState.board, &PIECE_LIST[IDX_I], 18, 20, SHOULD_PUSHDOWN);
+  CHECK(response.rfind("Default:1,4,", 0) == 0);
+}
+
+TEST_CASE("tournament transposition check prevents deferred I -> I from beating immediate Tetris") {
+  // Regression pin from live gameplay: fastEval ranks (Tetris, col 0) ahead of (Tetris, col 7),
+  // whereas 8-ply playouts prefer the (Tetris + col 7) board. Without reconciling transposed
+  // post-2-piece states at publish time, Round 3 could lock the Tetris candidate onto (Tetris,
+  // col 0) while the col-7 candidate deepened (col 7, Tetris) and outscored it. Reconciling
+  // sampled resultingStates at publish time gives (Tetris, col 7) the deeper (col 7, Tetris)
+  // estimate plus its higher immediateReward.
+  const std::string board =
+      "00000000000000000000000000000000000000000000000000"
+      "00000000000000000000000000000000000000000000000000"
+      "00000000000000000000000001000011001110001111111000"
+      "11111110001111111110111111111011111111101111111110";
+  REQUIRE(board.size() == 200);
+
+  auto checkITakesTetris = [&](const std::string &out) {
+    size_t iPos = out.find("\nI:");
+    REQUIRE(iPos != std::string::npos);
+    size_t iEnd = out.find('\n', iPos + 1);
+    std::string iLine = out.substr(iPos + 1, iEnd - (iPos + 1));
+    CHECK(iLine.find("|19|110|16") != std::string::npos);
+  };
+
+  // Fixed-budget tournament (deep enough that col 7 beats col 0 on playouts)
+  std::string fixedPipe = InputBuilder()
+                              .withBoard1(board)
+                              .withLevel(19)
+                              .withLines(106)
+                              .withCurPiece(IDX_I)
+                              .withNextPiece(-1)
+                              .withTimeline("X..")
+                              .withPlayoutCount(500)
+                              .withPlayoutLength(8)
+                              .withPruningBreadth(-1)
+                              .withAggression("aggro")
+                              .withDasCharge(16)
+                              .build()
+                          + "18|";
+  checkITakesTetris(runRequest(PRECOMPUTE, fixedPipe));
+
+  // Timed tournament at the live server's calibrated 7-thread rate
+  std::string timedPipe = InputBuilder()
+                              .withBoard1(board)
+                              .withLevel(19)
+                              .withLines(106)
+                              .withCurPiece(IDX_I)
+                              .withNextPiece(-1)
+                              .withTimeline("X..")
+                              .withPlayoutCount(344)
+                              .withPlayoutLength(8)
+                              .withPruningBreadth(-2)
+                              .withAggression("aggro")
+                              .withDasCharge(16)
+                              .build()
+                          + "18|";
+  EngineTimingContext timing;
+  timing.hasRequestReceived = true;
+  timing.requestReceived = std::chrono::steady_clock::now();
+  timing.calibratedMovesPerMs7T = 123.0;
+  checkITakesTetris(mainProcess(timedPipe.c_str(), PRECOMPUTE, &timing));
+}
+
 #endif // SR_REQUEST_TYPE_TESTS
