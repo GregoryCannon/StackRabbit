@@ -1,31 +1,38 @@
 /**
- * Differential runner for the C++ precompute pipeline.
+ * Verification runner for the C++ precompute pipeline.
  *
  * Reads the golden fixtures, derives each PRECOMPUTE pipe string (the 11
  * standard fields plus the reaction time; nextPiece is -1 because precompute
- * searches all seven next pieces), calls the addon, and compares the result
- * byte-for-byte with the recorded string. The summary is reported as-is:
+ * searches all seven next pieces), runs all requests through
+ * `build/precompute_cli` in a single batch invocation, and compares each result
+ * byte-for-byte with the recorded golden string. The summary is reported as-is:
  * nothing is sorted, re-ordered or normalised before the comparison.
  *
  * Usage: npm run precompute_verify
  *
  * `--dump-inputs [path]` (default build/precompute_tsan_inputs.txt) writes the
  * production-tier requests for the TSan replay harness instead of running the
- * differential verify: a count line, then two lines per request — the
- * PRECOMPUTE pipe string, then the recorded golden output with every newline
- * escaped to a \x01 sentinel (pipe strings never contain newlines or \x01).
- * This mode does not load the addon.
+ * verification: a count line, then two lines per request — the PRECOMPUTE pipe
+ * string, then the recorded golden output with every newline escaped to a \x01
+ * sentinel (pipe strings never contain newlines or \x01). This mode does not
+ * invoke `build/precompute_cli`.
  */
+const { execFileSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 
 const FIXTURES_PATH = path.join(__dirname, "data/precompute_fixtures.jsonl");
+const PRECOMPUTE_CLI_BIN = path.join(__dirname, "../../build/precompute_cli");
 const DEFAULT_DUMP_PATH = path.join(__dirname, "../../build/precompute_tsan_inputs.txt");
 const PIECE_LOOKUP = ["I", "O", "L", "J", "T", "S", "Z"];
 const MAX_DIFF_EXAMPLES = 5;
+const MAX_STDOUT_BUFFER = 1 << 28; // 256 MiB
 
 function buildPipeString(record) {
   const curPieceIndex = PIECE_LOOKUP.indexOf(record.currentPiece);
+  if (curPieceIndex === -1) {
+    throw new Error(`Unknown piece: ${record.currentPiece}`);
+  }
   return [
     record.board,
     record.level,
@@ -42,32 +49,32 @@ function buildPipeString(record) {
   ].join("|") + "|";
 }
 
-/** Classifies the first line where the two outputs diverge. */
-function categorize(tsOutput, cppOutput) {
-  if (/^Error:/.test(cppOutput)) {
+/** Classifies the first line where the expected and actual outputs diverge. */
+function categorize(expectedOutput, actualOutput) {
+  if (/^Error:/.test(actualOutput)) {
     return "cpp error";
   }
-  if (tsOutput === "none" || cppOutput === "none") {
-    return tsOutput === cppOutput ? null : "whole-response none vs content";
+  if (expectedOutput === "none" || actualOutput === "none") {
+    return expectedOutput === actualOutput ? null : "whole-response none vs content";
   }
 
-  const tsLines = tsOutput.split("\n");
-  const cppLines = cppOutput.split("\n");
-  if (tsLines[0] !== cppLines[0]) {
+  const expectedLines = expectedOutput.split("\n");
+  const actualLines = actualOutput.split("\n");
+  if (expectedLines[0] !== actualLines[0]) {
     return "default line";
   }
-  for (let i = 1; i < Math.max(tsLines.length, cppLines.length); i++) {
-    if (tsLines[i] !== cppLines[i]) {
-      const tsLine = tsLines[i] || "";
-      const cppLine = cppLines[i] || "";
+  for (let i = 1; i < Math.max(expectedLines.length, actualLines.length); i++) {
+    if (expectedLines[i] !== actualLines[i]) {
+      const expectedLine = expectedLines[i] || "";
+      const actualLine = actualLines[i] || "";
       const fallbackRe = /^([IOLJTSZ]):(continue|none)$/;
-      if (fallbackRe.test(tsLine) !== fallbackRe.test(cppLine)) {
-        return `piece ${tsLine.slice(0, 1)} fallback vs content`;
+      if (fallbackRe.test(expectedLine) !== fallbackRe.test(actualLine)) {
+        return `piece ${expectedLine.slice(0, 1)} fallback vs content`;
       }
-      if (fallbackRe.test(tsLine) && fallbackRe.test(cppLine)) {
-        return `piece ${tsLine.slice(0, 1)} fallback marker`;
+      if (fallbackRe.test(expectedLine) && fallbackRe.test(actualLine)) {
+        return `piece ${expectedLine.slice(0, 1)} fallback marker`;
       }
-      return `piece ${tsLine.slice(0, 1)} line`;
+      return `piece ${expectedLine.slice(0, 1)} line`;
     }
   }
   return null;
@@ -76,6 +83,36 @@ function categorize(tsOutput, cppOutput) {
 function loadFixtures() {
   const raw = fs.readFileSync(FIXTURES_PATH, "utf8").trim().split("\n");
   return raw.slice(1).map((line) => JSON.parse(line));
+}
+
+function runPrecomputeBatch(pipeStrings) {
+  if (pipeStrings.length === 0) {
+    return [];
+  }
+  for (let i = 0; i < pipeStrings.length; i++) {
+    const pipe = pipeStrings[i];
+    if (typeof pipe !== "string" || !pipe || /[\r\n\x01]/.test(pipe)) {
+      throw new Error(`Invalid precompute pipe string at index ${i}`);
+    }
+  }
+  const stdout = execFileSync(PRECOMPUTE_CLI_BIN, [], {
+    input: pipeStrings.join("\n") + "\n",
+    encoding: "utf8",
+    maxBuffer: MAX_STDOUT_BUFFER,
+  });
+  if (!stdout.endsWith("\n")) {
+    throw new Error("precompute_cli returned truncated stdout (missing trailing newline)");
+  }
+  const lines = stdout
+    .slice(0, -1)
+    .split("\n")
+    .map((line) => (line.endsWith("\r") ? line.slice(0, -1) : line));
+  if (lines.length !== pipeStrings.length) {
+    throw new Error(
+      `precompute_cli returned ${lines.length} lines for ${pipeStrings.length} requests`
+    );
+  }
+  return lines.map((line) => line.replace(/\x01/g, "\n"));
 }
 
 /** Writes the production-tier requests in the TSan replay harness's input format. */
@@ -98,33 +135,30 @@ function main() {
     return;
   }
 
-  const cModule = require(path.join(__dirname, "../../build/Release/cRabbit"));
   const fixtures = loadFixtures();
-  console.log(`Precompute differential verify: ${fixtures.length} fixtures\n`);
+  console.log(`Precompute verify: ${fixtures.length} fixtures\n`);
+
+  const started = Date.now();
+  const pipeStrings = fixtures.map(buildPipeString);
+  const actualOutputs = runPrecomputeBatch(pipeStrings);
 
   let matches = 0;
   const categories = new Map();
   const examples = [];
-  const started = Date.now();
 
   fixtures.forEach((fixture, index) => {
-    let cppOutput;
-    try {
-      cppOutput = cModule.precompute(buildPipeString(fixture));
-    } catch (err) {
-      cppOutput = `Error: ${err.message}`;
-    }
-    const tsOutput = fixture.output;
+    const actualOutput = actualOutputs[index];
+    const expectedOutput = fixture.output;
 
-    if (cppOutput === tsOutput) {
+    if (actualOutput === expectedOutput) {
       matches++;
       return;
     }
 
-    const category = categorize(tsOutput, cppOutput) || "unclassified";
+    const category = categorize(expectedOutput, actualOutput) || "unclassified";
     categories.set(category, (categories.get(category) || 0) + 1);
     if (examples.length < MAX_DIFF_EXAMPLES) {
-      examples.push({ index, fixture, tsOutput, cppOutput, category });
+      examples.push({ index, fixture, expectedOutput, actualOutput, category });
     }
   });
 
@@ -152,10 +186,10 @@ function main() {
           ` playouts=${f.playoutCount}/${f.playoutLength}` +
           (f.source && f.source.syntheticTag ? ` tag=${f.source.syntheticTag}` : "")
       );
-      console.log("--- TS output ---");
-      console.log(example.tsOutput);
-      console.log("--- C++ output ---");
-      console.log(example.cppOutput);
+      console.log("--- Golden output ---");
+      console.log(example.expectedOutput);
+      console.log("--- Actual output ---");
+      console.log(example.actualOutput);
       console.log("");
     }
   } else {
@@ -165,4 +199,8 @@ function main() {
   process.exitCode = mismatches === 0 ? 0 : 1;
 }
 
-main();
+if (require.main === module) {
+  main();
+}
+
+module.exports = { runPrecomputeBatch, buildPipeString, PIECE_LOOKUP };
