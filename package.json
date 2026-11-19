@@ -17,6 +17,7 @@
     "precompute_static_lint": "node src/cpp_modules/tests/precompute_static_lint.js",
     "cpp_main": "mkdir -p build && g++ entrypoint.cpp -o build/cpp_main && ./build/cpp_main",
     "live_server_build": "mkdir -p build && g++ -O2 -std=c++17 -pthread -o build/live_game_server src/cpp_modules/src/live_game_server.cpp",
+    "live_server_build_win": "node -e \"require('fs').mkdirSync('build',{recursive:true})\" && g++ -O2 -std=c++17 -pthread -o build/live_game_server.exe src/cpp_modules/src/live_game_server.cpp -lws2_32",
     "live_server": "npm run live_server_build && ./build/live_game_server",
     "live_server_check": "npm run live_server_build && node src/server/live_server_check.js",
     "speed_benchmark": "g++ -O2 -std=c++17 src/benchmark/speed_benchmark.cpp -o build/speed_benchmark && ./build/speed_benchmark",

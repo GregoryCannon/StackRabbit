@@ -14,7 +14,9 @@
 #include <stdexcept>
 #include <stdio.h>
 #include <string.h>
+#ifndef __EMSCRIPTEN__
 #include <thread>
+#endif
 #include <unordered_map>
 
 using namespace std;
@@ -82,7 +84,7 @@ std::string encodeLockCell(int rot, int x, int y) {
 }
 
 /** The 200-character 0/1 rendering of a board (bit 9 is the leftmost column). */
-std::string renderBoard(unsigned int board[20]) {
+std::string renderBoard(const unsigned int board[20]) {
   std::string out;
   out.reserve(200);
   for (int r = 0; r < 20; r++) {
@@ -95,8 +97,8 @@ std::string renderBoard(unsigned int board[20]) {
 
 /** Places the piece and collapses full rows, mirroring the move search's own
  * board-after computation. Returns the number of cleared lines. */
-int boardAfterLock(unsigned int board[20], const Piece *piece, int rotationIndex, int x, int y,
-                   OUT unsigned int newBoard[20]) {
+int boardAfterLock(const unsigned int board[20], const Piece *piece, int rotationIndex, int x,
+                   int y, OUT unsigned int newBoard[20]) {
   unsigned int temp[20];
   memcpy(temp, board, sizeof(temp));
   for (int r = 0; r < 4; r++) {
@@ -338,7 +340,8 @@ std::string pushDownSequence(const std::string &inputString) {
 
 /** rot,x,y | sequence split at the reaction time | board | level | lines | das. */
 std::string formatDefaultLine(const PrecomputePossibility &placement, int reactionTime,
-                              unsigned int board[20], const Piece *piece, int level, int lines) {
+                              const unsigned int board[20], const Piece *piece, int level,
+                              int lines) {
   char head[32];
   snprintf(head, sizeof(head), "%d,%d,%d|", placement.relRot, placement.relX, placement.relY);
 
@@ -366,7 +369,8 @@ std::string formatDefaultLine(const PrecomputePossibility &placement, int reacti
 
 /** rot,x,y | sequence | board | level | lines | das. */
 std::string formatPieceLine(const PrecomputePossibility &placement, bool pushDown,
-                            unsigned int board[20], const Piece *piece, int level, int lines) {
+                            const unsigned int board[20], const Piece *piece, int level,
+                            int lines) {
   const int levelAfter = getLevelAfterLineClears(level, lines, placement.numLinesCleared);
   const std::string sequence =
       (pushDown && levelAfter == 18) ? pushDownSequence(placement.inputSequence)
@@ -392,9 +396,9 @@ std::string formatPieceLine(const PrecomputePossibility &placement, bool pushDow
 
 /** Default line plus one line per next piece, with the fallback markers. */
 std::string formatPrecomputeResult(const PrecomputePhantom &phantom,
-                                   const PrecomputePossibility *const bestPerPiece[7], int reactionTime,
-                                   bool pushDown, unsigned int board[20], const Piece *piece,
-                                   int level, int lines) {
+                                   const PrecomputePossibility *const bestPerPiece[7],
+                                   int reactionTime, bool pushDown, const unsigned int board[20],
+                                   const Piece *piece, int level, int lines) {
   std::string out = "Default:";
   if (phantom.hasInitialPlacement) {
     out += formatDefaultLine(phantom.initial, reactionTime, board, piece, level, lines);
@@ -418,6 +422,15 @@ std::string formatPrecomputeResult(const PrecomputePhantom &phantom,
 }
 
 } // namespace
+
+std::string formatSinglePlacement(const FullMovePossibility &possibility,
+                                  const unsigned int board[20], const Piece *piece, int level,
+                                  int lines, bool pushDown) {
+  const PrecomputePossibility placement =
+      toPrecomputePossibility(possibility, /* existingRotation= */ 0, INITIAL_X, piece->initialY,
+                              numOrientationsOf(piece));
+  return formatPieceLine(placement, pushDown, board, piece, level, lines);
+}
 
 PrecomputeState preparePrecomputeState(GameState gameState, const Piece *curPiece,
                                        char const *inputFrameTimeline, int dasCharge,
@@ -545,27 +558,34 @@ PrecomputeState preparePrecomputeState(GameState gameState, const Piece *curPiec
   }
   const SearchBudget *lookupBudgetPtr =
       lookupBudget.mode == BUDGET_TIME_MS ? &lookupBudget : budget;
+  auto runLookupForPiece = [&, lookupBudgetPtr](int i) {
+    const Piece *nextPiece = &PIECE_LIST[i];
+    if (state.useDAS) {
+      const DasLockValueMaps maps = getLockValueLookupDasMapsWithFirstMoves(
+          firstMoves, nextPiece, pruningBreadth, playoutCount, playoutLength, inputFrameTimeline,
+          evalContext, pieceRangeContextLookup, lookupBudgetPtr);
+      roundCopyMap(maps.partialPenalty, state.partialPenalties[i]);
+      roundCopyMap(maps.minPenalty, state.minPenalties[i]);
+      roundCopyMap(maps.lockValue, state.lockValues[i]);
+    } else {
+      roundCopyMap(getLockValueLookupMappedWithFirstMoves(
+                       firstMoves, nextPiece, pruningBreadth, playoutCount, playoutLength,
+                       evalContext, pieceRangeContextLookup, lookupBudgetPtr),
+                   state.lockValues[i]);
+    }
+  };
+#ifdef __EMSCRIPTEN__
+  // Single-threaded WASM runs the seven independent lookups sequentially.
+  for (int i = 0; i < 7; i++) {
+    runLookupForPiece(i);
+  }
+#else
   std::exception_ptr lookupErrors[7] = {};
   std::thread lookupThreads[7];
   for (int i = 0; i < 7; i++) {
-    lookupThreads[i] = std::thread([i, &state, &firstMoves, inputFrameTimeline, pruningBreadth,
-                                    playoutCount, playoutLength, evalContext,
-                                    &pieceRangeContextLookup, lookupBudgetPtr, &lookupErrors]() {
+    lookupThreads[i] = std::thread([i, &runLookupForPiece, &lookupErrors]() {
       try {
-        const Piece *nextPiece = &PIECE_LIST[i];
-        if (state.useDAS) {
-          const DasLockValueMaps maps = getLockValueLookupDasMapsWithFirstMoves(
-              firstMoves, nextPiece, pruningBreadth, playoutCount, playoutLength,
-              inputFrameTimeline, evalContext, pieceRangeContextLookup, lookupBudgetPtr);
-          roundCopyMap(maps.partialPenalty, state.partialPenalties[i]);
-          roundCopyMap(maps.minPenalty, state.minPenalties[i]);
-          roundCopyMap(maps.lockValue, state.lockValues[i]);
-        } else {
-          roundCopyMap(getLockValueLookupMappedWithFirstMoves(
-                           firstMoves, nextPiece, pruningBreadth, playoutCount, playoutLength,
-                           evalContext, pieceRangeContextLookup, lookupBudgetPtr),
-                       state.lockValues[i]);
-        }
+        runLookupForPiece(i);
       } catch (...) {
         lookupErrors[i] = std::current_exception();
       }
@@ -574,18 +594,19 @@ PrecomputeState preparePrecomputeState(GameState gameState, const Piece *curPiec
   for (std::thread &lookupThread : lookupThreads) {
     lookupThread.join();
   }
-  // All threads are joined before rethrowing, so a failure surfaces as a JS
-  // error with the first failing piece's diagnostic (piece 0 first).
+  // All threads are joined before rethrowing, so a failure surfaces with the
+  // first failing piece's diagnostic (piece 0 first).
   for (int i = 0; i < 7; i++) {
     if (lookupErrors[i]) {
       std::rethrow_exception(lookupErrors[i]);
     }
   }
+#endif
 
   return state;
 }
 
-std::string collapseAndFormatPrecompute(const PrecomputeState &state, unsigned int board[20],
+std::string collapseAndFormatPrecompute(const PrecomputeState &state, const unsigned int board[20],
                                         const Piece *piece, int level, int lines, bool pushDown) {
   // Step 5: the collapse.
   double bestPhantomValue = PRECOMPUTE_MIN_VALUE;

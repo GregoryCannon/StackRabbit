@@ -9,8 +9,7 @@ DEBUG_MODE = true
 SHOULD_RECORD_GAMES = true
 SAVE_SCORES = true
 AGGRESSION_LEVEL = "aggro" -- How much the agent values burning lines: "safe", "aggro", or "hyper"
--- The C++ live server serving precompute (docs/engine_endpoints.md). The TS server
--- stays on 3000 until the first-move flow is ported to /precompute as well.
+-- Native C++ live game server (docs/engine_endpoints.md).
 LIVE_SERVER_URL = "http://localhost:3000"
 
 -- OS-dependent config

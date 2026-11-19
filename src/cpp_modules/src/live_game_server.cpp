@@ -1,47 +1,75 @@
 // live_game_server.cpp — standalone HTTP server serving the live-game
-// precompute contract over POSIX sockets, zero dependencies (the route/flow
-// reference below; also documented in docs/engine_endpoints.md).
+// precompute and A/B test contracts over native sockets (POSIX and Winsock2),
+// zero dependencies (also documented in docs/engine_endpoints.md).
 //
 // Build (from repo root):
-//   g++ -O2 -std=c++17 -pthread -o build/live_game_server src/cpp_modules/src/live_game_server.cpp
+//   macOS/Linux:
+//     g++ -O2 -std=c++17 -pthread -o build/live_game_server src/cpp_modules/src/live_game_server.cpp
+//   Windows (MinGW):
+//     g++ -O2 -std=c++17 -pthread -o build/live_game_server.exe src/cpp_modules/src/live_game_server.cpp -lws2_32
+//   Windows (MSVC):
+//     cl /O2 /std:c++17 /EHsc /Fe:build\live_game_server.exe src\cpp_modules\src\live_game_server.cpp ws2_32.lib
 //
 // Run:
-//   ./build/live_game_server [<port>]     (default port 3001, overridable via
+//   ./build/live_game_server [<port>]     (default port 3000, overridable via
 //                                          argv[1] or the PORT env var)
 //
 // Routes (text/plain responses; `Connection: close` on every response):
-//   GET /ping                  -> 200 "pong"
-//   GET /precompute?p=<pipe>   -> 200 "Request accepted." and the pipe is
-//                                 computed asynchronously (backup response
-//                                 first, then the full precompute); 503
-//                                 "Busy" if a request is still computing;
-//                                 400 if the p parameter is absent
-//   GET /async-result          -> 200 + full result once computed, else 200 +
-//                                 backup response, else 504 "Still
-//                                 calculating", else 404 "No previous async
-//                                 request has been made"; a rejected/failed
-//                                 engine run surfaces as 500 + message
-//   anything else              -> 200 "Unknown request type. Received: <path>"
+//   GET /ping                       -> 200 "pong"
+//   GET /precompute?p=<pipe>        -> 200 "Request accepted." and the pipe is
+//                                      computed asynchronously (backup response
+//                                      first, then the full precompute); 503
+//                                      "Busy" if a request is still computing;
+//                                      400 if the p parameter is absent
+//   GET /precompute-sync?p=<pipe>   -> 200 + full precompute result computed
+//                                      synchronously; 503 "Busy" if an async
+//                                      precompute is running; 400 if p absent;
+//                                      500 on delimiter/validation/engine error
+//   GET /get-move-ab-test?p=<pipe>  -> 200 + JSON A/B move comparison computed
+//                                      synchronously; 400 if p absent; 500 on
+//                                      delimiter/validation/engine error
+//   GET /async-result               -> 200 + full result once computed, else
+//                                      200 + backup response, else 504 "Still
+//                                      calculating", else 404 "No previous
+//                                      async request has been made"; a
+//                                      rejected/failed engine run surfaces as
+//                                      500 + message
+//   anything else                   -> 200 "Unknown request type. Received: <path>"
 //
-// The `p` parameter is the 12-field request string delimited by `,` so URLs
-// work unencoded in browsers and stay readable (percent-encoded `,` is also
-// accepted and decoded; `|` is rejected at the HTTP boundary). Internally the
-// server translates `,` to `|` and delegates validation to mainProcess (in
-// main.cpp). The agent's flow: kick /precompute as soon as the upcoming piece
-// is known, then poll /async-result once, right before that piece spawns (~160ms
-// later).
+// The `p` parameter is the comma-delimited request string (12 fields for
+// precompute; 11 or 12 fields for get-move-ab-test) so URLs work unencoded in
+// browsers and stay readable (percent-encoded `,` is also accepted and decoded;
+// `|` is rejected at the HTTP boundary). Internally the server translates `,`
+// to `|` and delegates validation to mainProcess (in main.cpp). The agent's
+// live-play flow: kick /precompute as soon as the upcoming piece is known, then
+// poll /async-result once, right before that piece spawns (~160ms later).
 
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#ifdef OUT
+#undef OUT
+#endif
+#else
 #include <arpa/inet.h>
+#include <csignal>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <unistd.h>
+#endif
 
 #include <atomic>
 #include <cerrno>
 #include <chrono>
 #include <condition_variable>
-#include <csignal>
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <exception>
@@ -60,9 +88,90 @@ const size_t READ_BUFFER_LIMIT = 8192;
 const int LISTEN_BACKLOG = 16;
 
 // ---------------------------------------------------------------------------
+// Minimal cross-platform socket helpers (POSIX / Winsock2)
+// ---------------------------------------------------------------------------
+
+#ifdef _WIN32
+using SocketFd = SOCKET;
+const SocketFd INVALID_SOCK = INVALID_SOCKET;
+
+bool initSockets() {
+  WSADATA wsa{};
+  int rc = WSAStartup(MAKEWORD(2, 2), &wsa);
+  if (rc != 0) {
+    fprintf(stderr, "live_game_server: WSAStartup failed (%d)\n", rc);
+    return false;
+  }
+  return true;
+}
+
+void cleanupSockets() { WSACleanup(); }
+
+void closeSocket(SocketFd fd) { closesocket(fd); }
+
+void setRecvTimeout(SocketFd fd, int seconds) {
+  DWORD timeoutMs = static_cast<DWORD>(seconds) * 1000;
+  setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char *>(&timeoutMs),
+             sizeof(timeoutMs));
+}
+
+void setListenReuseAddr(SocketFd /* fd */) {
+  // No-op on Windows: SO_REUSEADDR allows hijacking an active port, while
+  // SO_EXCLUSIVEADDRUSE blocks restarts during TIME_WAIT for up to 120s.
+}
+
+bool isInterruptedAccept() { return WSAGetLastError() == WSAEINTR; }
+
+void logSocketError(const char *label) {
+  fprintf(stderr, "%s: WSA error %d\n", label, WSAGetLastError());
+}
+#else
+using SocketFd = int;
+const SocketFd INVALID_SOCK = -1;
+
+bool initSockets() {
+  signal(SIGPIPE, SIG_IGN);
+  return true;
+}
+
+void cleanupSockets() {}
+
+void closeSocket(SocketFd fd) { ::close(fd); }
+
+void setRecvTimeout(SocketFd fd, int seconds) {
+  timeval timeout{};
+  timeout.tv_sec = seconds;
+  setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char *>(&timeout),
+             sizeof(timeout));
+}
+
+void setListenReuseAddr(SocketFd fd) {
+  int one = 1;
+  setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char *>(&one), sizeof(one));
+}
+
+bool isInterruptedAccept() { return errno == EINTR; }
+
+void logSocketError(const char *label) { perror(label); }
+#endif
+
+struct SocketSubsystemGuard {
+  bool ok = false;
+  SocketSubsystemGuard() : ok(initSockets()) {}
+  ~SocketSubsystemGuard() {
+    if (ok) {
+      cleanupSockets();
+    }
+  }
+};
+
+// ---------------------------------------------------------------------------
 // The async slot: shared state between the accept loop and the worker thread.
 // This is the only file-scope mutable state in the server, and every access
-// is guarded by its mutex. Only the worker thread calls into the engine.
+// is guarded by its mutex. Async precompute runs on the worker thread;
+// synchronous routes run on the accept-loop thread (/precompute-sync rejects
+// with 503 Busy while the async worker is RUNNING to avoid oversubscribing
+// two concurrent 7-thread precomputes).
 // ---------------------------------------------------------------------------
 
 struct AsyncSlot {
@@ -195,9 +304,10 @@ double calibratePrecomputeSpeed7T() {
   return blendedRate;
 }
 
-// Translates the URL's comma-delimited 12-field query value into the
-// engine's internal '|'-delimited pipe string. Rejects '|' so the HTTP
-// boundary enforces commas strictly rather than silently accepting both.
+// Translates the URL's comma-delimited query value (12 fields for precompute;
+// 11 or 12 for get-move-ab-test) into the engine's internal '|'-delimited pipe
+// string. Rejects '|' so the HTTP boundary enforces commas strictly rather than
+// silently accepting both.
 bool urlQueryToEnginePipe(const std::string &queryInput, std::string &enginePipe,
                           std::string &errorOut) {
   if (queryInput.find('|') != std::string::npos) {
@@ -443,12 +553,82 @@ RouteResult handleAsyncResult() {
   return {504, "Still calculating", std::string(" (") + elapsedBuf + ")"};
 }
 
-RouteResult routeRequest(const std::string &path, const std::string &query) {
+bool parseEnginePipeQuery(const std::string &query, std::string &enginePipe,
+                          RouteResult &errorResult) {
+  std::string encodedPipe;
+  if (!extractPipeParam(query, encodedPipe)) {
+    errorResult = {400, "Missing required query parameter: p", ""};
+    return false;
+  }
+  std::string convError;
+  if (!urlQueryToEnginePipe(percentDecode(encodedPipe), enginePipe, convError)) {
+    errorResult = {500, convError, ""};
+    return false;
+  }
+  return true;
+}
+
+std::string formatDurationSuffix(std::chrono::steady_clock::time_point started) {
+  double ms =
+      std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
+  char buf[32];
+  snprintf(buf, sizeof(buf), " (%.2fms)", ms);
+  return std::string(buf);
+}
+
+RouteResult handlePrecomputeSync(const std::string &query, double calibratedMovesPerMs7T) {
+  auto received = std::chrono::steady_clock::now();
+  std::string enginePipe;
+  RouteResult parseError;
+  if (!parseEnginePipeQuery(query, enginePipe, parseError)) {
+    return parseError;
+  }
+  {
+    std::lock_guard<std::mutex> lock(g_slot.mutex);
+    if (g_slot.state == AsyncSlot::State::RUNNING) {
+      return {503, "Busy", ""};
+    }
+  }
+  EngineTimingContext timing;
+  timing.hasRequestReceived = true;
+  timing.requestReceived = received;
+  timing.calibratedMovesPerMs7T = calibratedMovesPerMs7T;
+  std::string response = mainProcess(enginePipe.c_str(), PRECOMPUTE, &timing);
+  std::string suffix = formatDurationSuffix(received);
+  if (isEngineRejection(response)) {
+    return {500, response, suffix};
+  }
+  return {200, response, suffix};
+}
+
+RouteResult handleGetMoveAbTest(const std::string &query) {
+  auto started = std::chrono::steady_clock::now();
+  std::string enginePipe;
+  RouteResult parseError;
+  if (!parseEnginePipeQuery(query, enginePipe, parseError)) {
+    return parseError;
+  }
+  std::string response = mainProcess(enginePipe.c_str(), GET_MOVE_AB_TEST);
+  std::string suffix = formatDurationSuffix(started);
+  if (isEngineRejection(response)) {
+    return {500, response, suffix};
+  }
+  return {200, response, suffix};
+}
+
+RouteResult routeRequest(const std::string &path, const std::string &query,
+                         double calibratedMovesPerMs7T) {
   if (path == "/ping") {
     return {200, "pong", ""};
   }
   if (path == "/precompute") {
     return handlePrecomputeKick(query);
+  }
+  if (path == "/precompute-sync") {
+    return handlePrecomputeSync(query, calibratedMovesPerMs7T);
+  }
+  if (path == "/get-move-ab-test") {
+    return handleGetMoveAbTest(query);
   }
   if (path == "/async-result") {
     return handleAsyncResult();
@@ -481,18 +661,20 @@ const char *statusText(int status) {
   }
 }
 
-void sendAll(int fd, const char *data, size_t length) {
+void sendAll(SocketFd fd, const char *data, size_t length) {
   size_t sent = 0;
   while (sent < length) {
-    ssize_t n = ::send(fd, data + sent, length - sent, 0);
+    size_t remaining = length - sent;
+    int chunk = remaining > 65536 ? 65536 : static_cast<int>(remaining);
+    ptrdiff_t n = ::send(fd, data + sent, chunk, 0);
     if (n <= 0) {
-      return; // client gone; SIGPIPE is ignored so this surfaces as EPIPE
+      return; // client gone; SIGPIPE is ignored on POSIX so this surfaces as an error
     }
-    sent += (size_t)n;
+    sent += static_cast<size_t>(n);
   }
 }
 
-void sendResponse(int fd, int status, const std::string &body) {
+void sendResponse(SocketFd fd, int status, const std::string &body) {
   std::string head = "HTTP/1.1 "
                      + std::to_string(status)
                      + " "
@@ -512,15 +694,15 @@ void sendResponse(int fd, int status, const std::string &body) {
 // Reads from the socket until the end of the request headers ("\r\n\r\n").
 // Returns false on disconnect, receive timeout, or when the header block
 // exceeds the read buffer cap.
-bool readRequestHeaders(int fd, std::string &out) {
+bool readRequestHeaders(SocketFd fd, std::string &out) {
   char buf[2048];
   out.clear();
   for (;;) {
-    ssize_t n = ::recv(fd, buf, sizeof(buf), 0);
+    ptrdiff_t n = ::recv(fd, buf, static_cast<int>(sizeof(buf)), 0);
     if (n <= 0) {
-      return false; // timeout (EAGAIN), disconnect, or error
+      return false; // timeout, disconnect, or error
     }
-    out.append(buf, (size_t)n);
+    out.append(buf, static_cast<size_t>(n));
     if (out.find("\r\n\r\n") != std::string::npos) {
       return true;
     }
@@ -532,10 +714,8 @@ bool readRequestHeaders(int fd, std::string &out) {
 
 // Reads and answers one connection, then closes it. One concise log line per
 // request goes to stdout (path, status, duration).
-void handleConnection(int fd) {
-  timeval timeout{};
-  timeout.tv_sec = RECV_TIMEOUT_SECONDS;
-  setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+void handleConnection(SocketFd fd, double calibratedMovesPerMs7T) {
+  setRecvTimeout(fd, RECV_TIMEOUT_SECONDS);
   auto started = std::chrono::steady_clock::now();
   auto elapsedMs = [started] {
     return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started)
@@ -588,11 +768,11 @@ void handleConnection(int fd) {
 
   RouteResult result;
   try {
-    result = routeRequest(path, query);
+    result = routeRequest(path, query, calibratedMovesPerMs7T);
   } catch (const std::exception &e) {
-    result = {500, std::string(e.what())};
+    result = {500, std::string(e.what()), ""};
   } catch (...) {
-    result = {500, "Unknown server error"};
+    result = {500, "Unknown server error", ""};
   }
   sendResponse(fd, result.status, result.body);
   const char *prefix = (path == "/precompute") ? "\n" : "";
@@ -626,7 +806,10 @@ bool parsePort(const char *text, int &port) {
 } // namespace
 
 int main(int argc, char **argv) {
-  signal(SIGPIPE, SIG_IGN);
+  SocketSubsystemGuard sockets;
+  if (!sockets.ok) {
+    return 1;
+  }
 
   // Port: argv[1] if given, else the PORT env var, else the default. A
   // non-numeric or out-of-range explicit value fails loudly rather than
@@ -646,24 +829,25 @@ int main(int argc, char **argv) {
     }
   }
 
-  int listenFd = socket(AF_INET, SOCK_STREAM, 0);
-  if (listenFd < 0) {
-    perror("live_game_server: socket");
+  SocketFd listenFd = socket(AF_INET, SOCK_STREAM, 0);
+  if (listenFd == INVALID_SOCK) {
+    logSocketError("live_game_server: socket");
     return 1;
   }
-  int one = 1;
-  setsockopt(listenFd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+  setListenReuseAddr(listenFd);
 
   sockaddr_in address{};
   address.sin_family = AF_INET;
   address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
   address.sin_port = htons((unsigned short)port);
-  if (::bind(listenFd, (sockaddr *)&address, sizeof(address)) < 0) {
-    perror("live_game_server: bind");
+  if (::bind(listenFd, reinterpret_cast<sockaddr *>(&address), sizeof(address)) != 0) {
+    logSocketError("live_game_server: bind");
+    closeSocket(listenFd);
     return 1;
   }
-  if (listen(listenFd, LISTEN_BACKLOG) < 0) {
-    perror("live_game_server: listen");
+  if (listen(listenFd, LISTEN_BACKLOG) != 0) {
+    logSocketError("live_game_server: listen");
+    closeSocket(listenFd);
     return 1;
   }
 
@@ -675,16 +859,16 @@ int main(int argc, char **argv) {
   fflush(stdout);
 
   for (;;) {
-    int fd = accept(listenFd, nullptr, nullptr);
-    if (fd < 0) {
-      if (errno == EINTR) {
+    SocketFd fd = accept(listenFd, nullptr, nullptr);
+    if (fd == INVALID_SOCK) {
+      if (isInterruptedAccept()) {
         continue;
       }
       // Back off briefly so an unexpected error can't spin the loop hot.
-      usleep(10000);
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
       continue;
     }
-    handleConnection(fd);
-    ::close(fd);
+    handleConnection(fd, calibratedMovesPerMs7T);
+    closeSocket(fd);
   }
 }

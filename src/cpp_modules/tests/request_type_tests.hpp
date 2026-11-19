@@ -322,14 +322,189 @@ TEST_CASE("getLockValueLookupDasMaps penalizes third-piece DAS loss without muta
   CHECK(sawMinPenalty);
 }
 
-TEST_CASE("GET_MOVE_AB_TEST always reports agree/disagree with an explanation") {
-  auto input = InputBuilder().build();
-  std::string output = runRequest(GET_MOVE_AB_TEST, input);
+/** Splits `s` on `delim` (preserving empty segments). */
+static std::vector<std::string> splitByChar(const std::string &s, char delim) {
+  std::vector<std::string> parts;
+  size_t start = 0;
+  for (;;) {
+    size_t pos = s.find(delim, start);
+    if (pos == std::string::npos) {
+      parts.push_back(s.substr(start));
+      break;
+    }
+    parts.push_back(s.substr(start, pos - start));
+    start = pos + 1;
+  }
+  return parts;
+}
 
-  bool isAgree = output.rfind("[\"agree\"", 0) == 0;
-  bool isDisagree = output.rfind("[\"disagree\"", 0) == 0;
-  CHECK((isAgree || isDisagree));
-  CHECK(output.find("\"explanationMain\"") != std::string::npos);
+/** Extracts a JSON string value starting at `quotePos` (pointing at opening '"') and advances
+ * `nextPos` to the character immediately after the closing '"'. */
+static std::string parseJsonStringAt(const std::string &json, size_t quotePos, size_t &nextPos) {
+  REQUIRE(quotePos < json.size());
+  REQUIRE(json[quotePos] == '"');
+  std::string out;
+  size_t i = quotePos + 1;
+  while (i < json.size()) {
+    char c = json[i++];
+    if (c == '\\') {
+      REQUIRE(i < json.size());
+      char esc = json[i++];
+      switch (esc) {
+      case '"':
+        out += '"';
+        break;
+      case '\\':
+        out += '\\';
+        break;
+      case 'n':
+        out += '\n';
+        break;
+      case 'r':
+        out += '\r';
+        break;
+      case 't':
+        out += '\t';
+        break;
+      default:
+        out += esc;
+        break;
+      }
+    } else if (c == '"') {
+      nextPos = i;
+      return out;
+    } else {
+      CHECK(c != '\n');
+      CHECK(c != '\r');
+      out += c;
+    }
+  }
+  FAIL("Unterminated JSON string");
+  return "";
+}
+
+/** Asserts that `placement` matches the 6-field wire format
+ * "relRot,relX,relY|inputSequence|boardAfter|levelAfter|linesAfter|dasChargeAfter". */
+static void checkFormattedPlacement(const std::string &placement, int minLevel, int minLines,
+                                    bool expectDas) {
+  std::vector<std::string> parts = splitByChar(placement, '|');
+  REQUIRE(parts.size() == 6);
+
+  std::vector<std::string> coords = splitByChar(parts[0], ',');
+  REQUIRE(coords.size() == 3);
+  int relRot = std::stoi(coords[0]);
+  int relX = std::stoi(coords[1]);
+  int relY = std::stoi(coords[2]);
+  CHECK(relRot >= 0);
+  CHECK(relRot <= 3);
+  CHECK(relX >= -8);
+  CHECK(relX <= 8);
+  CHECK(relY >= 0);
+  CHECK(relY <= 22);
+
+  CHECK(!parts[1].empty());
+  REQUIRE(parts[2].size() == 200);
+  for (char c : parts[2]) {
+    CHECK((c == '0' || c == '1'));
+  }
+
+  int levelAfter = std::stoi(parts[3]);
+  int linesAfter = std::stoi(parts[4]);
+  int dasAfter = std::stoi(parts[5]);
+  CHECK(levelAfter >= minLevel);
+  CHECK(linesAfter >= minLines);
+  if (expectDas) {
+    CHECK(dasAfter >= 0);
+    CHECK(dasAfter <= 16);
+  } else {
+    CHECK(dasAfter == -1);
+  }
+}
+
+/** Asserts that `s` starts with `prefix` at `pos` and advances `pos` past it. */
+static void consumePrefix(const std::string &s, size_t &pos, const std::string &prefix) {
+  REQUIRE(pos + prefix.size() <= s.size());
+  REQUIRE(s.compare(pos, prefix.size(), prefix) == 0);
+  pos += prefix.size();
+}
+
+/** Asserts `output` matches `["agree", "<formatted>", {"explanationMain":"..."}]`. */
+static void checkAgreeJson(const std::string &output, int minLevel, int minLines, bool expectDas) {
+  CHECK(output.find('\n') == std::string::npos);
+  size_t pos = 0;
+  consumePrefix(output, pos, "[\"agree\", ");
+  std::string mainFormatted = parseJsonStringAt(output, pos, pos);
+  checkFormattedPlacement(mainFormatted, minLevel, minLines, expectDas);
+
+  consumePrefix(output, pos, ", {\"explanationMain\":");
+  std::string expMain = parseJsonStringAt(output, pos, pos);
+  CHECK(!expMain.empty());
+  consumePrefix(output, pos, "}]");
+  CHECK(pos == output.size());
+}
+
+TEST_CASE("GET_MOVE_AB_TEST returns valid JSON with formatted placement and explanation") {
+  SUBCASE("agree in tap mode") {
+    auto input = InputBuilder().build();
+    checkAgreeJson(runRequest(GET_MOVE_AB_TEST, input), 18, 0, /* expectDas= */ false);
+  }
+
+  SUBCASE("agree in DAS mode") {
+    auto input = InputBuilder()
+                     .withBoard1(makeFlatBoard(4))
+                     .withCurPiece(IDX_I)
+                     .withNextPiece(IDX_O)
+                     .withTimeline("X..")
+                     .withDasCharge(16)
+                     .build();
+    checkAgreeJson(runRequest(GET_MOVE_AB_TEST, input), 18, 0, /* expectDas= */ true);
+  }
+
+  SUBCASE("topped-out board formats no legal move as none") {
+    auto input = InputBuilder().withBoard1(makeFlatBoard(20)).build();
+    std::string output = runRequest(GET_MOVE_AB_TEST, input);
+
+    CHECK(output == "[\"agree\", \"none\", {\"explanationMain\":\"\"}]");
+  }
+
+  SUBCASE("disagree returns both formatted placements and both explanations") {
+    // Relies on MAIN_WEIGHTS != TEST_WEIGHTS (coveredWellCoef -10 vs -12):
+    // a 4-high stack with a 1-deep well at col 9 and col 7 carved on the top
+    // row makes the T piece sit right across the 2-point well-cover gap.
+    std::string board = makeWellBoard(4, 1, 9);
+    board[(20 - 4) * 10 + 7] = '0';
+    auto input = InputBuilder()
+                     .withBoard1(board)
+                     .withCurPiece(IDX_T)
+                     .withNextPiece(-1)
+                     .withTimeline("X..")
+                     .withPlayoutCount(0)
+                     .withPlayoutLength(0)
+                     .withPruningBreadth(10)
+                     .build();
+    std::string output = runRequest(GET_MOVE_AB_TEST, input);
+
+    CHECK(output.find('\n') == std::string::npos);
+    size_t pos = 0;
+    consumePrefix(output, pos, "[\"disagree\", ");
+    std::string mainFormatted = parseJsonStringAt(output, pos, pos);
+    checkFormattedPlacement(mainFormatted, 18, 0, /* expectDas= */ false);
+
+    consumePrefix(output, pos, ", ");
+    std::string testFormatted = parseJsonStringAt(output, pos, pos);
+    checkFormattedPlacement(testFormatted, 18, 0, /* expectDas= */ false);
+    CHECK(mainFormatted != testFormatted);
+
+    consumePrefix(output, pos, ", {\"explanationMain\":");
+    std::string mainExp = parseJsonStringAt(output, pos, pos);
+    CHECK(!mainExp.empty());
+
+    consumePrefix(output, pos, ", \"explanationTest\":");
+    std::string testExp = parseJsonStringAt(output, pos, pos);
+    CHECK(!testExp.empty());
+    consumePrefix(output, pos, "}]");
+    CHECK(pos == output.size());
+  }
 }
 
 TEST_CASE("searchDepth2 rejects dasCharge + secondPieceDasCharge passed together") {

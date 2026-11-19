@@ -84,8 +84,16 @@ PrecomputeState preparePrecomputeState(GameState gameState, const Piece *curPiec
  * (ties keep the first). pushDown enables the push-down input rewrite on the
  * per-piece lines when the level after the placement is 18.
  */
-std::string collapseAndFormatPrecompute(const PrecomputeState &state, unsigned int board[20],
+std::string collapseAndFormatPrecompute(const PrecomputeState &state, const unsigned int board[20],
                                         const Piece *piece, int level, int lines, bool pushDown);
+
+/**
+ * Formats one spawn-entry placement from fullMoveSearch into the wire format:
+ * "relRot,relX,relY|inputSequence|boardAfter|levelAfter|linesAfter|dasChargeAfter".
+ */
+std::string formatSinglePlacement(const FullMovePossibility &possibility,
+                                  const unsigned int board[20], const Piece *piece, int level,
+                                  int lines, bool pushDown = false);
 
 /**
  * The full pipeline for one request: prepare the state from the game state,

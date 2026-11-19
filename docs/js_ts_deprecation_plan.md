@@ -114,7 +114,7 @@ Do this first so no permanent test or re-baseline workflow depends on `cRabbit` 
      - Agree: `["agree", "<mainFormatted>", {"explanationMain":"..."}]`
      - Disagree: `["disagree", "<mainFormatted>", "<testFormatted>", {"explanationMain":"...", "explanationTest":"..."}]`
    - Update/expand `GET_MOVE_AB_TEST` tests in `src/cpp_modules/tests/request_type_tests.hpp` to assert valid JSON structure, formatted placement fields (including input sequence, 200-char board, level, lines, dasCharge), both `agree` and `disagree` shapes, topped-out `"none"` handling, and `explanationMain`/`explanationTest`.
-   - *(Note: `GET_MOVE_AB_TEST` is not in `wasm.cpp`, and `precompute.cpp` is guarded by `#ifndef __EMSCRIPTEN__`, so keep any `fullMoveSearch`-based formatting helper guarded or in a non-WASM-excluded header so `npm run wasm_build` stays clean.)*
+   - Standardize the compile graph across native and WASM: remove `#ifndef __EMSCRIPTEN__` guards from `main.cpp` so `precompute.cpp` and all request types compile identically everywhere, keeping only a minimal `#ifdef __EMSCRIPTEN__` sequential loop around the 7-thread dispatch in `precompute.cpp` (since WASM builds without `-pthread`).
 
 2. **Add `GET /precompute-sync` and `GET /get-move-ab-test` to `src/cpp_modules/src/live_game_server.cpp`**
    - **`GET /precompute-sync?p=<pipe>`**:

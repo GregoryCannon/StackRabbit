@@ -1,3 +1,4 @@
+#include <memory>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -15,10 +16,7 @@
 #include "piece_ranges.cpp"
 #include "playout.cpp"
 #include "high_level_search.cpp"
-#ifndef __EMSCRIPTEN__
-// The precompute path is not part of the WASM build.
 #include "precompute.cpp"
-#endif
 #include "tournament_search.cpp"
 #include "piece_rng.cpp"
 // #include "../data/ranks_output.cpp"
@@ -461,39 +459,70 @@ std::string mainProcess(char const *inputStr, RequestType requestType,
     LockLocation bestMove =
         playOneMove(startingGameState, curPiece, nextPiece, pruningBreadth, playoutCount,
                     playoutLength, &context, pieceRangeContextLookup, mainPtr);
-    int xOffset = bestMove.x - 3;
-    int rot = bestMove.rotationIndex;
-    int yOffset = bestMove.y - curPiece->initialY;
 
     const EvalContext contextTest = getEvalContext(startingGameState, pieceRangeContextLookup,
                                                    /* useTestWeights= */ true, aggressionLevel);
     LockLocation bestMoveTest =
         playOneMove(startingGameState, curPiece, nextPiece, pruningBreadth, playoutCount,
                     playoutLength, &contextTest, pieceRangeContextLookup, testPtr);
-    int xOffsetTest = bestMoveTest.x - 3;
-    int rotTest = bestMoveTest.rotationIndex;
-    int yOffsetTest = bestMoveTest.y - curPiece->initialY;
 
-    // Escape for safe JSON embedding (explanations are ;-separated "name=value" pairs).
-    std::string escMain = escapeJsonString(explanationMain);
-    std::string escTest = escapeJsonString(explanationTest);
-    // Extra array element keeps [0]=agree/disagree, [1]=main, [2]=test backward-compatible
-    // with the existing JS consumer while exposing both explanations.
-    bool agree = xOffset == xOffsetTest && rot == rotTest && yOffset == yOffsetTest;
-    if (agree) {
-      return string_format("[\"agree\", [%d, %d, %d], {\n\"explanationMain\":\"%s\"}]", rot,
-                           xOffset, yOffset, escMain.c_str());
-    } else {
-      return string_format("[\"disagree\", [%d, %d, %d], [%d, %d, %d], "
-                           "{\n\"explanationMain\":\"%s\", \n\"explanationTest\":\"%s\"}]",
-                           rot, xOffset, yOffset, rotTest, xOffsetTest, yOffsetTest,
-                           escMain.c_str(), escTest.c_str());
+    const bool mainNull = lockLocationEquals(bestMove, NULL_LOCK_LOCATION);
+    const bool testNull = lockLocationEquals(bestMoveTest, NULL_LOCK_LOCATION);
+    std::vector<FullMovePossibility> possibilities;
+    if (!mainNull || !testNull) {
+      // playOneMove searches tap reachability (exact for dasCharge == -1,
+      // DAS-equivalent approximation for dasCharge >= 0); any reachability
+      // mismatch against fullMoveSearch surfaces below as an explicit error.
+      fullMoveSearch(startingGameState, curPiece, inputFrameTimeline.c_str(), dasCharge,
+                     /* trackInputSequences= */ true, possibilities);
     }
+
+    auto formatMove = [&](const LockLocation &move, std::string &formattedOut,
+                          std::string &errorOut) -> bool {
+      if (lockLocationEquals(move, NULL_LOCK_LOCATION)) {
+        formattedOut = "none";
+        return true;
+      }
+      for (const FullMovePossibility &p : possibilities) {
+        if (p.rotationIndex == move.rotationIndex && p.x == move.x && p.y == move.y) {
+          formattedOut = formatSinglePlacement(p, startingGameState.board, curPiece,
+                                               startingGameState.level, startingGameState.lines);
+          return true;
+        }
+      }
+      errorOut = string_format("Error: fullMoveSearch failed to match move [%d, %d, %d]",
+                               move.rotationIndex, move.x - INITIAL_X,
+                               move.y - curPiece->initialY);
+      return false;
+    };
+
+    std::string mainFormatted;
+    std::string formatError;
+    if (!formatMove(bestMove, mainFormatted, formatError)) {
+      return formatError;
+    }
+
+    bool agree = lockLocationEquals(bestMove, bestMoveTest);
+    std::string escMainFormatted = escapeJsonString(mainFormatted);
+    std::string escMainExp = escapeJsonString(explanationMain);
+    if (agree) {
+      return "[\"agree\", \"" + escMainFormatted + "\", {\"explanationMain\":\"" + escMainExp
+             + "\"}]";
+    }
+
+    std::string testFormatted;
+    if (!formatMove(bestMoveTest, testFormatted, formatError)) {
+      return formatError;
+    }
+    std::string escTestFormatted = escapeJsonString(testFormatted);
+    std::string escTestExp = escapeJsonString(explanationTest);
+    return "[\"disagree\", \"" + escMainFormatted + "\", \"" + escTestFormatted
+           + "\", {\"explanationMain\":\"" + escMainExp + "\", \"explanationTest\":\""
+           + escTestExp + "\"}]";
   }
 
   case PRECOMPUTE:
   case PRECOMPUTE_BACKUP: {
-#ifndef __EMSCRIPTEN__
     // The real timeline goes to the move searches; the piece-range / eval /
     // playout contexts above keep the derived tapper approximation.
     if (requestType == PRECOMPUTE) {
@@ -504,10 +533,6 @@ std::string mainProcess(char const *inputStr, RequestType requestType,
     return runPrecomputeBackup(startingGameState, curPiece, inputFrameTimeline.c_str(), dasCharge,
                                reactionTime, pruningBreadth, playoutCount, playoutLength, &context,
                                pieceRangeContextLookup);
-#else
-    // The precompute path is not part of the WASM build.
-    return "Precompute unavailable";
-#endif
   }
 
   default: {
