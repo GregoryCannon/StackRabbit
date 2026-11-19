@@ -273,6 +273,11 @@ std::string pushDownSequence(const std::string &inputString) {
   return preLock;
 }
 
+int reactionSliceIndex(const std::string &inputSequence, int reactionTime) {
+  const bool holdsThroughAre = inputSequence.find('_') != std::string::npos;
+  return holdsThroughAre ? reactionTime + 1 : reactionTime;
+}
+
 /** rot,x,y | sequence split at the reaction time | board | level | lines | das. */
 std::string formatDefaultLine(const PrecomputePossibility &placement, int reactionTime,
                               unsigned int board[20], const Piece *piece, int level, int lines) {
@@ -280,8 +285,7 @@ std::string formatDefaultLine(const PrecomputePossibility &placement, int reacti
   snprintf(head, sizeof(head), "%d,%d,%d|", placement.relRot, placement.relX, placement.relY);
 
   const std::string sequence = placement.inputSequence.empty() ? "none" : placement.inputSequence;
-  const bool holdsThroughAre = placement.inputSequence.find('_') != std::string::npos;
-  const int sliceIndex = holdsThroughAre ? reactionTime + 1 : reactionTime;
+  const int sliceIndex = reactionSliceIndex(placement.inputSequence, reactionTime);
   const int clamped = min(sliceIndex, static_cast<int>(sequence.size()));
 
   std::string out = head;
@@ -411,7 +415,8 @@ PrecomputeState preparePrecomputeState(GameState gameState, const Piece *curPiec
 
     std::unordered_set<std::string> seenPrefixes;
     for (const size_t index : order) {
-      const std::string prefix = initialPlacements[index].inputSequence.substr(0, reactionTime);
+      const std::string &seq = initialPlacements[index].inputSequence;
+      const std::string prefix = seq.substr(0, reactionSliceIndex(seq, reactionTime));
       if (!seenPrefixes.insert(prefix).second) {
         continue;
       }

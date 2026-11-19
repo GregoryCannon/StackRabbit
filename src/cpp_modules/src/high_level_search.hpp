@@ -43,10 +43,12 @@ struct FirstMoveBranch {
   int dasChargeAfter; // DAS mode only: leftover charge after first placement (-1 in tap mode)
   GameState afterFirstMove;
   float firstMoveReward;
+  float firstMoveTiebreak;
 };
 
 struct FirstMoveSearchResult {
   bool useDas = false;
+  const Piece *firstPiece = nullptr;
   std::vector<FirstMoveBranch> branches;
 };
 

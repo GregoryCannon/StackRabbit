@@ -1194,4 +1194,102 @@ TEST_CASE("playSequence preserves originalAiMode weights across mid-playout mode
   }
 }
 
+TEST_CASE("preparePrecomputeState offsets phantom prefix slice by 1 when '_' holds through ARE") {
+  // With full DAS charge (16) and reactionTime = 7, holding right through ARE prepends '_' at
+  // index 0, so the 7 pre-reaction active frames (0..6) occupy indices 1..7 (slice length 8):
+  //   - +1 shift (x = 4): "_Rrrrrr." (stops shifting on frame 6)
+  //   - +2 shift (x = 5): "_RrrrrrR" (shifts again on frame 6)
+  // Both prefixes must be preserved as distinct phantoms, matching preAdjInputSequence.
+  std::string dasEquivalent = getDasEquivalentInputTimeline("X..");
+  PieceRangeContext contexts[4] = {
+      getPieceRangeContext(dasEquivalent.c_str(), 1, /* gravityDoubled= */ true),
+      getPieceRangeContext(dasEquivalent.c_str(), 1, /* gravityDoubled= */ false),
+      getPieceRangeContext(dasEquivalent.c_str(), 2, /* gravityDoubled= */ false),
+      getPieceRangeContext(dasEquivalent.c_str(), 3, /* gravityDoubled= */ false),
+  };
+  BackupProbe probe = probeStateFrom(makeEmptyBoard(), 18, 0, dasEquivalent, "safe");
+  PrecomputeState state = preparePrecomputeState(
+      probe.gameState, &PIECE_LIST[IDX_O], "X..", /* dasCharge= */ 16, /* reactionTime= */ 7,
+      /* pruningBreadth= */ 4, /* playoutCount= */ 0, /* playoutLength= */ 0, &probe.evalContext,
+      contexts);
+
+  bool sawOneShiftPrefix = false;
+  bool sawTwoShiftPrefix = false;
+  for (const PrecomputePhantom &phantom : state.phantoms) {
+    if (phantom.hasInitialPlacement && phantom.hasAdjustmentState) {
+      CHECK(phantom.inputSequence == phantom.adjustmentCtx.preAdjInputSequence);
+    }
+    if (phantom.inputSequence == "_Rrrrrr.") {
+      sawOneShiftPrefix = true;
+    } else if (phantom.inputSequence == "_RrrrrrR") {
+      sawTwoShiftPrefix = true;
+    }
+  }
+  CHECK(sawOneShiftPrefix);
+  CHECK(sawTwoShiftPrefix);
+}
+
+TEST_CASE("2-ply intermediate eval tiebreak takes an immediate Tetris on I -> I") {
+  // On an 8-high Tetris-ready right-well board with current piece I and next piece I, placing
+  // the first I onto the stack and saving the Tetris for the second I reaches the identical
+  // post-2-piece board as taking the Tetris immediately, while costing fewer post-reaction
+  // adjustment inputs (e.g. at reactionTime = 18 with full DAS, the piece is at col 8 one frame
+  // short of col 9). The 1-ply intermediate eval tiebreak prefers clearing the Tetris on the
+  // first I across eval-only, playout-backed, DAS, low-DAS, and tap modes.
+  const std::string board = makeWellBoard(8, 8, 9);
+
+  auto checkPrecomputeITakesTetris = [&](int dasCharge, int pruningBreadth, int playoutCount,
+                                         int playoutLength) {
+    INFO("dasCharge=", dasCharge, " breadth=", pruningBreadth, " playouts=", playoutCount);
+    std::string pipe = InputBuilder()
+                           .withBoard1(board)
+                           .withLevel(18)
+                           .withLines(20)
+                           .withCurPiece(IDX_I)
+                           .withNextPiece(-1)
+                           .withTimeline("X..")
+                           .withPlayoutCount(playoutCount)
+                           .withPlayoutLength(playoutLength)
+                           .withPruningBreadth(pruningBreadth)
+                           .withAggression("aggro")
+                           .withDasCharge(dasCharge)
+                           .build()
+                       + "18|";
+    std::string out = runRequest(PRECOMPUTE, pipe);
+    size_t iPos = out.find("\nI:");
+    REQUIRE(iPos != std::string::npos);
+    size_t iEnd = out.find('\n', iPos + 1);
+    std::string iLine = out.substr(iPos + 1, iEnd - (iPos + 1));
+    // Taking the Tetris clears 4 lines (20 -> 24).
+    CHECK(iLine.find("|18|24|") != std::string::npos);
+  };
+
+  // Eval-only across full DAS (mid-flight col-8 snapshot), zero DAS, and tap mode
+  checkPrecomputeITakesTetris(/* dasCharge= */ 16, 20, 0, 0);
+  checkPrecomputeITakesTetris(/* dasCharge= */ 0, 20, 0, 0);
+  checkPrecomputeITakesTetris(/* dasCharge= */ -1, 20, 0, 0);
+
+  // Tournament playout mode (where playout scores replace raw evalScoreInclReward)
+  checkPrecomputeITakesTetris(/* dasCharge= */ 16, -1, 200, 4);
+  checkPrecomputeITakesTetris(/* dasCharge= */ 0, -1, 200, 4);
+
+  // Direct 2-ply GET_MOVE (I -> I): vertical I in col 9 (rot=1, xOffset=+4)
+  std::string getMovePipe = InputBuilder()
+                                .withBoard1(board)
+                                .withLevel(18)
+                                .withLines(20)
+                                .withCurPiece(IDX_I)
+                                .withNextPiece(IDX_I)
+                                .withTimeline("X..")
+                                .withPlayoutCount(49)
+                                .withPlayoutLength(2)
+                                .withPruningBreadth(20)
+                                .withAggression("aggro")
+                                .build();
+  int rot = -1, xOff = 0, yOff = 0;
+  parseMoveTriple(runRequest(GET_MOVE, getMovePipe), rot, xOff, yOff);
+  CHECK(rot == 1);
+  CHECK(xOff == 4);
+}
+
 #endif // SR_REQUEST_TYPE_TESTS

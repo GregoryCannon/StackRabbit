@@ -283,6 +283,12 @@ TEST_CASE("precompute pipeline invariants hold on every golden fixture") {
     INFO("fixture ", fixtureIdx, " tier=", fixture.production ? "production" : "edge");
     const PreparedFixture prepared = prepareFixtureFromPipe(fixture.input);
 
+    for (const PrecomputePhantom &phantom : prepared.state.phantoms) {
+      if (phantom.hasInitialPlacement && phantom.hasAdjustmentState) {
+        CHECK(phantom.inputSequence == phantom.adjustmentCtx.preAdjInputSequence);
+      }
+    }
+
     // (d) lock values and penalties: finite, and within a generous +-1e6
     // bound (real eval values are tens to hundreds at most).
     for (int i = 0; i < 7; i++) {

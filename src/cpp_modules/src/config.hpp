@@ -59,6 +59,12 @@
 #define SEMI_HOLE_PROPORTION                                                                       \
   0.6f // Value used for things that are sort of like holes but not fully, e.g. unfilled wells while
        // digging
+// Small 1-ply eval tiebreak added to duplicate-piece 2-ply evaluations (e.g. I->I, O->O, T->T)
+// so commuting placements prefer taking line clears and cleaner intermediate boards first,
+// preserving mid-air adjustment flexibility for the second piece. Clamped below so temporary
+// 1-ply penalties that the second piece immediately resolves do not distort 2-ply setups.
+#define INTERMEDIATE_EVAL_TIEBREAK_WEIGHT 0.025f
+#define INTERMEDIATE_EVAL_TIEBREAK_FLOOR -40.0f
 
 // Piece sequences
 #define SEQUENCE_LENGTH 20

@@ -71,6 +71,7 @@ FirstMoveSearchResult buildFirstMoveBranches(const GameState &gameState, const P
                                              const EvalContext *evalContext) {
   FirstMoveSearchResult result;
   result.useDas = firstPieceDasCharge >= 0;
+  result.firstPiece = firstPiece;
 
   auto appendBranch = [&](const LockPlacement &firstPlacement, int dasChargeAfter) {
     GameState afterFirstMove = advanceGameState(gameState, firstPlacement, evalContext);
@@ -81,7 +82,15 @@ FirstMoveSearchResult buildFirstMoveBranches(const GameState &gameState, const P
         getLineClearFactor(afterFirstMove.lines - gameState.lines, evalContext->weights,
                            evalContext->shouldRewardLineClears, gameState.lines,
                            evalContext->lineoutAt29);
-    result.branches.push_back({firstPlacement, dasChargeAfter, afterFirstMove, firstMoveReward});
+    float firstMoveTiebreak = 0.0f;
+    if (!SHOULD_PLAY_PERFECT) {
+      float firstMoveEval = fastEval(gameState, afterFirstMove, firstPlacement, evalContext,
+                                     /* outExplanation= */ nullptr);
+      firstMoveTiebreak = INTERMEDIATE_EVAL_TIEBREAK_WEIGHT
+                          * std::max(firstMoveEval, INTERMEDIATE_EVAL_TIEBREAK_FLOOR);
+    }
+    result.branches.push_back(
+        {firstPlacement, dasChargeAfter, afterFirstMove, firstMoveReward, firstMoveTiebreak});
   };
 
   // Get the placements of the first piece. In DAS mode the results come out of
@@ -144,13 +153,17 @@ static int searchDepth2FromFirstMoves(const FirstMoveSearchResult &firstMoves,
   vector<LockPlacement> secondLockPlacements;
   secondLockPlacements.reserve(64);
 
+  const bool isDuplicatePiece =
+      firstMoves.firstPiece != nullptr && firstMoves.firstPiece->index == secondPiece->index;
+
   for (FirstMoveBranch const &branch : firstMoves.branches) {
     if (cancelFlag != nullptr && cancelFlag->load(std::memory_order_relaxed)) {
       return 0;
     }
     const LockPlacement &firstPlacement = branch.firstPlacement;
     const GameState &afterFirstMove = branch.afterFirstMove;
-    float firstMoveReward = branch.firstMoveReward;
+    float firstMoveReward =
+        branch.firstMoveReward + (isDuplicatePiece ? branch.firstMoveTiebreak : 0.0f);
     maybePrint("\n\n\n\nNEW FIRST MOVE: rot=%d x=%d\n", firstPlacement.rotationIndex,
                firstPlacement.x);
 
