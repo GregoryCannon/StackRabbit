@@ -26,14 +26,14 @@ aggressionLevel | dasCharge |
   tapper approximation for piece-range/eval/playout contexts (below); only the
   full move search consumes the real timeline.
 - Encoders and callers that must stay in lockstep:
-  `src/cpp_modules/src/live_game_server.cpp`,
-  `src/cpp_modules/tests/precompute_cli.cpp`, `entrypoint.cpp`,
+  `src/backend/live_game_server.cpp`,
+  `src/tests/precompute_cli.cpp`, `entrypoint.cpp`,
   `src/benchmark/speed_benchmark.cpp`, `src/benchmark/run_agent.cpp`,
   `src/wasm/sample_client/wasmRabbit-worker.js`, `src/fceux/stackrabbit.lua`.
 
 ## C++ live game server surface
 
-`src/cpp_modules/src/live_game_server.cpp` — standalone zero-dependency HTTP
+`src/backend/live_game_server.cpp` — standalone zero-dependency HTTP
 server serving the live precompute and A/B test endpoints over native sockets
 (POSIX and Winsock2; see the file's header comment for build commands and
 design details). Default port `3000`, overridable via `argv[1]` or the `PORT`

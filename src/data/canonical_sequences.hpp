@@ -1,10 +1,10 @@
 #ifndef CANONICAL_SEQUENCES_H
 #define CANONICAL_SEQUENCES_H
 
-#include "../src/config.hpp"
+#include "../backend/config.hpp"
 
 /*
- * Piece-sequence data used by getPlayoutScore (src/cpp_modules/src/playout.cpp) to play out
+ * Piece-sequence data used by getPlayoutScore (src/backend/playout.cpp) to play out
  * future piece sequences under NES Tetris randomizer semantics.
  *
  * Each array holds CANONICAL_SEQUENCE_BATCH_SIZE (config.hpp) rows of SEQUENCE_LENGTH (=20)

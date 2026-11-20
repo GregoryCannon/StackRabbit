@@ -32,7 +32,7 @@ const {
 
 const SEED = 0x5eedc0de;
 const DEFAULT_OUTPUT = path.join(__dirname, "data/precompute_fixtures.jsonl");
-const POSITION_LOG_PATH = path.join(__dirname, "../../benchmark/data/position_log.jsonl");
+const POSITION_LOG_PATH = path.join(__dirname, "../benchmark/data/position_log.jsonl");
 const POSITION_LOG_SOURCE = "src/benchmark/data/position_log.jsonl";
 const REACTION_TIMES = [0, 8, 20];
 const DAS_BUCKETS = [-1, 0, 5, 10, 15, 16];
@@ -354,7 +354,7 @@ function main() {
     // Emit artifact: header object then one JSON object per fixture.
     const header = {
       type: "precompute_fixtures",
-      generator: "src/cpp_modules/tests/precompute_fixture_generate.js (npm run precompute_fixture_generate)",
+      generator: "src/tests/precompute_fixture_generate.js (npm run precompute_fixture_generate)",
       seed: SEED,
       source: POSITION_LOG_SOURCE,
       timeline,

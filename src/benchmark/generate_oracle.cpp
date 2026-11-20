@@ -15,7 +15,7 @@
 //  the header is written only when the file doesn't exist yet.
 //
 
-#include "../cpp_modules/src/main.cpp"
+#include "../backend/main.cpp"
 #include "benchmark_common.hpp"
 #include <chrono>
 #include <cmath>

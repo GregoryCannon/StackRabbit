@@ -4,8 +4,8 @@
 // Shared helpers for the benchmark tools (generate_oracle.cpp, run_agent.cpp):
 // minimal JSONL field extraction, compressed-board decoding/encoding, and provenance.
 
-#include "../cpp_modules/src/formatting.hpp" // BOARD_ENCODING
-#include "../cpp_modules/src/utils.hpp"      // FULL_ROW
+#include "../backend/formatting.hpp" // BOARD_ENCODING
+#include "../backend/utils.hpp"      // FULL_ROW
 #include <stdio.h>
 #include <stdlib.h>
 #include <string>

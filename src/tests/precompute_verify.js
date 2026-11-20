@@ -23,8 +23,8 @@ const fs = require("fs");
 const path = require("path");
 
 const FIXTURES_PATH = path.join(__dirname, "data/precompute_fixtures.jsonl");
-const PRECOMPUTE_CLI_BIN = path.join(__dirname, "../../../build/precompute_cli");
-const DEFAULT_DUMP_PATH = path.join(__dirname, "../../../build/precompute_tsan_inputs.txt");
+const PRECOMPUTE_CLI_BIN = path.join(__dirname, "../../build/precompute_cli");
+const DEFAULT_DUMP_PATH = path.join(__dirname, "../../build/precompute_tsan_inputs.txt");
 const PIECE_LOOKUP = ["I", "O", "L", "J", "T", "S", "Z"];
 const MAX_DIFF_EXAMPLES = 5;
 const MAX_STDOUT_BUFFER = 1 << 28; // 256 MiB

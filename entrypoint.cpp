@@ -5,8 +5,8 @@
 //  Created by Greg Cannon on 7/27/21.
 //
 
-#include "src/cpp_modules/src/main.cpp"
-#include "src/cpp_modules/src/game_simulation.cpp"
+#include "src/backend/main.cpp"
+#include "src/backend/game_simulation.cpp"
 #include <iostream>
 
 /*

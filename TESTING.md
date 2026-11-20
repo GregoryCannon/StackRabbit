@@ -1,6 +1,6 @@
 # Testing & Verification Plan
 
-Testing the `src/cpp_modules/` AI backend and full engine stack: it is deterministic,
+Testing the `src/backend/` AI backend and full engine stack: it is deterministic,
 heavily optimized, and its core entry points are pure string-in/string-out functions.
 
 ## Change-Scoped Test Matrix
@@ -22,17 +22,17 @@ Match verification checks to what changed instead of running every heavy suite u
 StackRabbit maintains layered test harnesses with distinct verification depths. All Node test scripts use the Node.js standard library only (zero `node_modules`).
 
 * **C++ Unit Tests** (`npm run cpp_test_unit`)
-  * **Files**: `src/cpp_modules/tests/stackrabbit_test.cpp` and included test headers (`helpers.hpp`, `board_format_tests.hpp`, `input_validation_tests.hpp`, `move_search_fuzz_tests.hpp`, `precompute_collapse_tests.hpp`, `precompute_property_tests.hpp`, `request_type_tests.hpp`)
+  * **Files**: `src/tests/stackrabbit_test.cpp` and included test headers (`helpers.hpp`, `board_format_tests.hpp`, `input_validation_tests.hpp`, `move_search_fuzz_tests.hpp`, `precompute_collapse_tests.hpp`, `precompute_property_tests.hpp`, `request_type_tests.hpp`)
   * **Purpose**: Fast in-memory doctest suite compiled with `-O0 -std=c++17 -pthread` (~4s total). Validates pipe parsing, all request types, board compression, synthetic precompute collapse/formatting rules, precompute pipeline invariants (7 inline regime cases in `precompute_property_tests.hpp`, with no baked golden header), and move search placement tuples.
 * **Move Search Regression & Sequence Verifiers**
-  * **In-Suite Move Search Fuzz** (`npm run cpp_test_unit` — `src/cpp_modules/tests/move_search_fuzz_tests.hpp`): Replays all 2,783 fixtures inside the C++ test binary. Compares result order and `(rot, x, y, chargeAfter, inputCost)` tuples in-memory against bit-packed records in `src/cpp_modules/tests/move_search_fixtures.hpp` (no string sequences). Tests both `fullMoveSearch` and `fastMoveSearch`.
-  * **Move Search Sequence Verifier** (`npm run fuzz_verify_sequences` — `src/cpp_modules/tests/fixture_dump.cpp`, `src/cpp_modules/tests/move_search_fuzz_verify.js`): The strongest move-search gate. Compiles and runs `build/fixture_dump` across all 2,783 fixtures and asserts **character-exact controller input sequences** (frame-by-frame) and tuple ordering against `src/cpp_modules/tests/data/move_search_fixtures.json`.
+  * **In-Suite Move Search Fuzz** (`npm run cpp_test_unit` — `src/tests/move_search_fuzz_tests.hpp`): Replays all 2,783 fixtures inside the C++ test binary. Compares result order and `(rot, x, y, chargeAfter, inputCost)` tuples in-memory against bit-packed records in `src/tests/move_search_fixtures.hpp` (no string sequences). Tests both `fullMoveSearch` and `fastMoveSearch`.
+  * **Move Search Sequence Verifier** (`npm run fuzz_verify_sequences` — `src/tests/fixture_dump.cpp`, `src/tests/move_search_fuzz_verify.js`): The strongest move-search gate. Compiles and runs `build/fixture_dump` across all 2,783 fixtures and asserts **character-exact controller input sequences** (frame-by-frame) and tuple ordering against `src/tests/data/move_search_fixtures.json`.
 * **Precompute Pipeline, Concurrency & Live Server Gates**
-  * **Precompute Verifier** (`npm run precompute_verify` — `src/cpp_modules/tests/precompute_cli.cpp`, `src/cpp_modules/tests/precompute_verify.js`): Builds `build/precompute_cli`, streams all 3,470 fixtures from `src/cpp_modules/tests/data/precompute_fixtures.jsonl` in a single batch invocation, and verifies byte-identical responses with categorized mismatch reporting.
-  * **Precompute Fixture Generator** (`npm run precompute_fixture_generate` — `src/cpp_modules/tests/precompute_cli.cpp`, `src/cpp_modules/tests/precompute_fixture_generate.js`): Builds `build/precompute_cli` and regenerates the single golden file `src/cpp_modules/tests/data/precompute_fixtures.jsonl` (3,470 fixtures) from `src/benchmark/data/position_log.jsonl` with strict coverage quotas across pieces, reaction times, and DAS buckets.
-  * **Precompute TSan Gate** (`npm run precompute_tsan` — `src/cpp_modules/tests/precompute_tsan.cpp`): Compiles with `-fsanitize=thread` and replays 6 diverse non-`"none"` production fixtures covering `(tap, DAS) × (reactionTime 0, 8, 20)` plus 1 derived timed `-2` (150ms budget) DAS precompute request to catch data races across the 7 per-next-piece worker threads.
-  * **Live Server Verifier** (`npm run live_server_check` — `src/cpp_modules/tests/live_server_check.js`, `src/cpp_modules/tests/live_server_verify.js`): Builds and boots `build/live_game_server` on isolated battery port 3101, verifies 3 representative HTTP golden fixtures (production tap, production DAS, and whole-response `"none"`), backup-and-halt cancellation, `503 Busy` under concurrent load, `/precompute-sync`, `/get-move-ab-test` (11- and 12-field pipes), and HTTP error paths (`400` missing `p`, `500` on junk pipe or `|` delimiter).
-  * **Precompute Static Lint** (`npm run precompute_static_lint` — `src/cpp_modules/tests/precompute_static_lint.js`): Static tripwire ensuring no non-const, non-thread-local file-scope static variables exist in files reachable from concurrent precompute lookup calls (waivers tracked in `src/cpp_modules/tests/thread_static_allowlist.txt`).
+  * **Precompute Verifier** (`npm run precompute_verify` — `src/tests/precompute_cli.cpp`, `src/tests/precompute_verify.js`): Builds `build/precompute_cli`, streams all 3,470 fixtures from `src/tests/data/precompute_fixtures.jsonl` in a single batch invocation, and verifies byte-identical responses with categorized mismatch reporting.
+  * **Precompute Fixture Generator** (`npm run precompute_fixture_generate` — `src/tests/precompute_cli.cpp`, `src/tests/precompute_fixture_generate.js`): Builds `build/precompute_cli` and regenerates the single golden file `src/tests/data/precompute_fixtures.jsonl` (3,470 fixtures) from `src/benchmark/data/position_log.jsonl` with strict coverage quotas across pieces, reaction times, and DAS buckets.
+  * **Precompute TSan Gate** (`npm run precompute_tsan` — `src/tests/precompute_tsan.cpp`): Compiles with `-fsanitize=thread` and replays 6 diverse non-`"none"` production fixtures covering `(tap, DAS) × (reactionTime 0, 8, 20)` plus 1 derived timed `-2` (150ms budget) DAS precompute request to catch data races across the 7 per-next-piece worker threads.
+  * **Live Server Verifier** (`npm run live_server_check` — `src/tests/live_server_check.js`, `src/tests/live_server_verify.js`): Builds and boots `build/live_game_server` on isolated battery port 3101, verifies 3 representative HTTP golden fixtures (production tap, production DAS, and whole-response `"none"`), backup-and-halt cancellation, `503 Busy` under concurrent load, `/precompute-sync`, `/get-move-ab-test` (11- and 12-field pipes), and HTTP error paths (`400` missing `p`, `500` on junk pipe or `|` delimiter).
+  * **Precompute Static Lint** (`npm run precompute_static_lint` — `src/tests/precompute_static_lint.js`): Static tripwire ensuring no non-const, non-thread-local file-scope static variables exist in files reachable from concurrent precompute lookup calls (waivers tracked in `src/tests/thread_static_allowlist.txt`).
 * **Benchmarks**
   * **Throughput Benchmark** (`npm run speed_benchmark` — `src/benchmark/speed_benchmark.cpp`): Measures raw engine throughput (ms/call, ops/sec) for `GET_MOVE` across varying board topologies, speeds, and playout parameters.
   * **Accuracy Benchmark Suite** (`npm run benchmark_run_agent` — `src/benchmark/run_agent.cpp`): Evaluates engine move choice and decision quality against a deep Monte Carlo oracle (1,000–8,000 playouts) on standard or hard positions (e.g. `npm run benchmark_run_agent -- GET_MOVE 49 2 20 hard`).
@@ -44,8 +44,8 @@ StackRabbit maintains layered test harnesses with distinct verification depths. 
 ### Distinguishing Key Overlapping Tests
 
 * **`move_search_fuzz_tests.hpp` vs. `move_search_fuzz_verify.js`**:
-  * `move_search_fuzz_tests.hpp` is an in-memory C++ doctest suite (`npm run cpp_test_unit`). It checks placement tuples `(rotation, x, y, dasChargeAfter, inputCost)` in result order against bit-packed integers in `src/cpp_modules/tests/move_search_fixtures.hpp`. It runs fast and also guards `fastMoveSearch` set equivalence, but it does *not* carry or check controller input sequences.
-  * `move_search_fuzz_verify.js` (`npm run fuzz_verify_sequences`) is a separate Node.js differential harness. It compiles and runs `build/fixture_dump --all` and diffs both the placement tuples and the **character-exact controller input sequences** (frame-by-frame) against `src/cpp_modules/tests/data/move_search_fixtures.json`. It is the authoritative gate for sequence correctness.
+  * `move_search_fuzz_tests.hpp` is an in-memory C++ doctest suite (`npm run cpp_test_unit`). It checks placement tuples `(rotation, x, y, dasChargeAfter, inputCost)` in result order against bit-packed integers in `src/tests/move_search_fixtures.hpp`. It runs fast and also guards `fastMoveSearch` set equivalence, but it does *not* carry or check controller input sequences.
+  * `move_search_fuzz_verify.js` (`npm run fuzz_verify_sequences`) is a separate Node.js differential harness. It compiles and runs `build/fixture_dump --all` and diffs both the placement tuples and the **character-exact controller input sequences** (frame-by-frame) against `src/tests/data/move_search_fixtures.json`. It is the authoritative gate for sequence correctness.
 * **`precompute_verify.js` vs. `live_server_check.js`**:
   * `precompute_verify.js` tests `build/precompute_cli` across all 3,470 fixtures (both eval-only and production tiers).
   * `live_server_check.js` tests the standalone multi-threaded HTTP server (`build/live_game_server`) on port 3101 across 3 representative golden fixtures plus protocol checks for `/precompute`, `/async-result` backup-and-halt cancellation, `503 Busy`, `/precompute-sync`, `/get-move-ab-test`, error handling, and socket teardown.
@@ -55,18 +55,18 @@ StackRabbit maintains layered test harnesses with distinct verification depths. 
 
 ## Test binary layout
 
-- Vendored `doctest.h` in `src/cpp_modules/vendor/doctest.h` (v2.4.12)
-- `src/cpp_modules/tests/stackrabbit_test.cpp`:
+- Vendored `doctest.h` in `src/tests/vendor/doctest.h` (v2.4.12)
+- `src/tests/stackrabbit_test.cpp`:
   - `#define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN` + include `doctest.h`
-  - Includes `../src/main.cpp` (the unity build) — deliberately **not** the other `main()` definers (`entrypoint.cpp`, `live_game_server.cpp`, `fixture_dump.cpp`, `precompute_cli.cpp`, `precompute_tsan.cpp`, `src/benchmark/*.cpp`) or `wasm.cpp` (Emscripten glue)
+  - Includes `../backend/main.cpp` (the unity build) — deliberately **not** the other `main()` definers (`entrypoint.cpp`, `live_game_server.cpp`, `fixture_dump.cpp`, `precompute_cli.cpp`, `precompute_tsan.cpp`, `src/benchmark/*.cpp`) or `wasm.cpp` (Emscripten glue)
 - Test cases live in per-category headers included by `stackrabbit_test.cpp`:
-  - `src/cpp_modules/tests/helpers.hpp` — shared board builders, `InputBuilder`, assertions
-  - `src/cpp_modules/tests/board_format_tests.hpp` — `formatBoard` / `parseCompressedBoard` round trips
-  - `src/cpp_modules/tests/input_validation_tests.hpp` — Section A: input parsing & validation
-  - `src/cpp_modules/tests/move_search_fuzz_tests.hpp` — in-memory move-search placement-tuple regression checks
-  - `src/cpp_modules/tests/precompute_collapse_tests.hpp` — eval-free synthetic-state collapse & formatter pins
-  - `src/cpp_modules/tests/precompute_property_tests.hpp` — pipeline invariants on 7 inline regime cases
-  - `src/cpp_modules/tests/request_type_tests.hpp` — Section B: tests per request type
+  - `src/tests/helpers.hpp` — shared board builders, `InputBuilder`, assertions
+  - `src/tests/board_format_tests.hpp` — `formatBoard` / `parseCompressedBoard` round trips
+  - `src/tests/input_validation_tests.hpp` — Section A: input parsing & validation
+  - `src/tests/move_search_fuzz_tests.hpp` — in-memory move-search placement-tuple regression checks
+  - `src/tests/precompute_collapse_tests.hpp` — eval-free synthetic-state collapse & formatter pins
+  - `src/tests/precompute_property_tests.hpp` — pipeline invariants on 7 inline regime cases
+  - `src/tests/request_type_tests.hpp` — Section B: tests per request type
 - npm script: `"cpp_test_unit"` compiles with `g++ -O0 -std=c++17 -pthread` (fast edit-compile-test loop, ~4s total)
 
 ## Test strategy: black-box on `mainProcess`
@@ -119,7 +119,7 @@ plus seven `<piece>:continue` lines. The sequence is emitted unsliced (the
 whole sequence sits before `~~`), and a piece with no legal placement answers
 exactly `none`.
 
-Shared helpers live in `src/cpp_modules/tests/helpers.hpp`: board-string
+Shared helpers live in `src/tests/helpers.hpp`: board-string
 builders (empty board, board with a well, notch, full row), piece-letter →
 `PIECE_LIST` index mapping, and `InputBuilder` so tests read like the calls
 they exercise.
@@ -176,8 +176,8 @@ they exercise.
 
 ## Move-search regression fixtures (DAS & tap move search)
 
-`src/cpp_modules/tests/data/move_search_fixtures.json` (2,783 fixtures) and its
-companion bit-packed C++ header `src/cpp_modules/tests/move_search_fixtures.hpp`
+`src/tests/data/move_search_fixtures.json` (2,783 fixtures) and its
+companion bit-packed C++ header `src/tests/move_search_fixtures.hpp`
 are the permanent versioned specification of `fullMoveSearch` behavior.
 
 - `npm run cpp_test_unit` (`move_search_fuzz_tests.hpp`) replays all fixtures
@@ -189,10 +189,10 @@ are the permanent versioned specification of `fullMoveSearch` behavior.
   noise. Tap fixtures are asserted twice: through `fastMoveSearch` (placement
   **set** equivalence only, since its tuck semantics and order differ) and
   through `fullMoveSearch`'s ARR-gated tap path.
-- `npm run fuzz_verify_sequences` compiles `src/cpp_modules/tests/fixture_dump.cpp`,
+- `npm run fuzz_verify_sequences` compiles `src/tests/fixture_dump.cpp`,
   dumps C++ results for every fixture (both modes from `fullMoveSearch`), and
   diffs tuples **and character-exact controller input sequences** against
-  `src/cpp_modules/tests/data/move_search_fixtures.json` (exiting nonzero on
+  `src/tests/data/move_search_fixtures.json` (exiting nonzero on
   any mismatch).
 
 ### The two "tuck" definitions (`fastMoveSearch` vs `fullMoveSearch`)
@@ -267,16 +267,16 @@ compares sequences character-exactly.
 
 ## Precompute golden fixtures (full-request regression baseline)
 
-`src/cpp_modules/tests/data/precompute_fixtures.jsonl` is the **single**
+`src/tests/data/precompute_fixtures.jsonl` is the **single**
 precompute golden file (3,470 fixtures: exact request parameters plus verbatim
 output string per fixture). `npm run precompute_verify` builds
-`build/precompute_cli` and runs `src/cpp_modules/tests/precompute_verify.js`
+`build/precompute_cli` and runs `src/tests/precompute_verify.js`
 to assert 3,470/3,470 byte-identical outputs.
 
 `npm run precompute_fixture_generate` builds `build/precompute_cli` and runs
-`src/cpp_modules/tests/precompute_fixture_generate.js` over logged positions
+`src/tests/precompute_fixture_generate.js` over logged positions
 from `src/benchmark/data/position_log.jsonl` to regenerate
-`src/cpp_modules/tests/data/precompute_fixtures.jsonl` (accepts an optional
+`src/tests/data/precompute_fixtures.jsonl` (accepts an optional
 output path argument, e.g.
 `npm run precompute_fixture_generate -- /tmp/precompute_check.jsonl`).
 
@@ -313,7 +313,7 @@ handling, or collapse scoring) follows a single-file re-baseline workflow:
    that before re-baselining.
 2. Regenerate the single golden file with `npm run precompute_fixture_generate`
    (verify determinism by running to a temporary path and diffing) and commit
-   `src/cpp_modules/tests/data/precompute_fixtures.jsonl` alongside the change.
+   `src/tests/data/precompute_fixtures.jsonl` alongside the change.
    `cpp_test_unit` needs no re-baselining: `precompute_property_tests.hpp` tests
    eval-independent pipeline invariants on 7 inline cases, and
    `precompute_collapse_tests.hpp` pins tie-breaking, rounding, fallback, and
@@ -338,25 +338,25 @@ The pattern for any parity or regression-snapshot work:
    reviewable, re-baselineable) from structural breaks (changed shape,
    fallback, ordering, malformed output — never re-baseline over these).
 
-Live instances: `src/cpp_modules/tests/move_search_fuzz_verify.js` (over
-`src/cpp_modules/tests/data/move_search_fixtures.json` via `build/fixture_dump`)
-and `src/cpp_modules/tests/precompute_verify.js` (over
-`src/cpp_modules/tests/data/precompute_fixtures.jsonl` via
+Live instances: `src/tests/move_search_fuzz_verify.js` (over
+`src/tests/data/move_search_fixtures.json` via `build/fixture_dump`)
+and `src/tests/precompute_verify.js` (over
+`src/tests/data/precompute_fixtures.jsonl` via
 `build/precompute_cli`).
 
 ## Versioned fixture and tooling inventory
 
 The golden fixture files stay versioned permanently:
 
-- `src/cpp_modules/tests/data/move_search_fixtures.json` and
-  `src/cpp_modules/tests/move_search_fixtures.hpp` — authoritative definition
+- `src/tests/data/move_search_fixtures.json` and
+  `src/tests/move_search_fixtures.hpp` — authoritative definition
   of `fullMoveSearch` behavior (2,783 fixtures).
-- `src/cpp_modules/tests/data/precompute_fixtures.jsonl` — single precompute
+- `src/tests/data/precompute_fixtures.jsonl` — single precompute
   regression baseline (3,470 fixtures).
 - `src/benchmark/data/*` — positions and deep-playout oracles feeding the
   accuracy benchmark workflow.
 
-Permanent verification harnesses under `src/cpp_modules/tests/`:
+Permanent verification harnesses under `src/tests/`:
 
 - `stackrabbit_test.cpp` (+ included `.hpp` suites) — `npm run cpp_test_unit`
 - `fixture_dump.cpp` + `move_search_fuzz_verify.js` — `npm run fuzz_verify_sequences`
@@ -366,7 +366,7 @@ Permanent verification harnesses under `src/cpp_modules/tests/`:
 - `precompute_static_lint.js` + `thread_static_allowlist.txt` — `npm run precompute_static_lint`
 - `live_server_check.js` + `live_server_verify.js` — `npm run live_server_check`
 
-The standalone C++ live game server (`src/cpp_modules/src/live_game_server.cpp`,
+The standalone C++ live game server (`src/backend/live_game_server.cpp`,
 default port 3000) is verified end-to-end by `npm run live_server_check` on
 isolated port 3101 (see the overview above for the full list of HTTP routes,
 backup-and-halt cancellation, error recovery, and representative golden checks).

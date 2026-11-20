@@ -16,7 +16,7 @@
 #include <vector>
 
 // Pull in all the engine code the same way entrypoint.cpp does.
-#include "../cpp_modules/src/main.cpp"
+#include "../backend/main.cpp"
 
 // ---------------------------------------------------------------------------
 // Board helpers

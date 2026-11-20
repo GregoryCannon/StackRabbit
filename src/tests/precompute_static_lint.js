@@ -12,7 +12,7 @@
  * classified correctly). The heuristic is knowingly crude -- a false positive
  * is waived in the allowlist file, never silently worked around in the lint.
  *
- * Waivers: src/cpp_modules/tests/thread_static_allowlist.txt, one `file:line`
+ * Waivers: src/tests/thread_static_allowlist.txt, one `file:line`
  * or bare `file` entry per line (`#` starts a comment).
  *
  * Usage: npm run precompute_static_lint
@@ -20,7 +20,7 @@
 const fs = require("fs");
 const path = require("path");
 
-const CPP_SRC_DIR = path.join(__dirname, "../src");
+const CPP_SRC_DIR = path.join(__dirname, "../backend");
 const ALLOWLIST_PATH = path.join(__dirname, "thread_static_allowlist.txt");
 
 const AUDITED_FILES = [
@@ -150,7 +150,7 @@ function main() {
     }
     console.error(
       "These run under concurrent per-next-piece precompute threads (see AGENTS.md). " +
-        "Fix the declaration, or add a waiver in src/cpp_modules/tests/thread_static_allowlist.txt " +
+        "Fix the declaration, or add a waiver in src/tests/thread_static_allowlist.txt " +
         "if it is deliberate -- a waiver is a reviewable act, not a rubber stamp."
     );
     process.exitCode = 1;

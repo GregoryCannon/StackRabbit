@@ -20,7 +20,7 @@
 //    run (or to outputPath if provided), so runs with different configs can be compared
 //
 
-#include "../cpp_modules/src/main.cpp"
+#include "../backend/main.cpp"
 #include "benchmark_common.hpp"
 #include <algorithm>
 #include <cctype>

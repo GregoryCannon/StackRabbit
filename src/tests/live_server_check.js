@@ -2,7 +2,7 @@
  * Battery item: boots the C++ live game server on the battery-dedicated port
  * 3101 (never 3000/3001, so this can never collide with a dev server or a
  * manually-run live server), runs the differential harness against it
- * (src/cpp_modules/tests/live_server_verify.js — representative precompute golden
+ * (src/tests/live_server_verify.js — representative precompute golden
  * responses plus protocol, error, backup-halt, and synchronous-route checks
  * over HTTP), kills the server process group, and verifies the port is freed.
  *
@@ -15,7 +15,7 @@ const net = require("net");
 const path = require("path");
 
 const PORT = 3101;
-const SERVER_BIN = path.join(__dirname, "../../../build/live_game_server");
+const SERVER_BIN = path.join(__dirname, "../../build/live_game_server");
 const HARNESS_PATH = path.join(__dirname, "live_server_verify.js");
 const LISTEN_PATTERN = "listening on 127.0.0.1:" + PORT;
 const STARTUP_TIMEOUT_MS = 15000;
@@ -170,7 +170,7 @@ async function main() {
     fail(
       "the server never printed \"" + LISTEN_PATTERN + "\" within " + (STARTUP_TIMEOUT_MS / 1000) +
         "s. Output above. Either startup is hung/slow or the message moved — check " +
-        "src/cpp_modules/src/live_game_server.cpp."
+        "src/backend/live_game_server.cpp."
     );
   }
 
@@ -190,7 +190,7 @@ async function main() {
       "the differential harness exited with code " + harnessResult.code + " (signal=" +
         harnessResult.signal + "). Its report is above: any non-byte-identical golden, hard " +
         "failure, or failed error-path assertion fails the battery. Re-run it standalone with: " +
-        "node src/cpp_modules/tests/live_server_verify.js --port " + PORT + " (server must be running)."
+        "node src/tests/live_server_verify.js --port " + PORT + " (server must be running)."
     );
   }
 

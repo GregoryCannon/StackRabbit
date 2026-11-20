@@ -1,6 +1,6 @@
 // Precompute collapse + formatter tests: synthetic states, exact pins.
 //
-// Drives collapseAndFormatPrecompute (src/precompute.hpp) directly with
+// Drives collapseAndFormatPrecompute (src/backend/precompute.hpp) directly with
 // hand-built phantom sets and lock value maps, so the collapse math and the
 // response formatting are pinned independently of the eval and the move
 // search. The maps are pure inputs here: keys are built with encodeLockCell

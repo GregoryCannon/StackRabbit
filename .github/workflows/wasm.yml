@@ -27,7 +27,7 @@ jobs:
       - name: Compile C++ with Emscripten
         run: |
           source ./emsdk/emsdk_env.sh
-          emcc ./src/cpp_modules/src/wasm.cpp -O3 --bind -lembind -g0 -o ./src/wasm/wasmRabbit.js
+          emcc ./src/backend/wasm.cpp -O3 --bind -lembind -g0 -o ./src/wasm/wasmRabbit.js
 
       # Step 4: Create a ZIP archive of the compiled files
       - name: Create ZIP archive

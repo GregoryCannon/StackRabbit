@@ -22,7 +22,7 @@
  * backup-shaped response and halts a 500ms computation within milliseconds so
  * the slot stays on the backup and immediately accepts the next /precompute.
  *
- * Usage: node src/cpp_modules/tests/live_server_verify.js [--host <h>] [--port <p>]
+ * Usage: node src/tests/live_server_verify.js [--host <h>] [--port <p>]
  * Host/port also come from LIVE_SERVER_HOST / LIVE_SERVER_PORT; default
  * 127.0.0.1:3000 (the battery passes --port 3101).
  */

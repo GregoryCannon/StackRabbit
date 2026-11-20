@@ -4,11 +4,11 @@
 //
 // Build (from repo root):
 //   macOS/Linux:
-//     g++ -O2 -std=c++17 -pthread -o build/live_game_server src/cpp_modules/src/live_game_server.cpp
+//     g++ -O2 -std=c++17 -pthread -o build/live_game_server src/backend/live_game_server.cpp
 //   Windows (MinGW):
-//     g++ -O2 -std=c++17 -pthread -o build/live_game_server.exe src/cpp_modules/src/live_game_server.cpp -lws2_32
+//     g++ -O2 -std=c++17 -pthread -o build/live_game_server.exe src/backend/live_game_server.cpp -lws2_32
 //   Windows (MSVC):
-//     cl /O2 /std:c++17 /EHsc /Fe:build\live_game_server.exe src\cpp_modules\src\live_game_server.cpp ws2_32.lib
+//     cl /O2 /std:c++17 /EHsc /Fe:build\live_game_server.exe src\backend\live_game_server.cpp ws2_32.lib
 //
 // Run:
 //   ./build/live_game_server [<port>]     (default port 3000, overridable via

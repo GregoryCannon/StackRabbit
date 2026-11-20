@@ -3,9 +3,8 @@ raw_data/
 *.txt
 *.csv
 *.exe
-src/cpp_modules/data/ranks_output.cpp
-src/cpp_modules/data/ranksOutput.cc
-src/cpp_modules/unused/
+src/data/ranks_output.cpp
+src/data/ranksOutput.cc
 .vscode/
 built/
 build/

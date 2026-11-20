@@ -2,7 +2,7 @@
 
 StackRabbit can be compiled with [emscriptem](https://emscripten.org/) into a wasm module to do in browser placement recommendations in real time.
 
-The emscriptembindings are in the file src/wasm.cpp
+The emscripten bindings are in the file `src/backend/wasm.cpp`.
 
 ## Compilation Instructions
 

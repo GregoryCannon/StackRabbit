@@ -22,7 +22,7 @@ Here are some gameplay maneuvers players use to get the most out of DAS:
 
 ## The Engine's Frame-Exact Charge Model
 
-The engine simulates DAS frame-by-frame (see `src/cpp_modules/src/full_move_search.cpp`,
+The engine simulates DAS frame-by-frame (see `src/backend/full_move_search.cpp`,
 verified by the move-search fuzz harness). The table below restates
 the charge rules above at frame granularity, plus transitions that only the engine
 model tracks:

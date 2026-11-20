@@ -1,4 +1,4 @@
-#include "../src/types.hpp"
+#include "../backend/types.hpp"
 
 const std::string PIECE_CHAR_LIST = "IOLJTSZ";
 

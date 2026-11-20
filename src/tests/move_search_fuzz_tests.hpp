@@ -37,7 +37,7 @@
 #include <vector>
 
 #include "move_search_fixtures.hpp"
-#include "../src/full_move_search.hpp"
+#include "../backend/full_move_search.hpp"
 
 struct FuzzEntry {
   int rot;

@@ -12,7 +12,7 @@
 #include <iostream>
 #include <string>
 
-#include "../src/main.cpp"
+#include "../backend/main.cpp"
 
 int main() {
   std::ios::sync_with_stdio(false);

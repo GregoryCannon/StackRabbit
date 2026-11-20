@@ -1,6 +1,6 @@
 // Replays representative production-param precompute requests under ThreadSanitizer.
 //
-// Input: the dump written by `node src/cpp_modules/tests/precompute_verify.js
+// Input: the dump written by `node src/tests/precompute_verify.js
 // --dump-inputs [path]` (default build/precompute_tsan_inputs.txt) -- a count
 // line, then two lines per request: the PRECOMPUTE pipe string, then the
 // golden output with every newline escaped to a \x01 sentinel. Pipe strings
@@ -25,7 +25,7 @@
 #include <string>
 #include <vector>
 
-#include "../src/main.cpp"
+#include "../backend/main.cpp"
 
 namespace {
 

@@ -40,11 +40,11 @@ rebuilding on disk does not update it. Rebuild and restart `live_game_server`
   from those entry points. Enforcement: `npm run precompute_static_lint` (always-run
   default) and `npm run precompute_tsan` (~3–4s; required whenever touching threading,
   shared state, or the lookup call tree). The lint is knowingly crude; a false positive is
-  waived in `src/cpp_modules/tests/thread_static_allowlist.txt` (adding a waiver is a
+  waived in `src/tests/thread_static_allowlist.txt` (adding a waiver is a
   deliberate, reviewable act), never by weakening the lint.
 - When touching the pipe format or shared signatures, update **all** callers in
-  lockstep: `src/cpp_modules/src/live_game_server.cpp`,
-  `src/cpp_modules/tests/precompute_cli.cpp`, `entrypoint.cpp`,
+  lockstep: `src/backend/live_game_server.cpp`,
+  `src/tests/precompute_cli.cpp`, `entrypoint.cpp`,
   `src/benchmark/speed_benchmark.cpp`, `src/benchmark/run_agent.cpp`,
   `src/wasm/sample_client/wasmRabbit-worker.js`, `src/fceux/stackrabbit.lua`
   — and rebuild the WASM artifacts (`npm run wasm_build`) when the engine changes.

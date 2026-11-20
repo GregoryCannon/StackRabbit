@@ -9,7 +9,7 @@
 
 #include <string>
 
-// PIECE_LIST index order (see data/tetrominoes.hpp and canonical_sequences.hpp)
+// PIECE_LIST index order (see src/data/tetrominoes.hpp and src/data/canonical_sequences.hpp)
 const int IDX_I = 0;
 const int IDX_O = 1;
 const int IDX_L = 2;

@@ -51,11 +51,11 @@ When `USE_DAS` is `true`, the `inputFrameTimeline` variable controls how fast th
 
 ## Backend
 
-The core computation code lives in `src/cpp_modules` and is shared by all entrypoints.
+The core computation code lives in `src/backend` and is shared by all entrypoints.
 
 There are three main ways to run the StackRabbit backend:
 
-1) `src/cpp_modules/src/live_game_server.cpp` is a standalone, zero-dependency C++ HTTP server for live gameplay (`npm start` / `npm run live_server`).
+1) `src/backend/live_game_server.cpp` is a standalone, zero-dependency C++ HTTP server for live gameplay (`npm start` / `npm run live_server`).
 2) `src/wasm` contains instructions for compiling this repo into a WASM binary via Emscripten, which can be consumed by any browser or JavaScript client.
 3) `entrypoint.cpp` is a local C++ CLI entrypoint that can be run from the command line for local testing. Test inputs can be configured at the top of the file.
 
@@ -96,18 +96,18 @@ There are a number of different clients for interacting with the main StackRabbi
      ```
    - **macOS / Linux** (direct `g++`, no Node required):
      ```sh
-     mkdir -p build && g++ -O2 -std=c++17 -pthread -o build/live_game_server src/cpp_modules/src/live_game_server.cpp && ./build/live_game_server
+     mkdir -p build && g++ -O2 -std=c++17 -pthread -o build/live_game_server src/backend/live_game_server.cpp && ./build/live_game_server
      ```
    - **Windows (MinGW-w64)**:
      ```bat
      npm run live_server_build_win
      build\live_game_server.exe
      ```
-     *(or without npm: `if not exist build mkdir build && g++ -O2 -std=c++17 -pthread -o build/live_game_server.exe src/cpp_modules/src/live_game_server.cpp -lws2_32 && build\live_game_server.exe`)*
+     *(or without npm: `if not exist build mkdir build && g++ -O2 -std=c++17 -pthread -o build/live_game_server.exe src/backend/live_game_server.cpp -lws2_32 && build\live_game_server.exe`)*
    - **Windows (MSVC Developer Command Prompt)**:
      ```bat
      if not exist build mkdir build
-     cl /O2 /std:c++17 /EHsc /Fe:build\live_game_server.exe src\cpp_modules\src\live_game_server.cpp ws2_32.lib
+     cl /O2 /std:c++17 /EHsc /Fe:build\live_game_server.exe src\backend\live_game_server.cpp ws2_32.lib
      build\live_game_server.exe
      ```
 

@@ -1,6 +1,6 @@
 // Unit tests for the StackRabbit C++ engine (see TESTING.md for the plan).
 //
-// Mirrors the unity-build pattern of src/main.cpp: instead of listing sources in
+// Mirrors the unity-build pattern of src/backend/main.cpp: instead of listing sources in
 // a makefile, we include main.cpp, which includes every engine source file.
 // Deliberately NOT included: the other main() definers (entrypoint.cpp,
 // live_game_server.cpp, fixture_dump.cpp, precompute_cli.cpp, precompute_tsan.cpp,
@@ -15,9 +15,9 @@
 //   precompute_property_tests.hpp  pipeline invariants on inline cases
 
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
-#include "../vendor/doctest.h"
+#include "vendor/doctest.h"
 
-#include "../src/main.cpp"
+#include "../backend/main.cpp"
 
 #include "helpers.hpp"
 #include "board_format_tests.hpp"

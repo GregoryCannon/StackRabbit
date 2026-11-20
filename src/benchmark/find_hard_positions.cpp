@@ -15,7 +15,7 @@
 //
 //  Position range is inclusive and 1-based (benchmark position indices).
 
-#include "../cpp_modules/src/main.cpp"
+#include "../backend/main.cpp"
 #include "benchmark_common.hpp"
 #include <fstream>
 #include <random>
