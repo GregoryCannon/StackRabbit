@@ -1,0 +1,1709 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>StackRabbit Precompute Replay</title>
+  <style>
+    :root {
+      --bg: #f5f6f8;
+      --panel: #ffffff;
+      --input-bg: #ffffff;
+      --surface-alt: #f8fafc;
+      --border: #d5dce6;
+      --border-hover: #94a3b8;
+      --text: #1e293b;
+      --muted: #64748b;
+      --accent: #2563eb;
+      --green: #15803d;
+      --amber: #b45309;
+      --red: #dc2626;
+      --cell: 24px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 16px;
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 600;
+    }
+
+    .header-right {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+    }
+
+    input,
+    select,
+    textarea,
+    button {
+      font-family: inherit;
+      font-size: 12.5px;
+      color: var(--text);
+    }
+
+    input[type="text"],
+    input[type="number"],
+    select,
+    textarea {
+      background: var(--input-bg);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      padding: 4px 7px;
+      outline: none;
+    }
+
+    input:focus,
+    select:focus,
+    textarea:focus {
+      border-color: var(--accent);
+    }
+
+    button {
+      background: var(--surface-alt);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      padding: 5px 10px;
+      cursor: pointer;
+    }
+
+    button:hover:not(:disabled) {
+      background: #eef2f6;
+      border-color: var(--border-hover);
+    }
+
+    button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    button.primary {
+      background: #2563eb;
+      border-color: #2563eb;
+      color: #fff;
+      font-weight: 500;
+    }
+
+    button.primary:hover:not(:disabled) {
+      background: #1d4ed8;
+      border-color: #1d4ed8;
+    }
+
+    .ping {
+      font-size: 12px;
+      padding: 4px 8px;
+      border-radius: 5px;
+      border: 1px solid var(--border);
+      background: var(--surface-alt);
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .ping.ok {
+      color: var(--green);
+      border-color: #86efac;
+      background: #f0fdf4;
+    }
+
+    .ping.err {
+      color: var(--red);
+      border-color: #fca5a5;
+      background: #fef2f2;
+    }
+
+    main {
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 14px 16px 28px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px 14px;
+    }
+
+    .card-title {
+      margin: 0;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+    }
+
+    .row-between {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    .muted {
+      color: var(--muted);
+    }
+
+    .mono {
+      font-family: var(--mono);
+    }
+
+    /* Log input */
+    .log-drawer.collapsed {
+      display: none;
+    }
+
+    textarea#logInput {
+      width: 100%;
+      min-height: 120px;
+      resize: vertical;
+      margin-top: 8px;
+      font-family: var(--mono);
+      font-size: 11.5px;
+    }
+
+    .log-footer {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    /* Main layout */
+    .viewer {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 12px;
+      align-items: start;
+    }
+
+    @media (max-width: 880px) {
+      .viewer {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* Board side */
+    .board-col {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      min-width: 340px;
+    }
+
+    .nav-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .counter {
+      font-family: var(--mono);
+      font-weight: 600;
+      font-size: 13.5px;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+
+    .board-area {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+    }
+
+    .board-grid {
+      display: grid;
+      grid-template-columns: repeat(10, var(--cell));
+      grid-template-rows: repeat(20, var(--cell));
+      background: #f8fafc;
+      border: 2px solid #94a3b8;
+      border-radius: 3px;
+    }
+
+    .cell {
+      width: var(--cell);
+      height: var(--cell);
+      border-right: 1px solid #e2e8f0;
+      border-bottom: 1px solid #e2e8f0;
+      position: relative;
+    }
+
+    .cell.filled {
+      background: #475569;
+      box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.2),
+        inset -1px -1px 0 rgba(0, 0, 0, 0.22);
+    }
+
+    .cell.cleared {
+      background-color: rgba(245, 158, 11, 0.22);
+    }
+
+    .cell.filled.cleared {
+      background: #64748b;
+      box-shadow: inset 0 0 0 1px rgba(217, 119, 6, 0.6);
+    }
+
+    .cell.piece {
+      background: #0ea5e9;
+      box-shadow: inset 1.5px 1.5px 0 rgba(255, 255, 255, 0.35),
+        inset -1.5px -1.5px 0 rgba(0, 0, 0, 0.2);
+    }
+
+    .cell.ghost-actual::after {
+      content: "";
+      position: absolute;
+      inset: 2px;
+      border: 2px dashed #d97706;
+      border-radius: 2px;
+      pointer-events: none;
+    }
+
+    .piece-sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      width: 92px;
+    }
+
+    .piece-box {
+      background: var(--surface-alt);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      padding: 7px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .piece-box-label {
+      font-size: 10.5px;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .mini-piece {
+      display: grid;
+      grid-template-columns: repeat(4, 14px);
+      grid-template-rows: repeat(4, 14px);
+      gap: 1px;
+    }
+
+    .mini-cell {
+      width: 14px;
+      height: 14px;
+      border-radius: 2px;
+    }
+
+    .board-options {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .board-options label {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    /* Right column */
+    .right-col {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .params-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .param-field {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .param-field label {
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .param-field input,
+    .param-field select {
+      width: 100%;
+      font-family: var(--mono);
+      font-size: 12.5px;
+      padding: 5px 7px;
+    }
+
+    .param-field.modified input,
+    .param-field.modified select {
+      border-color: #d97706;
+      background: #fffbeb;
+    }
+
+    .param-field.modified label {
+      color: var(--amber);
+    }
+
+    .meta-line {
+      margin-top: 10px;
+      padding-top: 8px;
+      border-top: 1px solid var(--border);
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--muted);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 14px;
+    }
+
+    .meta-line strong {
+      color: var(--text);
+    }
+
+    .tag {
+      display: inline-block;
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 600;
+      padding: 1px 7px;
+      border-radius: 4px;
+      border: 1px solid transparent;
+    }
+
+    .tag.amber {
+      color: var(--amber);
+      border-color: #fcd34d;
+      background: #fffbeb;
+    }
+
+    .tag.green {
+      color: var(--green);
+      border-color: #86efac;
+      background: #f0fdf4;
+    }
+
+    .tag.red {
+      color: var(--red);
+      border-color: #fca5a5;
+      background: #fef2f2;
+    }
+
+    .error-box {
+      margin-top: 10px;
+      padding: 8px 10px;
+      border-radius: 5px;
+      border: 1px solid #fca5a5;
+      background: #fef2f2;
+      color: #991b1b;
+      font-family: var(--mono);
+      font-size: 12px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .results-wrap {
+      margin-top: 10px;
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: var(--mono);
+      font-size: 12px;
+    }
+
+    th {
+      text-align: left;
+      font-size: 11px;
+      color: var(--muted);
+      background: var(--surface-alt);
+      padding: 6px 8px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    td {
+      padding: 5px 8px;
+      border-bottom: 1px solid #e2e8f0;
+    }
+
+    tbody tr {
+      cursor: pointer;
+    }
+
+    tbody tr:last-child td {
+      border-bottom: none;
+    }
+
+    tbody tr:hover {
+      background: #f1f5f9;
+    }
+
+    tbody tr.selected {
+      background: #eff6ff;
+      box-shadow: inset 3px 0 0 var(--accent);
+    }
+
+    tbody tr.actual-row {
+      background: #f0fdf4;
+    }
+
+    tbody tr.actual-row.selected {
+      background: #dcfce7;
+      box-shadow: inset 3px 0 0 #16a34a;
+    }
+
+    .seq {
+      max-width: 340px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .seq-split {
+      color: var(--amber);
+      font-weight: 700;
+    }
+
+    details.raw-output {
+      margin-top: 8px;
+    }
+
+    details.raw-output summary {
+      cursor: pointer;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    details.raw-output pre {
+      margin: 6px 0 0;
+      padding: 8px;
+      background: var(--surface-alt);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      font-family: var(--mono);
+      font-size: 11px;
+      overflow-x: auto;
+      max-height: 200px;
+    }
+
+    .empty {
+      text-align: center;
+      padding: 32px 16px;
+      color: var(--muted);
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <h1>StackRabbit Precompute Replay</h1>
+    <div class="header-right">
+      <label for="serverUrl" class="muted">Server</label>
+      <input id="serverUrl" type="text" value="http://localhost:3000" style="width:185px;" spellcheck="false" />
+      <span id="pingStatus" class="ping" title="Click to ping server">Checking...</span>
+      <button id="toggleLogBtn">Hide Log</button>
+    </div>
+  </header>
+
+  <main>
+    <section id="logDrawer" class="card log-drawer">
+      <div class="row-between">
+        <h2 class="card-title">Paste Precompute Logs</h2>
+        <span id="parseSummary" class="muted"></span>
+      </div>
+      <div class="log-body">
+        <textarea id="logInput" spellcheck="false"
+          placeholder="Paste live_game_server logs ([compute] ... input=...) or raw comma/pipe-delimited precompute request strings..."></textarea>
+        <div class="log-footer">
+          <div style="display:flex; gap:8px;">
+            <button id="parseBtn" class="primary">Load Log</button>
+            <button id="clearBtn">Clear</button>
+          </div>
+          <span class="muted">Auto-loads on paste · Arrow keys step through states · <code>R</code> replays</span>
+        </div>
+      </div>
+    </section>
+
+    <section id="emptyState" class="card empty">
+      Paste precompute logs above to step through game states with <strong>← / →</strong> and replay any move against
+      <code>/precompute-sync</code>.
+    </section>
+
+    <section id="viewer" class="viewer hidden">
+      <!-- Left: Board -->
+      <div class="card board-col">
+        <div class="nav-row">
+          <button id="prevBtn" title="Previous (←)">◀ Prev</button>
+          <span id="stateCounter" class="counter">1 / 1</span>
+          <button id="nextBtn" title="Next (→)">Next ▶</button>
+        </div>
+
+        <input id="stateSlider" type="range" min="0" max="0" value="0" />
+
+        <div class="board-area">
+          <div class="board-grid" id="boardGrid"></div>
+
+          <div class="piece-sidebar">
+            <div class="piece-box">
+              <div class="piece-box-label">Current</div>
+              <div id="curPieceMini" class="mini-piece"></div>
+              <div id="curPieceLabel" class="mono" style="font-weight:700;">—</div>
+            </div>
+            <div class="piece-box">
+              <div class="piece-box-label">Next (Log)</div>
+              <div id="nextPieceMini" class="mini-piece"></div>
+              <div id="nextPieceLabel" class="mono" style="font-weight:700;">—</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="board-options">
+          <label><input type="checkbox" id="showAfterChk" /> Show board after lock</label>
+          <span id="boardCaption"></span>
+        </div>
+      </div>
+
+      <!-- Right: Editable Request State + Replay -->
+      <div class="right-col">
+        <div class="card">
+          <div class="row-between">
+            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+              <h2 class="card-title">Request State</h2>
+              <span id="stateTags"></span>
+            </div>
+            <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+              <button id="resetParamsBtn" class="hidden">Reset to Logged</button>
+              <button id="copyPipeBtn" title="Copy current p= query string">Copy p=</button>
+              <button id="replayBtn" class="primary">Replay Precompute (R)</button>
+            </div>
+          </div>
+
+          <div class="params-grid" id="paramsGrid">
+            <div class="param-field" data-param="level">
+              <label for="pLevel">Level</label>
+              <input id="pLevel" type="number" min="18" />
+            </div>
+            <div class="param-field" data-param="lines">
+              <label for="pLines">Lines</label>
+              <input id="pLines" type="number" min="0" />
+            </div>
+            <div class="param-field" data-param="currentPieceIdx">
+              <label for="pCurPiece">Current Piece</label>
+              <select id="pCurPiece">
+                <option value="0">0 (I)</option>
+                <option value="1">1 (O)</option>
+                <option value="2">2 (L)</option>
+                <option value="3">3 (J)</option>
+                <option value="4">4 (T)</option>
+                <option value="5">5 (S)</option>
+                <option value="6">6 (Z)</option>
+              </select>
+            </div>
+            <div class="param-field" data-param="nextPieceIdx">
+              <label for="pNextPiece">Next Piece</label>
+              <select id="pNextPiece">
+                <option value="-1">-1 (None)</option>
+                <option value="0">0 (I)</option>
+                <option value="1">1 (O)</option>
+                <option value="2">2 (L)</option>
+                <option value="3">3 (J)</option>
+                <option value="4">4 (T)</option>
+                <option value="5">5 (S)</option>
+                <option value="6">6 (Z)</option>
+              </select>
+            </div>
+            <div class="param-field" data-param="inputFrameTimeline">
+              <label for="pTimeline">Timeline</label>
+              <input id="pTimeline" type="text" spellcheck="false" />
+            </div>
+            <div class="param-field" data-param="playoutCount">
+              <label for="pPlayoutCount" id="pPlayoutCountLabel">Playouts / ms</label>
+              <input id="pPlayoutCount" type="number" min="0" />
+            </div>
+            <div class="param-field" data-param="playoutLength">
+              <label for="pPlayoutLength">Depth</label>
+              <input id="pPlayoutLength" type="number" min="0" max="20" />
+            </div>
+            <div class="param-field" data-param="pruningBreadth">
+              <label for="pBreadth">Breadth (-2/-1/0+)</label>
+              <input id="pBreadth" type="number" min="-2" max="1156" />
+            </div>
+            <div class="param-field" data-param="aggressionLevel">
+              <label for="pAggro">Aggression</label>
+              <select id="pAggro">
+                <option value="safe">safe</option>
+                <option value="aggro">aggro</option>
+                <option value="hyper">hyper</option>
+              </select>
+            </div>
+            <div class="param-field" data-param="dasCharge">
+              <label for="pDas">DAS (-1=tap)</label>
+              <input id="pDas" type="number" min="-1" max="16" />
+            </div>
+            <div class="param-field" data-param="reactionTime">
+              <label for="pReaction">Reaction (f)</label>
+              <input id="pReaction" type="number" min="0" max="60" />
+            </div>
+          </div>
+
+          <div id="timingLine" class="meta-line"></div>
+          <div id="actualMoveLine" class="meta-line"></div>
+        </div>
+
+        <div class="card">
+          <div class="row-between">
+            <h2 class="card-title">Replay Result</h2>
+            <div id="replayStatus" style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;"></div>
+          </div>
+
+          <div id="replayError" class="error-box hidden"></div>
+
+          <div id="replayResultsWrap" class="hidden">
+            <div class="results-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Next</th>
+                    <th>Placement</th>
+                    <th>Lines</th>
+                    <th>DAS</th>
+                    <th>Input Sequence</th>
+                  </tr>
+                </thead>
+                <tbody id="resultsBody"></tbody>
+              </table>
+            </div>
+            <details class="raw-output">
+              <summary>Raw response</summary>
+              <pre id="rawOutputPre"></pre>
+            </details>
+          </div>
+
+          <div id="replayPlaceholder" class="muted" style="margin-top:8px;">
+            Click <strong>Replay Precompute</strong> (or press <code>R</code>) to run the parameters above against
+            <code>/precompute-sync</code>.
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    (() => {
+      // ---------------------------------------------------------------------------
+      // Piece geometry (matches src/data/tetrominoes.hpp)
+      // ---------------------------------------------------------------------------
+      const INITIAL_X = 3;
+      const PIECE_COLOR = "#0ea5e9";
+      const PIECES = [
+        { id: "I", index: 0, initialY: -2, rowsByRotation: [[0, 0, 960, 0], [128, 128, 128, 128]] },
+        { id: "O", index: 1, initialY: -1, rowsByRotation: [[0, 384, 384, 0]] },
+        { id: "L", index: 2, initialY: -1, rowsByRotation: [[0, 448, 256, 0], [384, 128, 128, 0], [64, 448, 0, 0], [128, 128, 192, 0]] },
+        { id: "J", index: 3, initialY: -1, rowsByRotation: [[0, 448, 64, 0], [128, 128, 384, 0], [256, 448, 0, 0], [192, 128, 128, 0]] },
+        { id: "T", index: 4, initialY: -1, rowsByRotation: [[0, 448, 128, 0], [128, 384, 128, 0], [128, 448, 0, 0], [128, 192, 128, 0]] },
+        { id: "S", index: 5, initialY: -1, rowsByRotation: [[0, 192, 384, 0], [128, 192, 64, 0]] },
+        { id: "Z", index: 6, initialY: -1, rowsByRotation: [[0, 384, 192, 0], [64, 192, 128, 0]] },
+      ];
+      const PIECE_BY_ID = Object.fromEntries(PIECES.map(p => [p.id, p]));
+
+      const PARAM_KEYS = [
+        "level", "lines", "currentPieceIdx", "nextPieceIdx", "inputFrameTimeline",
+        "playoutCount", "playoutLength", "pruningBreadth", "aggressionLevel",
+        "dasCharge", "reactionTime",
+      ];
+
+      function boardStrToRows(boardStr) {
+        const rows = new Array(20);
+        for (let r = 0; r < 20; r++) {
+          let mask = 0;
+          const off = r * 10;
+          for (let c = 0; c < 10; c++) {
+            if (boardStr.charCodeAt(off + c) === 49) mask |= (1 << (9 - c));
+          }
+          rows[r] = mask;
+        }
+        return rows;
+      }
+
+      function rowsToBoardStr(rows) {
+        let out = "";
+        for (let r = 0; r < 20; r++) {
+          const m = rows[r];
+          for (let c = 0; c < 10; c++) out += ((m >> (9 - c)) & 1) ? "1" : "0";
+        }
+        return out;
+      }
+
+      function getPieceCells(piece, rot, x, y) {
+        const rotRows = piece.rowsByRotation[rot];
+        if (!rotRows) return null;
+        const cells = [];
+        for (let dr = 0; dr < 4; dr++) {
+          const bits = rotRows[dr];
+          if (!bits) continue;
+          for (let dc = 0; dc < 4; dc++) {
+            if ((bits >> (9 - dc)) & 1) cells.push([y + dr, x + dc]);
+          }
+        }
+        return cells;
+      }
+
+      function simulateLock(beforeRows, piece, rot, x, y) {
+        const cells = getPieceCells(piece, rot, x, y);
+        if (!cells) return null;
+        const temp = beforeRows.slice();
+        for (const [r, c] of cells) {
+          if (c < 0 || c >= 10 || r >= 20) return null;
+          if (r >= 0) {
+            const bit = 1 << (9 - c);
+            if (temp[r] & bit) return null;
+            temp[r] |= bit;
+          }
+        }
+        const clearedRows = [];
+        const afterRows = new Array(20).fill(0);
+        let writeRow = 19;
+        for (let r = 19; r >= 0; r--) {
+          if ((temp[r] & 0x3FF) === 0x3FF) clearedRows.push(r);
+          else afterRows[writeRow--] = temp[r];
+        }
+        return {
+          rot, x, y,
+          relRot: rot,
+          relX: x - INITIAL_X,
+          relY: y - piece.initialY,
+          cells,
+          clearedRows,
+          afterRows,
+          afterBoardStr: rowsToBoardStr(afterRows),
+        };
+      }
+
+      function isPlacementSupported(beforeRows, cells) {
+        for (const [r, c] of cells) {
+          if (r + 1 >= 20) return true;
+          if (r + 1 >= 0 && ((beforeRows[r + 1] >> (9 - c)) & 1)) return true;
+        }
+        return false;
+      }
+
+      function findPlacementMatchingBoard(beforeRows, piece, targetBoardStr, expectedCleared = null, preferred = null) {
+        if (preferred) {
+          const sim = simulateLock(beforeRows, piece, preferred.rot, preferred.x, preferred.y);
+          if (sim && sim.afterBoardStr === targetBoardStr) return sim;
+        }
+        let fallback = null;
+        for (let rot = 0; rot < piece.rowsByRotation.length; rot++) {
+          const baseCells = getPieceCells(piece, rot, 0, 0);
+          let minDc = 4, maxDc = -1;
+          for (const [, dc] of baseCells) {
+            if (dc < minDc) minDc = dc;
+            if (dc > maxDc) maxDc = dc;
+          }
+          for (let x = -minDc; x <= 9 - maxDc; x++) {
+            for (let y = piece.initialY; y <= 19; y++) {
+              const sim = simulateLock(beforeRows, piece, rot, x, y);
+              if (!sim || !isPlacementSupported(beforeRows, sim.cells)) continue;
+              if (sim.afterBoardStr !== targetBoardStr) continue;
+              if (expectedCleared !== null && sim.clearedRows.length === expectedCleared) return sim;
+              if (!fallback) fallback = sim;
+            }
+          }
+        }
+        return fallback;
+      }
+
+      // ---------------------------------------------------------------------------
+      // Log Parser
+      // ---------------------------------------------------------------------------
+      function buildCommaQuery(board, params, secondBoard = null) {
+        const fields = [
+          board,
+          ...(secondBoard ? [secondBoard] : []),
+          params.level,
+          params.lines,
+          params.currentPieceIdx,
+          params.nextPieceIdx,
+          params.inputFrameTimeline,
+          params.playoutCount,
+          params.playoutLength,
+          params.pruningBreadth,
+          params.aggressionLevel,
+          params.dasCharge,
+          params.reactionTime,
+        ];
+        return fields.join(",") + ",";
+      }
+
+      function parsePipeString(rawStr) {
+        let s = rawStr.trim();
+        const pIdx = s.indexOf("p=");
+        if (pIdx !== -1 && (pIdx === 0 || s[pIdx - 1] === "?" || s[pIdx - 1] === "&")) {
+          s = s.slice(pIdx + 2);
+          const ampIdx = s.indexOf("&");
+          if (ampIdx !== -1) s = s.slice(0, ampIdx);
+        }
+        try {
+          if (/%[0-9a-fA-F]{2}/.test(s)) s = decodeURIComponent(s);
+        } catch (_) { }
+
+        if (s.length < 201) return null;
+        const delim = s[200];
+        if (delim !== "," && delim !== "|") return null;
+        const board = s.slice(0, 200);
+        if (!/^[01]{200}$/.test(board)) return null;
+
+        const parts = s.slice(201).split(delim);
+        if (parts.length > 0 && parts[parts.length - 1] === "") parts.pop();
+
+        let offset = 0;
+        let secondBoard = null;
+        if (parts.length > 0 && /^[01]{200}$/.test(parts[0])) {
+          secondBoard = parts[0];
+          offset = 1;
+        }
+        if (parts.length - offset < 10) return null;
+
+        const params = {
+          level: parseInt(parts[offset + 0], 10),
+          lines: parseInt(parts[offset + 1], 10),
+          currentPieceIdx: parseInt(parts[offset + 2], 10),
+          nextPieceIdx: parseInt(parts[offset + 3], 10),
+          inputFrameTimeline: parts[offset + 4],
+          playoutCount: parseInt(parts[offset + 5], 10),
+          playoutLength: parseInt(parts[offset + 6], 10),
+          pruningBreadth: parseInt(parts[offset + 7], 10),
+          aggressionLevel: parts[offset + 8],
+          dasCharge: parseInt(parts[offset + 9], 10),
+          reactionTime: (parts.length - offset >= 11 && parts[offset + 10] !== "")
+            ? parseInt(parts[offset + 10], 10)
+            : 0,
+        };
+
+        if (
+          Number.isNaN(params.level) || Number.isNaN(params.lines) ||
+          Number.isNaN(params.currentPieceIdx) || params.currentPieceIdx < 0 || params.currentPieceIdx > 6
+        ) {
+          return null;
+        }
+
+        return {
+          board,
+          rows: boardStrToRows(board),
+          secondBoard,
+          params,
+          piece: PIECES[params.currentPieceIdx],
+          canonicalCommaInput: buildCommaQuery(board, params, secondBoard),
+        };
+      }
+
+      function parseLogs(text) {
+        const lines = text.split(/\r?\n/);
+        const entries = [];
+        let pending = {};
+        let lastEntry = null;
+
+        const finalizeEntry = (parsed, extraMeta) => {
+          const entry = {
+            index: entries.length,
+            ...parsed,
+            log: {
+              backupMs: null,
+              fullMs: null,
+              precomputeTimeMs: null,
+              asyncResultMs: null,
+              backupUsed: false,
+              halted: false,
+              ...pending,
+              ...extraMeta,
+            },
+            inferredNext: null,
+          };
+          entries.push(entry);
+          lastEntry = entry;
+          pending = {};
+        };
+
+        for (const rawLine of lines) {
+          const line = rawLine.trim();
+          if (!line) continue;
+
+          if (/^GET\s+\/precompute(?:\s|$|\?)/.test(line) && !line.startsWith("GET /precompute-sync")) {
+            pending = {};
+            lastEntry = null;
+            continue;
+          }
+
+          let m;
+          if ((m = line.match(/Precompute time:\s*([\d.]+)ms/))) {
+            pending.precomputeTimeMs = parseFloat(m[1]);
+            continue;
+          }
+          if (/Precompute halted \(backup already served\)/.test(line)) {
+            pending.halted = true;
+            pending.backupUsed = true;
+            continue;
+          }
+          if ((m = line.match(/^GET\s+\/async-result(?:\s+\d+)?\s*\(([\d.]+)ms after \/precompute(,\s*backup)?\)/))) {
+            const asyncMs = parseFloat(m[1]);
+            const isBackup = Boolean(m[2]);
+            if (lastEntry && lastEntry.log.asyncResultMs === null) {
+              lastEntry.log.asyncResultMs = asyncMs;
+              if (isBackup) lastEntry.log.backupUsed = true;
+            } else {
+              pending.asyncResultMs = asyncMs;
+              if (isBackup) pending.backupUsed = true;
+            }
+            continue;
+          }
+          if ((m = line.match(/\[compute\]\s+backup=([\d.-]+)ms\s+full=([\d.-]+)ms\s+input=(\S+)/))) {
+            const parsed = parsePipeString(m[3]);
+            if (parsed) finalizeEntry(parsed, { backupMs: parseFloat(m[1]), fullMs: parseFloat(m[2]) });
+            continue;
+          }
+          const bareMatch = line.match(/(?:^|[\s?&](?:p|input)=)([01]{200}[,|]\S+)/);
+          if (bareMatch) {
+            const parsed = parsePipeString(bareMatch[1]);
+            if (parsed) finalizeEntry(parsed, {});
+          }
+        }
+
+        for (let i = 0; i < entries.length - 1; i++) {
+          const cur = entries[i];
+          const next = entries[i + 1];
+          const linesDelta = next.params.lines - cur.params.lines;
+          if (linesDelta >= 0 && linesDelta <= 4 && next.params.level >= cur.params.level) {
+            const match = findPlacementMatchingBoard(cur.rows, cur.piece, next.board, linesDelta);
+            if (match && match.clearedRows.length === linesDelta) {
+              cur.inferredNext = {
+                contiguous: true,
+                nextPiece: next.piece,
+                linesDelta,
+                placement: match,
+                nextBoard: next.board,
+              };
+              continue;
+            }
+          }
+          cur.inferredNext = { contiguous: false, nextPiece: null, linesDelta, placement: null, nextBoard: next.board };
+        }
+
+        return entries;
+      }
+
+      // ---------------------------------------------------------------------------
+      // Precompute Response Parser
+      // ---------------------------------------------------------------------------
+      function parsePlacementPayload(payload, beforeRows, piece, curLines, isDefault, defaultPlacement = null) {
+        const trimmed = payload.trim();
+        if (trimmed === "none") return { kind: "none" };
+        if (trimmed === "continue") return { kind: "continue", resolved: defaultPlacement };
+        if (trimmed.startsWith("N/A")) return { kind: "na", note: trimmed };
+
+        const parts = trimmed.split("|");
+        if (parts.length < 6) return { kind: "raw", raw: trimmed };
+
+        const [relRot, relX, relY] = parts[0].split(",").map(v => parseInt(v, 10));
+        const sequence = parts[1];
+        const boardAfter = parts[2];
+        const levelAfter = parseInt(parts[3], 10);
+        const linesAfter = parseInt(parts[4], 10);
+        const dasAfter = parseInt(parts[5], 10);
+        const linesCleared = Number.isNaN(linesAfter) ? null : (linesAfter - curLines);
+
+        let preferred = null;
+        if (isDefault && !Number.isNaN(relRot) && !Number.isNaN(relX) && !Number.isNaN(relY)) {
+          preferred = { rot: relRot, x: relX + INITIAL_X, y: relY + piece.initialY };
+        }
+
+        const validBoard = /^[01]{200}$/.test(boardAfter);
+        const resolved = validBoard
+          ? findPlacementMatchingBoard(beforeRows, piece, boardAfter, linesCleared, preferred)
+          : null;
+
+        return {
+          kind: "move",
+          relRot, relX, relY,
+          sequence,
+          boardAfter,
+          afterRows: validBoard ? boardStrToRows(boardAfter) : null,
+          levelAfter,
+          linesAfter,
+          linesCleared,
+          dasAfter,
+          resolved,
+        };
+      }
+
+      function parsePrecomputeResponse(rawText, beforeRows, piece, curLines) {
+        const trimmed = rawText.trim();
+        if (trimmed === "none") return { isNone: true, raw: rawText, rows: [], defaultRow: null };
+
+        const lines = trimmed.split(/\r?\n/).filter(Boolean);
+        const rows = [];
+        let defaultRow = null;
+
+        for (const line of lines) {
+          const colonIdx = line.indexOf(":");
+          if (colonIdx === -1) continue;
+          const key = line.slice(0, colonIdx).trim();
+          const val = line.slice(colonIdx + 1);
+          const isDefault = key === "Default";
+          const parsed = parsePlacementPayload(
+            val, beforeRows, piece, curLines, isDefault,
+            defaultRow ? defaultRow.resolved : null
+          );
+          const rowObj = { key, isDefault, piece: isDefault ? null : (PIECE_BY_ID[key] || null), ...parsed };
+          if (rowObj.kind === "continue" && defaultRow) {
+            rowObj.boardAfter = defaultRow.boardAfter;
+            rowObj.afterRows = defaultRow.afterRows;
+            rowObj.levelAfter = defaultRow.levelAfter;
+            rowObj.linesAfter = defaultRow.linesAfter;
+            rowObj.linesCleared = defaultRow.linesCleared;
+            rowObj.dasAfter = defaultRow.dasAfter;
+            rowObj.resolved = defaultRow.resolved;
+          }
+          if (isDefault) defaultRow = rowObj;
+          rows.push(rowObj);
+        }
+        return { isNone: false, raw: rawText, rows, defaultRow };
+      }
+
+      // ---------------------------------------------------------------------------
+      // App State
+      // ---------------------------------------------------------------------------
+      const state = {
+        entries: [],
+        currentIndex: 0,
+        overrides: new Map(), // index -> partial/full params object
+        replays: new Map(),   // index -> { elapsedMs, queryUsed, overridden, parsed, selectedKey, matchesActual, pieceUsed }
+        inFlight: false,
+      };
+
+      const $ = id => document.getElementById(id);
+      const elServerUrl = $("serverUrl");
+      const elPingStatus = $("pingStatus");
+      const elLogDrawer = $("logDrawer");
+      const elToggleLogBtn = $("toggleLogBtn");
+      const elLogInput = $("logInput");
+      const elParseSummary = $("parseSummary");
+      const elEmptyState = $("emptyState");
+      const elViewer = $("viewer");
+      const elStateCounter = $("stateCounter");
+      const elStateSlider = $("stateSlider");
+      const elBoardGrid = $("boardGrid");
+      const elShowAfterChk = $("showAfterChk");
+      const elBoardCaption = $("boardCaption");
+      const elStateTags = $("stateTags");
+      const elResetParamsBtn = $("resetParamsBtn");
+      const elTimingLine = $("timingLine");
+      const elActualMoveLine = $("actualMoveLine");
+      const elReplayBtn = $("replayBtn");
+      const elReplayError = $("replayError");
+      const elReplayResultsWrap = $("replayResultsWrap");
+      const elReplayPlaceholder = $("replayPlaceholder");
+      const elReplayStatus = $("replayStatus");
+      const elResultsBody = $("resultsBody");
+      const elRawOutputPre = $("rawOutputPre");
+
+      const PARAM_INPUTS = {
+        level: { el: $("pLevel"), type: "int" },
+        lines: { el: $("pLines"), type: "int" },
+        currentPieceIdx: { el: $("pCurPiece"), type: "int" },
+        nextPieceIdx: { el: $("pNextPiece"), type: "int" },
+        inputFrameTimeline: { el: $("pTimeline"), type: "str" },
+        playoutCount: { el: $("pPlayoutCount"), type: "int" },
+        playoutLength: { el: $("pPlayoutLength"), type: "int" },
+        pruningBreadth: { el: $("pBreadth"), type: "int" },
+        aggressionLevel: { el: $("pAggro"), type: "str" },
+        dasCharge: { el: $("pDas"), type: "int" },
+        reactionTime: { el: $("pReaction"), type: "int" },
+      };
+
+      // Build board cells once
+      const boardCells = [];
+      for (let i = 0; i < 200; i++) {
+        const cell = document.createElement("div");
+        cell.className = "cell";
+        elBoardGrid.appendChild(cell);
+        boardCells.push(cell);
+      }
+
+      function escapeHtml(s) {
+        return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+      }
+
+      function getEffectiveParams(entry) {
+        const ov = state.overrides.get(entry.index);
+        return ov ? { ...entry.params, ...ov } : { ...entry.params };
+      }
+
+      function hasOverrides(entry) {
+        const ov = state.overrides.get(entry.index);
+        if (!ov) return false;
+        return PARAM_KEYS.some(k => ov[k] !== undefined && ov[k] !== entry.params[k]);
+      }
+
+      function syncParamInputsFromState(entry) {
+        const params = getEffectiveParams(entry);
+        for (const key of PARAM_KEYS) {
+          const { el } = PARAM_INPUTS[key];
+          const val = String(params[key]);
+          if (el.value !== val) el.value = val;
+          const fieldWrap = el.closest(".param-field");
+          if (fieldWrap) {
+            fieldWrap.classList.toggle("modified", params[key] !== entry.params[key]);
+          }
+        }
+        $("pPlayoutCountLabel").textContent = params.pruningBreadth === -2 ? "Budget (ms)" : "Playouts";
+        elResetParamsBtn.classList.toggle("hidden", !hasOverrides(entry));
+      }
+
+      function renderMiniPiece(container, piece) {
+        container.innerHTML = "";
+        const rows = piece ? piece.rowsByRotation[0] : [0, 0, 0, 0];
+        for (let dr = 0; dr < 4; dr++) {
+          for (let dc = 0; dc < 4; dc++) {
+            const d = document.createElement("div");
+            const on = piece && ((rows[dr] >> (9 - dc)) & 1);
+            d.className = "mini-cell";
+            if (on) d.style.background = PIECE_COLOR;
+            container.appendChild(d);
+          }
+        }
+      }
+
+      // ---------------------------------------------------------------------------
+      // Server Ping & Replay
+      // ---------------------------------------------------------------------------
+      function getServerBase() {
+        return elServerUrl.value.trim().replace(/\/+$/, "");
+      }
+
+      async function checkPing() {
+        elPingStatus.className = "ping";
+        elPingStatus.textContent = "Checking...";
+        try {
+          const resp = await fetch(`${getServerBase()}/ping`);
+          const text = (await resp.text()).trim();
+          if (resp.ok && text === "pong") {
+            elPingStatus.className = "ping ok";
+            elPingStatus.textContent = "Connected";
+          } else {
+            elPingStatus.className = "ping err";
+            elPingStatus.textContent = `HTTP ${resp.status}`;
+          }
+        } catch (_) {
+          elPingStatus.className = "ping err";
+          elPingStatus.textContent = "Offline";
+        }
+      }
+
+      async function replayCurrent() {
+        const entry = state.entries[state.currentIndex];
+        if (!entry || state.inFlight) return;
+
+        const params = getEffectiveParams(entry);
+        const query = buildCommaQuery(entry.board, params, entry.secondBoard);
+        const overridden = hasOverrides(entry);
+        const pieceUsed = PIECES[params.currentPieceIdx] || entry.piece;
+
+        state.inFlight = true;
+        elReplayBtn.disabled = true;
+        elReplayBtn.textContent = "Replaying...";
+        elReplayError.classList.add("hidden");
+
+        const t0 = performance.now();
+        try {
+          const resp = await fetch(`${getServerBase()}/precompute-sync?p=${query}`);
+          const text = await resp.text();
+          const elapsedMs = performance.now() - t0;
+
+          if (!resp.ok) {
+            elReplayError.textContent = `HTTP ${resp.status}: ${text}`;
+            elReplayError.classList.remove("hidden");
+            return;
+          }
+
+          const parsed = parsePrecomputeResponse(text, entry.rows, pieceUsed, params.lines);
+          const actualNextId = entry.inferredNext && entry.inferredNext.contiguous
+            ? entry.inferredNext.nextPiece.id
+            : null;
+
+          let selectedKey = "Default";
+          if (actualNextId && parsed.rows.some(r => r.key === actualNextId)) {
+            selectedKey = actualNextId;
+          } else if (parsed.rows.length > 0) {
+            selectedKey = parsed.rows[0].key;
+          }
+
+          let matchesActual = null;
+          if (actualNextId && entry.inferredNext.nextBoard) {
+            const rowForActual = parsed.rows.find(r => r.key === actualNextId);
+            if (rowForActual && rowForActual.boardAfter) {
+              matchesActual = rowForActual.boardAfter === entry.inferredNext.nextBoard;
+            } else if (parsed.isNone) {
+              matchesActual = false;
+            }
+          }
+
+          state.replays.set(entry.index, {
+            elapsedMs,
+            queryUsed: query,
+            overridden,
+            parsed,
+            selectedKey,
+            matchesActual,
+            pieceUsed,
+          });
+
+          elPingStatus.className = "ping ok";
+          elPingStatus.textContent = "Connected";
+          renderCurrent();
+        } catch (err) {
+          elReplayError.textContent =
+            `Could not reach ${getServerBase()}/precompute-sync (is npm run live_server running?).\n${err}`;
+          elReplayError.classList.remove("hidden");
+          checkPing();
+        } finally {
+          state.inFlight = false;
+          elReplayBtn.disabled = false;
+          elReplayBtn.textContent = "Replay Precompute (R)";
+        }
+      }
+
+      // ---------------------------------------------------------------------------
+      // Rendering
+      // ---------------------------------------------------------------------------
+      function getSelectedReplayRow(replay) {
+        if (!replay || !replay.parsed || replay.parsed.isNone) return null;
+        return replay.parsed.rows.find(r => r.key === replay.selectedKey) || replay.parsed.rows[0] || null;
+      }
+
+      function renderBoard(entry, params, replay) {
+        const piece = PIECES[params.currentPieceIdx] || entry.piece;
+        const actualPlacement = entry.inferredNext && entry.inferredNext.contiguous
+          ? entry.inferredNext.placement
+          : null;
+        const replayRow = getSelectedReplayRow(replay);
+        const replayPlacement = replayRow ? replayRow.resolved : null;
+        const showAfter = elShowAfterChk.checked;
+
+        let displayRows = entry.rows;
+        let pieceCellSet = new Set();
+        let ghostActualSet = new Set();
+        let clearedSet = new Set();
+        let caption = "";
+
+        if (showAfter) {
+          if (replayRow && replayRow.afterRows) {
+            displayRows = replayRow.afterRows;
+            caption = `After replay (${replayRow.key})`;
+          } else if (actualPlacement) {
+            displayRows = actualPlacement.afterRows;
+            caption = "After actual move";
+          } else {
+            caption = "Before move";
+          }
+        } else if (replayPlacement) {
+          for (const [r, c] of replayPlacement.cells) {
+            if (r >= 0 && r < 20) pieceCellSet.add(r * 10 + c);
+          }
+          clearedSet = new Set(replayPlacement.clearedRows);
+          // Outline the actual logged placement if it differs from the previewed replay placement
+          if (actualPlacement && actualPlacement.afterBoardStr !== replayPlacement.afterBoardStr) {
+            for (const [r, c] of actualPlacement.cells) {
+              if (r >= 0 && r < 20) ghostActualSet.add(r * 10 + c);
+            }
+            caption = `Replay (${replayRow.key}) · dashed = actual`;
+          } else {
+            caption = `Replay (${replayRow.key})`;
+          }
+        } else if (actualPlacement) {
+          for (const [r, c] of actualPlacement.cells) {
+            if (r >= 0 && r < 20) pieceCellSet.add(r * 10 + c);
+          }
+          clearedSet = new Set(actualPlacement.clearedRows);
+          caption = "Actual logged move";
+        }
+
+        for (let r = 0; r < 20; r++) {
+          const mask = displayRows[r];
+          const isCleared = clearedSet.has(r);
+          for (let c = 0; c < 10; c++) {
+            const idx = r * 10 + c;
+            const cell = boardCells[idx];
+            let cls = "cell";
+            if ((mask >> (9 - c)) & 1) cls += " filled";
+            if (isCleared) cls += " cleared";
+            if (pieceCellSet.has(idx)) cls += " piece";
+            if (ghostActualSet.has(idx)) cls += " ghost-actual";
+            cell.className = cls;
+          }
+        }
+        elBoardCaption.textContent = caption;
+
+        renderMiniPiece($("curPieceMini"), piece);
+        $("curPieceLabel").textContent = piece.id;
+
+        const nextPiece = entry.inferredNext && entry.inferredNext.contiguous
+          ? entry.inferredNext.nextPiece
+          : null;
+        renderMiniPiece($("nextPieceMini"), nextPiece);
+        $("nextPieceLabel").textContent = nextPiece ? nextPiece.id : "—";
+      }
+
+      function formatSequenceHtml(seq) {
+        if (!seq) return `<span class="muted">—</span>`;
+        const splitIdx = seq.indexOf("~~");
+        if (splitIdx === -1) return escapeHtml(seq);
+        return escapeHtml(seq.slice(0, splitIdx)) +
+          `<span class="seq-split">~~</span>` +
+          escapeHtml(seq.slice(splitIdx + 2));
+      }
+
+      function renderCurrent() {
+        const n = state.entries.length;
+        if (n === 0) {
+          elEmptyState.classList.remove("hidden");
+          elViewer.classList.add("hidden");
+          return;
+        }
+
+        elEmptyState.classList.add("hidden");
+        elViewer.classList.remove("hidden");
+
+        const idx = state.currentIndex;
+        const entry = state.entries[idx];
+        const params = getEffectiveParams(entry);
+        const replay = state.replays.get(idx) || null;
+
+        // Navigation
+        elStateCounter.textContent = `${idx + 1} / ${n}`;
+        elStateSlider.max = String(n - 1);
+        elStateSlider.value = String(idx);
+        $("prevBtn").disabled = idx === 0;
+        $("nextBtn").disabled = idx === n - 1;
+
+        // Board + editable params (preserving any user overrides!)
+        renderBoard(entry, params, replay);
+        syncParamInputsFromState(entry);
+
+        // Tags
+        const tags = [];
+        if (entry.log.backupUsed) tags.push(`<span class="tag amber">BACKUP USED</span>`);
+        if (entry.log.halted) tags.push(`<span class="tag red">HALTED</span>`);
+        if (hasOverrides(entry)) tags.push(`<span class="tag amber">MODIFIED</span>`);
+        elStateTags.innerHTML = tags.join(" ");
+
+        // Logged timing line
+        const tParts = [];
+        if (entry.log.backupMs !== null) tParts.push(`backup=<strong>${entry.log.backupMs.toFixed(2)}ms</strong>`);
+        if (entry.log.fullMs !== null) tParts.push(`full=<strong>${entry.log.fullMs.toFixed(2)}ms</strong>`);
+        if (entry.log.precomputeTimeMs !== null) tParts.push(`precompute=<strong>${entry.log.precomputeTimeMs.toFixed(2)}ms</strong>`);
+        if (entry.log.asyncResultMs !== null) tParts.push(`async-result=<strong>${entry.log.asyncResultMs.toFixed(2)}ms</strong>`);
+        elTimingLine.innerHTML = tParts.length > 0 ? tParts.join("") : `No timing metadata in log`;
+
+        // Actual move inferred from #i -> #i+1
+        if (idx === n - 1) {
+          elActualMoveLine.innerHTML = `Last entry in log`;
+        } else if (entry.inferredNext && entry.inferredNext.contiguous) {
+          const p = entry.inferredNext.placement;
+          const clr = entry.inferredNext.linesDelta > 0 ? ` (+${entry.inferredNext.linesDelta}L)` : "";
+          elActualMoveLine.innerHTML =
+            `<span>Actual move → #${idx + 2}: <strong>[${p.relRot}, ${p.relX >= 0 ? "+" + p.relX : p.relX}, ${p.relY}]</strong>${clr}</span>` +
+            `<span>Next piece: <strong>${entry.inferredNext.nextPiece.id}</strong></span>`;
+        } else {
+          elActualMoveLine.innerHTML = `Next entry (#${idx + 2}) is not a single-piece transition (gap or new game)`;
+        }
+
+        // Replay result panel
+        elReplayError.classList.add("hidden");
+        if (!replay) {
+          elReplayStatus.innerHTML = "";
+          elReplayResultsWrap.classList.add("hidden");
+          elReplayPlaceholder.classList.remove("hidden");
+        } else {
+          elReplayPlaceholder.classList.add("hidden");
+          elReplayResultsWrap.classList.remove("hidden");
+
+          const bits = [`<span class="mono muted">${replay.elapsedMs.toFixed(1)}ms</span>`];
+          if (replay.overridden) bits.push(`<span class="tag amber">OVERRIDDEN</span>`);
+          if (replay.matchesActual === true) {
+            bits.push(`<span class="tag green">MATCHES #${idx + 2} (${entry.inferredNext.nextPiece.id})</span>`);
+          } else if (replay.matchesActual === false) {
+            bits.push(`<span class="tag red">DIFFERS FROM #${idx + 2} (${entry.inferredNext.nextPiece.id})</span>`);
+          }
+          elReplayStatus.innerHTML = bits.join("");
+
+          const actualNextId = entry.inferredNext && entry.inferredNext.contiguous
+            ? entry.inferredNext.nextPiece.id
+            : null;
+
+          if (replay.parsed.isNone) {
+            elResultsBody.innerHTML = `<tr><td colspan="5" style="color:var(--red); text-align:center;">none (no legal placement)</td></tr>`;
+          } else {
+            elResultsBody.innerHTML = replay.parsed.rows.map(row => {
+              const isSelected = row.key === replay.selectedKey;
+              const isActual = actualNextId && row.key === actualNextId;
+              const trCls = [isSelected ? "selected" : "", isActual ? "actual-row" : ""].filter(Boolean).join(" ");
+
+              let keyHtml;
+              if (row.isDefault) {
+                keyHtml = `<strong>Default</strong>`;
+              } else {
+                keyHtml = `<strong>${escapeHtml(row.key)}</strong>`;
+                if (isActual) keyHtml += ` <span class="tag green">ACTUAL</span>`;
+              }
+
+              if (row.kind === "continue") {
+                return `<tr class="${trCls}" data-key="${escapeHtml(row.key)}">
+            <td style="white-space:nowrap;">${keyHtml}</td>
+            <td colspan="4" class="muted">continue</td>
+          </tr>`;
+              }
+
+              let placeHtml = `<span class="muted">—</span>`;
+              let linesHtml = `<span class="muted">—</span>`;
+              let dasHtml = `<span class="muted">—</span>`;
+              let seqHtml = `<span class="muted">—</span>`;
+
+              if (row.kind === "none") {
+                placeHtml = `<span style="color:var(--red)">none</span>`;
+              } else if (row.kind === "na") {
+                placeHtml = `<span class="muted">${escapeHtml(row.note)}</span>`;
+              } else if (row.kind === "move") {
+                const r = row.resolved;
+                placeHtml = r
+                  ? `[${r.relRot}, ${r.relX >= 0 ? "+" + r.relX : r.relX}, ${r.relY}]`
+                  : `rel(${row.relRot}, ${row.relX}, ${row.relY})`;
+                linesHtml = row.linesCleared !== null ? (row.linesCleared > 0 ? `<strong>+${row.linesCleared}</strong>` : "0") : "—";
+                dasHtml = Number.isNaN(row.dasAfter) ? "—" : String(row.dasAfter);
+                seqHtml = formatSequenceHtml(row.sequence);
+              }
+
+              return `<tr class="${trCls}" data-key="${escapeHtml(row.key)}">
+            <td style="white-space:nowrap;">${keyHtml}</td>
+            <td style="white-space:nowrap;">${placeHtml}</td>
+            <td>${linesHtml}</td>
+            <td>${dasHtml}</td>
+            <td class="seq" title="${escapeHtml(row.sequence || row.kind)}">${seqHtml}</td>
+          </tr>`;
+            }).join("");
+          }
+
+          elRawOutputPre.textContent = replay.parsed.raw;
+        }
+      }
+
+      function selectState(index) {
+        if (state.entries.length === 0) return;
+        const clamped = Math.max(0, Math.min(state.entries.length - 1, index));
+        if (clamped === state.currentIndex && !elViewer.classList.contains("hidden")) return;
+        state.currentIndex = clamped;
+        renderCurrent();
+      }
+
+      function loadFromTextarea(collapseOnSuccess = true) {
+        const entries = parseLogs(elLogInput.value);
+        state.entries = entries;
+        state.currentIndex = 0;
+        state.overrides.clear();
+        state.replays.clear();
+
+        if (entries.length === 0) {
+          elParseSummary.textContent = elLogInput.value.trim() ? "No valid precompute requests found." : "";
+          renderCurrent();
+          return;
+        }
+
+        const backups = entries.filter(e => e.log.backupUsed).length;
+        elParseSummary.textContent = `${entries.length} request${entries.length === 1 ? "" : "s"}` +
+          (backups > 0 ? ` (${backups} backup)` : "");
+
+        if (collapseOnSuccess) {
+          elLogDrawer.classList.add("collapsed");
+          elToggleLogBtn.textContent = "Edit / Paste Log";
+        }
+        renderCurrent();
+      }
+
+      // ---------------------------------------------------------------------------
+      // Event Listeners
+      // ---------------------------------------------------------------------------
+      $("parseBtn").addEventListener("click", () => loadFromTextarea(true));
+      $("clearBtn").addEventListener("click", () => {
+        elLogInput.value = "";
+        loadFromTextarea(false);
+        elLogInput.focus();
+      });
+      elLogInput.addEventListener("paste", () => setTimeout(() => loadFromTextarea(true), 0));
+
+      elToggleLogBtn.addEventListener("click", () => {
+        const collapsed = elLogDrawer.classList.toggle("collapsed");
+        elToggleLogBtn.textContent = collapsed ? "Edit / Paste Log" : "Hide Log";
+        if (!collapsed) elLogInput.focus();
+      });
+
+      elPingStatus.addEventListener("click", checkPing);
+      elServerUrl.addEventListener("change", checkPing);
+
+      $("prevBtn").addEventListener("click", () => selectState(state.currentIndex - 1));
+      $("nextBtn").addEventListener("click", () => selectState(state.currentIndex + 1));
+      elStateSlider.addEventListener("input", e => selectState(Number(e.target.value)));
+      elShowAfterChk.addEventListener("change", () => {
+        const entry = state.entries[state.currentIndex];
+        if (entry) renderBoard(entry, getEffectiveParams(entry), state.replays.get(state.currentIndex) || null);
+      });
+
+      // Editable Request State parameters -> persisted in state.overrides
+      for (const key of PARAM_KEYS) {
+        const { el, type } = PARAM_INPUTS[key];
+        const onEdit = () => {
+          const entry = state.entries[state.currentIndex];
+          if (!entry) return;
+          const raw = el.value;
+          const val = type === "int" ? parseInt(raw, 10) : raw;
+          if (type === "int" && Number.isNaN(val)) return;
+
+          const ov = state.overrides.get(entry.index) || {};
+          if (val === entry.params[key]) {
+            delete ov[key];
+          } else {
+            ov[key] = val;
+          }
+          if (Object.keys(ov).length === 0) state.overrides.delete(entry.index);
+          else state.overrides.set(entry.index, ov);
+
+          const fieldWrap = el.closest(".param-field");
+          if (fieldWrap) fieldWrap.classList.toggle("modified", val !== entry.params[key]);
+          if (key === "pruningBreadth") {
+            $("pPlayoutCountLabel").textContent = val === -2 ? "Budget (ms)" : "Playouts";
+          }
+          elResetParamsBtn.classList.toggle("hidden", !hasOverrides(entry));
+          const tags = [];
+          if (entry.log.backupUsed) tags.push(`<span class="tag amber">BACKUP USED</span>`);
+          if (entry.log.halted) tags.push(`<span class="tag red">HALTED</span>`);
+          if (hasOverrides(entry)) tags.push(`<span class="tag amber">MODIFIED</span>`);
+          elStateTags.innerHTML = tags.join(" ");
+
+          if (key === "currentPieceIdx") {
+            renderBoard(entry, getEffectiveParams(entry), state.replays.get(entry.index) || null);
+          }
+        };
+        el.addEventListener("input", onEdit);
+        el.addEventListener("change", onEdit);
+      }
+
+      elResetParamsBtn.addEventListener("click", () => {
+        const entry = state.entries[state.currentIndex];
+        if (!entry) return;
+        state.overrides.delete(entry.index);
+        renderCurrent();
+      });
+
+      elReplayBtn.addEventListener("click", replayCurrent);
+
+      $("copyPipeBtn").addEventListener("click", async () => {
+        const entry = state.entries[state.currentIndex];
+        if (!entry) return;
+        const query = buildCommaQuery(entry.board, getEffectiveParams(entry), entry.secondBoard);
+        try {
+          await navigator.clipboard.writeText(query);
+          const btn = $("copyPipeBtn");
+          btn.textContent = "Copied!";
+          setTimeout(() => { btn.textContent = "Copy p="; }, 1000);
+        } catch (_) { }
+      });
+
+      elResultsBody.addEventListener("click", e => {
+        const tr = e.target.closest("tr[data-key]");
+        if (!tr) return;
+        const replay = state.replays.get(state.currentIndex);
+        if (!replay) return;
+        replay.selectedKey = tr.dataset.key;
+        renderCurrent();
+      });
+
+      document.addEventListener("keydown", e => {
+        const tag = document.activeElement ? document.activeElement.tagName : "";
+        if (tag === "TEXTAREA" || tag === "INPUT" || tag === "SELECT") return;
+        if (state.entries.length === 0) return;
+
+        if (e.key === "ArrowLeft") {
+          e.preventDefault();
+          selectState(state.currentIndex - 1);
+        } else if (e.key === "ArrowRight") {
+          e.preventDefault();
+          selectState(state.currentIndex + 1);
+        } else if ((e.key === "r" || e.key === "R") && !e.metaKey && !e.ctrlKey && !e.altKey) {
+          e.preventDefault();
+          replayCurrent();
+        }
+      });
+
+      checkPing();
+    })();
+  </script>
+</body>
+
+</html>
