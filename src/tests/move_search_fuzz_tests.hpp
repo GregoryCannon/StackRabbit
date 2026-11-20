@@ -682,4 +682,121 @@ TEST_CASE("Move search fuzz: reaction-time fixtures match the golden (adjTimeSim
                                      << report.str());
 }
 
+TEST_CASE("fullMoveSearch adjustment entry: immediate wall-charge on reaction frame and no "
+          "retroactive wall-charge tuck") {
+  // 1. Regression: an adjustment staying at its current (rot, x) must enter the fall phase
+  //    on frame framesAlreadyElapsed (matching Default after '~~') rather than burning a no-op '.'
+  //    frame in tryPlacement. Verify on a J-piece position where a wall-charge is available on
+  //    frame 18, followed by a wall-charge tuck.
+  {
+    const char *boardStr =
+        "00000000000000000000000000000000000000000000000000000000000000000000000000001000"
+        "00000011000000000100000000010000000001000000111100010011110011011111101111111110"
+        "1111111110111111111011111111101111111110";
+    GameState gs = {};
+    gs.level = 18;
+    gs.lines = 96;
+    encodeBoard(boardStr, gs.board);
+    const Piece *piece = &PIECE_LIST[IDX_J];
+
+    std::vector<FullMovePossibility> spawnResults;
+    std::vector<AdjTimeSimStateSlot> captures;
+    fullMoveSearch(gs, piece, "X..", /*dasCharge=*/8, /*trackInputSequences=*/true, spawnResults,
+                   FullMoveSearchContext(), /*reactionTime=*/18, &captures);
+
+    // Find the spawn tuck (rot=1, x=4, y=9) and its captured frame-18 state.
+    int spawnIdx = -1;
+    for (size_t i = 0; i < spawnResults.size(); i++) {
+      if (spawnResults[i].rotationIndex == 1 && spawnResults[i].x == 4 && spawnResults[i].y == 9) {
+        spawnIdx = (int)i;
+        break;
+      }
+    }
+    REQUIRE(spawnIdx >= 0);
+    REQUIRE(captures[spawnIdx].hasCapture);
+    const std::string spawnSuffix = spawnResults[spawnIdx].inputSequence.substr(18);
+    CHECK(spawnSuffix.rfind("r..........rRrr", 0) == 0);
+
+    const AdjTimeSimState &cap = captures[spawnIdx].capture;
+    FullMoveSearchContext adjCtx;
+    adjCtx.existingXOffset = cap.x - INITIAL_X;
+    adjCtx.existingYOffset = cap.y - piece->initialY;
+    adjCtx.framesAlreadyElapsed = cap.frameIndex;
+    adjCtx.existingRotation = cap.rotationIndex;
+    adjCtx.isAdjustment = true;
+    adjCtx.isArrContinued = cap.isArrContinued;
+    adjCtx.dasButtonHeld = cap.dasButtonHeld;
+    adjCtx.preAdjInputSequence = cap.preAdjInputSequence;
+
+    std::vector<FullMovePossibility> adjResults;
+    fullMoveSearch(gs, piece, "X..", cap.dasCharge, /*trackInputSequences=*/true, adjResults,
+                   adjCtx);
+
+    int adjIdx = -1;
+    for (size_t i = 0; i < adjResults.size(); i++) {
+      if (adjResults[i].rotationIndex == 1 && adjResults[i].x == 4 && adjResults[i].y == 9) {
+        adjIdx = (int)i;
+        break;
+      }
+    }
+    REQUIRE(adjIdx >= 0);
+    CHECK(adjResults[adjIdx].inputSequence == spawnSuffix);
+    CHECK(adjResults[adjIdx].dasChargeAfter == spawnResults[spawnIdx].dasChargeAfter);
+  }
+
+  // 2. Guard: an adjustment starting right after a gravity frame (frameIndex =
+  // framesAlreadyElapsed)
+  //    that tucks on its very first frame must not treat the pre-reaction frame as a wall-charge
+  //    tuck (which would retroactively modify preAdjInputSequence / pop an empty inputSequence).
+  {
+    // Level 18 (gravity = 3): frame 17 is a gravity frame; frame 18 is the first adjustment frame.
+    // Fill row 5 col 6 so J(rot=1, x=4) collides at y=5 (y-1), while y=6 is open with a floor at
+    // row 9. With dasButtonHeld=RIGHT and dasCharge=8, goalOffsetX=+1 cannot tap-shift on frame 18
+    // (it charges 8->11 and locks at x=3), so (rot=1, x=4, y=6) is novel and forces tryInput('R')
+    // to execute on frame 18 with an empty inputSequence.
+    std::string boardStr(200, '0');
+    boardStr[5 * 10 + 6] = '1';
+    for (int c = 0; c < 10; c++) {
+      boardStr[9 * 10 + c] = '1';
+    }
+    GameState gs = {};
+    gs.level = 18;
+    gs.lines = 0;
+    encodeBoard(boardStr.c_str(), gs.board);
+    const Piece *piece = &PIECE_LIST[IDX_J];
+
+    FullMoveSearchContext adjCtx;
+    adjCtx.existingXOffset = 0;       // x = 3
+    adjCtx.existingYOffset = 7;       // y = -1 + 7 = 6
+    adjCtx.framesAlreadyElapsed = 18; // frame 17 was a gravity frame (17 % 3 == 2)
+    adjCtx.existingRotation = 1;
+    adjCtx.isAdjustment = true;
+    adjCtx.isArrContinued = false;
+    adjCtx.dasButtonHeld = DAS_BUTTON_RIGHT;
+    adjCtx.preAdjInputSequence = "rrrrrrrrrr";
+
+    std::vector<FullMovePossibility> adjResultsSeq;
+    fullMoveSearch(gs, piece, "X", /*dasCharge=*/8, /*trackInputSequences=*/true, adjResultsSeq,
+                   adjCtx);
+    std::vector<FullMovePossibility> adjResultsNoSeq;
+    fullMoveSearch(gs, piece, "X", /*dasCharge=*/8, /*trackInputSequences=*/false, adjResultsNoSeq,
+                   adjCtx);
+
+    REQUIRE(adjResultsSeq.size() == adjResultsNoSeq.size());
+    int tuckIdx = -1;
+    for (size_t i = 0; i < adjResultsSeq.size(); i++) {
+      CHECK(adjResultsSeq[i].dasChargeAfter == adjResultsNoSeq[i].dasChargeAfter);
+      if (adjResultsSeq[i].rotationIndex == 1
+          && adjResultsSeq[i].x == 4
+          && adjResultsSeq[i].y == 6
+          && adjResultsSeq[i].tuckInput == 'R') {
+        tuckIdx = (int)i;
+      }
+    }
+    REQUIRE(tuckIdx >= 0);
+    CHECK(adjResultsSeq[tuckIdx].inputSequence[0] == 'R');
+    CHECK(adjResultsSeq[tuckIdx].dasChargeAfter == 0);
+  }
+}
+
 #endif // SR_MOVE_SEARCH_FUZZ_TESTS

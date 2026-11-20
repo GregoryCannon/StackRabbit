@@ -361,6 +361,16 @@ tryPlacement(unsigned int board[20], const Piece *piece, int goalRotationIndex, 
     return;
   }
 
+  // Already at the goal with no reaction-time capture to wait for: hand off
+  // directly to the fall phase so this frame is eligible for wall charges and
+  // tucks/spins instead of spending a no-op '.' frame here.
+  if (simState.rotationIndex == goalRotationIndex
+      && simState.x == goalX
+      && (ctx.isAdjustment || reactionTime <= 0)) {
+    dedupedStates.push_back(std::move(simState));
+    return;
+  }
+
   // An ARR input window that goes by without a real input breaks the ARR
   // phase (isArrContinued = false in the capture). DAS-mode shift and
   // hold frames do not count as ARR inputs -- only the rotation-bearing
@@ -622,7 +632,7 @@ template <bool TrackSeq>
 static bool tryInput(unsigned int board[20], const Piece *piece, char inputChar, int newX,
                      int newRotationIndex, bool useDAS,
                      const FullSimState<TrackSeq> &parentSimState, int minFramesWait, int gravity,
-                     OUT FullMovePossibility &outPossibility) {
+                     int framesAlreadyElapsed, OUT FullMovePossibility &outPossibility) {
 
   FullSimState<TrackSeq> simState = parentSimState;
   bool hasDoneInput = false;
@@ -641,11 +651,14 @@ static bool tryInput(unsigned int board[20], const Piece *piece, char inputChar,
 
         // DAS only: wall-charge tuck -- the piece could have wall-charged on the
         // previous (gravity) frame; then the tuck shift leaves charge at 10.
+        // Only eligible when the previous frame belonged to this search (an
+        // adjustment cannot retroactively rewrite a pre-reaction frame).
         if (useDAS) {
           const bool couldWallChargeLastFrame =
               collision(board, piece, newX, simState.y - 1, simState.rotationIndex) != 0;
           const bool lastFrameWasGravityFrame =
-              simState.frameIndex > 0 && isGravityDropFrame(simState.frameIndex - 1, gravity);
+              simState.frameIndex > framesAlreadyElapsed
+              && isGravityDropFrame(simState.frameIndex - 1, gravity);
           if (couldWallChargeLastFrame && lastFrameWasGravityFrame) {
             isWallChargeTuck = true;
             wallChargeChar = newX > simState.x ? 'r' : 'l';
@@ -722,7 +735,7 @@ static TuckSpinResult
 searchForTucksOrSpins(unsigned int board[20], const Piece *piece, int numOrientations,
                       const std::vector<FullSimState<TrackSeq>> &potentialTuckSpinStates,
                       const LockHeightTable &lockHeightLookup, bool useDAS, int minFramesWait,
-                      int gravity) {
+                      int gravity, int framesAlreadyElapsed) {
   const char *possibleInputs = numOrientations == 1   ? "LR"
                                : numOrientations == 2 ? "LRAEI"
                                                       : "LRABEIFG";
@@ -765,7 +778,7 @@ searchForTucksOrSpins(unsigned int board[20], const Piece *piece, int numOrienta
 
       FullMovePossibility possibility;
       if (tryInput(board, piece, inputChar, newX, newRot, useDAS, simState, minFramesWait, gravity,
-                   possibility)) {
+                   framesAlreadyElapsed, possibility)) {
         const int key = (possibility.rotationIndex * 100 + possibility.x) * 1000 + possibility.y;
         NovelTuck *existing = findNovel(key);
         if (existing == NULL
@@ -888,7 +901,7 @@ fullMoveSearchImpl(GameState &gameState, const Piece *piece, char const *inputFr
   // Phase C: tuck/spin DFS
   TuckSpinResult tuckResult = searchForTucksOrSpins<TrackSeq>(
       gameState.board, piece, numOrientations, fall.potentialTuckSpinStates, fall.lockHeightLookup,
-      useDAS, minFramesWait, gravity);
+      useDAS, minFramesWait, gravity, ctx.framesAlreadyElapsed);
 
   // Lock dedup on the basic list
   dedupeLockPossibilities(fall.lockPossibilities, fall.lockCaptureIdx);

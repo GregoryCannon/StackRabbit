@@ -401,15 +401,29 @@ TEST_CASE("precompute pipeline invariants hold across all structural regimes") {
 
     const std::vector<std::string> lines = splitPrecomputeByChar(response, '\n');
 
-    // (c) fallback markers occur exactly under their conditions
+    // (c) fallback / continue markers occur exactly under their conditions
     const PrecomputePhantom &winningPhantom = prepared.state.phantoms[winner];
     const bool canContinue =
         winningPhantom.hasInitialPlacement
         && winningPhantom.initial.inputSequence.length() > (size_t)prepared.reactionTime;
+    std::string defaultPostReactionSeq;
+    if (winningPhantom.hasInitialPlacement && !winningPhantom.initial.inputSequence.empty()) {
+      const int sliceIndex =
+          reactionSliceIndex(winningPhantom.initial.inputSequence, prepared.reactionTime);
+      if (static_cast<size_t>(sliceIndex) < winningPhantom.initial.inputSequence.size()) {
+        defaultPostReactionSeq = winningPhantom.initial.inputSequence.substr(sliceIndex);
+      }
+    }
     bool caseSawContentLine = false;
     bool caseSawContinue = false;
     bool caseSawPerPieceNone = false;
     bool caseSawLevelIncrease = false;
+    if (winningPhantom.hasInitialPlacement) {
+      const std::vector<std::string> defSegments = splitPrecomputeByChar(lines[0].substr(8), '|');
+      if (defSegments.size() == 6 && atoi(defSegments[3].c_str()) > prepared.level) {
+        caseSawLevelIncrease = true;
+      }
+    }
     for (int i = 1; i < 8; i++) {
       const std::string body = lines[i].substr(2);
       const bool marker = body == "continue" || body == "none";
@@ -425,22 +439,41 @@ TEST_CASE("precompute pipeline invariants hold across all structural regimes") {
         }
       }
 
-      bool anyAdjustmentHit = false;
+      const PrecomputePossibility *bestAdj = nullptr;
+      double maxVal = PRECOMPUTE_MIN_VALUE;
       for (const PrecomputePossibility &adjustment : winningPhantom.possibleAdjustments) {
-        if (prepared.state.lockValues[i - 1].count(
-                encodeLockCell(adjustment.rot, adjustment.x, adjustment.y))) {
-          anyAdjustmentHit = true;
-          break;
+        const std::string key = encodeLockCell(adjustment.rot, adjustment.x, adjustment.y);
+        if (prepared.state.lockValues[i - 1].find(key) == prepared.state.lockValues[i - 1].end()) {
+          continue;
+        }
+        const double value =
+            prepared.state.lockValues[i - 1].at(key)
+            + adjustmentInputCost(adjustment, winningPhantom, prepared.reactionTime)
+            + recomputedDasPenalty(prepared.state.useDAS, adjustment.dasChargeAfter, key,
+                                   prepared.state.partialPenalties[i - 1],
+                                   prepared.state.minPenalties[i - 1]);
+        if (value >= maxVal) {
+          maxVal = value;
+          bestAdj = &adjustment;
         }
       }
-      const bool expectedMarker = winningPhantom.possibleAdjustments.empty() || !anyAdjustmentHit;
-      if (expectedMarker) {
+
+      if (winningPhantom.possibleAdjustments.empty() || bestAdj == nullptr) {
         CHECK(marker);
         if (marker) {
           CHECK(body == (canContinue ? "continue" : "none"));
         }
       } else {
-        CHECK_FALSE(marker);
+        const int levelAfter =
+            getLevelAfterLineClears(prepared.level, prepared.lines, bestAdj->numLinesCleared);
+        const std::string pieceSeq = (SHOULD_PUSHDOWN && levelAfter == 18)
+                                         ? pushDownSequence(bestAdj->inputSequence)
+                                         : bestAdj->inputSequence;
+        if (!defaultPostReactionSeq.empty() && pieceSeq == defaultPostReactionSeq) {
+          CHECK(body == "continue");
+        } else {
+          CHECK_FALSE(marker);
+        }
       }
     }
 

@@ -400,8 +400,15 @@ std::string formatPrecomputeResult(const PrecomputePhantom &phantom,
                                    int reactionTime, bool pushDown, const unsigned int board[20],
                                    const Piece *piece, int level, int lines) {
   std::string out = "Default:";
+  std::string defaultPostReactionSeq;
   if (phantom.hasInitialPlacement) {
     out += formatDefaultLine(phantom.initial, reactionTime, board, piece, level, lines);
+    if (!phantom.initial.inputSequence.empty()) {
+      const int sliceIndex = reactionSliceIndex(phantom.initial.inputSequence, reactionTime);
+      if (static_cast<size_t>(sliceIndex) < phantom.initial.inputSequence.size()) {
+        defaultPostReactionSeq = phantom.initial.inputSequence.substr(sliceIndex);
+      }
+    }
   } else {
     out += "N/A (0 reaction time)";
   }
@@ -414,7 +421,16 @@ std::string formatPrecomputeResult(const PrecomputePhantom &phantom,
     out += RESPONSE_PIECE_ORDER[i];
     out += ":";
     if (bestPerPiece[i] != NULL) {
-      out += formatPieceLine(*bestPerPiece[i], pushDown, board, piece, level, lines);
+      const int levelAfter =
+          getLevelAfterLineClears(level, lines, bestPerPiece[i]->numLinesCleared);
+      const std::string pieceSeq = (pushDown && levelAfter == 18)
+                                       ? pushDownSequence(bestPerPiece[i]->inputSequence)
+                                       : bestPerPiece[i]->inputSequence;
+      if (!defaultPostReactionSeq.empty() && pieceSeq == defaultPostReactionSeq) {
+        out += "continue";
+      } else {
+        out += formatPieceLine(*bestPerPiece[i], pushDown, board, piece, level, lines);
+      }
     } else {
       out += canContinue ? "continue" : "none";
     }

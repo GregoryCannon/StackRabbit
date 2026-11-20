@@ -1452,12 +1452,16 @@ TEST_CASE("2-ply intermediate eval tiebreak takes an immediate Tetris on I -> I"
                            .build()
                        + "18|";
     std::string out = runRequest(PRECOMPUTE, pipe);
+    size_t defEnd = out.find('\n');
+    REQUIRE(defEnd != std::string::npos);
+    std::string defLine = out.substr(0, defEnd);
     size_t iPos = out.find("\nI:");
     REQUIRE(iPos != std::string::npos);
     size_t iEnd = out.find('\n', iPos + 1);
     std::string iLine = out.substr(iPos + 1, iEnd - (iPos + 1));
-    // Taking the Tetris clears 4 lines (20 -> 24).
-    CHECK(iLine.find("|18|24|") != std::string::npos);
+    // Taking the Tetris clears 4 lines (20 -> 24); if I continues with Default, check Default.
+    const std::string &effectiveILine = (iLine == "I:continue") ? defLine : iLine;
+    CHECK(effectiveILine.find("|18|24|") != std::string::npos);
   };
 
   // Eval-only across full DAS (mid-flight col-8 snapshot), zero DAS, and tap mode
@@ -1544,11 +1548,15 @@ TEST_CASE("tournament transposition check prevents deferred I -> I from beating 
   REQUIRE(board.size() == 200);
 
   auto checkITakesTetris = [&](const std::string &out) {
+    size_t defEnd = out.find('\n');
+    REQUIRE(defEnd != std::string::npos);
+    std::string defLine = out.substr(0, defEnd);
     size_t iPos = out.find("\nI:");
     REQUIRE(iPos != std::string::npos);
     size_t iEnd = out.find('\n', iPos + 1);
     std::string iLine = out.substr(iPos + 1, iEnd - (iPos + 1));
-    CHECK(iLine.find("|19|110|16") != std::string::npos);
+    const std::string &effectiveILine = (iLine == "I:continue") ? defLine : iLine;
+    CHECK(effectiveILine.find("|19|110|16") != std::string::npos);
   };
 
   // Fixed-budget tournament (deep enough that col 7 beats col 0 on playouts)

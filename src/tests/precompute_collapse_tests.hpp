@@ -770,10 +770,8 @@ TEST_CASE("adjustmentInputCost measures frame-by-frame deviation from the defaul
                       /* useDAS= */ false, /* reactionTime= */ 8);
     putLockValueEverywhere(state, encodeLockCell(0, 0, 17), 10.0);
     putLockValueEverywhere(state, encodeLockCell(0, 2, 17), 10.0);
-    const std::string expected = "Default:0,-3,18|LLLLLLLL~~L..|"
-                                 + boardOAt(0)
-                                 + "|18|0|-1"
-                                 + sevenPieceContent("0,-3,18|L..|" + boardOAt(0) + "|18|0|-1");
+    const std::string expected =
+        "Default:0,-3,18|LLLLLLLL~~L..|" + boardOAt(0) + "|18|0|-1" + sevenPieceMarkers("continue");
     CHECK(runCollapse(state) == expected);
   }
 
@@ -806,10 +804,8 @@ TEST_CASE("adjustmentInputCost measures frame-by-frame deviation from the defaul
                       /* useDAS= */ false, /* reactionTime= */ 8);
     putLockValueEverywhere(state, encodeLockCell(0, 4, 17), 10.0);
     putLockValueEverywhere(state, encodeLockCell(0, 2, 17), 10.0);
-    const std::string expected = "Default:0,1,18|RRRRRRRR~~..L|"
-                                 + boardOAt(4)
-                                 + "|18|0|-1"
-                                 + sevenPieceContent("0,1,18|..L|" + boardOAt(4) + "|18|0|-1");
+    const std::string expected =
+        "Default:0,1,18|RRRRRRRR~~..L|" + boardOAt(4) + "|18|0|-1" + sevenPieceMarkers("continue");
     CHECK(runCollapse(state) == expected);
   }
 
@@ -865,6 +861,62 @@ TEST_CASE("adjustmentInputCost measures frame-by-frame deviation from the defaul
                                  + "|18|0|-1"
                                  + sevenPieceContent("0,-1,18|L.|" + boardOAt(2) + "|18|0|-1");
     CHECK(runCollapse(state) == expected);
+  }
+}
+
+TEST_CASE("formatter emits continue when a piece matches Default post-reaction sequence") {
+  SUBCASE("matching pieces emit continue while diverging pieces emit full lines") {
+    // Default post-reaction suffix is "..**" (after 8 frames). Piece I prefers cell 6 ("R.**"),
+    // while the other 6 pieces prefer cell 4 ("..**"), which matches Default after '~~'.
+    PrecomputeState state =
+        collapseState({adjustmentBranchPhantom(
+                          oPlacement(4, "RRRRRRRR..**", '.', -1, 0),
+                          {oPlacement(4, "..**", '.', -1, 0), oPlacement(6, "R.**", '.', -1, 0)})},
+                      /* useDAS= */ false, /* reactionTime= */ 8);
+    putLockValueEverywhere(state, encodeLockCell(0, 4, 17), 10.0);
+    putLockValueEverywhere(state, encodeLockCell(0, 6, 17), 5.0);
+    putLockValueOnPiece(state, IDX_I, encodeLockCell(0, 6, 17), 20.0);
+
+    std::string expected = "Default:0,1,18|RRRRRRRR~~..**|" + boardOAt(4) + "|18|0|-1";
+    for (int i = 0; i < 7; i++) {
+      expected += "\n";
+      expected += "IOLJTSZ"[i];
+      expected += ":";
+      expected += (i == IDX_I) ? ("0,3,18|R.**|" + boardOAt(6) + "|18|0|-1") : "continue";
+    }
+    CHECK(runCollapse(state) == expected);
+  }
+
+  SUBCASE("hold-through-ARE marker '_' advances the slice before comparing") {
+    // Default has '_' so reactionTime=4 slices after 5 chars: "_RRRR~~..**".
+    PrecomputeState state =
+        collapseState({adjustmentBranchPhantom(oPlacement(4, "_RRRR..**", '.', 15, 0),
+                                               {oPlacement(4, "..**", '.', 15, 0)})},
+                      /* useDAS= */ true, /* reactionTime= */ 4);
+    putLockValueEverywhere(state, encodeLockCell(0, 4, 17), 10.0);
+    const std::string expected =
+        "Default:0,1,18|_RRRR~~..**|" + boardOAt(4) + "|18|0|15" + sevenPieceMarkers("continue");
+    CHECK(runCollapse(state) == expected);
+  }
+
+  SUBCASE("pushdown rewrite prevents false continue when formatted sequence differs") {
+    // Raw adjustment sequence "RR.*" matches Default's post-'~~' suffix, but pushDown=true at
+    // level 18 rewrites the piece line to "RRDDD", so it must emit the rewritten line.
+    PrecomputeState state =
+        collapseState({adjustmentBranchPhantom(oPlacement(4, "RRRRRRRRRR.*", '.', -1, 0),
+                                               {oPlacement(4, "RR.*", '.', -1, 0)})},
+                      /* useDAS= */ false, /* reactionTime= */ 8);
+    putLockValueEverywhere(state, encodeLockCell(0, 4, 17), 10.0);
+    const std::string expected = "Default:0,1,18|RRRRRRRR~~RR.*|"
+                                 + boardOAt(4)
+                                 + "|18|0|-1"
+                                 + sevenPieceContent("0,1,18|RRDDD|" + boardOAt(4) + "|18|0|-1");
+    CHECK(runCollapse(state, &PIECE_LIST[IDX_O], 18, 0, /* pushDown= */ true) == expected);
+    // With pushDown=false, the sequences match verbatim and collapse to continue.
+    const std::string expectedNoPushDown =
+        "Default:0,1,18|RRRRRRRR~~RR.*|" + boardOAt(4) + "|18|0|-1" + sevenPieceMarkers("continue");
+    CHECK(runCollapse(state, &PIECE_LIST[IDX_O], 18, 0, /* pushDown= */ false)
+          == expectedNoPushDown);
   }
 }
 
