@@ -1,7 +1,7 @@
-// Move search fuzz harness (see TESTING.md, "TS oracle fuzz fixtures").
+// Move search fuzz harness (see TESTING.md).
 //
-// Consumes the generated golden fixtures (move_search_fixtures.hpp, produced
-// by `npm run fuzz_generate`) and checks the C++ move search against them.
+// Consumes the characterization baseline fixtures (move_search_fixtures.hpp)
+// and checks the C++ move search against them.
 //
 //   - Tap-mode fixtures (dasCharge == -1): hard-asserted twice -- through
 //     fastMoveSearch (the hot-path legacy search; fixtures containing spin
@@ -64,9 +64,8 @@ struct FuzzEntry {
   }
 };
 
-// Unpacks one expected entry from FIXTURE_ENTRY_POOL (bit layout documented in
-// the generator's packEntry; 18 bits: rot | (x+8)<<2 | (y+2)<<6 |
-// (dasChargeAfter+1)<<11 | (inputCostX10+3)<<16).
+// Unpacks one expected entry from FIXTURE_ENTRY_POOL (18-bit packed layout:
+// rot | (x+8)<<2 | (y+2)<<6 | (dasChargeAfter+1)<<11 | (inputCostX10+3)<<16).
 static FuzzEntry unpackEntry(int p) {
   FuzzEntry e;
   e.rot = p & 3;

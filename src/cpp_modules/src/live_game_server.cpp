@@ -484,11 +484,8 @@ struct RouteResult {
 
 // Kicks off an async precompute: hands the decoded pipe to the worker and
 // answers immediately — the agent ignores this body and only needs the 200.
-// 503 "Busy" if a request is still computing. That is a deliberate hardening
-// over the legacy TS server, whose in-progress flag was toggled after an
-// event-loop tick and could race a second kick into overwriting a running
-// computation; the agent's waitingOnAsyncRequest gate never overlaps requests,
-// so this path is defensive only.
+// Returns 503 "Busy" if a request is still computing so an overlapping kick
+// cannot clobber a running computation.
 RouteResult handlePrecomputeKick(const std::string &query) {
   auto received = std::chrono::steady_clock::now();
   std::string encodedPipe;

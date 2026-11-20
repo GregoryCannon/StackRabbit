@@ -3,8 +3,8 @@
 // Mirrors the unity-build pattern of src/main.cpp: instead of listing sources in
 // a makefile, we include main.cpp, which includes every engine source file.
 // Deliberately NOT included: the other main() definers (entrypoint.cpp,
-// fixture_dump.cpp, precompute_tsan.cpp, src/benchmark/*.cpp) and
-// module.cpp (nan glue) / wasm.cpp (emscripten glue).
+// live_game_server.cpp, fixture_dump.cpp, precompute_cli.cpp, precompute_tsan.cpp,
+// src/benchmark/*.cpp) and wasm.cpp (emscripten glue).
 //
 // The test cases themselves live in per-category headers, included below:
 //   helpers.hpp                 shared board builders, InputBuilder, assertions

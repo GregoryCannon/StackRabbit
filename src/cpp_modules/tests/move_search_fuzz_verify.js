@@ -3,9 +3,8 @@
  * strongest available level: character-exact input sequences, plus the
  * (rotationIndex, x, y, dasChargeAfter, inputCostX10) tuples.
  *
- * TODO(Phase 5 cutover): at cutover the oracle becomes a hand-maintained
- * characterization baseline; updates come from reviewed verifier diffs,
- * re-baselined from C++ itself (see TESTING.md).
+ * The fixture JSON is a hand-maintained characterization baseline; intentional
+ * updates come from reviewed verifier diffs (see TESTING.md).
  *
  * Covers BOTH modes: DAS fixtures (dasCharge >= 0, the frame-exact charge
  * search) and tap fixtures (dasCharge == -1, fullMoveSearch's ARR-gated tap
@@ -19,11 +18,7 @@
  * Complements `npm run cpp_test_unit` (which asserts the tuples for all
  * fixtures in-doctest but does not carry sequences in the fixture header):
  * this script runs the full fixture set through build/fixture_dump and
- * diffs every entry, sequences included, against the oracle JSON.
- *
- * Workflow: after any change to the move-search oracle, regenerate it with
- * `npm run fuzz_generate`, then run `npm run fuzz_verify_sequences` to check
- * the C++ side against the new golden.
+ * diffs every entry, sequences included, against the baseline JSON.
  *
  * Usage: npm run fuzz_verify_sequences   (exits nonzero on any mismatch)
  */
@@ -40,10 +35,10 @@ const HELD_NAME_TO_CODE = { LEFT: -1, RIGHT: 1, NONE: 0 };
 function main() {
   const data = JSON.parse(fs.readFileSync(FIXTURES_JSON, "utf8"));
 
-  // Derive the fixture indexes from the oracle itself (never assume layout).
+  // Derive the fixture indexes from the baseline itself (never assume layout).
   const allIndexes = data.fixtures.map((_, i) => i);
   if (allIndexes.length === 0) {
-    console.error("No fixtures found in the oracle JSON -- regenerate with `npm run fuzz_generate`.");
+    console.error(`No fixtures found in ${FIXTURES_JSON}.`);
     process.exit(1);
   }
 
@@ -255,22 +250,22 @@ function main() {
     // Show the first few diffs to make triage immediate.
     for (const idx of mismatchedFixtures.slice(0, 3)) {
       const f = data.fixtures[idx];
-      const ts = toComparable(f.entries);
+      const baseline = toComparable(f.entries);
       const cpp = cppByFixture[idx] || [];
       console.error(`  fixture ${idx} (${f.pieceId} L${f.level} ${f.timeline} c${f.dasCharge}):`);
       let shown = 0;
-      for (let i = 0; i < Math.max(ts.length, cpp.length) && shown < 4; i++) {
-        if (!ts[i] || !cpp[i] || ts[i].key !== cpp[i].key || ts[i].seq !== cpp[i].seq) {
-          console.error(`    oracle : ${ts[i] ? ts[i].key + " seq=" + ts[i].seq : "-"}`);
-          console.error(`    C++: ${cpp[i] ? cpp[i].key + " seq=" + cpp[i].seq : "-"}`);
+      for (let i = 0; i < Math.max(baseline.length, cpp.length) && shown < 4; i++) {
+        if (!baseline[i] || !cpp[i] || baseline[i].key !== cpp[i].key || baseline[i].seq !== cpp[i].seq) {
+          console.error(`    baseline: ${baseline[i] ? baseline[i].key + " seq=" + baseline[i].seq : "-"}`);
+          console.error(`    C++:      ${cpp[i] ? cpp[i].key + " seq=" + cpp[i].seq : "-"}`);
           shown++;
         }
       }
     }
     for (const idx of mismatchedAdjustments.slice(0, 3)) {
       const f = adjustmentFixtures[idx];
-      const ts = sortEntries(toComparable(f.entries));
-      const cpp = sortEntries(cppByAdjustment[idx] || []);
+      const baseline = toComparable(f.entries);
+      const cpp = cppByAdjustment[idx] || [];
       console.error(
         `  adjustment ${idx} (${f.pieceId} L${f.level} ${f.timeline} c${f.dasCharge} ` +
           `f${f.framesAlreadyElapsed} x${f.existingXOffset} y${f.existingYOffset} ` +
@@ -278,33 +273,33 @@ function main() {
           `pre=${f.preAdjInputSequence}):`
       );
       let shown = 0;
-      for (let i = 0; i < Math.max(ts.length, cpp.length) && shown < 4; i++) {
-        if (!ts[i] || !cpp[i] || ts[i].key !== cpp[i].key || ts[i].seq !== cpp[i].seq) {
-          console.error(`    oracle : ${ts[i] ? ts[i].key + " seq=" + ts[i].seq : "-"}`);
-          console.error(`    C++: ${cpp[i] ? cpp[i].key + " seq=" + cpp[i].seq : "-"}`);
+      for (let i = 0; i < Math.max(baseline.length, cpp.length) && shown < 4; i++) {
+        if (!baseline[i] || !cpp[i] || baseline[i].key !== cpp[i].key || baseline[i].seq !== cpp[i].seq) {
+          console.error(`    baseline: ${baseline[i] ? baseline[i].key + " seq=" + baseline[i].seq : "-"}`);
+          console.error(`    C++:      ${cpp[i] ? cpp[i].key + " seq=" + cpp[i].seq : "-"}`);
           shown++;
         }
       }
     }
     for (const idx of mismatchedReactionTimes.slice(0, 3)) {
       const f = reactionTimeFixtures[idx];
-      const ts = toComparableRt(f.entries);
+      const baseline = toComparableRt(f.entries);
       const cpp = cppByReactionTime[idx] || [];
       console.error(
         `  reaction-time ${idx} (${f.pieceId} L${f.level} ${f.timeline} c${f.dasCharge} ` +
-          `rt${f.reactionTime}):`
+          `reactionTime=${f.reactionTime}):`
       );
       let shown = 0;
-      for (let i = 0; i < Math.max(ts.length, cpp.length) && shown < 4; i++) {
-        const t = ts[i];
+      for (let i = 0; i < Math.max(baseline.length, cpp.length) && shown < 4; i++) {
+        const b = baseline[i];
         const c = cpp[i];
-        if (!t || !c || t.key !== c.key || t.seq !== c.seq || !captureEquals(t.capture, c.capture)) {
+        if (!b || !c || b.key !== c.key || b.seq !== c.seq || !captureEquals(b.capture, c.capture)) {
           const capStr = (x) =>
             x.capture === null
               ? "cap=null"
               : `cap=f${x.capture.frameIndex},x${x.capture.x},y${x.capture.y},r${x.capture.rotationIndex},c${x.capture.dasCharge},arr${x.capture.isArrContinued ? 1 : 0},held${x.capture.dasButtonHeld},pre=${x.capture.preAdjInputSequence}`;
-          console.error(`    oracle : ${t ? t.key + " seq=" + t.seq + " " + capStr(t) : "-"}`);
-          console.error(`    C++: ${c ? c.key + " seq=" + c.seq + " " + capStr(c) : "-"}`);
+          console.error(`    baseline: ${b ? b.key + " seq=" + b.seq + " " + capStr(b) : "-"}`);
+          console.error(`    C++:      ${c ? c.key + " seq=" + c.seq + " " + capStr(c) : "-"}`);
           shown++;
         }
       }

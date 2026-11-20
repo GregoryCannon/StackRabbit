@@ -2,16 +2,12 @@
   "name": "stackrabbit",
   "version": "1.0.0",
   "description": "an AI for playing NES Tetris",
-  "main": "src/web_client/index.js",
   "scripts": {
-    "start": "node-gyp build && tsc && node built/app.js",
-    "start_check": "node-gyp build && tsc && node src/server/start_check.js",
+    "start": "npm run live_server",
     "cpp_test_unit": "mkdir -p build && g++ -O0 -std=c++17 -pthread src/cpp_modules/tests/stackrabbit_test.cpp -o build/cpp_unit_tests && ./build/cpp_unit_tests",
-    "move_test": "tsc && node built/move_search_test.js",
-    "fuzz_generate": "tsc && node built/move_search_fuzz_generate.js",
     "precompute_cli_build": "mkdir -p build && g++ -O2 -std=c++17 -pthread -o build/precompute_cli src/cpp_modules/tests/precompute_cli.cpp",
     "precompute_fixture_generate": "npm run precompute_cli_build && node src/cpp_modules/tests/precompute_fixture_generate.js",
-    "fuzz_verify_sequences": "g++ -O2 -std=c++17 -o build/fixture_dump src/cpp_modules/tests/fixture_dump.cpp && node src/cpp_modules/tests/move_search_fuzz_verify.js",
+    "fuzz_verify_sequences": "mkdir -p build && g++ -O2 -std=c++17 -o build/fixture_dump src/cpp_modules/tests/fixture_dump.cpp && node src/cpp_modules/tests/move_search_fuzz_verify.js",
     "precompute_verify": "npm run precompute_cli_build && node src/cpp_modules/tests/precompute_verify.js",
     "precompute_tsan": "mkdir -p build && node src/cpp_modules/tests/precompute_verify.js --dump-inputs build/precompute_tsan_inputs.txt && g++ -O1 -g -fsanitize=thread src/cpp_modules/tests/precompute_tsan.cpp -o build/precompute_tsan && ./build/precompute_tsan build/precompute_tsan_inputs.txt",
     "precompute_static_lint": "node src/cpp_modules/tests/precompute_static_lint.js",
@@ -20,30 +16,13 @@
     "live_server_build_win": "node -e \"require('fs').mkdirSync('build',{recursive:true})\" && g++ -O2 -std=c++17 -pthread -o build/live_game_server.exe src/cpp_modules/src/live_game_server.cpp -lws2_32",
     "live_server": "npm run live_server_build && ./build/live_game_server",
     "live_server_check": "npm run live_server_build && node src/cpp_modules/tests/live_server_check.js",
-    "speed_benchmark": "g++ -O2 -std=c++17 src/benchmark/speed_benchmark.cpp -o build/speed_benchmark && ./build/speed_benchmark",
+    "speed_benchmark": "mkdir -p build && g++ -O2 -std=c++17 src/benchmark/speed_benchmark.cpp -o build/speed_benchmark && ./build/speed_benchmark",
     "benchmark_sample_positions": "node src/benchmark/sample_benchmark_positions.js",
-    "benchmark_run_agent": "g++ -O2 src/benchmark/run_agent.cpp -o build/run_agent && ./build/run_agent",
-    "benchmark_find_hard": "g++ -O2 src/benchmark/find_hard_positions.cpp -o build/find_hard_positions && ./build/find_hard_positions",
+    "benchmark_run_agent": "mkdir -p build && g++ -O2 src/benchmark/run_agent.cpp -o build/run_agent && ./build/run_agent",
+    "benchmark_find_hard": "mkdir -p build && g++ -O2 src/benchmark/find_hard_positions.cpp -o build/find_hard_positions && ./build/find_hard_positions",
     "wasm_build": "em++ -O3 src/cpp_modules/src/wasm.cpp --bind -lembind -g0 -o compiledWasmRabbit.js -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=64MB -sMAXIMUM_MEMORY=2GB",
     "wasm_build_trainer": "npm run wasm_build && cp -f compiledWasmRabbit.js compiledWasmRabbit.wasm /Users/gregcannon/Documents/TetrisTrainer/docs/wasm/"
   },
   "author": "",
-  "license": "ISC",
-  "devDependencies": {
-    "@types/express": "^4.17.12",
-    "gh-pages": "^3.1.0",
-    "typescript": "^5.3.3",
-    "webpack": "^4.43.0",
-    "webpack-cli": "^3.3.11",
-    "webpack-dev-server": "^3.11.0"
-  },
-  "dependencies": {
-    "@types/express": "^4.17.12",
-    "dotenv": "^16.3.1",
-    "fs": "0.0.1-security",
-    "nan": "^2.28.0",
-    "node-fetch": "^2.6.1",
-    "node-gyp": "^13.0.1",
-    "prettier": "^2.0.5"
-  }
+  "license": "ISC"
 }

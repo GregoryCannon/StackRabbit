@@ -3,9 +3,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-// I have to include the C++ files here due to a complication of node-gyp. Consider this the
-// equivalent of listing all the C++ sources in the makefile (Node-gyp seems to only work with 1
-// source rn).
+// Unity-build aggregation: all engine C++ sources are included here so every
+// target (live_game_server, wasm, CLI, tests) compiles from a single entry point.
 #include "../data/tetrominoes.hpp"
 #include "../data/canonical_sequences.cpp"
 #include "eval.cpp"
@@ -25,9 +24,6 @@
 template <typename... Args> std::string string_format(const std::string &format, Args... args) {
   int size_s = std::snprintf(nullptr, 0, format.c_str(), args...) + 1; // Extra space for '\0'
   if (size_s <= 0) {
-    // throw std::runtime_error( "Error during formatting." );
-    // (^^ if I remember right, that code fails for node-gyp integrations due to compatibility
-    // issues)
     return "";
   }
   auto size = static_cast<size_t>(size_s);
@@ -436,10 +432,9 @@ std::string mainProcess(char const *inputStr, RequestType requestType,
     LockLocation bestMove =
         playOneMove(startingGameState, curPiece, nextPiece, pruningBreadth, playoutCount,
                     playoutLength, &context, pieceRangeContextLookup);
-    // TODO: a topped-out board returns NULL_LOCK_LOCATION, which renders here as
-    // huge coordinate numbers; the JS consumer detects "no legal moves" by
-    // matching xOffset > 999999. Replace with an explicit error/sentinel when
-    // the TS server consumers retire (a wire-contract change -- lockstep).
+    // A topped-out board returns NULL_LOCK_LOCATION, which formats here as
+    // sentinel coordinates (xOffset > 999999); wire callers rely on this
+    // sentinel to detect "no legal moves".
     int xOffset = bestMove.x - 3;
     int rot = bestMove.rotationIndex;
     int yOffset = bestMove.y - curPiece->initialY;

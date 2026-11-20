@@ -6,9 +6,9 @@
  * responses plus protocol, error, backup-halt, and synchronous-route checks
  * over HTTP), kills the server process group, and verifies the port is freed.
  *
- * Mirrors start_check.js's start/kill/port logic (deliberate duplication so
- * start_check.js stays untouched). Fail loudly with actionable text on: the
- * server didn't start, a harness mismatch, or the port not being freed.
+ * Fails loudly with actionable text if the port is already occupied, the
+ * server fails to start, the harness finds a mismatch, or the port is not
+ * freed after shutdown.
  */
 const { spawn } = require("child_process");
 const net = require("net");

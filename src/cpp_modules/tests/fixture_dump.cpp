@@ -1,8 +1,8 @@
 // Dumps the C++ move-search results for fuzz fixtures in the same entry format
 // as src/cpp_modules/tests/data/move_search_fixtures.json, for external diffing.
 //
-// TODO(Phase 5 cutover): at cutover the JSON oracle becomes a hand-maintained
-// characterization baseline re-baselined from C++ itself (see TESTING.md).
+// move_search_fixtures.json is a hand-maintained characterization baseline;
+// intentional updates come from reviewed verifier diffs (see TESTING.md).
 //
 // Usage:
 //   ./build/fixture_dump --das    all DAS fixtures (dasCharge >= 0)
