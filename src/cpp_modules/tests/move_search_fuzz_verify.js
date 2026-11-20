@@ -28,10 +28,11 @@
  * Usage: npm run fuzz_verify_sequences   (exits nonzero on any mismatch)
  */
 const fs = require("fs");
+const path = require("path");
 const { execFileSync } = require("child_process");
 
-const FIXTURES_JSON = "src/server/move_search_fixtures.json";
-const DUMP_BIN = "build/fixture_dump";
+const FIXTURES_JSON = path.join(__dirname, "data/move_search_fixtures.json");
+const DUMP_BIN = path.join(__dirname, "../../../build/fixture_dump");
 
 // dasButtonHeld names (JSON) <-> DAS_BUTTON_* codes (C++ dump output).
 const HELD_NAME_TO_CODE = { LEFT: -1, RIGHT: 1, NONE: 0 };

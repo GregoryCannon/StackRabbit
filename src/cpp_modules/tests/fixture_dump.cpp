@@ -1,5 +1,5 @@
 // Dumps the C++ move-search results for fuzz fixtures in the same entry format
-// as src/server/move_search_fixtures.json, for external diffing.
+// as src/cpp_modules/tests/data/move_search_fixtures.json, for external diffing.
 //
 // TODO(Phase 5 cutover): at cutover the JSON oracle becomes a hand-maintained
 // characterization baseline re-baselined from C++ itself (see TESTING.md).
@@ -15,7 +15,7 @@
 // Tap-mode fixtures (dasCharge == -1) exercise fullMoveSearch's ARR-gated tap
 // path and come out with dasChargeAfter = -1 and their full input sequences.
 //
-// Consumed by `npm run fuzz_verify_sequences` (src/server/move_search_fuzz_verify.js).
+// Consumed by `npm run fuzz_verify_sequences` (src/cpp_modules/tests/move_search_fuzz_verify.js).
 //
 // Adjustment-mode fixtures are dumped
 // under "adjustment <idx>" headers from the ADJUSTMENT_FIXTURES section: each
