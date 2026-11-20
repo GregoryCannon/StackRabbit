@@ -138,7 +138,8 @@ double roundForConsumer(float value) {
   return strtod(buffer, NULL);
 }
 
-void roundCopyMap(const std::unordered_map<std::string, float> &source, OUT PrecomputeValueMap &out) {
+void roundCopyMap(const std::unordered_map<std::string, float> &source,
+                  OUT PrecomputeValueMap &out) {
   out.reserve(source.size());
   for (const auto &entry : source) {
     out[entry.first] = roundForConsumer(entry.second);
@@ -152,7 +153,8 @@ double lockValueOrNan(const PrecomputeValueMap &map, const std::string &key) {
 }
 
 double dasPenalty(bool useDas, int dasChargeAfter, const std::string &key,
-                  const PrecomputeValueMap &partialPenalties, const PrecomputeValueMap &minPenalties) {
+                  const PrecomputeValueMap &partialPenalties,
+                  const PrecomputeValueMap &minPenalties) {
   if (!useDas) {
     return 0;
   }
@@ -258,27 +260,25 @@ double adjustmentInputCost(const PrecomputePossibility &possibility,
     }
   }
 
-  const int defTuckCostX10 =
-      (phantom.hasInitialPlacement && defSuffixLen > 0)
-          ? inputCostX10ForChar(phantom.initial.tuckInput)
-          : 0;
+  const int defTuckCostX10 = (phantom.hasInitialPlacement && defSuffixLen > 0)
+                                 ? inputCostX10ForChar(phantom.initial.tuckInput)
+                                 : 0;
   const bool sameDefaultTuck = defTuckCostX10 != 0
                                && possibility.tuckInput == phantom.initial.tuckInput
                                && possibility.rot == phantom.initial.rot
                                && possibility.x == phantom.initial.x
                                && possibility.y == phantom.initial.y;
   const double tuckCost =
-      sameDefaultTuck ? 0.0
-                      : (inputCostX10ForChar(possibility.tuckInput) + defTuckCostX10) / 10.0;
+      sameDefaultTuck ? 0.0 : (inputCostX10ForChar(possibility.tuckInput) + defTuckCostX10) / 10.0;
   return cost + tuckCost;
 }
 
 /** NES PRNG transition odds, indexed T J Z O S L I. */
 double pieceProbability(const Piece *current, const Piece *next) {
-  static const int TRANSITIONS[7][7] = {
-      {2, 10, 12, 10, 10, 10, 10}, {12, 2, 10, 10, 10, 10, 10}, {10, 12, 2, 10, 10, 10, 10},
-      {10, 10, 10, 4, 10, 10, 10}, {10, 10, 10, 10, 4, 10, 10}, {12, 10, 10, 10, 10, 2, 10},
-      {10, 10, 10, 10, 12, 10, 2}};
+  static const int TRANSITIONS[7][7] = {{2, 10, 12, 10, 10, 10, 10}, {12, 2, 10, 10, 10, 10, 10},
+                                        {10, 12, 2, 10, 10, 10, 10}, {10, 10, 10, 4, 10, 10, 10},
+                                        {10, 10, 10, 10, 4, 10, 10}, {12, 10, 10, 10, 10, 2, 10},
+                                        {10, 10, 10, 10, 12, 10, 2}};
   auto tableIndex = [](char id) {
     switch (id) {
     case 'T':
@@ -373,9 +373,9 @@ std::string formatPieceLine(const PrecomputePossibility &placement, bool pushDow
                             int lines) {
   const int levelAfter = getLevelAfterLineClears(level, lines, placement.numLinesCleared);
   const std::string sequence =
-      (pushDown && levelAfter == 18) ? pushDownSequence(placement.inputSequence)
-                                     : (placement.inputSequence.empty() ? "none"
-                                                                        : placement.inputSequence);
+      (pushDown && levelAfter == 18)
+          ? pushDownSequence(placement.inputSequence)
+          : (placement.inputSequence.empty() ? "none" : placement.inputSequence);
 
   char head[32];
   snprintf(head, sizeof(head), "%d,%d,%d|", placement.relRot, placement.relX, placement.relY);
@@ -406,8 +406,9 @@ std::string formatPrecomputeResult(const PrecomputePhantom &phantom,
     out += "N/A (0 reaction time)";
   }
 
-  const bool canContinue = phantom.hasInitialPlacement
-                           && phantom.initial.inputSequence.length() > static_cast<size_t>(reactionTime);
+  const bool canContinue =
+      phantom.hasInitialPlacement
+      && phantom.initial.inputSequence.length() > static_cast<size_t>(reactionTime);
   for (int i = 0; i < 7; i++) {
     out += "\n";
     out += RESPONSE_PIECE_ORDER[i];
@@ -426,9 +427,8 @@ std::string formatPrecomputeResult(const PrecomputePhantom &phantom,
 std::string formatSinglePlacement(const FullMovePossibility &possibility,
                                   const unsigned int board[20], const Piece *piece, int level,
                                   int lines, bool pushDown) {
-  const PrecomputePossibility placement =
-      toPrecomputePossibility(possibility, /* existingRotation= */ 0, INITIAL_X, piece->initialY,
-                              numOrientationsOf(piece));
+  const PrecomputePossibility placement = toPrecomputePossibility(
+      possibility, /* existingRotation= */ 0, INITIAL_X, piece->initialY, numOrientationsOf(piece));
   return formatPieceLine(placement, pushDown, board, piece, level, lines);
 }
 
@@ -444,8 +444,9 @@ PrecomputeState preparePrecomputeState(GameState gameState, const Piece *curPiec
   // Step 1: the current piece's placements, with the mid-air snapshots.
   std::vector<FullMovePossibility> initialResults;
   std::vector<AdjTimeSimStateSlot> captures;
-  fullMoveSearch(gameState, curPiece, inputFrameTimeline, dasCharge, /* trackInputSequences= */ true,
-                 initialResults, FullMoveSearchContext(), reactionTime, &captures);
+  fullMoveSearch(gameState, curPiece, inputFrameTimeline, dasCharge,
+                 /* trackInputSequences= */ true, initialResults, FullMoveSearchContext(),
+                 reactionTime, &captures);
   if (initialResults.empty()) {
     // No legal placement: the state keeps no phantoms and the lock lookups do
     // not run at all; the collapse responds "none".
@@ -469,9 +470,8 @@ PrecomputeState preparePrecomputeState(GameState gameState, const Piece *curPiec
     std::vector<PrecomputePossibility> initialPlacements;
     initialPlacements.reserve(initialResults.size());
     for (const FullMovePossibility &result : initialResults) {
-      initialPlacements.push_back(
-          toPrecomputePossibility(result, /* existingRotation= */ 0, INITIAL_X, curPiece->initialY,
-                                  numOrientations));
+      initialPlacements.push_back(toPrecomputePossibility(
+          result, /* existingRotation= */ 0, INITIAL_X, curPiece->initialY, numOrientations));
     }
 
     // Fewest inputs first; ties keep the search order.
@@ -526,7 +526,8 @@ PrecomputeState preparePrecomputeState(GameState gameState, const Piece *curPiec
     phantom.possibleAdjustments.reserve(adjustmentResults.size());
     for (const FullMovePossibility &result : adjustmentResults) {
       phantom.possibleAdjustments.push_back(toPrecomputePossibility(
-          result, phantom.adjustmentCtx.existingRotation, INITIAL_X + phantom.adjustmentCtx.existingXOffset,
+          result, phantom.adjustmentCtx.existingRotation,
+          INITIAL_X + phantom.adjustmentCtx.existingXOffset,
           curPiece->initialY + phantom.adjustmentCtx.existingYOffset, numOrientations));
     }
   }
@@ -568,9 +569,9 @@ PrecomputeState preparePrecomputeState(GameState gameState, const Piece *curPiec
       roundCopyMap(maps.minPenalty, state.minPenalties[i]);
       roundCopyMap(maps.lockValue, state.lockValues[i]);
     } else {
-      roundCopyMap(getLockValueLookupMappedWithFirstMoves(
-                       firstMoves, nextPiece, pruningBreadth, playoutCount, playoutLength,
-                       evalContext, pieceRangeContextLookup, lookupBudgetPtr),
+      roundCopyMap(getLockValueLookupMappedWithFirstMoves(firstMoves, nextPiece, pruningBreadth,
+                                                          playoutCount, playoutLength, evalContext,
+                                                          pieceRangeContextLookup, lookupBudgetPtr),
                    state.lockValues[i]);
     }
   };
@@ -666,9 +667,8 @@ std::string collapseAndFormatPrecompute(const PrecomputeState &state, const unsi
     const double phantomValue = totalValue / 7;
     // A tie keeps the earlier phantom.
     if (phantomValue > bestPhantomValue) {
-      overallResponse =
-          formatPrecomputeResult(phantom, bestPerPiece, state.reactionTime, pushDown, board, piece,
-                                 level, lines);
+      overallResponse = formatPrecomputeResult(phantom, bestPerPiece, state.reactionTime, pushDown,
+                                               board, piece, level, lines);
       bestPhantomValue = phantomValue;
     }
   }
@@ -700,8 +700,9 @@ std::string runPrecomputeBackup(GameState gameState, const Piece *curPiece,
   // Step 1 of the precompute pipeline only: the current piece's placements
   // with their input sequences.
   std::vector<FullMovePossibility> results;
-  fullMoveSearch(gameState, curPiece, inputFrameTimeline, dasCharge, /* trackInputSequences= */ true,
-                 results, FullMoveSearchContext(), reactionTime, /* adjTimeCaptures= */ NULL);
+  fullMoveSearch(gameState, curPiece, inputFrameTimeline, dasCharge,
+                 /* trackInputSequences= */ true, results, FullMoveSearchContext(), reactionTime,
+                 /* adjTimeCaptures= */ NULL);
   if (results.empty()) {
     return "none";
   }
@@ -714,8 +715,12 @@ std::string runPrecomputeBackup(GameState gameState, const Piece *curPiece,
   const FullMovePossibility *winner = &results[0];
   float bestScore = FLOAT_MIN;
   for (const FullMovePossibility &result : results) {
-    const LockPlacement placement = {result.x, result.y, result.rotationIndex,
-                                     /* tuckFrame= */ -1, result.tuckInput, curPiece};
+    const LockPlacement placement = {result.x,
+                                     result.y,
+                                     result.rotationIndex,
+                                     /* tuckFrame= */ -1,
+                                     result.tuckInput,
+                                     curPiece};
     const GameState resultingState = advanceGameState(gameState, placement, evalContext);
     const float score =
         fastEval(gameState, resultingState, placement, evalContext, /* outExplanation= */ NULL);

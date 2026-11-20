@@ -59,8 +59,11 @@ struct FuzzEntry {
   }
 
   bool operator==(const FuzzEntry &o) const {
-    return rot == o.rot && x == o.x && y == o.y && dasChargeAfter == o.dasChargeAfter &&
-           inputCostX10 == o.inputCostX10;
+    return rot == o.rot
+           && x == o.x
+           && y == o.y
+           && dasChargeAfter == o.dasChargeAfter
+           && inputCostX10 == o.inputCostX10;
   }
 };
 
@@ -154,8 +157,7 @@ static std::string fuzzEntryStr(const FuzzEntry &e) {
 // human-readable report (empty string if identical), showing the first
 // mismatching index with its neighborhood.
 static std::string diffEntriesInOrder(const std::vector<FuzzEntry> &expected,
-                                      const std::vector<FuzzEntry> &actual,
-                                      int context) {
+                                      const std::vector<FuzzEntry> &actual, int context) {
   if (expected == actual) {
     return "";
   }
@@ -167,17 +169,26 @@ static std::string diffEntriesInOrder(const std::vector<FuzzEntry> &expected,
     if (eOk && aOk && expected[i] == actual[i]) {
       continue;
     }
-    ss << "    first order mismatch at index " << i << " (expected "
-       << expected.size() << " entries, actual " << actual.size() << "):\n";
+    ss
+        << "    first order mismatch at index "
+        << i
+        << " (expected "
+        << expected.size()
+        << " entries, actual "
+        << actual.size()
+        << "):\n";
     for (long j = (long)i - context; j <= (long)i + context; j++) {
       if (j < 0 || j >= (long)n) {
         continue;
       }
-      ss << "      [" << j << "] expected: "
-         << (j < (long)expected.size() ? fuzzEntryStr(expected[j]) : "<none>")
-         << " | actual: "
-         << (j < (long)actual.size() ? fuzzEntryStr(actual[j]) : "<none>")
-         << "\n";
+      ss
+          << "      ["
+          << j
+          << "] expected: "
+          << (j < (long)expected.size() ? fuzzEntryStr(expected[j]) : "<none>")
+          << " | actual: "
+          << (j < (long)actual.size() ? fuzzEntryStr(actual[j]) : "<none>")
+          << "\n";
     }
     break;
   }
@@ -261,9 +272,8 @@ TEST_CASE("Move search fuzz: tap-mode fixtures match the golden") {
     // fastMoveSearch intentionally does not model, so those fixtures are
     // skipped here (asserted via the fullMoveSearch tap-path test below and
     // `npm run fuzz_verify_sequences`).
-    const bool hasSpinEntries =
-        std::any_of(expected.begin(), expected.end(),
-                    [](const FuzzEntry &e) { return e.inputCostX10 != 0; });
+    const bool hasSpinEntries = std::any_of(expected.begin(), expected.end(),
+                                            [](const FuzzEntry &e) { return e.inputCostX10 != 0; });
     if (hasSpinEntries) {
       skippedSpinCoverage++;
       continue;
@@ -387,9 +397,7 @@ TEST_CASE("Move search fuzz: DAS fixtures match the golden") {
     }
   }
 
-  MESSAGE("DAS-mode fuzz: "
-          << dasCount
-          << " fixtures asserted (full rot/x/y/charge/cost match)");
+  MESSAGE("DAS-mode fuzz: " << dasCount << " fixtures asserted (full rot/x/y/charge/cost match)");
   REQUIRE_MESSAGE(failures == 0, "DAS-mode fuzz: "
                                      << failures
                                      << "/"
@@ -438,7 +446,8 @@ TEST_CASE("Move search fuzz: adjustment fixtures match the golden (mid-air entry
     std::vector<FuzzEntry> actual;
     actual.reserve(results.size());
     for (const FullMovePossibility &p : results) {
-      actual.push_back({p.rotationIndex, p.x, p.y, p.dasChargeAfter, inputCostX10ForChar(p.tuckInput)});
+      actual.push_back(
+          {p.rotationIndex, p.x, p.y, p.dasChargeAfter, inputCostX10ForChar(p.tuckInput)});
     }
     std::vector<FuzzEntry> expected = expectedAdjustmentEntries(f);
     std::string diff = diffEntriesInOrder(expected, actual, /*context=*/2);
@@ -446,15 +455,41 @@ TEST_CASE("Move search fuzz: adjustment fixtures match the golden (mid-air entry
       failures++;
       if (failures <= 200) {
         std::ostringstream adjDesc;
-        adjDesc << "fixture #" << i << " piece=" << piece->id << " level=" << f.level
-                << " timeline=" << FIXTURE_TIMELINE_POOL[f.timelineIdx] << " dasCharge=" << f.dasCharge
-                << " frames=" << f.framesAlreadyElapsed << " xOffset=" << f.existingXOffset
-                << " yOffset=" << f.existingYOffset << " rot=" << f.existingRotation
-                << " arrContinued=" << f.isArrContinued << " held=" << f.dasButtonHeld
-                << " preAdj=" << FIXTURE_PREFIX_POOL[f.preAdjSeqIdx];
-        report << "  MISMATCH " << adjDesc.str() << " (expected " << expected.size()
-               << " entries, got " << actual.size() << ")\n"
-               << diff << "\n";
+        adjDesc
+            << "fixture #"
+            << i
+            << " piece="
+            << piece->id
+            << " level="
+            << f.level
+            << " timeline="
+            << FIXTURE_TIMELINE_POOL[f.timelineIdx]
+            << " dasCharge="
+            << f.dasCharge
+            << " frames="
+            << f.framesAlreadyElapsed
+            << " xOffset="
+            << f.existingXOffset
+            << " yOffset="
+            << f.existingYOffset
+            << " rot="
+            << f.existingRotation
+            << " arrContinued="
+            << f.isArrContinued
+            << " held="
+            << f.dasButtonHeld
+            << " preAdj="
+            << FIXTURE_PREFIX_POOL[f.preAdjSeqIdx];
+        report
+            << "  MISMATCH "
+            << adjDesc.str()
+            << " (expected "
+            << expected.size()
+            << " entries, got "
+            << actual.size()
+            << ")\n"
+            << diff
+            << "\n";
       }
     }
   }
@@ -504,16 +539,33 @@ TEST_CASE("Move search fuzz: reaction-time fixtures match the golden (adjTimeSim
 
     const int entryCount = f.entryCount;
     std::ostringstream desc;
-    desc << "fixture #" << i << " piece=" << piece->id << " level=" << f.level
-         << " timeline=" << FIXTURE_TIMELINE_POOL[f.timelineIdx] << " dasCharge=" << f.dasCharge
-         << " reactionTime=" << f.reactionTime;
+    desc
+        << "fixture #"
+        << i
+        << " piece="
+        << piece->id
+        << " level="
+        << f.level
+        << " timeline="
+        << FIXTURE_TIMELINE_POOL[f.timelineIdx]
+        << " dasCharge="
+        << f.dasCharge
+        << " reactionTime="
+        << f.reactionTime;
 
     if ((int)results.size() != entryCount || (int)captures.size() != entryCount) {
       failures++;
       if (failures <= 200) {
-        report << "  MISMATCH " << desc.str() << " (expected " << entryCount
-               << " entries, got results=" << results.size()
-               << " captures=" << captures.size() << ")\n";
+        report
+            << "  MISMATCH "
+            << desc.str()
+            << " (expected "
+            << entryCount
+            << " entries, got results="
+            << results.size()
+            << " captures="
+            << captures.size()
+            << ")\n";
       }
       continue;
     }
@@ -526,46 +578,90 @@ TEST_CASE("Move search fuzz: reaction-time fixtures match the golden (adjTimeSim
       const FixtureAdjTimeCapture &ec = REACTION_TIME_CAPTURE_POOL[f.captureOffset + j];
       const AdjTimeSimStateSlot &ac = captures[j];
       const bool captureMatch =
-          (ec.hasCapture != 0) == ac.hasCapture &&
-          (!ac.hasCapture ||
-           (ac.capture.frameIndex == ec.frameIndex && ac.capture.x == ec.x &&
-            ac.capture.y == ec.y && ac.capture.rotationIndex == ec.rotationIndex &&
-            ac.capture.dasCharge == ec.dasCharge && ac.capture.isArrContinued == (ec.isArrContinued != 0) &&
-            ac.capture.dasButtonHeld == ec.dasButtonHeld &&
-            ac.capture.preAdjInputSequence == FIXTURE_RT_PREFIX_POOL[ec.preAdjSeqIdx]));
-      if ((expected.rot != actual.rot || expected.x != actual.x || expected.y != actual.y ||
-           expected.dasChargeAfter != actual.dasChargeAfter ||
-           expected.inputCostX10 != actual.inputCostX10) ||
-          !captureMatch) {
+          (ec.hasCapture != 0) == ac.hasCapture
+          && (!ac.hasCapture
+              || (ac.capture.frameIndex == ec.frameIndex
+                  && ac.capture.x == ec.x
+                  && ac.capture.y == ec.y
+                  && ac.capture.rotationIndex == ec.rotationIndex
+                  && ac.capture.dasCharge == ec.dasCharge
+                  && ac.capture.isArrContinued == (ec.isArrContinued != 0)
+                  && ac.capture.dasButtonHeld == ec.dasButtonHeld
+                  && ac.capture.preAdjInputSequence == FIXTURE_RT_PREFIX_POOL[ec.preAdjSeqIdx]));
+      if ((expected.rot != actual.rot
+           || expected.x != actual.x
+           || expected.y != actual.y
+           || expected.dasChargeAfter != actual.dasChargeAfter
+           || expected.inputCostX10 != actual.inputCostX10)
+          || !captureMatch) {
         failures++;
         if (failures <= 200) {
-          report << "  MISMATCH " << desc.str() << " entry " << j << "\n"
-                 << "    expected: rot=" << expected.rot << " x=" << expected.x
-                 << " y=" << expected.y << " charge=" << expected.dasChargeAfter
-                 << " cost=" << expected.inputCostX10 << " hasCapture=" << (ec.hasCapture != 0)
-                 << (ec.hasCapture ? " f=" + std::to_string(ec.frameIndex)
-                                         + " x=" + std::to_string(ec.x)
-                                         + " y=" + std::to_string(ec.y)
-                                         + " rot=" + std::to_string(ec.rotationIndex)
-                                         + " c=" + std::to_string(ec.dasCharge)
-                                         + " arr=" + std::to_string(ec.isArrContinued)
-                                         + " held=" + std::to_string(ec.dasButtonHeld)
-                                         + " pre=" + FIXTURE_RT_PREFIX_POOL[ec.preAdjSeqIdx]
-                                       : "")
-                 << "\n"
-                 << "    actual  : rot=" << actual.rot << " x=" << actual.x << " y=" << actual.y
-                 << " charge=" << actual.dasChargeAfter << " cost=" << actual.inputCostX10
-                 << " hasCapture=" << ac.hasCapture
-                 << (ac.hasCapture ? " f=" + std::to_string(ac.capture.frameIndex)
-                                         + " x=" + std::to_string(ac.capture.x)
-                                         + " y=" + std::to_string(ac.capture.y)
-                                         + " rot=" + std::to_string(ac.capture.rotationIndex)
-                                         + " c=" + std::to_string(ac.capture.dasCharge)
-                                         + " arr=" + std::to_string(ac.capture.isArrContinued)
-                                         + " held=" + std::to_string(ac.capture.dasButtonHeld)
-                                         + " pre=" + ac.capture.preAdjInputSequence
-                                       : "")
-                 << "\n";
+          report
+              << "  MISMATCH "
+              << desc.str()
+              << " entry "
+              << j
+              << "\n"
+              << "    expected: rot="
+              << expected.rot
+              << " x="
+              << expected.x
+              << " y="
+              << expected.y
+              << " charge="
+              << expected.dasChargeAfter
+              << " cost="
+              << expected.inputCostX10
+              << " hasCapture="
+              << (ec.hasCapture != 0)
+              << (ec.hasCapture ? " f="
+                                      + std::to_string(ec.frameIndex)
+                                      + " x="
+                                      + std::to_string(ec.x)
+                                      + " y="
+                                      + std::to_string(ec.y)
+                                      + " rot="
+                                      + std::to_string(ec.rotationIndex)
+                                      + " c="
+                                      + std::to_string(ec.dasCharge)
+                                      + " arr="
+                                      + std::to_string(ec.isArrContinued)
+                                      + " held="
+                                      + std::to_string(ec.dasButtonHeld)
+                                      + " pre="
+                                      + FIXTURE_RT_PREFIX_POOL[ec.preAdjSeqIdx]
+                                : "")
+              << "\n"
+              << "    actual  : rot="
+              << actual.rot
+              << " x="
+              << actual.x
+              << " y="
+              << actual.y
+              << " charge="
+              << actual.dasChargeAfter
+              << " cost="
+              << actual.inputCostX10
+              << " hasCapture="
+              << ac.hasCapture
+              << (ac.hasCapture ? " f="
+                                      + std::to_string(ac.capture.frameIndex)
+                                      + " x="
+                                      + std::to_string(ac.capture.x)
+                                      + " y="
+                                      + std::to_string(ac.capture.y)
+                                      + " rot="
+                                      + std::to_string(ac.capture.rotationIndex)
+                                      + " c="
+                                      + std::to_string(ac.capture.dasCharge)
+                                      + " arr="
+                                      + std::to_string(ac.capture.isArrContinued)
+                                      + " held="
+                                      + std::to_string(ac.capture.dasButtonHeld)
+                                      + " pre="
+                                      + ac.capture.preAdjInputSequence
+                                : "")
+              << "\n";
         }
         break; // one report line per fixture is enough
       }

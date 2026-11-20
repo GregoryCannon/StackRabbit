@@ -66,7 +66,9 @@ uint64_t hashGameState(const GameState &gs) {
 }
 
 bool gameStateEquals(const GameState &a, const GameState &b) {
-  return a.lines == b.lines && a.level == b.level && a.numTrueHoles == b.numTrueHoles
+  return a.lines == b.lines
+         && a.level == b.level
+         && a.numTrueHoles == b.numTrueHoles
          && a.numPartialHoles == b.numPartialHoles
          && memcmp(a.board, b.board, sizeof(a.board)) == 0
          && memcmp(a.surfaceArray, b.surfaceArray, sizeof(a.surfaceArray)) == 0;
@@ -621,10 +623,9 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
         continue;
       }
       for (auto &cont : candidate.conts) {
-        r2MovesRun += playTournamentSamples(cont, n2, samplesSoFar, playoutLength,
-                                            pieceRangeContextLookup, secondPieceIndex,
-                                            evalContext->aggressionLevel, evalContext->aiMode,
-                                            budget.cancelFlag);
+        r2MovesRun += playTournamentSamples(
+            cont, n2, samplesSoFar, playoutLength, pieceRangeContextLookup, secondPieceIndex,
+            evalContext->aggressionLevel, evalContext->aiMode, budget.cancelFlag);
       }
     }
     if (isTimed) {
@@ -730,10 +731,10 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
         int contIdx = finalistBestContIndices[f];
         TMT_TRACE("TRACE: R3 chunk playing %s cont=%s\n", candidate.key.c_str(),
                   candidate.conts[contIdx].contKey.c_str());
-        chunkMovesRun += playTournamentSamples(
-            candidate.conts[contIdx], chunkSize, samplesSoFar, playoutLength,
-            pieceRangeContextLookup, secondPieceIndex, evalContext->aggressionLevel,
-            evalContext->aiMode, budget.cancelFlag);
+        chunkMovesRun += playTournamentSamples(candidate.conts[contIdx], chunkSize, samplesSoFar,
+                                               playoutLength, pieceRangeContextLookup,
+                                               secondPieceIndex, evalContext->aggressionLevel,
+                                               evalContext->aiMode, budget.cancelFlag);
       }
       lastChunkMs = msBetween(chunkStart, SteadyClock::now());
       playoutMsAccum += lastChunkMs;
@@ -761,8 +762,7 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
                   candidate.conts[contIdx].contKey.c_str());
         playTournamentSamples(candidate.conts[contIdx], n3, samplesSoFar, playoutLength,
                               pieceRangeContextLookup, secondPieceIndex,
-                              evalContext->aggressionLevel, evalContext->aiMode,
-                              budget.cancelFlag);
+                              evalContext->aggressionLevel, evalContext->aiMode, budget.cancelFlag);
         if (TMT_LOGGING_ENABLED) {
           logTournamentCont("R3", candidate.key, candidate.conts[contIdx], n1 + n2);
         }
@@ -798,7 +798,8 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
       const float lcbPenalty =
           n < 2 ? 0.0f : (2.0f + 4.5f / (n - 1)) * getTournamentContStandardError(cont);
       const auto it = stateEstimates.find(&cont.resultingState);
-      if (it == stateEstimates.end() || n > it->second.count
+      if (it == stateEstimates.end()
+          || n > it->second.count
           || (n == it->second.count
               && (mean - lcbPenalty) > (it->second.mean - it->second.lcbPenalty))) {
         stateEstimates[&cont.resultingState] = {n, mean, lcbPenalty};

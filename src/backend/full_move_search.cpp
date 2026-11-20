@@ -238,7 +238,7 @@ static char dasFindWallCharge(unsigned int board[20], const Piece *piece, int x,
  * and requires re-baselining the golden fixtures (pinned by the backup tests).
  */
 static int placePieceAndClearLines(unsigned int board[20], const Piece *piece, int rotationIndex,
-                                      int x, int y) {
+                                   int x, int y) {
   unsigned int temp[20];
   memcpy(temp, board, sizeof(temp));
   for (int r = 0; r < 4; r++) {
@@ -330,8 +330,7 @@ tryPlacement(unsigned int board[20], const Piece *piece, int goalRotationIndex, 
 
   // Adjustments never get the '_' hold-through-ARE marker: holdDASduringARE
   // requires a non-adjustment context.
-  const bool holdDASduringARE =
-      useDAS && !ctx.isAdjustment && !dasWillReset && goalOffsetX != 0;
+  const bool holdDASduringARE = useDAS && !ctx.isAdjustment && !dasWillReset && goalOffsetX != 0;
 
   FullSimState<TrackSeq> simState;
   simState.x = initialX;
@@ -446,8 +445,7 @@ tryPlacement(unsigned int board[20], const Piece *piece, int goalRotationIndex, 
     // registered on this frame and later carry its arena index (earlier ones
     // register without one).
     if (TrackSeq && simState.frameIndex == reactionTime && !lockAfterThisFrame) {
-      simState.adjCaptureIdx =
-          saveAdjTimeState(simState, !arrFrameVoluntarilyMissed, captureArena);
+      simState.adjCaptureIdx = saveAdjTimeState(simState, !arrFrameVoluntarilyMissed, captureArena);
     }
 
     const bool foundPlacement = simState.rotationIndex == goalRotationIndex && simState.x == goalX;
@@ -819,7 +817,7 @@ static void dedupeLockPossibilities(OUT std::vector<FullMovePossibility> &possib
 
 /** Side-channel slot for one result from its walk-capture arena index. */
 static AdjTimeSimStateSlot captureSlot(int adjCaptureIdx,
-                                            const std::vector<AdjTimeSimState> &captureArena) {
+                                       const std::vector<AdjTimeSimState> &captureArena) {
   AdjTimeSimStateSlot slot;
   slot.hasCapture = adjCaptureIdx >= 0;
   slot.capture = adjCaptureIdx >= 0 ? captureArena[adjCaptureIdx] : AdjTimeSimState();
@@ -858,10 +856,10 @@ fullMoveSearchImpl(GameState &gameState, const Piece *piece, char const *inputFr
   // them is per goal-shift direction below. On the spawn path
   // (isAdjustment = false) this reduces to "DAS mode with incoming charge <= 5
   // and the goal requires movement".
-  const bool dasWillResetLeft = (useDAS && dasCharge <= 5)
-                                || (ctx.isAdjustment && ctx.dasButtonHeld != DAS_BUTTON_LEFT);
-  const bool dasWillResetRight = (useDAS && dasCharge <= 5)
-                                 || (ctx.isAdjustment && ctx.dasButtonHeld != DAS_BUTTON_RIGHT);
+  const bool dasWillResetLeft =
+      (useDAS && dasCharge <= 5) || (ctx.isAdjustment && ctx.dasButtonHeld != DAS_BUTTON_LEFT);
+  const bool dasWillResetRight =
+      (useDAS && dasCharge <= 5) || (ctx.isAdjustment && ctx.dasButtonHeld != DAS_BUTTON_RIGHT);
 
   // Phase A: per-goal frame simulation. Each walk appends at most one capture
   // to the arena; kept first/last states reference it by index.

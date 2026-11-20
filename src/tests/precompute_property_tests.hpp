@@ -80,7 +80,8 @@ static std::string makePrecomputePipe(const std::string &board, int level, int l
              .withAggression("safe")
              .withDasCharge(dasCharge)
              .build()
-         + std::to_string(reactionTime) + "|";
+         + std::to_string(reactionTime)
+         + "|";
 }
 
 /** The game state and request fields one test case runs under. */
@@ -148,18 +149,18 @@ static PreparedFixture prepareFixtureFromPipe(const std::string &pipe) {
   prepared.reactionTime = reactionTime;
   prepared.dasCharge = dasCharge;
   prepared.curPieceIdx = curPieceIdx;
-  prepared.state = preparePrecomputeState(
-      gameState, &PIECE_LIST[curPieceIdx], fields[5].c_str(), dasCharge, reactionTime,
-      atoi(fields[8].c_str()), atoi(fields[6].c_str()), atoi(fields[7].c_str()), &evalContext,
-      pieceRangeContextLookup);
+  prepared.state =
+      preparePrecomputeState(gameState, &PIECE_LIST[curPieceIdx], fields[5].c_str(), dasCharge,
+                             reactionTime, atoi(fields[8].c_str()), atoi(fields[6].c_str()),
+                             atoi(fields[7].c_str()), &evalContext, pieceRangeContextLookup);
   return prepared;
 }
 
 static std::string collapseFixture(const PreparedFixture &prepared, const PrecomputeState &state) {
   unsigned int board[20];
   encodeBoard(prepared.boardStr.c_str(), board);
-  return collapseAndFormatPrecompute(state, board, &PIECE_LIST[prepared.curPieceIdx], prepared.level,
-                                     prepared.lines, SHOULD_PUSHDOWN);
+  return collapseAndFormatPrecompute(state, board, &PIECE_LIST[prepared.curPieceIdx],
+                                     prepared.level, prepared.lines, SHOULD_PUSHDOWN);
 }
 
 // --- independent recomputation ------------------------------------------
@@ -195,13 +196,13 @@ static std::vector<double> recomputedPhantomTotals(const PrecomputeState &state,
         const std::string key =
             encodeLockCell(phantom.initial.rot, phantom.initial.x, phantom.initial.y);
         const PrecomputeValueMap &map = state.lockValues[i];
-        const double lock = map.find(key) == map.end()
-                                ? std::numeric_limits<double>::quiet_NaN()
-                                : map.at(key);
-        const double value = lock + inputCostX10ForChar(phantom.initial.tuckInput) / 10.0
-                             + recomputedDasPenalty(state.useDAS, phantom.initial.dasChargeAfter,
-                                                    key, state.partialPenalties[i],
-                                                    state.minPenalties[i]);
+        const double lock =
+            map.find(key) == map.end() ? std::numeric_limits<double>::quiet_NaN() : map.at(key);
+        const double value =
+            lock
+            + inputCostX10ForChar(phantom.initial.tuckInput) / 10.0
+            + recomputedDasPenalty(state.useDAS, phantom.initial.dasChargeAfter, key,
+                                   state.partialPenalties[i], state.minPenalties[i]);
         const double term = value * pieceProbability(curPiece, &PIECE_LIST[i]);
         totalValue += term;
       }
@@ -213,11 +214,11 @@ static std::vector<double> recomputedPhantomTotals(const PrecomputeState &state,
           if (state.lockValues[i].find(key) == state.lockValues[i].end()) {
             continue;
           }
-          const double value = state.lockValues[i].at(key)
-                               + adjustmentInputCost(adjustment, phantom, state.reactionTime)
-                               + recomputedDasPenalty(state.useDAS, adjustment.dasChargeAfter, key,
-                                                      state.partialPenalties[i],
-                                                      state.minPenalties[i]);
+          const double value =
+              state.lockValues[i].at(key)
+              + adjustmentInputCost(adjustment, phantom, state.reactionTime)
+              + recomputedDasPenalty(state.useDAS, adjustment.dasChargeAfter, key,
+                                     state.partialPenalties[i], state.minPenalties[i]);
           // equal value keeps the later adjustment, mirroring the collapse
           if (value >= maxValue) {
             maxValue = value;
@@ -318,7 +319,8 @@ TEST_CASE("precompute pipeline invariants hold across all structural regimes") {
        makePrecomputePipe(makeEmptyBoard(), 18, 0, IDX_I, "X.....", 0, 0, 20,
                           /* dasCharge= */ -1, /* reactionTime= */ 0)},
       // 4. Per-piece "continue" fallback: 16-high well board locks at frame 9
-      //    (< reactionTime=12), while the full sequence (with lock/ARE frames) extends past reactionTime=12.
+      //    (< reactionTime=12), while the full sequence (with lock/ARE frames) extends past
+      //    reactionTime=12.
       {"per_piece_continue_fallback", EXPECT_PER_PIECE_CONTINUE,
        makePrecomputePipe(makeWellBoard(16, 16, 9), 18, 0, IDX_O, "X.....", 0, 0, 20,
                           /* dasCharge= */ -1, /* reactionTime= */ 12)},
@@ -431,8 +433,7 @@ TEST_CASE("precompute pipeline invariants hold across all structural regimes") {
           break;
         }
       }
-      const bool expectedMarker =
-          winningPhantom.possibleAdjustments.empty() || !anyAdjustmentHit;
+      const bool expectedMarker = winningPhantom.possibleAdjustments.empty() || !anyAdjustmentHit;
       if (expectedMarker) {
         CHECK(marker);
         if (marker) {

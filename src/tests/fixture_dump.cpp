@@ -118,8 +118,8 @@ static void dumpReactionTimeFixture(int idx) {
                  &captures);
 
   char detail[96];
-  snprintf(detail, sizeof(detail), "L%d %s c%d rt%d", f.level,
-           FIXTURE_TIMELINE_POOL[f.timelineIdx], f.dasCharge, f.reactionTime);
+  snprintf(detail, sizeof(detail), "L%d %s c%d rt%d", f.level, FIXTURE_TIMELINE_POOL[f.timelineIdx],
+           f.dasCharge, f.reactionTime);
   printf("reactiontime %d (%c %s) n=%d\n", idx, piece->id, detail, (int)results.size());
   for (size_t i = 0; i < results.size(); i++) {
     const FullMovePossibility &p = results[i];

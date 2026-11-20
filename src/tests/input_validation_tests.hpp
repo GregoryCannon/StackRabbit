@@ -26,17 +26,17 @@ TEST_CASE("Out-of-range piece indices are rejected for every request type") {
 
 TEST_CASE("Engine-level range limits apply to every request type") {
   auto lowLevel = InputBuilder().withLevel(17).build();
-  CHECK(runRequest(GET_MOVE, lowLevel) ==
-        "Error: currently only 18, 19, and 29 starts are supported by StackRabbit. Requested: 17");
+  CHECK(
+      runRequest(GET_MOVE, lowLevel)
+      == "Error: currently only 18, 19, and 29 starts are supported by StackRabbit. Requested: 17");
   auto badLength = InputBuilder().withPlayoutLength(21).build();
-  CHECK(runRequest(GET_MOVE, badLength) ==
-        "Error: invalid playout length (max is 20): 21");
+  CHECK(runRequest(GET_MOVE, badLength) == "Error: invalid playout length (max is 20): 21");
   auto badCharge = InputBuilder().withDasCharge(17).build();
-  CHECK(runRequest(GET_MOVE, badCharge) ==
-        "Error: illegal DAS charge (expected -1 for tap mode, or 0-16): 17");
+  CHECK(runRequest(GET_MOVE, badCharge)
+        == "Error: illegal DAS charge (expected -1 for tap mode, or 0-16): 17");
   auto badBreadth = InputBuilder().withPruningBreadth(1157).build();
-  CHECK(runRequest(GET_MOVE, badBreadth) ==
-        "Error: invalid pruning breadth (max is 1156, or 34x34): 1157");
+  CHECK(runRequest(GET_MOVE, badBreadth)
+        == "Error: invalid pruning breadth (max is 1156, or 34x34): 1157");
   auto tooLowBreadth = InputBuilder().withPruningBreadth(-3).build();
   CHECK(runRequest(GET_MOVE, tooLowBreadth)
         == "Error: invalid pruning breadth (expected -2, -1, or 0-1156): -3");

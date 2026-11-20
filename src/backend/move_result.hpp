@@ -3,7 +3,8 @@
 
 #include "types.hpp"
 
-std::pair<int, float> getNewSurfaceAndNumNewHoles(const int surfaceArray[10], unsigned int board[20],
+std::pair<int, float> getNewSurfaceAndNumNewHoles(const int surfaceArray[10],
+                                                  unsigned int board[20],
                                                   const LockPlacement &lockPlacement,
                                                   const EvalContext *evalContext, int isTuck,
                                                   OUT int newSurface[10]);

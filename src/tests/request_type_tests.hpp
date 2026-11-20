@@ -177,9 +177,9 @@ TEST_CASE("GET_LOCK_VALUE_LOOKUP_DAS penalties never reward losing DAS (regressi
   // endpoint-level assertion below is <= 0 either way.
   auto input = InputBuilder()
                    .withBoard1("00000000000000000000000000000000000000000000000000"
-                       "00000000000000000000000000000000000000000000000000"
-                       "00000000000000001000100001110010000111001000011100"
-                       "10111111001111111110111111111011111111101111111110")
+                               "00000000000000000000000000000000000000000000000000"
+                               "00000000000000001000100001110010000111001000011100"
+                               "10111111001111111110111111111011111111101111111110")
                    .withLevel(19)
                    .withLines(22)
                    .withCurPiece(IDX_J)
@@ -221,9 +221,9 @@ TEST_CASE("GET_LOCK_VALUE_LOOKUP_DAS clamps out-of-scope maneuver deltas to zero
   // (an earlier fail-fast guard threw here).
   auto input = InputBuilder()
                    .withBoard1("00000000000000000000000000000000000000000000000000"
-                       "00000000000000000000000000000000000000000000000000"
-                       "00000000000000000000100000000010000000001010010000"
-                       "11111110001111111110111111111011111111101111111110")
+                               "00000000000000000000000000000000000000000000000000"
+                               "00000000000000000000100000000010000000001010010000"
+                               "11111110001111111110111111111011111111101111111110")
                    .withLevel(19)
                    .withLines(6)
                    .withCurPiece(IDX_S)
@@ -261,7 +261,8 @@ TEST_CASE("thirdPieceDasPenalty scales linearly below 15 and caps at charge 5") 
   CHECK(thirdPieceDasPenalty(16) == doctest::Approx(0.0f));
 }
 
-TEST_CASE("getLockValueLookupDasMaps penalizes third-piece DAS loss without mutating shallow lockValue") {
+TEST_CASE(
+    "getLockValueLookupDasMaps penalizes third-piece DAS loss without mutating shallow lockValue") {
   // On a tall level-19 stack, a flat-dropped O leaves an open board where an O next piece
   // wants to drop near spawn or shift once; starting piece 2 at partial/min charge lowers
   // piece 2's ending DAS charge (penalizing piece 3) even when the same cell is reachable,
@@ -282,9 +283,9 @@ TEST_CASE("getLockValueLookupDasMaps penalizes third-piece DAS loss without muta
   const EvalContext ctx = getEvalContext(g, contexts, /* useTestWeights= */ false, SAFE);
   const Piece *O = &PIECE_LIST[IDX_O];
 
-  const DasLockValueMaps maps = getLockValueLookupDasMaps(
-      g, O, O, /* pruningBreadth= */ 20, /* playoutCount= */ 0, /* playoutLength= */ 0, "X..",
-      &ctx, contexts);
+  const DasLockValueMaps maps =
+      getLockValueLookupDasMaps(g, O, O, /* pruningBreadth= */ 20, /* playoutCount= */ 0,
+                                /* playoutLength= */ 0, "X..", &ctx, contexts);
 
   // Verify shallow maps.lockValue equals unpenalized full-charge searchDepth2 max eval.
   std::vector<Possibility> rawFull;
@@ -600,9 +601,9 @@ static BackupProbe probeStateFrom(const std::string &boardStr, int level, int li
   probe.gameState.level = level;
   probe.gameState.lines = lines;
   getSurfaceArray(probe.gameState.board, probe.gameState.surfaceArray);
-  std::pair<int, float> holes = updateSurfaceAndHoles(probe.gameState.surfaceArray,
-                                                      probe.gameState.board,
-                                                      /* wellColumn= */ 9, /* isDigMode= */ false);
+  std::pair<int, float> holes =
+      updateSurfaceAndHoles(probe.gameState.surfaceArray, probe.gameState.board,
+                            /* wellColumn= */ 9, /* isDigMode= */ false);
   probe.gameState.numTrueHoles = holes.first;
   probe.gameState.numPartialHoles = holes.second;
   PieceRangeContext contexts[4] = {
@@ -617,8 +618,8 @@ static BackupProbe probeStateFrom(const std::string &boardStr, int level, int li
   } else if (aggression == "hyper") {
     aggressionLevel = HYPER;
   }
-  probe.evalContext = getEvalContext(probe.gameState, contexts, /* useTestWeights= */ false,
-                                     aggressionLevel);
+  probe.evalContext =
+      getEvalContext(probe.gameState, contexts, /* useTestWeights= */ false, aggressionLevel);
   std::pair<int, float> holes2 =
       updateSurfaceAndHoles(probe.gameState.surfaceArray, probe.gameState.board,
                             probe.evalContext.countWellHoles ? -1 : probe.evalContext.wellColumn,
@@ -640,8 +641,8 @@ static int backupSelectionIndex(const BackupProbe &probe, const Piece *curPiece,
   float bestScore = FLOAT_MIN;
   for (size_t i = 0; i < results.size(); i++) {
     const FullMovePossibility &result = results[i];
-    LockPlacement placement = {result.x, result.y, result.rotationIndex, -1, result.tuckInput,
-                               curPiece};
+    LockPlacement placement = {result.x, result.y,         result.rotationIndex,
+                               -1,       result.tuckInput, curPiece};
     GameState resultingState = advanceGameState(probe.gameState, placement, &probe.evalContext);
     float score = fastEval(probe.gameState, resultingState, placement, &probe.evalContext, nullptr);
     if (score > bestScore) {
@@ -660,7 +661,8 @@ static std::string defaultLineHead(const std::string &response) {
   return response.substr(0, lineEnd);
 }
 
-TEST_CASE("PRECOMPUTE_BACKUP returns the exact backup response for the obvious well-fill placement") {
+TEST_CASE(
+    "PRECOMPUTE_BACKUP returns the exact backup response for the obvious well-fill placement") {
   // A 4-high stack with a 4-deep well at column 9, I piece, tap mode: the only
   // placement that clears lines is the vertical I into the well, which clears
   // all four rows and leaves an empty board -- unambiguously the best placement.
@@ -682,16 +684,21 @@ TEST_CASE("PRECOMPUTE_BACKUP returns the exact backup response for the obvious w
   std::string expected = "Default:1,4,18|"
                          // The full input sequence (999 = no slicing): the rotate/shift
                          // inputs, then the search's fall/lock/wait notation.
-                         "I.R.R.R" + std::string(50, '.') + "*****" + std::string(17, '^') + "*****"
-                         + "~~|" + std::string(200, '0') // the well fill clears the whole board
+                         "I.R.R.R"
+                         + std::string(50, '.')
+                         + "*****"
+                         + std::string(17, '^')
+                         + "*****"
+                         + "~~|"
+                         + std::string(200, '0') // the well fill clears the whole board
                          + "|18|4|-1"
-                         "\nI:continue"
-                         "\nO:continue"
-                         "\nL:continue"
-                         "\nJ:continue"
-                         "\nT:continue"
-                         "\nS:continue"
-                         "\nZ:continue";
+                           "\nI:continue"
+                           "\nO:continue"
+                           "\nL:continue"
+                           "\nJ:continue"
+                           "\nT:continue"
+                           "\nS:continue"
+                           "\nZ:continue";
   std::string output = runRequest(PRECOMPUTE_BACKUP, input);
   CHECK(output == expected);
   // Deterministic: the same request answers the same bytes.
@@ -803,9 +810,16 @@ TEST_CASE("PRECOMPUTE_BACKUP breaks exact eval ties by keeping the first result 
   // pre-existing full bottom row burns: the piece's row shifts down into row
   // 19 and the line count rises to 1.
   std::string head = defaultLineHead(runRequest(PRECOMPUTE_BACKUP, input));
-  CHECK(head == "Default:0,-1,18|" + std::string("L") + std::string(56, '.')
-                     + std::string(5, '*') + std::string(17, '^') + std::string(5, '*') + "~~|"
-                     + std::string(190, '0') + "0011110000|18|1|-1");
+  CHECK(head
+        == "Default:0,-1,18|"
+               + std::string("L")
+               + std::string(56, '.')
+               + std::string(5, '*')
+               + std::string(17, '^')
+               + std::string(5, '*')
+               + "~~|"
+               + std::string(190, '0')
+               + "0011110000|18|1|-1");
 }
 
 TEST_CASE("PRECOMPUTE_BACKUP returns exactly none when the piece has no legal placement") {
@@ -886,8 +900,8 @@ TEST_CASE("PRECOMPUTE_BACKUP's 999 reaction time puts the full sequence in the D
     const FullMovePossibility &best = results[backupSelectionIndex(probe, curPiece, results)];
 
     std::string defaultLine = defaultLineHead(runRequest(PRECOMPUTE_BACKUP, dasInput));
-    std::string expectedLine = "Default:1,4,18|" + best.inputSequence + "~~|" + std::string(200, '0')
-                               + "|18|4|16";
+    std::string expectedLine =
+        "Default:1,4,18|" + best.inputSequence + "~~|" + std::string(200, '0') + "|18|4|16";
     CHECK(defaultLine == expectedLine);
     CHECK(countOccurrences(defaultLine, "~~") == 1);
     // The hold branch is genuinely exercised: the sequence holds through ARE.
@@ -1059,7 +1073,8 @@ TEST_CASE("playSequence preserves originalAiMode weights across mid-playout mode
     seq[0] = IDX_O;
     seq[1] = IDX_O;
 
-    // Trace the 2-ply playout manually to verify ply 0 enters DIG and compute the true STANDARD leaf eval.
+    // Trace the 2-ply playout manually to verify ply 0 enters DIG and compute the true STANDARD
+    // leaf eval.
     std::vector<LockPlacement> locks0;
     fastMoveSearch(g, &PIECE_LIST[seq[0]], initialCtx.pieceRangeContext.inputFrameTimeline, locks0);
     REQUIRE(!locks0.empty());
@@ -1073,7 +1088,8 @@ TEST_CASE("playSequence preserves originalAiMode weights across mid-playout mode
     const EvalContext ply1Ctx = getEvalContext(after0, contexts, /* useTestWeights= */ false, SAFE);
     REQUIRE(ply1Ctx.aiMode == DIG);
     std::vector<LockPlacement> locks1;
-    fastMoveSearch(after0, &PIECE_LIST[seq[1]], ply1Ctx.pieceRangeContext.inputFrameTimeline, locks1);
+    fastMoveSearch(after0, &PIECE_LIST[seq[1]], ply1Ctx.pieceRangeContext.inputFrameTimeline,
+                   locks1);
     REQUIRE(!locks1.empty());
     LockPlacement best1 = pickLockPlacement(after0, &ply1Ctx, locks1);
 
@@ -1094,7 +1110,8 @@ TEST_CASE("playSequence preserves originalAiMode weights across mid-playout mode
   SUBCASE("DIG playout that clears its hole mid-playout still uses DIG weights at leaf") {
     // Row 19 has a hole at col 0 under a 1-cell roof at (row 18, col 0), with cols 4-7 empty in
     // row 18 and a tall stack in col 8 (height 11). Dropping a horizontal I into cols 4-7 of row 18
-    // clears row 18, removing the roof over col 0 so numTrueHoles becomes 0 (STANDARD mode) on ply 1.
+    // clears row 18, removing the roof over col 0 so numTrueHoles becomes 0 (STANDARD mode) on
+    // ply 1.
     GameState g = {};
     g.level = 18;
     g.lines = 0;
@@ -1136,7 +1153,8 @@ TEST_CASE("playSequence preserves originalAiMode weights across mid-playout mode
     const EvalContext ply1Ctx = getEvalContext(after0, contexts, /* useTestWeights= */ false, SAFE);
     REQUIRE(ply1Ctx.aiMode == STANDARD);
     std::vector<LockPlacement> locks1;
-    fastMoveSearch(after0, &PIECE_LIST[seq[1]], ply1Ctx.pieceRangeContext.inputFrameTimeline, locks1);
+    fastMoveSearch(after0, &PIECE_LIST[seq[1]], ply1Ctx.pieceRangeContext.inputFrameTimeline,
+                   locks1);
     REQUIRE(!locks1.empty());
     LockPlacement best1 = pickLockPlacement(after0, &ply1Ctx, locks1);
 
@@ -1164,7 +1182,8 @@ TEST_CASE("playSequence preserves originalAiMode weights across mid-playout mode
     CHECK(scoreFromPostRootMove == doctest::Approx(expectedDigEval));
   }
 
-  SUBCASE("Pre-killscreen playout stops immediately upon reaching Level 29 LINEOUT and evaluates in Level 28 context") {
+  SUBCASE("Pre-killscreen playout stops immediately upon reaching Level 29 LINEOUT and evaluates "
+          "in Level 28 context") {
     // At level 28, lines = 226, a 4-deep right well with height 10 on cols 0..8 is Tetris-ready.
     // Dropping a vertical I into col 9 on ply 0 clears 4 lines (226 -> 230, advancing to level 29
     // LINEOUT). Even when playoutLength = 6, playSequence must terminate immediately after ply 0
@@ -1252,10 +1271,12 @@ TEST_CASE("playSequence preserves originalAiMode weights across mid-playout mode
 
     // Compare a candidate placement that keeps the board clean and Tetris-ready vs a candidate
     // placement that creates a hole over the well to enter DIG mode.
-    LockPlacement cleanPlacement = {/* x= */ 0, /* y= */ 10, /* rotationIndex= */ 0,
-                                    /* tuckFrame= */ -1, NO_TUCK_NOTATION, &PIECE_LIST[IDX_O]};
-    LockPlacement holePlacement = {/* x= */ 7, /* y= */ 10, /* rotationIndex= */ 2,
-                                   /* tuckFrame= */ -1, NO_TUCK_NOTATION, &PIECE_LIST[IDX_L]};
+    LockPlacement cleanPlacement = {
+        /* x= */ 0,          /* y= */ 10,      /* rotationIndex= */ 0,
+        /* tuckFrame= */ -1, NO_TUCK_NOTATION, &PIECE_LIST[IDX_O]};
+    LockPlacement holePlacement = {
+        /* x= */ 7,          /* y= */ 10,      /* rotationIndex= */ 2,
+        /* tuckFrame= */ -1, NO_TUCK_NOTATION, &PIECE_LIST[IDX_L]};
     GameState cleanState = advanceGameState(g, cleanPlacement, &ctx);
     GameState holeState = advanceGameState(g, holePlacement, &ctx);
     REQUIRE(cleanState.numTrueHoles == 0);
@@ -1516,11 +1537,10 @@ TEST_CASE("tournament transposition check prevents deferred I -> I from beating 
   // col 0) while the col-7 candidate deepened (col 7, Tetris) and outscored it. Reconciling
   // sampled resultingStates at publish time gives (Tetris, col 7) the deeper (col 7, Tetris)
   // estimate plus its higher immediateReward.
-  const std::string board =
-      "00000000000000000000000000000000000000000000000000"
-      "00000000000000000000000000000000000000000000000000"
-      "00000000000000000000000001000011001110001111111000"
-      "11111110001111111110111111111011111111101111111110";
+  const std::string board = "00000000000000000000000000000000000000000000000000"
+                            "00000000000000000000000000000000000000000000000000"
+                            "00000000000000000000000001000011001110001111111000"
+                            "11111110001111111110111111111011111111101111111110";
   REQUIRE(board.size() == 200);
 
   auto checkITakesTetris = [&](const std::string &out) {

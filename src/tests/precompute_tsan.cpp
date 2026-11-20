@@ -115,8 +115,9 @@ int main(int argc, char **argv) {
   // budget to ensure the timed tournament rounds actually run on all 7 threads.
   bool timedOk = false;
   if (firstDasPipe.empty()) {
-    fprintf(stderr,
-            "precompute_tsan: no non-'none' DAS fixture found in dump to derive timed -2 request\n");
+    fprintf(
+        stderr,
+        "precompute_tsan: no non-'none' DAS fixture found in dump to derive timed -2 request\n");
   } else {
     const std::string timedPipe = buildTimedDasPipe(firstDasPipe, /* budgetMs= */ 150);
     if (timedPipe.empty()) {

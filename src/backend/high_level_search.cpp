@@ -78,10 +78,9 @@ FirstMoveSearchResult buildFirstMoveBranches(const GameState &gameState, const P
     if (SHOULD_PLAY_PERFECT && ((afterFirstMove.lines - gameState.lines) % 4) != 0) {
       return; // While playing perfect, ignore any placements that burn lines
     }
-    float firstMoveReward =
-        getLineClearFactor(afterFirstMove.lines - gameState.lines, evalContext->weights,
-                           evalContext->shouldRewardLineClears, gameState.lines,
-                           evalContext->lineoutAt29);
+    float firstMoveReward = getLineClearFactor(
+        afterFirstMove.lines - gameState.lines, evalContext->weights,
+        evalContext->shouldRewardLineClears, gameState.lines, evalContext->lineoutAt29);
     float firstMoveTiebreak = 0.0f;
     if (!SHOULD_PLAY_PERFECT) {
       float firstMoveEval = fastEval(gameState, afterFirstMove, firstPlacement, evalContext,
@@ -189,10 +188,9 @@ static int searchDepth2FromFirstMoves(const FirstMoveSearchResult &firstMoves,
       float evalScore =
           firstMoveReward
           + fastEval(afterFirstMove, resultingState, secondPlacement, evalContext, explanationPtr);
-      float secondMoveReward =
-          getLineClearFactor(resultingState.lines - afterFirstMove.lines, evalContext->weights,
-                             evalContext->shouldRewardLineClears, afterFirstMove.lines,
-                             evalContext->lineoutAt29);
+      float secondMoveReward = getLineClearFactor(
+          resultingState.lines - afterFirstMove.lines, evalContext->weights,
+          evalContext->shouldRewardLineClears, afterFirstMove.lines, evalContext->lineoutAt29);
 
       possibilities.push_back(
           {{firstPlacement.x, firstPlacement.y, firstPlacement.rotationIndex},
@@ -334,12 +332,11 @@ LockLocation playOneMove(GameState gameState, const Piece *firstPiece, const Pie
       break;
     }
     Possibility const &possibility = *possibilityPtr;
-    float overallScore =
-        possibility.immediateReward
-        + getPlayoutScore(possibility.resultingState, playoutCount, playoutLength,
-                          pieceRangeContextLookup, lastSeenPiece->index,
-                          evalContext->aggressionLevel, evalContext->aiMode,
-                          /* playoutDataList */ NULL);
+    float overallScore = possibility.immediateReward
+                         + getPlayoutScore(possibility.resultingState, playoutCount, playoutLength,
+                                           pieceRangeContextLookup, lastSeenPiece->index,
+                                           evalContext->aggressionLevel, evalContext->aiMode,
+                                           /* playoutDataList */ NULL);
 
     maybePrint("Possibility %d %d has overallscore %f %f\n",
                possibility.firstPlacement.rotationIndex, possibility.firstPlacement.x - 3,

@@ -1,18 +1,20 @@
 //
 //  generate_oracle.cpp
-//  Generates the benchmark oracle: for each position in src/benchmark/data/hard_benchmark_positions.jsonl, runs
-//  a depth-2 search over all (first, second) placement pairs, then rates every pair with
-//  a two-round playout budget (1000 playouts for all pairs, 7000 more for the top 10% by
-//  round-1 rating), and writes the pooled mean / standard error / n per pair to
-//  src/benchmark/data/oracle_positions.jsonl. See oracle_format.md for the file spec.
+//  Generates the benchmark oracle: for each position in
+//  src/benchmark/data/hard_benchmark_positions.jsonl, runs a depth-2 search over all (first,
+//  second) placement pairs, then rates every pair with a two-round playout budget (1000 playouts
+//  for all pairs, 7000 more for the top 10% by round-1 rating), and writes the pooled mean /
+//  standard error / n per pair to src/benchmark/data/oracle_positions.jsonl. See oracle_format.md
+//  for the file spec.
 //
 //  Build and run (from repo root):
 //    g++ -O2 src/benchmark/generate_oracle.cpp -o build/generate_oracle && ./build/generate_oracle
 //    [startPos] [endPos]
 //
-//  Position range is inclusive and 1-based (line numbers in src/benchmark/data/hard_benchmark_positions.jsonl).
-//  Results are appended to the oracle file, so ranges can be generated incrementally;
-//  the header is written only when the file doesn't exist yet.
+//  Position range is inclusive and 1-based (line numbers in
+//  src/benchmark/data/hard_benchmark_positions.jsonl). Results are appended to the oracle file, so
+//  ranges can be generated incrementally; the header is written only when the file doesn't exist
+//  yet.
 //
 
 #include "../backend/main.cpp"

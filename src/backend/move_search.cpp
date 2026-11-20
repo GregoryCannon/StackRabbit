@@ -185,9 +185,10 @@ int exploreHorizontally(const unsigned int board[20], SimState simState, int shi
  * Explores for moves with more rotations than shifts (the only blind spot of the default
  * exploration behavior).
  */
-void explorePlacementsNearSpawn(const unsigned int board[20], SimState simState, int goalRotationIndex,
-                                char const *inputFrameTimeline, int timelineLen, int gravity,
-                                bool gravityDoubled, LegalPlacementsList &legalPlacements) {
+void explorePlacementsNearSpawn(const unsigned int board[20], SimState simState,
+                                int goalRotationIndex, char const *inputFrameTimeline,
+                                int timelineLen, int gravity, bool gravityDoubled,
+                                LegalPlacementsList &legalPlacements) {
   int rotationDifference = abs(goalRotationIndex - simState.rotationIndex);
   /* The goal placement is in the blind spot of the main algorithm if there are more rotations than
    shifts. Therefore, for double rotations, the X could be anywhere from -1 to 1. For single
@@ -330,7 +331,8 @@ void findTucks(const unsigned int board[20], const Piece *piece, int availableTu
               lockPieceY++;
             }
 
-            // pieceX = overhangX (0..9) - spot.x (0..3), ranging from -3 to 9. Offset by +3 to map [-3, 9] to [0, 12].
+            // pieceX = overhangX (0..9) - spot.x (0..3), ranging from -3 to 9. Offset by +3 to map
+            // [-3, 9] to [0, 12].
             int xIdx = pieceX + 3;
             if (lockPieceY >= 0 && lockPieceY < 25 && xIdx >= 0 && xIdx < 16) {
               if (!seenTuckSpots[lockPieceY][xIdx][spot.orientation]) {

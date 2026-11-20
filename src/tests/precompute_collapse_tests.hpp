@@ -59,8 +59,9 @@ static PrecomputePhantom defaultBranchPhantom(const PrecomputePossibility &initi
   return phantom;
 }
 
-static PrecomputePhantom adjustmentBranchPhantom(
-    const PrecomputePossibility &initial, const std::vector<PrecomputePossibility> &adjustments) {
+static PrecomputePhantom
+adjustmentBranchPhantom(const PrecomputePossibility &initial,
+                        const std::vector<PrecomputePossibility> &adjustments) {
   PrecomputePhantom phantom;
   phantom.hasInitialPlacement = true;
   phantom.initial = initial;
@@ -189,14 +190,12 @@ TEST_CASE("collapse keeps the first phantom on an exact value tie (fusion guard)
   // therefore load-bearing and pinned here permanently. The values differ
   // on pieces L, S and Z, so the phantoms' per-piece terms are different
   // multisets, not mirror images.
-  static const double LOCK_VALUES_A[7] = {1.4573946109665386, 1.3365907603007052,
-                                          1.7297523944846018, 1.7634263285605516,
-                                          1.7227518561075703, 1.741593702393514,
-                                          1.3504765583646701};
-  static const double LOCK_VALUES_B[7] = {1.4573946109665386, 1.3365907603007052,
-                                          1.7297523944846096, 1.7634263285605516,
-                                          1.7227518561075703, 1.7415937023935171,
-                                          1.3504765583646623};
+  static const double LOCK_VALUES_A[7] = {
+      1.4573946109665386, 1.3365907603007052, 1.7297523944846018, 1.7634263285605516,
+      1.7227518561075703, 1.741593702393514,  1.3504765583646701};
+  static const double LOCK_VALUES_B[7] = {
+      1.4573946109665386, 1.3365907603007052, 1.7297523944846096, 1.7634263285605516,
+      1.7227518561075703, 1.7415937023935171, 1.3504765583646623};
   CHECK(LOCK_VALUES_A[2] != LOCK_VALUES_B[2]);
   CHECK(LOCK_VALUES_A[5] != LOCK_VALUES_B[5]);
   CHECK(LOCK_VALUES_A[6] != LOCK_VALUES_B[6]);
@@ -237,24 +236,30 @@ TEST_CASE("adjustment tie-break resolves equal values toward the later adjustmen
   // Both adjustments lock the same cell with equal cost and charge, so their
   // values tie exactly; the value >= maxValue comparison keeps scanning and
   // the later adjustment wins.
-  PrecomputeState state = collapseState(
-      {adjustmentBranchPhantom(oPlacement(4, "RRRRRRRR", '.', -1, 0),
-                               {oPlacement(4, "abc", '.', -1, 0), oPlacement(4, "xyz", '.', -1, 0)})},
-      /* useDAS= */ false, /* reactionTime= */ 8);
+  PrecomputeState state =
+      collapseState({adjustmentBranchPhantom(
+                        oPlacement(4, "RRRRRRRR", '.', -1, 0),
+                        {oPlacement(4, "abc", '.', -1, 0), oPlacement(4, "xyz", '.', -1, 0)})},
+                    /* useDAS= */ false, /* reactionTime= */ 8);
   putLockValueEverywhere(state, encodeLockCell(0, 4, 17), 5.0);
-  const std::string expected = "Default:0,1,18|RRRRRRRR~~|" + boardOAt(4) + "|18|0|-1"
+  const std::string expected = "Default:0,1,18|RRRRRRRR~~|"
+                               + boardOAt(4)
+                               + "|18|0|-1"
                                + sevenPieceContent("0,1,18|xyz|" + boardOAt(4) + "|18|0|-1");
   CHECK(runCollapse(state) == expected);
 }
 
 TEST_CASE("adjustment selection keeps the earlier adjustment when strictly better") {
-  PrecomputeState state = collapseState(
-      {adjustmentBranchPhantom(oPlacement(4, "RRRRRRRR", '.', -1, 0),
-                               {oPlacement(4, "abc", '.', -1, 0), oPlacement(2, "xyz", '.', -1, 0)})},
-      /* useDAS= */ false, /* reactionTime= */ 8);
+  PrecomputeState state =
+      collapseState({adjustmentBranchPhantom(
+                        oPlacement(4, "RRRRRRRR", '.', -1, 0),
+                        {oPlacement(4, "abc", '.', -1, 0), oPlacement(2, "xyz", '.', -1, 0)})},
+                    /* useDAS= */ false, /* reactionTime= */ 8);
   putLockValueEverywhere(state, encodeLockCell(0, 4, 17), 10.0);
   putLockValueEverywhere(state, encodeLockCell(0, 2, 17), 5.0);
-  const std::string expected = "Default:0,1,18|RRRRRRRR~~|" + boardOAt(4) + "|18|0|-1"
+  const std::string expected = "Default:0,1,18|RRRRRRRR~~|"
+                               + boardOAt(4)
+                               + "|18|0|-1"
                                + sevenPieceContent("0,1,18|abc|" + boardOAt(4) + "|18|0|-1");
   CHECK(runCollapse(state) == expected);
 }
@@ -335,18 +340,18 @@ TEST_CASE("default line slices the input sequence at the reaction time") {
     // The quirk: "none" substitutes for the empty sequence BEFORE slicing,
     // so the four-character substitute is sliced at the reaction time and
     // the line reads "none~~" regardless of the reaction time (4 here).
-    PrecomputeState state = collapseState(
-        {defaultBranchPhantom(oPlacement(4, "", '.', -1, 0))}, /* useDAS= */ false,
-        /* reactionTime= */ 4);
+    PrecomputeState state =
+        collapseState({defaultBranchPhantom(oPlacement(4, "", '.', -1, 0))}, /* useDAS= */ false,
+                      /* reactionTime= */ 4);
     putLockValueEverywhere(state, encodeLockCell(0, 4, 17), 10.0);
     const std::string expected =
         "Default:0,1,18|none~~|" + boardOAt(4) + "|18|0|-1" + sevenPieceMarkers("none");
     CHECK(runCollapse(state) == expected);
   }
   SUBCASE("sequence shorter than the reaction time is clamped to its length") {
-    PrecomputeState state = collapseState(
-        {defaultBranchPhantom(oPlacement(4, "RR", '.', -1, 0))}, /* useDAS= */ false,
-        /* reactionTime= */ 8);
+    PrecomputeState state =
+        collapseState({defaultBranchPhantom(oPlacement(4, "RR", '.', -1, 0))}, /* useDAS= */ false,
+                      /* reactionTime= */ 8);
     putLockValueEverywhere(state, encodeLockCell(0, 4, 17), 10.0);
     const std::string expected =
         "Default:0,1,18|RR~~|" + boardOAt(4) + "|18|0|-1" + sevenPieceMarkers("none");
@@ -368,31 +373,37 @@ TEST_CASE("pushDownSequence rewrites the pre-lock sequence with D fills") {
 }
 
 TEST_CASE("pushdown applies to piece lines only when enabled and the level stays 18") {
-  PrecomputeState state = collapseState(
-      {adjustmentBranchPhantom(oPlacement(4, "RRRRRRRR", '.', -1, 0),
-                               {oPlacement(4, "RR.*", '.', -1, 0)})},
-      /* useDAS= */ false, /* reactionTime= */ 8);
+  PrecomputeState state =
+      collapseState({adjustmentBranchPhantom(oPlacement(4, "RRRRRRRR", '.', -1, 0),
+                                             {oPlacement(4, "RR.*", '.', -1, 0)})},
+                    /* useDAS= */ false, /* reactionTime= */ 8);
   putLockValueEverywhere(state, encodeLockCell(0, 4, 17), 5.0);
 
   SUBCASE("enabled at level 18") {
-    const std::string expected = "Default:0,1,18|RRRRRRRR~~|" + boardOAt(4) + "|18|0|-1"
+    const std::string expected = "Default:0,1,18|RRRRRRRR~~|"
+                                 + boardOAt(4)
+                                 + "|18|0|-1"
                                  + sevenPieceContent("0,1,18|RRDDD|" + boardOAt(4) + "|18|0|-1");
     CHECK(runCollapse(state, &PIECE_LIST[IDX_O], 18, 0, /* pushDown= */ true) == expected);
   }
   SUBCASE("disabled keeps the raw sequence") {
-    const std::string expected = "Default:0,1,18|RRRRRRRR~~|" + boardOAt(4) + "|18|0|-1"
+    const std::string expected = "Default:0,1,18|RRRRRRRR~~|"
+                                 + boardOAt(4)
+                                 + "|18|0|-1"
                                  + sevenPieceContent("0,1,18|RR.*|" + boardOAt(4) + "|18|0|-1");
     CHECK(runCollapse(state, &PIECE_LIST[IDX_O], 18, 0, /* pushDown= */ false) == expected);
   }
   SUBCASE("level leaving 18 after the placement disables the rewrite") {
     // lines=126 + 4 clears reaches level 19, so the flag alone is not
     // enough; the default line keeps the raw sequence either way.
-    PrecomputeState cleared = collapseState(
-        {adjustmentBranchPhantom(oPlacement(4, "RRRRRRRR", '.', -1, 0),
-                                 {oPlacement(4, "RR.*", 0, -1, 4)})},
-        /* useDAS= */ false, /* reactionTime= */ 8);
+    PrecomputeState cleared =
+        collapseState({adjustmentBranchPhantom(oPlacement(4, "RRRRRRRR", '.', -1, 0),
+                                               {oPlacement(4, "RR.*", 0, -1, 4)})},
+                      /* useDAS= */ false, /* reactionTime= */ 8);
     putLockValueEverywhere(cleared, encodeLockCell(0, 4, 17), 5.0);
-    const std::string expected = "Default:0,1,18|RRRRRRRR~~|" + boardOAt(4) + "|18|126|-1"
+    const std::string expected = "Default:0,1,18|RRRRRRRR~~|"
+                                 + boardOAt(4)
+                                 + "|18|126|-1"
                                  + sevenPieceContent("0,1,18|RR.*|" + boardOAt(4) + "|19|130|-1");
     CHECK(runCollapse(cleared, &PIECE_LIST[IDX_O], 18, 126, /* pushDown= */ true) == expected);
   }
@@ -427,9 +438,11 @@ TEST_CASE("level and lines fields cross the transition thresholds") {
       char defaultTail[32];
       snprintf(defaultTail, sizeof(defaultTail), "|%d|%d|-1", testCase.levelAfter,
                testCase.lines + 4);
-      const std::string expected = "Default:0,1,18|RRRRRRRR~~|" + boardOAt(4) + defaultTail
-                                   + sevenPieceContent(
-                                       std::string("0,1,18|....|") + boardOAt(4) + defaultTail);
+      const std::string expected =
+          "Default:0,1,18|RRRRRRRR~~|"
+          + boardOAt(4)
+          + defaultTail
+          + sevenPieceContent(std::string("0,1,18|....|") + boardOAt(4) + defaultTail);
       CHECK(runCollapse(state, &PIECE_LIST[IDX_O], testCase.level, testCase.lines) == expected);
     }
   }
@@ -441,7 +454,9 @@ TEST_CASE("level and lines fields cross the transition thresholds") {
                                                {oPlacement(4, "....", '.', -1, 0)})},
                       /* useDAS= */ false, /* reactionTime= */ 8);
     putLockValueEverywhere(state, encodeLockCell(0, 4, 17), 5.0);
-    const std::string expected = "Default:0,1,18|RRRRRRRR~~|" + boardOAt(4) + "|18|126|-1"
+    const std::string expected = "Default:0,1,18|RRRRRRRR~~|"
+                                 + boardOAt(4)
+                                 + "|18|126|-1"
                                  + sevenPieceContent("0,1,18|....|" + boardOAt(4) + "|18|126|-1");
     CHECK(runCollapse(state, &PIECE_LIST[IDX_O], 18, 126) == expected);
   }
@@ -462,8 +477,8 @@ TEST_CASE("probability weighting can reverse the raw per-piece value order") {
   putLockValueOnPiece(state, IDX_T, encodeLockCell(0, 4, 17), 100.0);
   putLockValueOnPiece(state, IDX_Z, encodeLockCell(0, 2, 17), 118.0);
   // B's T value stays 0.0: a present zero, not a missing key.
-  const std::string expected = "Default:1,-1,18|BBBBBBBB~~|" + boardT2() + "|18|0|-1"
-                               + sevenPieceMarkers("none");
+  const std::string expected =
+      "Default:1,-1,18|BBBBBBBB~~|" + boardT2() + "|18|0|-1" + sevenPieceMarkers("none");
   CHECK(runCollapse(state, &PIECE_LIST[IDX_T]) == expected);
 }
 
@@ -475,15 +490,18 @@ TEST_CASE("DAS penalty rules choose between zero, the partial map and the min ma
     // X: charge 5 at a cell whose maps would penalise; Y: charge 9. In tap
     // mode both penalties vanish, X wins (10 > 9.5); if the tap-mode guard
     // ever leaked, X's -2 penalty would hand the win to Y.
-    PrecomputeState state = collapseState(
-        {adjustmentBranchPhantom(oPlacement(4, "RRRRRRRR", '.', -1, 0),
-                                 {oPlacement(4, "....", '.', 5, 0), oPlacement(6, "..", '.', 9, 0)})},
-        /* useDAS= */ false, /* reactionTime= */ 8);
+    PrecomputeState state =
+        collapseState({adjustmentBranchPhantom(
+                          oPlacement(4, "RRRRRRRR", '.', -1, 0),
+                          {oPlacement(4, "....", '.', 5, 0), oPlacement(6, "..", '.', 9, 0)})},
+                      /* useDAS= */ false, /* reactionTime= */ 8);
     putLockValueEverywhere(state, encodeLockCell(0, 4, 17), 10.0);
     putLockValueEverywhere(state, encodeLockCell(0, 6, 17), 9.5);
     putPenaltiesEverywhere(state, encodeLockCell(0, 4, 17), -2.0, -2.0);
     putPenaltiesEverywhere(state, encodeLockCell(0, 6, 17), -2.0, -2.0);
-    const std::string expected = "Default:0,1,18|RRRRRRRR~~|" + boardOAt(4) + "|18|0|-1"
+    const std::string expected = "Default:0,1,18|RRRRRRRR~~|"
+                                 + boardOAt(4)
+                                 + "|18|0|-1"
                                  + sevenPieceContent("0,1,18|....|" + boardOAt(4) + "|18|0|5");
     CHECK(runCollapse(state) == expected);
   }
@@ -491,17 +509,19 @@ TEST_CASE("DAS penalty rules choose between zero, the partial map and the min ma
     // KA would suffer -3.5 from either map if the charge exemption were
     // broken, which would hand the win to KB (9.5 - 2.0 = 7.5).
     for (int exemptCharge = 15; exemptCharge <= 16; exemptCharge++) {
-      PrecomputeState state = collapseState(
-          {adjustmentBranchPhantom(
-              oPlacement(4, "RRRRRRRR", '.', -1, 0),
-              {oPlacement(2, "..", '.', 9, 0), oPlacement(4, "....", 0, exemptCharge, 0)})},
-          /* useDAS= */ true, /* reactionTime= */ 8);
+      PrecomputeState state =
+          collapseState({adjustmentBranchPhantom(oPlacement(4, "RRRRRRRR", '.', -1, 0),
+                                                 {oPlacement(2, "..", '.', 9, 0),
+                                                  oPlacement(4, "....", 0, exemptCharge, 0)})},
+                        /* useDAS= */ true, /* reactionTime= */ 8);
       putLockValueEverywhere(state, encodeLockCell(0, 4, 17), 10.0);
       putLockValueEverywhere(state, encodeLockCell(0, 2, 17), 9.5);
       putPenaltiesEverywhere(state, encodeLockCell(0, 4, 17), -3.5, -3.5);
       putPenaltiesEverywhere(state, encodeLockCell(0, 2, 17), -2.0, -2.0);
       const std::string tail = "|18|0|" + std::to_string(exemptCharge);
-      const std::string expected = "Default:0,1,18|RRRRRRRR~~|" + boardOAt(4) + "|18|0|-1"
+      const std::string expected = "Default:0,1,18|RRRRRRRR~~|"
+                                   + boardOAt(4)
+                                   + "|18|0|-1"
                                    + sevenPieceContent("0,1,18|....|" + boardOAt(4) + tail);
       CHECK(runCollapse(state) == expected);
     }
@@ -510,30 +530,36 @@ TEST_CASE("DAS penalty rules choose between zero, the partial map and the min ma
     // KP's partial penalty (-3.5) is harsher than its min penalty (-0.5), so
     // the charge-14 adjustment loses to the charge-5 one exactly when the
     // partial map is consulted; reading the min map instead would flip it.
-    PrecomputeState state = collapseState(
-        {adjustmentBranchPhantom(oPlacement(4, "RRRRRRRR", '.', -1, 0),
-                                 {oPlacement(4, "....", '.', 14, 0), oPlacement(2, "..", '.', 5, 0)})},
-        /* useDAS= */ true, /* reactionTime= */ 8);
+    PrecomputeState state =
+        collapseState({adjustmentBranchPhantom(
+                          oPlacement(4, "RRRRRRRR", '.', -1, 0),
+                          {oPlacement(4, "....", '.', 14, 0), oPlacement(2, "..", '.', 5, 0)})},
+                      /* useDAS= */ true, /* reactionTime= */ 8);
     putLockValueEverywhere(state, encodeLockCell(0, 4, 17), 10.0);
     putLockValueEverywhere(state, encodeLockCell(0, 2, 17), 10.0);
     putPenaltiesEverywhere(state, encodeLockCell(0, 4, 17), -3.5, -0.5);
     putPenaltiesEverywhere(state, encodeLockCell(0, 2, 17), -2.0, -1.0);
-    const std::string expected = "Default:0,1,18|RRRRRRRR~~|" + boardOAt(4) + "|18|0|-1"
+    const std::string expected = "Default:0,1,18|RRRRRRRR~~|"
+                                 + boardOAt(4)
+                                 + "|18|0|-1"
                                  + sevenPieceContent("0,-1,18|..|" + boardOAt(2) + "|18|0|5");
     CHECK(runCollapse(state) == expected);
   }
   SUBCASE("charges below 10 read the min map") {
     // Mirror of the section above: the charge-9 adjustment must enjoy KP's
     // mild min penalty (-0.5), not its partial penalty (-3.5).
-    PrecomputeState state = collapseState(
-        {adjustmentBranchPhantom(oPlacement(4, "RRRRRRRR", '.', -1, 0),
-                                 {oPlacement(4, "....", '.', 9, 0), oPlacement(2, "..", '.', 14, 0)})},
-        /* useDAS= */ true, /* reactionTime= */ 8);
+    PrecomputeState state =
+        collapseState({adjustmentBranchPhantom(
+                          oPlacement(4, "RRRRRRRR", '.', -1, 0),
+                          {oPlacement(4, "....", '.', 9, 0), oPlacement(2, "..", '.', 14, 0)})},
+                      /* useDAS= */ true, /* reactionTime= */ 8);
     putLockValueEverywhere(state, encodeLockCell(0, 4, 17), 10.0);
     putLockValueEverywhere(state, encodeLockCell(0, 2, 17), 10.0);
     putPenaltiesEverywhere(state, encodeLockCell(0, 4, 17), -3.5, -0.5);
     putPenaltiesEverywhere(state, encodeLockCell(0, 2, 17), -2.0, -1.0);
-    const std::string expected = "Default:0,1,18|RRRRRRRR~~|" + boardOAt(4) + "|18|0|-1"
+    const std::string expected = "Default:0,1,18|RRRRRRRR~~|"
+                                 + boardOAt(4)
+                                 + "|18|0|-1"
                                  + sevenPieceContent("0,1,18|....|" + boardOAt(4) + "|18|0|9");
     CHECK(runCollapse(state) == expected);
   }
@@ -541,15 +567,18 @@ TEST_CASE("DAS penalty rules choose between zero, the partial map and the min ma
     // KM has a brutal min penalty but no partial entry: the guard must treat
     // the penalty as zero (KM wins by its raw 10.0), not fall back to the
     // min map (which would score 1.0 and lose to KN's 7.5).
-    PrecomputeState state = collapseState(
-        {adjustmentBranchPhantom(oPlacement(4, "RRRRRRRR", '.', -1, 0),
-                                 {oPlacement(4, "....", '.', 5, 0), oPlacement(6, "..", '.', 5, 0)})},
-        /* useDAS= */ true, /* reactionTime= */ 8);
+    PrecomputeState state =
+        collapseState({adjustmentBranchPhantom(
+                          oPlacement(4, "RRRRRRRR", '.', -1, 0),
+                          {oPlacement(4, "....", '.', 5, 0), oPlacement(6, "..", '.', 5, 0)})},
+                      /* useDAS= */ true, /* reactionTime= */ 8);
     putLockValueEverywhere(state, encodeLockCell(0, 4, 17), 10.0);
     putLockValueEverywhere(state, encodeLockCell(0, 6, 17), 9.5);
     putMinPenaltyEverywhere(state, encodeLockCell(0, 4, 17), -9.0);
     putPenaltiesEverywhere(state, encodeLockCell(0, 6, 17), -3.5, -2.0);
-    const std::string expected = "Default:0,1,18|RRRRRRRR~~|" + boardOAt(4) + "|18|0|-1"
+    const std::string expected = "Default:0,1,18|RRRRRRRR~~|"
+                                 + boardOAt(4)
+                                 + "|18|0|-1"
                                  + sevenPieceContent("0,1,18|....|" + boardOAt(4) + "|18|0|5");
     CHECK(runCollapse(state) == expected);
   }
@@ -557,15 +586,18 @@ TEST_CASE("DAS penalty rules choose between zero, the partial map and the min ma
     // KO has a mild partial entry but no min entry: the guard must zero the
     // penalty (KO's raw 8.0 beats KN's 9.9 - 2.0 = 7.9); a partial-map
     // fallback would score 7.6 and lose.
-    PrecomputeState state = collapseState(
-        {adjustmentBranchPhantom(oPlacement(4, "RRRRRRRR", '.', -1, 0),
-                                 {oPlacement(2, "..", '.', 5, 0), oPlacement(6, "....", '.', 5, 0)})},
-        /* useDAS= */ true, /* reactionTime= */ 8);
+    PrecomputeState state =
+        collapseState({adjustmentBranchPhantom(
+                          oPlacement(4, "RRRRRRRR", '.', -1, 0),
+                          {oPlacement(2, "..", '.', 5, 0), oPlacement(6, "....", '.', 5, 0)})},
+                      /* useDAS= */ true, /* reactionTime= */ 8);
     putLockValueEverywhere(state, encodeLockCell(0, 2, 17), 8.0);
     putLockValueEverywhere(state, encodeLockCell(0, 6, 17), 9.9);
     putPartialPenaltyEverywhere(state, encodeLockCell(0, 2, 17), -0.4);
     putPenaltiesEverywhere(state, encodeLockCell(0, 6, 17), -3.5, -2.0);
-    const std::string expected = "Default:0,1,18|RRRRRRRR~~|" + boardOAt(4) + "|18|0|-1"
+    const std::string expected = "Default:0,1,18|RRRRRRRR~~|"
+                                 + boardOAt(4)
+                                 + "|18|0|-1"
                                  + sevenPieceContent("0,-1,18|..|" + boardOAt(2) + "|18|0|5");
     CHECK(runCollapse(state) == expected);
   }
@@ -586,18 +618,18 @@ TEST_CASE("a missing default lock value poisons the phantom total") {
     CHECK(runCollapse(state) == "none");
   }
   SUBCASE("a healthy competitor wins instead") {
-    PrecomputeState state = collapseState(
-        {defaultBranchPhantom(oPlacement(4, "RRRRRRRR", '.', -1, 0)),
-         defaultBranchPhantom(oPlacement(2, "LLLLLLLL", '.', -1, 0))},
-        /* useDAS= */ false, /* reactionTime= */ 8);
+    PrecomputeState state =
+        collapseState({defaultBranchPhantom(oPlacement(4, "RRRRRRRR", '.', -1, 0)),
+                       defaultBranchPhantom(oPlacement(2, "LLLLLLLL", '.', -1, 0))},
+                      /* useDAS= */ false, /* reactionTime= */ 8);
     // Piece I's map (index 0) is left without the key: A's total is NaN.
     putLockValueOnPiece(state, IDX_O, encodeLockCell(0, 4, 17), 100.0);
     putLockValueEverywhere(state, encodeLockCell(0, 2, 17), 5.0);
     for (int i = IDX_L; i <= IDX_Z; i++) {
       putLockValueOnPiece(state, i, encodeLockCell(0, 4, 17), 100.0);
     }
-    const std::string expected = "Default:0,-1,18|LLLLLLLL~~|" + boardOAt(2) + "|18|0|-1"
-                                 + sevenPieceMarkers("none");
+    const std::string expected =
+        "Default:0,-1,18|LLLLLLLL~~|" + boardOAt(2) + "|18|0|-1" + sevenPieceMarkers("none");
     CHECK(runCollapse(state) == expected);
   }
 }
@@ -606,10 +638,11 @@ TEST_CASE("missing keys in the adjustment branch are skipped, not poisoning") {
   // The high-value adjustment misses piece J's lookup only; the collapse
   // must fall back to the low-value adjustment FOR THAT PIECE while the
   // other pieces still take the high-value one.
-  PrecomputeState state = collapseState(
-      {adjustmentBranchPhantom(oPlacement(4, "RRRRRRRRR", '.', -1, 0),
-                               {oPlacement(6, "....", '.', -1, 0), oPlacement(0, "..", '.', -1, 0)})},
-      /* useDAS= */ false, /* reactionTime= */ 8);
+  PrecomputeState state =
+      collapseState({adjustmentBranchPhantom(
+                        oPlacement(4, "RRRRRRRRR", '.', -1, 0),
+                        {oPlacement(6, "....", '.', -1, 0), oPlacement(0, "..", '.', -1, 0)})},
+                    /* useDAS= */ false, /* reactionTime= */ 8);
   putLockValueEverywhere(state, encodeLockCell(0, 0, 17), 5.0);
   for (int i = 0; i < 7; i++) {
     if (i != IDX_J) {
@@ -630,10 +663,10 @@ TEST_CASE("missing keys in the adjustment branch are skipped, not poisoning") {
   CHECK(runCollapse(state) == expected);
 
   SUBCASE("a piece whose adjustments all miss falls back to its marker") {
-    PrecomputeState single = collapseState(
-        {adjustmentBranchPhantom(oPlacement(4, "RRRRRRRRR", '.', -1, 0),
-                                 {oPlacement(6, "....", '.', -1, 0)})},
-        /* useDAS= */ false, /* reactionTime= */ 8);
+    PrecomputeState single =
+        collapseState({adjustmentBranchPhantom(oPlacement(4, "RRRRRRRRR", '.', -1, 0),
+                                               {oPlacement(6, "....", '.', -1, 0)})},
+                      /* useDAS= */ false, /* reactionTime= */ 8);
     for (int i = 0; i < 7; i++) {
       if (i != IDX_J) {
         putLockValueOnPiece(single, i, encodeLockCell(0, 6, 17), 10.0);
@@ -644,8 +677,8 @@ TEST_CASE("missing keys in the adjustment branch are skipped, not poisoning") {
       expected2 += "\n";
       expected2 += "IOLJTSZ"[i];
       expected2 += ":";
-      expected2 += (i == IDX_J) ? std::string("continue")
-                                : "0,3,18|....|" + boardOAt(6) + "|18|0|-1";
+      expected2 +=
+          (i == IDX_J) ? std::string("continue") : "0,3,18|....|" + boardOAt(6) + "|18|0|-1";
     }
     CHECK(runCollapse(single) == expected2);
   }
@@ -662,12 +695,15 @@ TEST_CASE("tuck and spin input cost is counted twice, as legacy behaviour") {
     // "RA": per-character -0.3, plus -0.2 via the tuck char -> -0.5 total,
     // versus "RRB"'s plain -0.4. The plain adjustment wins; a single-count
     // reading would score the spin -0.3 and flip the winner.
-    PrecomputeState state = collapseState(
-        {adjustmentBranchPhantom(oPlacement(4, "RRRRRRRR", '.', -1, 0),
-                                 {oPlacement(4, "RA", 'A', -1, 0), oPlacement(4, "RRB", '.', -1, 0)})},
-        /* useDAS= */ false, /* reactionTime= */ 8);
+    PrecomputeState state =
+        collapseState({adjustmentBranchPhantom(
+                          oPlacement(4, "RRRRRRRR", '.', -1, 0),
+                          {oPlacement(4, "RA", 'A', -1, 0), oPlacement(4, "RRB", '.', -1, 0)})},
+                      /* useDAS= */ false, /* reactionTime= */ 8);
     putLockValueEverywhere(state, encodeLockCell(0, 4, 17), 5.0);
-    const std::string expected = "Default:0,1,18|RRRRRRRR~~|" + boardOAt(4) + "|18|0|-1"
+    const std::string expected = "Default:0,1,18|RRRRRRRR~~|"
+                                 + boardOAt(4)
+                                 + "|18|0|-1"
                                  + sevenPieceContent("0,1,18|RRB|" + boardOAt(4) + "|18|0|-1");
     CHECK(runCollapse(state) == expected);
   }
@@ -676,14 +712,16 @@ TEST_CASE("tuck and spin input cost is counted twice, as legacy behaviour") {
     // versus thirteen R shifts' plain -1.3. The plain adjustment wins; a
     // single-count reading would tie at -1.2 and the later adjustment (the
     // spin-tuck) would win instead.
-    PrecomputeState state = collapseState(
-        {adjustmentBranchPhantom(
-            oPlacement(4, "RRRRRRRR", '.', -1, 0),
-            {oPlacement(4, "RRRRRRRRRRRRR", '.', -1, 0), oPlacement(4, "EFGI", 'E', -1, 0)})},
-        /* useDAS= */ false, /* reactionTime= */ 8);
+    PrecomputeState state =
+        collapseState({adjustmentBranchPhantom(oPlacement(4, "RRRRRRRR", '.', -1, 0),
+                                               {oPlacement(4, "RRRRRRRRRRRRR", '.', -1, 0),
+                                                oPlacement(4, "EFGI", 'E', -1, 0)})},
+                      /* useDAS= */ false, /* reactionTime= */ 8);
     putLockValueEverywhere(state, encodeLockCell(0, 4, 17), 5.0);
     const std::string expected =
-        "Default:0,1,18|RRRRRRRR~~|" + boardOAt(4) + "|18|0|-1"
+        "Default:0,1,18|RRRRRRRR~~|"
+        + boardOAt(4)
+        + "|18|0|-1"
         + sevenPieceContent("0,1,18|RRRRRRRRRRRRR|" + boardOAt(4) + "|18|0|-1");
     CHECK(runCollapse(state) == expected);
   }
@@ -691,25 +729,29 @@ TEST_CASE("tuck and spin input cost is counted twice, as legacy behaviour") {
 
 TEST_CASE("dasChargeAfter passes through to the formatted das field") {
   SUBCASE("tap mode carries -1 verbatim") {
-    PrecomputeState state = collapseState(
-        {adjustmentBranchPhantom(oPlacement(4, "RRRRRRRR", '.', -1, 0),
-                                 {oPlacement(4, "....", '.', -1, 0)})},
-        /* useDAS= */ false, /* reactionTime= */ 8);
+    PrecomputeState state =
+        collapseState({adjustmentBranchPhantom(oPlacement(4, "RRRRRRRR", '.', -1, 0),
+                                               {oPlacement(4, "....", '.', -1, 0)})},
+                      /* useDAS= */ false, /* reactionTime= */ 8);
     putLockValueEverywhere(state, encodeLockCell(0, 4, 17), 5.0);
-    const std::string expected = "Default:0,1,18|RRRRRRRR~~|" + boardOAt(4) + "|18|0|-1"
+    const std::string expected = "Default:0,1,18|RRRRRRRR~~|"
+                                 + boardOAt(4)
+                                 + "|18|0|-1"
                                  + sevenPieceContent("0,1,18|....|" + boardOAt(4) + "|18|0|-1");
     CHECK(runCollapse(state) == expected);
   }
   SUBCASE("DAS mode shows the charge") {
-    PrecomputeState state = collapseState(
-        {adjustmentBranchPhantom(oPlacement(4, "RRRRRRRR", '.', 7, 0),
-                                 {oPlacement(4, "....", '.', 7, 0)})},
-        /* useDAS= */ true, /* reactionTime= */ 8);
+    PrecomputeState state =
+        collapseState({adjustmentBranchPhantom(oPlacement(4, "RRRRRRRR", '.', 7, 0),
+                                               {oPlacement(4, "....", '.', 7, 0)})},
+                      /* useDAS= */ true, /* reactionTime= */ 8);
     putLockValueEverywhere(state, encodeLockCell(0, 4, 17), 5.0);
     putMinPenaltyEverywhere(state, encodeLockCell(0, 4, 17), -2.0);
     // No partial entries: the missing-key guard zeroes the penalty, and the
     // formatted field still shows the charge itself.
-    const std::string expected = "Default:0,1,18|RRRRRRRR~~|" + boardOAt(4) + "|18|0|7"
+    const std::string expected = "Default:0,1,18|RRRRRRRR~~|"
+                                 + boardOAt(4)
+                                 + "|18|0|7"
                                  + sevenPieceContent("0,1,18|....|" + boardOAt(4) + "|18|0|7");
     CHECK(runCollapse(state) == expected);
   }
@@ -721,14 +763,16 @@ TEST_CASE("adjustmentInputCost measures frame-by-frame deviation from the defaul
     // Even when x=0 and x=2 have identical lock values and x=2 ("...") appears LATER
     // in possibleAdjustments (where value >= maxValue would otherwise pick x=2),
     // matching the default's post-reaction 'L' costs 0.0 while omitting it costs -0.1.
-    PrecomputeState state = collapseState(
-        {adjustmentBranchPhantom(
-            oPlacement(0, "LLLLLLLLL..", '.', -1, 0),
-            {oPlacement(0, "L..", '.', -1, 0), oPlacement(2, "...", '.', -1, 0)})},
-        /* useDAS= */ false, /* reactionTime= */ 8);
+    PrecomputeState state =
+        collapseState({adjustmentBranchPhantom(
+                          oPlacement(0, "LLLLLLLLL..", '.', -1, 0),
+                          {oPlacement(0, "L..", '.', -1, 0), oPlacement(2, "...", '.', -1, 0)})},
+                      /* useDAS= */ false, /* reactionTime= */ 8);
     putLockValueEverywhere(state, encodeLockCell(0, 0, 17), 10.0);
     putLockValueEverywhere(state, encodeLockCell(0, 2, 17), 10.0);
-    const std::string expected = "Default:0,-3,18|LLLLLLLL~~L..|" + boardOAt(0) + "|18|0|-1"
+    const std::string expected = "Default:0,-3,18|LLLLLLLL~~L..|"
+                                 + boardOAt(0)
+                                 + "|18|0|-1"
                                  + sevenPieceContent("0,-3,18|L..|" + boardOAt(0) + "|18|0|-1");
     CHECK(runCollapse(state) == expected);
   }
@@ -740,27 +784,31 @@ TEST_CASE("adjustmentInputCost measures frame-by-frame deviation from the defaul
     // Give cell 4 lockValue 5.00 and cell 2 lockValue 4.95:
     //   - with 'R' discounted, "I." scores 5.00 - 0.20 = 4.80 and beats ".L" (4.95 - 0.20 = 4.75);
     //   - if "I." paid the full -0.30 compound cost, it would score 4.70 and lose.
-    PrecomputeState state = collapseState(
-        {adjustmentBranchPhantom(
-            oPlacement(4, "RRRRRRRRR.", '.', -1, 0),
-            {oPlacement(4, "I.", '.', -1, 0), oPlacement(2, ".L", '.', -1, 0)})},
-        /* useDAS= */ false, /* reactionTime= */ 8);
+    PrecomputeState state =
+        collapseState({adjustmentBranchPhantom(
+                          oPlacement(4, "RRRRRRRRR.", '.', -1, 0),
+                          {oPlacement(4, "I.", '.', -1, 0), oPlacement(2, ".L", '.', -1, 0)})},
+                      /* useDAS= */ false, /* reactionTime= */ 8);
     putLockValueEverywhere(state, encodeLockCell(0, 4, 17), 5.0);
     putLockValueEverywhere(state, encodeLockCell(0, 2, 17), 4.95);
-    const std::string expected = "Default:0,1,18|RRRRRRRR~~R.|" + boardOAt(4) + "|18|0|-1"
+    const std::string expected = "Default:0,1,18|RRRRRRRR~~R.|"
+                                 + boardOAt(4)
+                                 + "|18|0|-1"
                                  + sevenPieceContent("0,1,18|I.|" + boardOAt(4) + "|18|0|-1");
     CHECK(runCollapse(state) == expected);
   }
 
   SUBCASE("executing the default move's own tuck discounts tuckInput as well") {
-    PrecomputeState state = collapseState(
-        {adjustmentBranchPhantom(
-            oPlacement(4, "RRRRRRRR..L", 'L', -1, 0),
-            {oPlacement(4, "..L", 'L', -1, 0), oPlacement(2, "...", '.', -1, 0)})},
-        /* useDAS= */ false, /* reactionTime= */ 8);
+    PrecomputeState state =
+        collapseState({adjustmentBranchPhantom(
+                          oPlacement(4, "RRRRRRRR..L", 'L', -1, 0),
+                          {oPlacement(4, "..L", 'L', -1, 0), oPlacement(2, "...", '.', -1, 0)})},
+                      /* useDAS= */ false, /* reactionTime= */ 8);
     putLockValueEverywhere(state, encodeLockCell(0, 4, 17), 10.0);
     putLockValueEverywhere(state, encodeLockCell(0, 2, 17), 10.0);
-    const std::string expected = "Default:0,1,18|RRRRRRRR~~..L|" + boardOAt(4) + "|18|0|-1"
+    const std::string expected = "Default:0,1,18|RRRRRRRR~~..L|"
+                                 + boardOAt(4)
+                                 + "|18|0|-1"
                                  + sevenPieceContent("0,1,18|..L|" + boardOAt(4) + "|18|0|-1");
     CHECK(runCollapse(state) == expected);
   }
@@ -805,14 +853,16 @@ TEST_CASE("adjustmentInputCost measures frame-by-frame deviation from the defaul
     // (same as omitting 'R'), not -0.20. With lockValue 5.00 vs cell 4's 4.95 (".."),
     // "L." scores 5.00 - 0.10 = 4.90 and beats ".." (4.95 - 0.10 = 4.85); a double -0.20
     // reversal penalty would score 4.80 and lose.
-    PrecomputeState state = collapseState(
-        {adjustmentBranchPhantom(
-            oPlacement(4, "RRRRRRRRR.", '.', -1, 0),
-            {oPlacement(2, "L.", '.', -1, 0), oPlacement(4, "..", '.', -1, 0)})},
-        /* useDAS= */ false, /* reactionTime= */ 8);
+    PrecomputeState state =
+        collapseState({adjustmentBranchPhantom(
+                          oPlacement(4, "RRRRRRRRR.", '.', -1, 0),
+                          {oPlacement(2, "L.", '.', -1, 0), oPlacement(4, "..", '.', -1, 0)})},
+                      /* useDAS= */ false, /* reactionTime= */ 8);
     putLockValueEverywhere(state, encodeLockCell(0, 2, 17), 5.00);
     putLockValueEverywhere(state, encodeLockCell(0, 4, 17), 4.95);
-    const std::string expected = "Default:0,1,18|RRRRRRRR~~R.|" + boardOAt(4) + "|18|0|-1"
+    const std::string expected = "Default:0,1,18|RRRRRRRR~~R.|"
+                                 + boardOAt(4)
+                                 + "|18|0|-1"
                                  + sevenPieceContent("0,-1,18|L.|" + boardOAt(2) + "|18|0|-1");
     CHECK(runCollapse(state) == expected);
   }

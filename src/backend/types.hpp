@@ -254,7 +254,7 @@ struct SearchBudget {
   int timeBudgetMs;   // Millisecond budget when mode == BUDGET_TIME_MS
   bool hasDeadline;
   std::chrono::steady_clock::time_point deadline;
-  double calibratedMovesPerMs; // 0 = fall back to built-in conservative default
+  double calibratedMovesPerMs;                   // 0 = fall back to built-in conservative default
   const std::atomic<bool> *cancelFlag = nullptr; // Optional cancellation token (live_game_server)
 
   bool isCancelled() const {
@@ -302,7 +302,8 @@ struct EngineTimingContext {
   std::chrono::steady_clock::time_point requestReceived{};
   double calibratedMovesPerMs7T = 0.0; // Baseline rate across 7 concurrent precompute threads
   double calibratedMovesPerMs1T = 0.0; // Baseline rate for single-threaded lookups
-  const std::atomic<bool> *cancelFlag = nullptr; // Set when backup is served to abort in-flight work
+  const std::atomic<bool> *cancelFlag =
+      nullptr; // Set when backup is served to abort in-flight work
 };
 
 #endif

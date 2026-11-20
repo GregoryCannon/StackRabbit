@@ -55,9 +55,9 @@ struct PrecomputeState {
   std::vector<PrecomputePhantom> phantoms;
   bool useDAS = false; // false = tap mode (incoming dasCharge == -1)
   int reactionTime = 0;
-  PrecomputeValueMap lockValues[7];         // one map per next piece
-  PrecomputeValueMap partialPenalties[7];   // DAS mode only
-  PrecomputeValueMap minPenalties[7];       // DAS mode only
+  PrecomputeValueMap lockValues[7];       // one map per next piece
+  PrecomputeValueMap partialPenalties[7]; // DAS mode only
+  PrecomputeValueMap minPenalties[7];     // DAS mode only
 };
 
 /**

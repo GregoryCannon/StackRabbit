@@ -146,7 +146,8 @@ std::string mainProcess(char const *inputStr, RequestType requestType,
         return "Error: invalid level value (expected an integer): " + arg;
       }
       if (argAsInt < 18) {
-        return "Error: currently only 18, 19, and 29 starts are supported by StackRabbit. Requested: "
+        return "Error: currently only 18, 19, and 29 starts are supported by StackRabbit. "
+               "Requested: "
                + arg;
       }
       startingGameState.level = argAsInt;
@@ -271,7 +272,8 @@ std::string mainProcess(char const *inputStr, RequestType requestType,
       }
       if (argAsInt < 0 || argAsInt > 60) {
         return "Error: reaction time exceeds the maximum possible of 60 frames. Did you "
-               "accidentally send it in milliseconds? " + arg;
+               "accidentally send it in milliseconds? "
+               + arg;
       }
       reactionTime = argAsInt;
       fieldProvided[10] = true;
@@ -311,7 +313,8 @@ std::string mainProcess(char const *inputStr, RequestType requestType,
     if (totalPlayoutVolume > MAX_CPP_PLAYOUT_MOVES) {
       return "Error: playout volume exceeds the current limit of "
              + std::to_string(MAX_CPP_PLAYOUT_MOVES)
-             + " moves. Current volume: " + std::to_string(totalPlayoutVolume);
+             + " moves. Current volume: "
+             + std::to_string(totalPlayoutVolume);
     }
   }
   int wellColumn = 9;
@@ -486,8 +489,7 @@ std::string mainProcess(char const *inputStr, RequestType requestType,
         }
       }
       errorOut = string_format("Error: fullMoveSearch failed to match move [%d, %d, %d]",
-                               move.rotationIndex, move.x - INITIAL_X,
-                               move.y - curPiece->initialY);
+                               move.rotationIndex, move.x - INITIAL_X, move.y - curPiece->initialY);
       return false;
     };
 
@@ -501,7 +503,10 @@ std::string mainProcess(char const *inputStr, RequestType requestType,
     std::string escMainFormatted = escapeJsonString(mainFormatted);
     std::string escMainExp = escapeJsonString(explanationMain);
     if (agree) {
-      return "[\"agree\", \"" + escMainFormatted + "\", {\"explanationMain\":\"" + escMainExp
+      return "[\"agree\", \""
+             + escMainFormatted
+             + "\", {\"explanationMain\":\""
+             + escMainExp
              + "\"}]";
     }
 
@@ -511,9 +516,15 @@ std::string mainProcess(char const *inputStr, RequestType requestType,
     }
     std::string escTestFormatted = escapeJsonString(testFormatted);
     std::string escTestExp = escapeJsonString(explanationTest);
-    return "[\"disagree\", \"" + escMainFormatted + "\", \"" + escTestFormatted
-           + "\", {\"explanationMain\":\"" + escMainExp + "\", \"explanationTest\":\""
-           + escTestExp + "\"}]";
+    return "[\"disagree\", \""
+           + escMainFormatted
+           + "\", \""
+           + escTestFormatted
+           + "\", {\"explanationMain\":\""
+           + escMainExp
+           + "\", \"explanationTest\":\""
+           + escTestExp
+           + "\"}]";
   }
 
   case PRECOMPUTE:
