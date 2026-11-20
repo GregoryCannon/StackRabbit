@@ -428,12 +428,13 @@ The cleanup touches many files, so the full battery (now including
 `precompute_verify`) plus a benchmark A/B (unity-build layout luck applies)
 are warranted here.
 
-### Phase 5 — Live traffic (out of scope here)
+### Phase 5 — Live traffic (**Complete**)
 
-A separate follow-up migration: flipping the live `precompute` routes to the
-C++ path, deleting `PreComputeManager` / worker_thread.ts, and retiring the
-TS path (the fuzz generators die with it; see Phase 4). The differential
-harness and precompute-cpp route remain in place until then.
+Complete — see [js_ts_deprecation_plan.md](js_ts_deprecation_plan.md). Live
+gameplay and all HTTP endpoints (`/ping`, `/precompute`, `/async-result`,
+`/precompute-sync`, `/get-move-ab-test`) now run on the standalone C++
+`live_game_server.cpp`; the TypeScript server, `node-gyp` addon, and
+`node_modules` dependencies have been removed.
 
 ## Decisions
 

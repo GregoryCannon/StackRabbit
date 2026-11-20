@@ -55,9 +55,9 @@ The core computation code lives in `src/cpp_modules` and is shared by all entryp
 
 There are three main ways to run the StackRabbit backend:
 
-1) `src/wasm` contains instructions for compiling this repo into a WASM binary, which then can be consumed by any Javascript client.
-2) `src/server` contains a Node.js server which supports many API endpoints, but is primarily only used for live gameplay (via "precompute" requests).
-3) `entrypoint.cpp` is a local C++ file that can be run from the command line, for local testing. The test inputs can be configured at the top of the file.
+1) `src/cpp_modules/src/live_game_server.cpp` is a standalone, zero-dependency C++ HTTP server for live gameplay (`npm start` / `npm run live_server`).
+2) `src/wasm` contains instructions for compiling this repo into a WASM binary via Emscripten, which can be consumed by any browser or JavaScript client.
+3) `entrypoint.cpp` is a local C++ CLI entrypoint that can be run from the command line for local testing. Test inputs can be configured at the top of the file.
 
 ## Possible Frontends
 
@@ -65,17 +65,18 @@ There are a number of different clients for interacting with the main StackRabbi
 
 - [TetrisTrainer](https://github.com/GregoryCannon/TetrisTrainer) is a public web client ([try it live!](https://gregorycannon.github.io/TetrisTrainer)) that lets users draw a board and ask AI about the best placements.
 - `fceux` contains a Lua client for playing in the FCEUX emulator (primary client for running live games with StackRabbit)
--  `console_client` contains a python client that runs on Raspberry Pi to play on a real console.
+- `console_client` contains a python client that runs on Raspberry Pi to play on a real console.
 - Any other Javascript client can consume the WASM binary (details in `src/wasm`) and call all the major endpoints.
 
 # How to Set Up
 
 ## Requirements
 
-- **Node.js**: [Download here](https://nodejs.org)
+- **C++17 compiler**:
+  - **macOS / Linux**: Xcode Command Line Tools (`clang++` / `g++`) or `g++`
+  - **Windows**: MinGW-w64 (`g++`) or Visual Studio Build Tools (`cl`)
 - **FCEUX**: [Download here](https://fceux.com)
-- **Python3**: [Download here](https://python.org)
-- (Windows-only) **Visual Studio Build Tools**
+- **Node.js** *(optional)*: [Download here](https://nodejs.org) — only needed if you want to use the `npm run` shortcuts or test scripts. No `npm install` or `node_modules` are required.
 
 ## Steps
 
@@ -85,24 +86,39 @@ There are a number of different clients for interacting with the main StackRabbi
 2. **Obtain NES Tetris ROM**:
    - **Legally** acquire the ROM for NES Tetris. You can use TetrisGYM.
 
-3. **Open Command Line**:
-   - Press `Win + R`, type `cmd`, and press Enter.
-   - Navigate to the folder for Stackrabbit using `cd path/to/stackrabbit`.
+3. **Open a Terminal / Command Line**:
+   - Navigate to the StackRabbit folder using `cd path/to/stackrabbit`.
 
-4. **Install Dependencies**:
-   - Run `node install.js` in the command line.
+4. **Build and Start the Live Game Server** (listens on port `3000` by default):
+   - **macOS / Linux** (with Node/npm):
+     ```sh
+     npm start
+     ```
+   - **macOS / Linux** (direct `g++`, no Node required):
+     ```sh
+     mkdir -p build && g++ -O2 -std=c++17 -pthread -o build/live_game_server src/cpp_modules/src/live_game_server.cpp && ./build/live_game_server
+     ```
+   - **Windows (MinGW-w64)**:
+     ```bat
+     npm run live_server_build_win
+     build\live_game_server.exe
+     ```
+     *(or without npm: `if not exist build mkdir build && g++ -O2 -std=c++17 -pthread -o build/live_game_server.exe src/cpp_modules/src/live_game_server.cpp -lws2_32 && build\live_game_server.exe`)*
+   - **Windows (MSVC Developer Command Prompt)**:
+     ```bat
+     if not exist build mkdir build
+     cl /O2 /std:c++17 /EHsc /Fe:build\live_game_server.exe src\cpp_modules\src\live_game_server.cpp ws2_32.lib
+     build\live_game_server.exe
+     ```
 
-5. **Start the Application**:
-   - If the previous command runs without errors, execute `npm start`.
-
-6. **Setup FCEUX**:
-   - Open the FCEUX folder.]
+5. **Setup FCEUX**:
+   - Open the FCEUX folder.
    - Add all `.lua` files (excluding `itn12.lua`, `mime.lua`, and `socket.lua`, put them in `C:/path/to/fceux/lua`) from the [Luasocket repository](https://github.com/lunarmodules/luasocket) to `C:/path/to/fceux/lua/socket/`. (if there is no `lua` folder, create it and the socket folder inside)
 
-7. **Load Tetris ROM**:
+6. **Load Tetris ROM**:
    - In FCEUX, click `File > Open` and select the Tetris ROM.
 
-8. **Run Stackrabbit Script**:
+7. **Run Stackrabbit Script**:
    - In the FCEUX window, go to `File > Lua > New Lua Script Window`.
    - In the new window, browse and run `path/to/stackrabbit/src/fceux/stackrabbit.lua`.
    - Open level 19 and let it start!

@@ -2,61 +2,60 @@
 
 Working agreements for AI agent sessions (and humans) changing the StackRabbit engine.
 Read alongside [TESTING.md](TESTING.md) (test layout, input-format contract) and
-[docs/engine_boundaries.md](docs/engine_boundaries.md) (TS↔C++ contracts).
+[docs/engine_endpoints.md](docs/engine_endpoints.md) (engine endpoints & wire contracts).
 
-## Verification battery (run before and after any engine change)
+## Change-scoped verification matrix
 
-- `npm run cpp_test_unit` — doctest suite, fast
-- `npm run fuzz_verify_sequences` — TS↔C++ DAS move-search equivalence (character-exact sequences)
-- `npx tsc`
-- `npm run move_test`
-- `npm run precompute_verify` — C++ precompute vs golden fixtures, byte-identical (3470/3470)
-- `npm run precompute_tsan` — ThreadSanitizer replay of the 42 production-param precompute
-  requests; zero warnings required (the thread-safety gate, see Change discipline)
-- `npm run precompute_static_lint` — file-scope statics tripwire over the thread-audited files
-- `npm run start_check` — builds the addon + TS (the only battery item exercising the
-  node-gyp addon build), starts the server, waits for "Listening on port 3000", kills
-  the process tree, and verifies port 3000 is freed; fails loudly if a stale server
-  already occupies the port (kill it manually — the trap below)
-- `npm run live_server_check` — boots the C++ live server (battery port 3101) and
-  byte-verifies all 42 production-precompute golden responses over HTTP
+Run the default checks before and after any C++ change, plus any triggered checks
+matching the files or behaviors touched (full harness details in [TESTING.md](TESTING.md)):
 
-NB: a long-running dev server keeps the OLD addon mapped in memory — `node-gyp build`
-on disk does not update it. Restart the server to test new code, and don't mistake
-stale-server output for a code change.
+| Change scope | Tests to run |
+|---|---|
+| **Always (default for any C++ change)** | `npm run cpp_test_unit`, `npm run precompute_static_lint` |
+| **HTTP server, routes, or Lua wire format** (`live_game_server.cpp`, `main.cpp` parsing, `stackrabbit.lua`) | + `npm run live_server_check` |
+| **Behavior-preserving refactors / perf optimizations**, or **intentional eval / search / precompute changes** (inspect diffs & re-baseline) | + `npm run precompute_verify` (3,470/3,470 golden fixtures) |
+| **Full move search / simulation** (`full_move_search.cpp`, `tetrominoes.hpp`, `utils.hpp`) | + `npm run fuzz_verify_sequences` (2,783 character-exact fixtures) |
+| **Threading, shared state, or static-buffer / allocation changes** in `precompute.cpp` or lookup call tree (`high_level_search`, `tournament_search`, `playout`, `eval`, `move_search`, `piece_rng`, and the other files audited by `precompute_static_lint.js`) | + `npm run precompute_tsan` (zero TSan warnings required) |
+| **Eval / search quality or throughput changes** | + `npm run benchmark_run_agent -- GET_MOVE 49 2 20 hard` and/or interleaved `npm run speed_benchmark` |
+| **Shared engine changes or WASM glue** (`wasm.cpp`, `wasmRabbit-worker.js`, pipe format) | + `npm run wasm_build` |
+
+NB: a running `build/live_game_server` process keeps the OLD compiled binary in memory —
+rebuilding on disk does not update it. Rebuild and restart `live_game_server`
+(`npm run live_server`) to test new C++ code.
 
 ## Change discipline
 
 - Make changes in small, **independently revertible steps** (git checkout of individual
-  files works — see `git status` before assuming). Run the full battery after each step
-  before proceeding.
+  files works — see `git status` before assuming). Run the applicable change-scoped
+  checks after each step before proceeding.
 - **Production signature changes are the checkpoint boundary.** If a step stalls, STOP
   AND REPORT — do not "fix forward" by widening the diff.
-- **Every boundary validates its own inputs** (TS URL args in `request_parser.ts`, the
-  C++ pipe parser in `main.cpp`). Never rely on the caller having validated; silent
+- **Every boundary validates its own inputs** (the HTTP layer in `live_game_server.cpp`,
+  the C++ pipe parser in `main.cpp`). Never rely on the caller having validated; silent
   defaults and junk-tolerant parsing have each caused real bugs here.
 - **Precompute lookup thread-safety is a tested contract.** Precompute runs
   `getLockValueLookupMapped` / `getLockValueLookupDasMaps` (see their contract comments in
   `high_level_search.cpp`) once per next piece on concurrent threads. No new non-const
   file-scope statics or thread-unsafe libc calls (`rand()`, `strtok`, ...) in code reachable
-  from those entry points. Enforcement: `npm run precompute_tsan` (battery item — ~18s,
-  cheap enough for every run) and `npm run precompute_static_lint`. The lint is knowingly
-  crude; a false positive is waived in `src/cpp_modules/tests/thread_static_allowlist.txt`
-  (adding a waiver is a deliberate, reviewable act), never by weakening the lint.
+  from those entry points. Enforcement: `npm run precompute_static_lint` (always-run
+  default) and `npm run precompute_tsan` (~3–4s; required whenever touching threading,
+  shared state, or the lookup call tree). The lint is knowingly crude; a false positive is
+  waived in `src/cpp_modules/tests/thread_static_allowlist.txt` (adding a waiver is a
+  deliberate, reviewable act), never by weakening the lint.
 - When touching the pipe format or shared signatures, update **all** callers in
-  lockstep: `request_parser.ts`, `worker_thread.ts`, `cmodules.ts`, `entrypoint.cpp`,
-  `speed_benchmark.cpp`, `run_agent.cpp`, `src/wasm/sample_client/wasmRabbit-worker.js`,
-  `src/fceux/stackrabbit.lua`
+  lockstep: `src/cpp_modules/src/live_game_server.cpp`,
+  `src/cpp_modules/tests/precompute_cli.cpp`, `entrypoint.cpp`,
+  `src/benchmark/speed_benchmark.cpp`, `src/benchmark/run_agent.cpp`,
+  `src/wasm/sample_client/wasmRabbit-worker.js`, `src/fceux/stackrabbit.lua`
   — and rebuild the WASM artifacts (`npm run wasm_build`) when the engine changes.
 - Design APIs so parameters mean one thing. If a call site needs different semantics,
   add a clearly-named parameter rather than overloading an existing one, and make
   mutually exclusive modes explicit (error out when both are passed).
-- **Code comments describe end-state behavior, not process.** Never reference TS
-  parity, the TS implementation, or migration phases/steps in code comments — that
-  context belongs in the docs (TESTING.md, docs/*.md). Two exceptions:
-  (1) ported behavior that may itself be a legacy bug may be flagged as parity
-  with "legacy TS code"; (2) unintuitive temporary behavior caused by a not-yet-
-  completed migration step may carry a TODO naming that step.
+- **Code comments describe end-state behavior, not process.** Never reference
+  migration phases/steps or retired implementations in code comments — that
+  context belongs in the docs (`TESTING.md`, `docs/*.md`). Unintuitive temporary
+  behavior caused by an in-progress refactor may carry a `TODO` naming the
+  follow-up.
 
 ## Performance landmines
 
@@ -71,7 +70,7 @@ stale-server output for a code change.
   per case on this machine) — deltas outside that band are real, and codegen/layout
   luck from touching a unity-build translation unit can swing either direction.
 - Deep-dive costs: the DAS move search is ~100x the tap walk per call; see
-  docs/engine_boundaries.md for the current measurements.
+  [docs/engine_endpoints.md](docs/engine_endpoints.md) for the current measurements.
 
 ## Verification lessons
 

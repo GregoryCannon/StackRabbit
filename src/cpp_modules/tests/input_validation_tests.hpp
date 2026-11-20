@@ -188,7 +188,7 @@ TEST_CASE("Missing trailing fields report the first missing field") {
 
 TEST_CASE("dasCharge >= 0 keeps the legacy tapper approximation for non-DAS request paths") {
   // A DAS-holding player's non-DAS requests run on the DAS-equivalent timeline
-  // derived from dasCharge (docs/engine_boundaries.md): passing the real
+  // derived from dasCharge (docs/engine_endpoints.md): passing the real
   // timeline with dasCharge >= 0 must produce the same output as passing the
   // derived timeline directly.
   auto dasInput = InputBuilder()

@@ -159,7 +159,7 @@ Eliminate redundant golden-file maintenance and cut everyday verification from ~
    - **Target**: `npm run live_server_check` runs in ~1.5–2s (down from 5.2s).
 
 3. **Slim `precompute_tsan` replay set**
-   - In `precompute_verify.js --dump-inputs`, select a small diverse subset of ~6–8 production fixtures (covering tap + DAS + rt=0/8/20 + one timed `-2` request) instead of all 42 production fixtures.
+   - In `precompute_verify.js --dump-inputs`, select a small diverse subset of ~6–8 production fixtures (covering tap + DAS + `reactionTime` 0/8/20 + one timed `-2` request) instead of all 42 production fixtures.
    - **Target**: `npm run precompute_tsan` exercises every 7-thread code path in ~3–4s (down from 12.7s).
 
 **Gate**: `cpp_test_unit`, `live_server_check`, `precompute_verify` (all 3,470 fixtures), `precompute_tsan`, `precompute_static_lint`, and `fuzz_verify_sequences` all pass.
@@ -256,17 +256,17 @@ Land as a pure move + path-update commit (no logic changes) so git preserves fil
 
 ## Post-Cutover Change-Scoped Test Matrix
 
-*(To be documented in `TESTING.md` and `AGENTS.md` in Phase 6.)*
+*(Documented in `TESTING.md` and `AGENTS.md` in Phase 6.)*
 
 Instead of running every heavy check unconditionally, match tests to what changed:
 
-| Change scope | Tests to run | Target runtime |
+| Change scope | Tests to run | Typical runtime |
 |---|---|---:|
-| **Always (default check for any C++ change)** | `npm run cpp_test_unit`, `npm run precompute_static_lint` | ~2–3s |
+| **Always (default check for any C++ change)** | `npm run cpp_test_unit`, `npm run precompute_static_lint` | ~4s |
 | **HTTP server, routes, or Lua wire format** (`live_game_server.cpp`, `main.cpp` parsing, `stackrabbit.lua`) | + `npm run live_server_check` | +1.5–2s |
 | **Refactors / perf optimizations (behavior-preserving)** or **intentional eval / search / precompute changes** (inspect diffs & re-baseline) | + `npm run precompute_verify` (all 3,470 fixtures) | +9s |
 | **Full move search / simulation** (`full_move_search.cpp`, `tetrominoes.hpp`, `utils.hpp`) | + `npm run fuzz_verify_sequences` | +3s |
-| **Threading, shared state, or allocation / static-buffer changes** in `precompute.cpp` or lookup call tree (`high_level_search`, `tournament_search`, `playout`, `eval`, `move_search`, `piece_rng`) | + `npm run precompute_tsan` (~6–8 fixtures) | +3–4s |
+| **Threading, shared state, or allocation / static-buffer changes** in `precompute.cpp` or lookup call tree (`high_level_search`, `tournament_search`, `playout`, `eval`, `move_search`, `piece_rng`, and the other files audited by `precompute_static_lint.js`) | + `npm run precompute_tsan` (6 fixtures + 1 timed `-2` request) | +5s |
 | **Eval / search quality or throughput changes** | + `npm run benchmark_run_agent -- GET_MOVE 49 2 20 hard` and/or interleaved `npm run speed_benchmark` | varies |
 | **Shared engine changes or WASM glue** (`wasm.cpp`, `wasmRabbit-worker.js`, pipe format) | + `npm run wasm_build` | ~3s |
 
@@ -276,12 +276,12 @@ Instead of running every heavy check unconditionally, match tests to what change
 
 One-time sign-off after Phase 5 — all checks must pass with **no `node_modules/` directory installed**:
 
-- [ ] `npm run cpp_test_unit` — compiles with `-O0 -std=c++17 -pthread`, all doctest cases pass (including updated `GET_MOVE_AB_TEST` formatted output tests and slimmed `precompute_property_tests.hpp`)
-- [ ] `npm run fuzz_verify_sequences` — all 2,783 move-search fixtures character-exact
-- [ ] `npm run precompute_verify` — builds `build/precompute_cli`, 3,470/3,470 byte-identical
-- [ ] `npm run precompute_tsan` — slimmed ~6–8 production fixtures byte-identical, zero TSan warnings
-- [ ] `npm run precompute_static_lint` — 0 unwaived non-const file-scope statics
-- [ ] `npm run live_server_check` — builds `build/live_game_server`, verifies `/precompute`, `/async-result`, backup-halt, `/precompute-sync`, `/get-move-ab-test`, error paths, and ~3 golden fixtures over HTTP
-- [ ] `npm run precompute_fixture_generate -- /tmp/precompute_check.jsonl` — deterministic and byte-identical to committed `precompute_fixtures.jsonl`
-- [ ] `npm run wasm_build` — compiles cleanly
+- [x] `npm run cpp_test_unit` — compiles with `-O0 -std=c++17 -pthread`, all doctest cases pass (including updated `GET_MOVE_AB_TEST` formatted output tests and slimmed `precompute_property_tests.hpp`)
+- [x] `npm run fuzz_verify_sequences` — all 2,783 move-search fixtures character-exact
+- [x] `npm run precompute_verify` — builds `build/precompute_cli`, 3,470/3,470 byte-identical
+- [x] `npm run precompute_tsan` — 6 production fixtures byte-identical + 1 timed `-2` request OK, zero TSan warnings
+- [x] `npm run precompute_static_lint` — 0 unwaived non-const file-scope statics
+- [x] `npm run live_server_check` — builds `build/live_game_server`, verifies `/precompute`, `/async-result`, backup-halt, `/precompute-sync`, `/get-move-ab-test`, error paths, and 3 representative golden fixtures over HTTP
+- [x] `npm run precompute_fixture_generate -- /tmp/precompute_check.jsonl` — deterministic and fixture lines (`tail -n +2`) byte-identical to committed `precompute_fixtures.jsonl`
+- [x] `npm run wasm_build` — compiles cleanly
 - [ ] Windows build check (when on Windows / CI) — `live_game_server.cpp` compiles cleanly with Winsock2 (`-lws2_32` / `ws2_32.lib`)
