@@ -11,7 +11,7 @@ matching the files or behaviors touched (full harness details in [TESTING.md](TE
 
 | Change scope | Tests to run |
 |---|---|
-| **Always (default for any C++ change)** | `npm run cpp_test_unit`, `npm run precompute_static_lint` |
+| **Always (default for any C++ change)** | `npm run format_cpp`, `npm run cpp_test_unit`, `npm run precompute_static_lint` |
 | **HTTP server, routes, or Lua wire format** (`live_game_server.cpp`, `main.cpp` parsing, `stackrabbit.lua`) | + `npm run live_server_check` |
 | **Behavior-preserving refactors / perf optimizations**, or **intentional eval / search / precompute changes** (inspect diffs & re-baseline) | + `npm run precompute_verify` (3,470/3,470 golden fixtures) |
 | **Full move search / simulation** (`full_move_search.cpp`, `tetrominoes.hpp`, `utils.hpp`) | + `npm run fuzz_verify_sequences` (2,783 character-exact fixtures) |

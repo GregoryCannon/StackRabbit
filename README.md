@@ -90,26 +90,25 @@ There are a number of different clients for interacting with the main StackRabbi
    - Navigate to the StackRabbit folder using `cd path/to/stackrabbit`.
 
 4. **Build and Start the Live Game Server** (listens on port `3000` by default):
-   - **macOS / Linux** (with Node/npm):
+   - **macOS / Linux / Windows** (with Node/npm — uses `g++`, or `cl` on Windows MSVC):
      ```sh
      npm start
      ```
-   - **macOS / Linux** (direct `g++`, no Node required):
-     ```sh
-     mkdir -p build && g++ -O2 -std=c++17 -pthread -o build/live_game_server src/backend/live_game_server.cpp && ./build/live_game_server
-     ```
-   - **Windows (MinGW-w64)**:
-     ```bat
-     npm run live_server_build_win
-     build\live_game_server.exe
-     ```
-     *(or without npm: `if not exist build mkdir build && g++ -O2 -std=c++17 -pthread -o build/live_game_server.exe src/backend/live_game_server.cpp -lws2_32 && build\live_game_server.exe`)*
-   - **Windows (MSVC Developer Command Prompt)**:
-     ```bat
-     if not exist build mkdir build
-     cl /O2 /std:c++17 /EHsc /Fe:build\live_game_server.exe src\backend\live_game_server.cpp ws2_32.lib
-     build\live_game_server.exe
-     ```
+   - **Without Node/npm**:
+     - **macOS / Linux**:
+       ```sh
+       mkdir -p build && g++ -O2 -std=c++17 -pthread -o build/live_game_server src/backend/live_game_server.cpp && ./build/live_game_server
+       ```
+     - **Windows (MinGW-w64)**:
+       ```bat
+       if not exist build mkdir build && g++ -O2 -std=c++17 -pthread -o build/live_game_server.exe src/backend/live_game_server.cpp -lws2_32 && build\live_game_server.exe
+       ```
+     - **Windows (MSVC Developer Command Prompt)**:
+       ```bat
+       if not exist build mkdir build
+       cl /O2 /std:c++17 /EHsc /Fe:build\live_game_server.exe /Fo:build\ src\backend\live_game_server.cpp ws2_32.lib
+       build\live_game_server.exe
+       ```
 
 5. **Setup FCEUX**:
    - Open the FCEUX folder.

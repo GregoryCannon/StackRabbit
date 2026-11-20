@@ -15,7 +15,10 @@ const net = require("net");
 const path = require("path");
 
 const PORT = 3101;
-const SERVER_BIN = path.join(__dirname, "../../build/live_game_server");
+const SERVER_BIN = path.join(
+  __dirname,
+  "../../build/live_game_server" + (process.platform === "win32" ? ".exe" : "")
+);
 const HARNESS_PATH = path.join(__dirname, "live_server_verify.js");
 const LISTEN_PATTERN = "listening on 127.0.0.1:" + PORT;
 const STARTUP_TIMEOUT_MS = 15000;
