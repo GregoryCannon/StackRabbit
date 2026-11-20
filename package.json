@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node-gyp build && tsc && node built/app.js",
     "start_check": "node-gyp build && tsc && node src/server/start_check.js",
-    "cpp_test_unit": "mkdir -p build && g++ src/cpp_modules/tests/stackrabbit_test.cpp -o build/cpp_unit_tests && ./build/cpp_unit_tests",
+    "cpp_test_unit": "mkdir -p build && g++ -O0 -std=c++17 -pthread src/cpp_modules/tests/stackrabbit_test.cpp -o build/cpp_unit_tests && ./build/cpp_unit_tests",
     "move_test": "tsc && node built/move_search_test.js",
     "fuzz_generate": "tsc && node built/move_search_fuzz_generate.js",
     "precompute_cli_build": "mkdir -p build && g++ -O2 -std=c++17 -pthread -o build/precompute_cli src/cpp_modules/tests/precompute_cli.cpp",

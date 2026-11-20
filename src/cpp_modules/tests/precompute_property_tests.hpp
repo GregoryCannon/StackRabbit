@@ -1,9 +1,10 @@
-// Precompute pipeline property/invariant tests on real golden inputs.
+// Precompute pipeline property/invariant tests on inline representative cases.
 //
-// Runs preparePrecomputeState + collapseAndFormatPrecompute over the baked
-// golden fixtures (precompute_pipeline_fixtures.hpp: every production-tier
-// record plus hand-picked eval-only edge records) and asserts the pipeline's
-// output contracts, independent of any particular value:
+// Runs preparePrecomputeState + collapseAndFormatPrecompute over a compact set
+// of inline cases covering each structural regime (tap, DAS, reactionTime == 0,
+// per-piece continue fallback, per-piece none fallback, whole-response none,
+// and a level transition) and asserts the pipeline's output contracts,
+// independent of any particular eval weights:
 //
 //   a. well-formedness: exactly "none", or "Default:" + seven piece lines in
 //      IOLJTSZ order;
@@ -16,16 +17,14 @@
 //   e. the winning phantom is the argmax recomputed from the maps, ties keep
 //      the first phantom, and a reduced single-phantom state reproduces the
 //      full response;
-//   f. the golden outputs are reproduced byte for byte.
+//   f. runRequest(PRECOMPUTE, pipe) matches prepare + collapse byte for byte,
+//      pinning the test harness's context setup to main.cpp.
 //
-// The state comes from the prepared pipeline (the searches and the seven
-// concurrent lock lookups really run here); the expectations are recomputed
-// from the state's maps, never from the response under test.
+// Full golden byte-parity over all 3,470 fixtures is checked separately by
+// `npm run precompute_verify`.
 
 #ifndef SR_PRECOMPUTE_PROPERTY_TESTS
 #define SR_PRECOMPUTE_PROPERTY_TESTS
-
-#include "precompute_pipeline_fixtures.hpp"
 
 #include <cmath>
 #include <limits>
@@ -49,22 +48,42 @@ static std::vector<std::string> splitPipeFields(const std::string &pipe) {
   return fields; // 12 fields; the trailing '|' produces no extra entry
 }
 
-static std::vector<std::string> splitLines(const std::string &response) {
-  std::vector<std::string> lines;
+static std::vector<std::string> splitPrecomputeByChar(const std::string &str, char delim) {
+  std::vector<std::string> parts;
   size_t start = 0;
   while (true) {
-    const size_t end = response.find('\n', start);
+    const size_t end = str.find(delim, start);
     if (end == std::string::npos) {
-      lines.push_back(response.substr(start));
+      parts.push_back(str.substr(start));
       break;
     }
-    lines.push_back(response.substr(start, end - start));
+    parts.push_back(str.substr(start, end - start));
     start = end + 1;
   }
-  return lines;
+  return parts;
 }
 
-/** The game state and request fields one fixture runs under. */
+static std::string makePrecomputePipe(const std::string &board, int level, int lines, int curPiece,
+                                      const std::string &timeline, int playoutCount,
+                                      int playoutLength, int pruningBreadth, int dasCharge,
+                                      int reactionTime) {
+  return InputBuilder()
+             .withBoard1(board)
+             .withLevel(level)
+             .withLines(lines)
+             .withCurPiece(curPiece)
+             .withNextPiece(-1)
+             .withTimeline(timeline)
+             .withPlayoutCount(playoutCount)
+             .withPlayoutLength(playoutLength)
+             .withPruningBreadth(pruningBreadth)
+             .withAggression("safe")
+             .withDasCharge(dasCharge)
+             .build()
+         + std::to_string(reactionTime) + "|";
+}
+
+/** The game state and request fields one test case runs under. */
 struct PreparedFixture {
   PrecomputeState state;
   std::string boardStr;
@@ -234,7 +253,7 @@ static void checkResponseWellFormed(const std::string &response) {
   }
   REQUIRE(response.size() >= 8);
   CHECK(response.substr(0, 8) == "Default:");
-  const std::vector<std::string> lines = splitLines(response);
+  const std::vector<std::string> lines = splitPrecomputeByChar(response, '\n');
   REQUIRE(lines.size() == 8);
   for (int i = 1; i < 8; i++) {
     REQUIRE(lines[i].size() >= 2);
@@ -247,24 +266,14 @@ static void checkPieceLinesWellFormed(const std::string &response) {
   if (response == "none") {
     return;
   }
-  const std::vector<std::string> lines = splitLines(response);
+  const std::vector<std::string> lines = splitPrecomputeByChar(response, '\n');
   REQUIRE(lines.size() == 8);
   for (int i = 1; i < 8; i++) {
     const std::string body = lines[i].substr(2);
     if (body == "continue" || body == "none") {
       continue;
     }
-    std::vector<std::string> segments;
-    size_t start = 0;
-    while (true) {
-      const size_t end = body.find('|', start);
-      if (end == std::string::npos) {
-        segments.push_back(body.substr(start));
-        break;
-      }
-      segments.push_back(body.substr(start, end - start));
-      start = end + 1;
-    }
+    const std::vector<std::string> segments = splitPrecomputeByChar(body, '|');
     CHECK(segments.size() == 6);
     if (segments.size() != 6) {
       continue;
@@ -278,11 +287,60 @@ static void checkPieceLinesWellFormed(const std::string &response) {
   }
 }
 
-TEST_CASE("precompute pipeline invariants hold on every golden fixture") {
-  for (int fixtureIdx = 0; fixtureIdx < PRECOMPUTE_PIPELINE_FIXTURE_COUNT; fixtureIdx++) {
-    const PrecomputePipelineFixture &fixture = PRECOMPUTE_PIPELINE_FIXTURES[fixtureIdx];
-    INFO("fixture ", fixtureIdx, " tier=", fixture.production ? "production" : "edge");
-    const PreparedFixture prepared = prepareFixtureFromPipe(fixture.input);
+TEST_CASE("precompute pipeline invariants hold across all structural regimes") {
+  enum RegimeExpectation {
+    EXPECT_TAP_RT_POS_CONTENT,
+    EXPECT_DAS_RT_POS_CONTENT,
+    EXPECT_ZERO_RT,
+    EXPECT_PER_PIECE_CONTINUE,
+    EXPECT_PER_PIECE_NONE,
+    EXPECT_WHOLE_RESPONSE_NONE,
+    EXPECT_LEVEL_TRANSITION,
+  };
+
+  struct PrecomputePropertyCase {
+    const char *name;
+    RegimeExpectation expectedRegime;
+    std::string input;
+  };
+
+  const std::vector<PrecomputePropertyCase> cases = {
+      // 1. Tap mode with reaction time > 0 and production-shaped playouts.
+      {"tap_rt8_production", EXPECT_TAP_RT_POS_CONTENT,
+       makePrecomputePipe(makeWellBoard(4, 4, 9), 18, 0, IDX_T, "X.....", 49, 2, 20,
+                          /* dasCharge= */ -1, /* reactionTime= */ 8)},
+      // 2. DAS mode with reaction time > 0 and production-shaped playouts.
+      {"das_rt8_production", EXPECT_DAS_RT_POS_CONTENT,
+       makePrecomputePipe(makeWellBoard(4, 4, 9), 18, 0, IDX_L, "X.....", 49, 2, 20,
+                          /* dasCharge= */ 10, /* reactionTime= */ 8)},
+      // 3. Zero reaction time ("Default:N/A (0 reaction time)").
+      {"reaction_time_zero", EXPECT_ZERO_RT,
+       makePrecomputePipe(makeEmptyBoard(), 18, 0, IDX_I, "X.....", 0, 0, 20,
+                          /* dasCharge= */ -1, /* reactionTime= */ 0)},
+      // 4. Per-piece "continue" fallback: 16-high well board locks at frame 9
+      //    (< reactionTime=12), while the full sequence (with lock/ARE frames) extends past reactionTime=12.
+      {"per_piece_continue_fallback", EXPECT_PER_PIECE_CONTINUE,
+       makePrecomputePipe(makeWellBoard(16, 16, 9), 18, 0, IDX_O, "X.....", 0, 0, 20,
+                          /* dasCharge= */ -1, /* reactionTime= */ 12)},
+      // 5. Per-piece "none" fallback: same 16-high well board locks before reactionTime=30
+      //    and the full sequence (27 frames) does not extend past reactionTime=30.
+      {"per_piece_none_fallback", EXPECT_PER_PIECE_NONE,
+       makePrecomputePipe(makeWellBoard(16, 16, 9), 18, 0, IDX_O, "X.....", 0, 0, 20,
+                          /* dasCharge= */ -1, /* reactionTime= */ 30)},
+      // 6. Whole-response "none": topped-out right-well board with no legal O placement.
+      {"whole_response_none", EXPECT_WHOLE_RESPONSE_NONE,
+       makePrecomputePipe(makeWellBoard(20, 20, 9), 18, 0, IDX_O, "X.....", 0, 0, 20,
+                          /* dasCharge= */ -1, /* reactionTime= */ 8)},
+      // 7. Level transition: clearing the 4-deep right well at lines=129 advances level 18 -> 19.
+      //    Relies on the evaluator taking the available Tetris clear for at least one next piece.
+      {"level_transition_18_to_19", EXPECT_LEVEL_TRANSITION,
+       makePrecomputePipe(makeWellBoard(4, 4, 9), 18, 129, IDX_I, "X.....", 0, 0, 20,
+                          /* dasCharge= */ 15, /* reactionTime= */ 8)},
+  };
+
+  for (const PrecomputePropertyCase &testCase : cases) {
+    INFO("case=", testCase.name);
+    const PreparedFixture prepared = prepareFixtureFromPipe(testCase.input);
 
     for (const PrecomputePhantom &phantom : prepared.state.phantoms) {
       if (phantom.hasInitialPlacement && phantom.hasAdjustmentState) {
@@ -321,28 +379,50 @@ TEST_CASE("precompute pipeline invariants hold on every golden fixture") {
     const int winner = winningPhantomIndex(totals);
     const std::string response = collapseFixture(prepared, prepared.state);
 
+    // (f) cross-check through mainProcess so prepareFixtureFromPipe stays pinned to main.cpp.
+    CHECK(runRequest(PRECOMPUTE, testCase.input) == response);
+
     // (a) + (b) output shape
     checkResponseWellFormed(response);
     checkPieceLinesWellFormed(response);
 
     if (response == "none") {
+      CHECK(testCase.expectedRegime == EXPECT_WHOLE_RESPONSE_NONE);
       // No phantom qualified: the recomputed argmax must agree that there is
       // nothing to answer with.
       CHECK(winner == -1);
       continue;
     }
+    CHECK(testCase.expectedRegime != EXPECT_WHOLE_RESPONSE_NONE);
     REQUIRE(winner != -1);
     REQUIRE(winner < static_cast<int>(prepared.state.phantoms.size()));
+
+    const std::vector<std::string> lines = splitPrecomputeByChar(response, '\n');
 
     // (c) fallback markers occur exactly under their conditions
     const PrecomputePhantom &winningPhantom = prepared.state.phantoms[winner];
     const bool canContinue =
         winningPhantom.hasInitialPlacement
         && winningPhantom.initial.inputSequence.length() > (size_t)prepared.reactionTime;
-    const std::vector<std::string> lines = splitLines(response);
+    bool caseSawContentLine = false;
+    bool caseSawContinue = false;
+    bool caseSawPerPieceNone = false;
+    bool caseSawLevelIncrease = false;
     for (int i = 1; i < 8; i++) {
       const std::string body = lines[i].substr(2);
       const bool marker = body == "continue" || body == "none";
+      if (body == "continue") {
+        caseSawContinue = true;
+      } else if (body == "none") {
+        caseSawPerPieceNone = true;
+      } else {
+        caseSawContentLine = true;
+        const std::vector<std::string> segments = splitPrecomputeByChar(body, '|');
+        if (segments.size() == 6 && atoi(segments[3].c_str()) > prepared.level) {
+          caseSawLevelIncrease = true;
+        }
+      }
+
       bool anyAdjustmentHit = false;
       for (const PrecomputePossibility &adjustment : winningPhantom.possibleAdjustments) {
         if (prepared.state.lockValues[i - 1].count(
@@ -363,6 +443,36 @@ TEST_CASE("precompute pipeline invariants hold on every golden fixture") {
       }
     }
 
+    // Per-case regime check so one case cannot silently drift and be masked by another.
+    switch (testCase.expectedRegime) {
+    case EXPECT_TAP_RT_POS_CONTENT:
+      CHECK(prepared.dasCharge == -1);
+      CHECK(prepared.reactionTime > 0);
+      CHECK_FALSE(winningPhantom.possibleAdjustments.empty());
+      CHECK(caseSawContentLine);
+      break;
+    case EXPECT_DAS_RT_POS_CONTENT:
+      CHECK(prepared.dasCharge >= 0);
+      CHECK(prepared.reactionTime > 0);
+      CHECK_FALSE(winningPhantom.possibleAdjustments.empty());
+      CHECK(caseSawContentLine);
+      break;
+    case EXPECT_ZERO_RT:
+      CHECK(lines[0] == "Default:N/A (0 reaction time)");
+      break;
+    case EXPECT_PER_PIECE_CONTINUE:
+      CHECK(caseSawContinue);
+      break;
+    case EXPECT_PER_PIECE_NONE:
+      CHECK(caseSawPerPieceNone);
+      break;
+    case EXPECT_WHOLE_RESPONSE_NONE:
+      break; // handled before this switch
+    case EXPECT_LEVEL_TRANSITION:
+      CHECK(caseSawLevelIncrease);
+      break;
+    }
+
     // (e) the response is the winner's: reducing the state to the winning
     // phantom alone must reproduce the full response, and a state of two
     // identical (winning) phantoms must keep the first one's response.
@@ -373,24 +483,6 @@ TEST_CASE("precompute pipeline invariants hold on every golden fixture") {
     PrecomputeState tiedTwice = prepared.state;
     tiedTwice.phantoms.assign(2, prepared.state.phantoms[winner]);
     CHECK(collapseFixture(prepared, tiedTwice) == response);
-  }
-}
-
-TEST_CASE("prepare + collapse reproduce the recorded goldens byte for byte") {
-  for (int fixtureIdx = 0; fixtureIdx < PRECOMPUTE_PIPELINE_FIXTURE_COUNT; fixtureIdx++) {
-    const PrecomputePipelineFixture &fixture = PRECOMPUTE_PIPELINE_FIXTURES[fixtureIdx];
-    INFO("fixture ", fixtureIdx, " tier=", fixture.production ? "production" : "edge");
-    const PreparedFixture prepared = prepareFixtureFromPipe(fixture.input);
-    CHECK(collapseFixture(prepared, prepared.state) == fixture.golden);
-
-    // Sampled cross-check through the whole engine surface (mainProcess):
-    // it re-runs the pipeline, so only the edge records plus every tenth
-    // production record go through it here; the full-set equivalent is the
-    // precompute_verify battery item. This spot-check pins that the context
-    // setup above matches main.cpp's own.
-    if (!fixture.production || fixtureIdx % 10 == 0) {
-      CHECK(runRequest(PRECOMPUTE, fixture.input) == fixture.golden);
-    }
   }
 }
 

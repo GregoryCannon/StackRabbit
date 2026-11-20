@@ -10,12 +10,13 @@
  *
  * Usage: npm run precompute_verify
  *
- * `--dump-inputs [path]` (default build/precompute_tsan_inputs.txt) writes the
- * production-tier requests for the TSan replay harness instead of running the
- * verification: a count line, then two lines per request — the PRECOMPUTE pipe
- * string, then the recorded golden output with every newline escaped to a \x01
- * sentinel (pipe strings never contain newlines or \x01). This mode does not
- * invoke `build/precompute_cli`.
+ * `--dump-inputs [path]` (default build/precompute_tsan_inputs.txt) writes a
+ * representative 6-fixture production-tier subset covering every combination of
+ * (mode in {tap, DAS}) x (reactionTime in {0, 8, 20}) for the TSan replay harness instead
+ * of running the full verification: a count line, then two lines per request —
+ * the PRECOMPUTE pipe string, then the recorded golden output with every
+ * newline escaped to a \x01 sentinel (pipe strings never contain newlines or
+ * \x01). This mode does not invoke `build/precompute_cli`.
  */
 const { execFileSync } = require("child_process");
 const fs = require("fs");
@@ -115,17 +116,39 @@ function runPrecomputeBatch(pipeStrings) {
   return lines.map((line) => line.replace(/\x01/g, "\n"));
 }
 
-/** Writes the production-tier requests in the TSan replay harness's input format. */
+/**
+ * Writes a diverse 6-fixture production-tier subset covering all
+ * (mode in {tap, DAS}) x (reactionTime in {0, 8, 20}) buckets for the TSan replay harness.
+ */
 function dumpInputs(outputPath) {
   const production = loadFixtures().filter((fixture) => fixture.tier === "production");
-  const lines = [String(production.length)];
-  for (const fixture of production) {
+  const selected = [];
+  for (const mode of ["tap", "das"]) {
+    for (const reactionTime of [0, 8, 20]) {
+      const match = production.find(
+        (fixture) =>
+          (mode === "tap" ? fixture.dasCharge === -1 : fixture.dasCharge >= 0) &&
+          fixture.reactionTime === reactionTime &&
+          fixture.output !== "none"
+      );
+      if (!match) {
+        throw new Error(
+          `dumpInputs: missing production fixture for mode=${mode}, reactionTime=${reactionTime}`
+        );
+      }
+      selected.push(match);
+    }
+  }
+  const lines = [String(selected.length)];
+  for (const fixture of selected) {
     lines.push(buildPipeString(fixture));
     lines.push(fixture.output.replace(/\n/g, "\x01"));
   }
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
   fs.writeFileSync(outputPath, lines.join("\n") + "\n");
-  console.log(`Dumped ${production.length} production-tier precompute requests to ${outputPath}`);
+  console.log(
+    `Dumped ${selected.length} representative production-tier precompute requests to ${outputPath}`
+  );
 }
 
 function main() {

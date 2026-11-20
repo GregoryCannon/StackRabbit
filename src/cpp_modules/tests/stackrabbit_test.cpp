@@ -12,8 +12,7 @@
 //   request_type_tests.hpp      SECTION B: one test per request type
 //   board_format_tests.hpp      formatBoard/parseCompressedBoard round trips
 //   precompute_collapse_tests.hpp  synthetic-state collapse/formatter pins
-//   precompute_property_tests.hpp  pipeline invariants on golden fixtures
-//   (fixtures baked in precompute_pipeline_fixtures.hpp)
+//   precompute_property_tests.hpp  pipeline invariants on inline cases
 
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include "../vendor/doctest.h"

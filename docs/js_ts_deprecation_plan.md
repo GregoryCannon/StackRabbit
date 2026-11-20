@@ -71,9 +71,9 @@ What still depends on TS or `node-gyp` today:
 
 8. **Test suite streamlining & change-scoped verification**
    - **Delete `precompute_pipeline_fixtures.hpp`**: `precompute_fixtures.jsonl` becomes the single precompute golden file. Keep all **3,470** fixtures in `precompute_fixtures.jsonl` so broad coverage continues to surface unexpected edge cases.
-   - **Slim `cpp_test_unit`**: compile with `-O2`, drop the duplicate golden byte-equality test from `precompute_property_tests.hpp`, and run the pipeline property/invariant checks on ~6–8 inline representative cases (tap, DAS, rt=0, `continue`, per-piece `none`, whole-response `none`, level transition) instead of 48 baked fixtures.
+   - **Slim `cpp_test_unit`**: compile with `-O0 -std=c++17 -pthread` (compile+run is ~4s vs ~7s at `-O2` on this unity build), drop the duplicate golden byte-equality test from `precompute_property_tests.hpp`, and run the pipeline property/invariant checks on ~6–8 inline representative cases (tap, DAS, `reactionTime=0`, `continue`, per-piece `none`, whole-response `none`, level transition) instead of 48 baked fixtures.
    - **Slim `live_server_check`**: cut the redundant 42-fixture HTTP golden loop down to ~3 representative fixtures (tap, DAS, `none`) while retaining all HTTP protocol, backup-halt, error-handling, and new-route checks.
-   - **Slim `precompute_tsan`**: cut the TSan replay set from 42 production fixtures to ~6–8 diverse production fixtures (covering tap, DAS, rt=0/8/20, and timed `-2`) so it hits every 7-thread code path in ~3–4s instead of ~13s.
+   - **Slim `precompute_tsan`**: cut the TSan replay set from 42 production fixtures to ~6–8 diverse production fixtures (covering tap, DAS, `reactionTime` 0/8/20, and timed `-2`) so it hits every 7-thread code path in ~3–4s instead of ~13s.
    - **Change-scoped test matrix**: replace the monolithic "run everything every time" rule in `TESTING.md` and `AGENTS.md` with a fast default check (~2–3s, or ~4–5s with `live_server_check`) plus targeted checks triggered by what changed (see [Post-Cutover Change-Scoped Test Matrix](#post-cutover-change-scoped-test-matrix)).
 
 ---
@@ -150,8 +150,8 @@ Eliminate redundant golden-file maintenance and cut everyday verification from ~
 1. **Delete `src/cpp_modules/tests/precompute_pipeline_fixtures.hpp` and slim `precompute_property_tests.hpp`**
    - Remove the duplicate golden byte-equality test case (`prepare + collapse reproduce the recorded goldens byte for byte`) — `precompute_verify` is the sole golden byte-parity runner over `precompute_fixtures.jsonl`.
    - Replace the 48-fixture `PRECOMPUTE_PIPELINE_FIXTURES` table in `precompute_property_tests.hpp` with ~6–8 small inline test cases covering each structural regime (tap, DAS, `reactionTime=0`, `continue` fallback, per-piece `none`, whole-response `none`, level transition). Keep all pipeline invariant assertions (well-formedness, finite/bounded map values, fallback-marker conditions, winning phantom consistency).
-   - Add `-O2` (or `-O1`) to `npm run cpp_test_unit` in `package.json` (`g++ -O2 -std=c++17 -pthread ...`).
-   - **Target**: `npm run cpp_test_unit` runs in ~2–3s total (down from 8.2s) and never needs re-baselining on eval changes.
+   - Compile `npm run cpp_test_unit` in `package.json` with `-O0 -std=c++17 -pthread` (`g++ -O0 -std=c++17 -pthread ...`; measured compile+run is ~4s at `-O0` vs ~7s at `-O2`).
+   - **Target**: `npm run cpp_test_unit` runs in ~4s total (down from 8.2s) and never needs re-baselining on eval changes.
 
 2. **Slim `live_server_verify.js` HTTP loop**
    - Keep all HTTP/protocol checks: junk pipe → 500, `|` delimiter → 500, backup-and-halt cancellation, percent-encoded commas, `/precompute-sync`, and `/get-move-ab-test`.
@@ -247,7 +247,7 @@ Land as a pure move + path-update commit (no logic changes) so git preserves fil
 | `src/browser_test_site/` | 5 | **Delete** |
 | `src/console_client/` | — | **Keep as-is** (historical relic) |
 | `binding.gyp`, `src/cpp_modules/src/module.cpp`, `install.js`, `tsconfig.json`, `package-lock.json` | 5 | **Delete** |
-| `package.json` | 1, 2, 3, 4, 5 | **Update** scripts (`cpp_test_unit` `-O2`, `start` → `live_server`, Windows build script, new paths), drop `main` / `dependencies` / `devDependencies` |
+| `package.json` | 1, 2, 3, 4, 5 | **Update** scripts (`cpp_test_unit` `-O0 -std=c++17 -pthread`, `start` → `live_server`, Windows build script, new paths), drop `main` / `dependencies` / `devDependencies` |
 | `src/fceux/stackrabbit.lua` | 2 | **Update** stale port/TS comment (lines 12–13) |
 | `src/cpp_modules/tests/fixture_dump.cpp` | 5 | **Clean up** cutover TODO comment |
 | `AGENTS.md`, `TESTING.md`, `README.md`, `docs/engine_endpoints.md`, `docs/precompute_cpp_migration.md` | 6 | **Update** to final zero-TS, zero-`node-gyp`, change-scoped test state |
@@ -276,7 +276,7 @@ Instead of running every heavy check unconditionally, match tests to what change
 
 One-time sign-off after Phase 5 — all checks must pass with **no `node_modules/` directory installed**:
 
-- [ ] `npm run cpp_test_unit` — compiles with `-O2`, all doctest cases pass (including updated `GET_MOVE_AB_TEST` formatted output tests and slimmed `precompute_property_tests.hpp`)
+- [ ] `npm run cpp_test_unit` — compiles with `-O0 -std=c++17 -pthread`, all doctest cases pass (including updated `GET_MOVE_AB_TEST` formatted output tests and slimmed `precompute_property_tests.hpp`)
 - [ ] `npm run fuzz_verify_sequences` — all 2,783 move-search fixtures character-exact
 - [ ] `npm run precompute_verify` — builds `build/precompute_cli`, 3,470/3,470 byte-identical
 - [ ] `npm run precompute_tsan` — slimmed ~6–8 production fixtures byte-identical, zero TSan warnings

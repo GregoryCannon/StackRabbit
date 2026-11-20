@@ -2,9 +2,9 @@
  * Battery item: boots the C++ live game server on the battery-dedicated port
  * 3101 (never 3000/3001, so this can never collide with a dev server or a
  * manually-run live server), runs the differential harness against it
- * (src/server/live_server_verify.js — all 42 production-precompute golden
- * responses byte-verified over HTTP), kills the server process group, and
- * verifies the port is freed.
+ * (src/server/live_server_verify.js — representative precompute golden
+ * responses plus protocol, error, backup-halt, and synchronous-route checks
+ * over HTTP), kills the server process group, and verifies the port is freed.
  *
  * Mirrors start_check.js's start/kill/port logic (deliberate duplication so
  * start_check.js stays untouched). Fail loudly with actionable text on: the
@@ -196,7 +196,7 @@ async function main() {
 
   console.log(
     "\n[live_server_check] OK: server reached \"" + LISTEN_PATTERN + "\", the harness verified " +
-      "all production-precompute goldens byte-identical over HTTP, the server was killed, " +
+      "representative precompute goldens and HTTP routes, the server was killed, " +
       "and port " + PORT + " is free."
   );
 }

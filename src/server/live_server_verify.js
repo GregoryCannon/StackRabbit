@@ -1,10 +1,11 @@
 /**
  * Differential runner for the C++ live game server's HTTP surface.
  *
- * Reads the golden precompute fixtures (production tier), builds each
- * PRECOMPUTE pipe string exactly like precompute_verify.js does, drives the
- * RUNNING server over HTTP — one /precompute kick, then /async-result polls —
- * and byte-compares the full result with the recorded output. Also verifies:
+ * Selects 3 representative golden precompute fixtures dynamically from
+ * precompute_fixtures.jsonl (production tap, production DAS, and whole-response
+ * `none`), drives the RUNNING server over HTTP — one /precompute kick, then
+ * /async-result polls — and byte-compares each result with its recorded golden.
+ * Also verifies:
  *   - error paths (junk pipe and `|` delimiter -> 500, cleared by next valid kick),
  *   - backup-and-halt cancellation (early /async-result poll serves backup,
  *     halts a 500ms computation quickly, and /precompute-sync returns 503 Busy
@@ -72,8 +73,8 @@ function buildPipeString(record, delimiter = ",", { includeReactionTime = true }
 // than a full result carrying placements: either the whole-body `none` (no
 // legal placement) or `Default:...` followed by exactly seven
 // `<piece>:continue` markers. A full result can share this exact shape when
-// every next piece keeps the default (fixture 41's golden does), so the poll
-// loop treats golden-equality as terminal alongside this classification.
+// every next piece keeps the default, so the poll loop treats golden-equality
+// as terminal alongside this classification.
 function isBackupShaped(body) {
   if (body === "none") {
     return true;
@@ -459,9 +460,38 @@ async function verifyGetMoveAbTestRoute(host, port, fixture) {
   }
 }
 
-function loadProductionFixtures() {
+function loadRepresentativeFixtures() {
   const raw = fs.readFileSync(FIXTURES_PATH, "utf8").trim().split("\n");
-  return raw.slice(1).map((line) => JSON.parse(line)).filter((f) => f.tier === "production");
+  const all = raw.slice(1).map((line) => JSON.parse(line));
+
+  const tapFixture = all.find(
+    (f) => f.tier === "production" && f.dasCharge === -1 && f.output !== "none"
+  );
+  if (!tapFixture) {
+    fail("no production tap-mode fixture found in " + FIXTURES_PATH);
+  }
+
+  const dasFixture = all.find(
+    (f) =>
+      f.tier === "production" &&
+      f.dasCharge >= 0 &&
+      f.reactionTime > 0 &&
+      f.output !== "none"
+  );
+  if (!dasFixture) {
+    fail("no production DAS-mode fixture with reactionTime > 0 found in " + FIXTURES_PATH);
+  }
+
+  const noneFixture =
+    all.find((f) => f.tier === "production" && f.output === "none") ||
+    all.find((f) => f.output === "none");
+  if (!noneFixture) {
+    fail("no whole-response 'none' fixture found in " + FIXTURES_PATH);
+  }
+
+  // run() relies on fixtures[0] being a non-"none" production fixture for the
+  // backup-halt, /precompute-sync, and /get-move-ab-test checks.
+  return [tapFixture, dasFixture, noneFixture];
 }
 
 function main() {
@@ -481,12 +511,9 @@ function main() {
     fail("both --host and --port must be non-empty");
   }
 
-  const fixtures = loadProductionFixtures();
-  if (fixtures.length === 0) {
-    fail("no production-tier fixtures found in " + FIXTURES_PATH);
-  }
+  const fixtures = loadRepresentativeFixtures();
   console.log(
-    `Live server differential verify: ${fixtures.length} production fixtures against ${host}:${port}\n`
+    `Live server differential verify: ${fixtures.length} representative fixtures against ${host}:${port}\n`
   );
 
   run(host, port, fixtures).catch((err) => fail(err && err.stack ? err.stack : String(err)));
@@ -504,7 +531,7 @@ async function run(host, port, fixtures) {
 
   // Error paths first: a junk pipe and a legacy `|`-delimited pipe must each
   // surface as a 500 with a message; the next valid kick (fixture 0's `%2C`
-  // check and the 42 raw-comma fixtures below) must clear the error state.
+  // check and the representative raw-comma fixtures below) must clear the error state.
   console.log("Error-path check: junk pipe ...");
   const errorMessage = await expectEngineRejection(host, port, JUNK_PIPE);
   console.log("  500 with message: " + JSON.stringify(errorMessage));
