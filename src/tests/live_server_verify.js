@@ -519,6 +519,46 @@ function main() {
   run(host, port, fixtures).catch((err) => fail(err && err.stack ? err.stack : String(err)));
 }
 
+async function verifyDebugPrecomputeRoute(host, port, fixture) {
+  const pipe = buildPipeString(fixture);
+  const ok = await get(host, port, `/debug-precompute?p=${pipe}`);
+  if (ok.status !== 200) {
+    fail(`/debug-precompute expected 200, got ${ok.status}: ${ok.body}`);
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(ok.body);
+  } catch (err) {
+    fail(`/debug-precompute returned invalid JSON: ${err.message}`);
+  }
+  if (
+    !Array.isArray(parsed.phantoms) ||
+    parsed.phantoms.length === 0 ||
+    parsed.response !== fixture.output
+  ) {
+    fail(`/debug-precompute response mismatched golden or missing phantoms`);
+  }
+
+  const missing = await get(host, port, "/debug-precompute");
+  if (missing.status !== 400) {
+    fail(`/debug-precompute without p expected 400, got ${missing.status}`);
+  }
+
+  const junk = await get(host, port, `/debug-precompute?p=${JUNK_PIPE}`);
+  if (junk.status !== 500) {
+    fail(`/debug-precompute with junk p expected 500, got ${junk.status}`);
+  }
+
+  const legacy = await get(
+    host,
+    port,
+    `/debug-precompute?p=${buildPipeString(fixture, "|")}`
+  );
+  if (legacy.status !== 500) {
+    fail(`/debug-precompute with '|' delimiter expected 500, got ${legacy.status}`);
+  }
+}
+
 async function verifyDebugGroundTruthRoute(host, port, fixture) {
   const pipe = buildPipeString(fixture);
   const ok = await get(host, port, `/debug-ground-truth?p=${pipe}&n=10&conts=2`);
@@ -601,6 +641,10 @@ async function run(host, port, fixtures) {
   console.log("Synchronous route check: /get-move-ab-test ...");
   await verifyGetMoveAbTestRoute(host, port, fixtures[0]);
   console.log("  200 valid JSON (11 & 12 fields), 400 missing p, 500 junk & '|' delimiter.");
+
+  console.log("Synchronous route check: /debug-precompute ...");
+  await verifyDebugPrecomputeRoute(host, port, fixtures[0]);
+  console.log("  200 valid JSON (response byte-identical), 400 missing p, 500 junk & '|' delimiter.");
 
   console.log("Synchronous route check: /debug-ground-truth ...");
   await verifyDebugGroundTruthRoute(host, port, fixtures[0]);

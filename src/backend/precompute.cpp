@@ -692,6 +692,194 @@ std::string collapseAndFormatPrecompute(const PrecomputeState &state, const unsi
   return overallResponse;
 }
 
+std::vector<PrecomputePhantomBreakdown> analyzePrecomputeCollapse(const PrecomputeState &state,
+                                                                  const Piece *piece) {
+  std::vector<PrecomputePhantomBreakdown> breakdowns;
+  breakdowns.reserve(state.phantoms.size());
+
+  double bestPhantomValue = PRECOMPUTE_MIN_VALUE;
+  int winnerBreakdownIdx = -1;
+
+  auto classifyDasBucket = [&](int dasAfter) -> const char * {
+    if (!state.useDAS) {
+      return "tap";
+    }
+    if (dasAfter >= 15) {
+      return "full";
+    }
+    if (dasAfter >= 10) {
+      return "partial";
+    }
+    return "min";
+  };
+
+  for (size_t pIdx = 0; pIdx < state.phantoms.size(); pIdx++) {
+    const PrecomputePhantom &phantom = state.phantoms[pIdx];
+    PrecomputePhantomBreakdown bd;
+    bd.phantomIndex = static_cast<int>(pIdx);
+    bd.hasInitialPlacement = phantom.hasInitialPlacement;
+    bd.inputPrefix = phantom.inputSequence;
+    bd.numAdjustments = static_cast<int>(phantom.possibleAdjustments.size());
+
+    if (phantom.hasInitialPlacement) {
+      bd.rot = phantom.initial.rot;
+      bd.x = phantom.initial.x;
+      bd.y = phantom.initial.y;
+      bd.relRot = phantom.initial.rot;
+      bd.relX = phantom.initial.x - INITIAL_X;
+      bd.relY = phantom.initial.y - piece->initialY;
+      bd.defaultKey = encodeLockCell(bd.rot, bd.x, bd.y);
+      bd.dasChargeAfter = phantom.initial.dasChargeAfter;
+      bd.linesCleared = phantom.initial.numLinesCleared;
+
+      // Compute no-adjustment baseline (initial placement for all 7 next pieces).
+      double noAdjTotal = 0.0;
+      bool noAdjOk = true;
+      for (int i = 0; i < 7; i++) {
+        auto it = state.lockValues[i].find(bd.defaultKey);
+        if (it == state.lockValues[i].end()) {
+          noAdjOk = false;
+          break;
+        }
+        const double val = it->second
+                           + inputCostX10ForChar(phantom.initial.tuckInput) / 10.0
+                           + dasPenalty(state.useDAS, phantom.initial.dasChargeAfter, bd.defaultKey,
+                                        state.partialPenalties[i], state.minPenalties[i]);
+        const double term = val * pieceProbability(piece, &PIECE_LIST[i]);
+        noAdjTotal += term;
+      }
+      if (noAdjOk) {
+        bd.hasNoAdjAvg = true;
+        bd.noAdjWeightedAvg = noAdjTotal;
+      }
+    }
+
+    // Collect unique adjustment lock keys in search order.
+    for (const PrecomputePossibility &adj : phantom.possibleAdjustments) {
+      std::string ak = encodeLockCell(adj.rot, adj.x, adj.y);
+      if (std::find(bd.adjustmentKeys.begin(), bd.adjustmentKeys.end(), ak)
+          == bd.adjustmentKeys.end()) {
+        bd.adjustmentKeys.push_back(std::move(ak));
+      }
+    }
+
+    double totalValue = 0.0;
+    if (phantom.possibleAdjustments.empty()) {
+      if (phantom.hasInitialPlacement) {
+        for (int i = 0; i < 7; i++) {
+          const double raw = lockValueOrNan(state.lockValues[i], bd.defaultKey);
+          const double inCost = inputCostX10ForChar(phantom.initial.tuckInput) / 10.0;
+          const double pen = dasPenalty(state.useDAS, phantom.initial.dasChargeAfter, bd.defaultKey,
+                                        state.partialPenalties[i], state.minPenalties[i]);
+          const double value = raw + inCost + pen;
+          const double term = value * pieceProbability(piece, &PIECE_LIST[i]);
+          totalValue += term;
+
+          PrecomputePieceBreakdown &pb = bd.byPiece[i];
+          pb.valid = !std::isnan(raw);
+          pb.isContinue = true;
+          pb.key = bd.defaultKey;
+          pb.rot = bd.rot;
+          pb.x = bd.x;
+          pb.y = bd.y;
+          pb.relRot = bd.relRot;
+          pb.relX = bd.relX;
+          pb.relY = bd.relY;
+          pb.rawLockValue = raw;
+          pb.dasPenalty = pen;
+          pb.dasBucket = classifyDasBucket(phantom.initial.dasChargeAfter);
+          pb.inputCost = inCost;
+          pb.totalValue = value;
+          pb.dasChargeAfter = phantom.initial.dasChargeAfter;
+          pb.linesCleared = phantom.initial.numLinesCleared;
+        }
+      }
+    } else {
+      for (int i = 0; i < 7; i++) {
+        double maxValue = PRECOMPUTE_MIN_VALUE;
+        const PrecomputePossibility *bestAdjustment = NULL;
+        double bestRaw = 0.0;
+        double bestPen = 0.0;
+        double bestInCost = 0.0;
+        std::string bestKey;
+
+        for (const PrecomputePossibility &adjustment : phantom.possibleAdjustments) {
+          const std::string key = encodeLockCell(adjustment.rot, adjustment.x, adjustment.y);
+          auto it = state.lockValues[i].find(key);
+          if (it == state.lockValues[i].end()) {
+            continue;
+          }
+          const double raw = it->second;
+          const double inCost = adjustmentInputCost(adjustment, phantom, state.reactionTime);
+          const double pen = dasPenalty(state.useDAS, adjustment.dasChargeAfter, key,
+                                        state.partialPenalties[i], state.minPenalties[i]);
+          const double value = raw + inCost + pen;
+          // Tie keeps the later adjustment (identical to collapseAndFormatPrecompute).
+          if (value >= maxValue) {
+            maxValue = value;
+            bestAdjustment = &adjustment;
+            bestRaw = raw;
+            bestPen = pen;
+            bestInCost = inCost;
+            bestKey = key;
+          }
+        }
+        const double term = maxValue * pieceProbability(piece, &PIECE_LIST[i]);
+        totalValue += term;
+
+        if (bestAdjustment != NULL) {
+          PrecomputePieceBreakdown &pb = bd.byPiece[i];
+          pb.valid = true;
+          pb.key = bestKey;
+          pb.rot = bestAdjustment->rot;
+          pb.x = bestAdjustment->x;
+          pb.y = bestAdjustment->y;
+          pb.relRot = bestAdjustment->rot;
+          pb.relX = bestAdjustment->x - INITIAL_X;
+          pb.relY = bestAdjustment->y - piece->initialY;
+          pb.isContinue = phantom.hasInitialPlacement && bestKey == bd.defaultKey;
+          pb.rawLockValue = bestRaw;
+          pb.dasPenalty = bestPen;
+          pb.dasBucket = classifyDasBucket(bestAdjustment->dasChargeAfter);
+          pb.inputCost = bestInCost;
+          pb.totalValue = maxValue;
+          pb.dasChargeAfter = bestAdjustment->dasChargeAfter;
+          pb.linesCleared = bestAdjustment->numLinesCleared;
+        }
+      }
+    }
+
+    const double phantomValue = totalValue / 7;
+    bd.weightedAvg = totalValue;
+    if (phantomValue > bestPhantomValue) {
+      bestPhantomValue = phantomValue;
+      winnerBreakdownIdx = static_cast<int>(breakdowns.size());
+    }
+    breakdowns.push_back(std::move(bd));
+  }
+
+  if (winnerBreakdownIdx >= 0) {
+    breakdowns[winnerBreakdownIdx].isWinner = true;
+  }
+
+  std::stable_sort(breakdowns.begin(), breakdowns.end(),
+                   [](const PrecomputePhantomBreakdown &a, const PrecomputePhantomBreakdown &b) {
+                     if (a.isWinner != b.isWinner) {
+                       return a.isWinner;
+                     }
+                     const bool aNan = std::isnan(a.weightedAvg);
+                     const bool bNan = std::isnan(b.weightedAvg);
+                     if (aNan != bNan) {
+                       return !aNan;
+                     }
+                     if (a.weightedAvg != b.weightedAvg) {
+                       return a.weightedAvg > b.weightedAvg;
+                     }
+                     return a.phantomIndex < b.phantomIndex;
+                   });
+  return breakdowns;
+}
+
 std::string runPrecompute(GameState gameState, const Piece *curPiece,
                           char const *inputFrameTimeline, int dasCharge, int reactionTime,
                           int pruningBreadth, int playoutCount, int playoutLength,

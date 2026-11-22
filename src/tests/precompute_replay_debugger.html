@@ -726,6 +726,58 @@
       font-size: 11.5px;
       word-break: break-word;
     }
+
+    /* Stage 2: Phantom Collapse Breakdown */
+    .ph-scroll {
+      max-height: 250px;
+      overflow-y: auto;
+    }
+
+    .ph-table tr.ph-winner {
+      background: #f0fdf4;
+    }
+
+    .ph-table tr.ph-sel-a {
+      background: #eff6ff;
+      box-shadow: inset 3px 0 0 var(--accent);
+    }
+
+    .ph-table tr.ph-sel-b {
+      background: #fffbeb;
+      box-shadow: inset 3px 0 0 var(--amber);
+    }
+
+    .ph-adj-cell {
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .ph-pen-neg {
+      color: var(--red);
+      font-weight: 600;
+    }
+
+    .ph-sub {
+      font-size: 10.5px;
+      color: var(--muted);
+    }
+
+    .ph-cell {
+      cursor: pointer;
+      white-space: nowrap;
+      font-size: 11.5px;
+      line-height: 1.3;
+    }
+
+    .ph-cell:hover {
+      background: #eff6ff;
+    }
+
+    .ph-cell.previewing {
+      outline: 2px solid var(--accent);
+      outline-offset: -2px;
+      background: #dbeafe;
+    }
   </style>
 </head>
 
@@ -929,7 +981,8 @@
 
           <div class="diag-tabs">
             <button id="tabSweepBtn" class="diag-tab active" type="button">1. Parameter Sweep</button>
-            <button id="tabGtBtn" class="diag-tab" type="button">2. Ground Truth (High-N)</button>
+            <button id="tabPhantomBtn" class="diag-tab" type="button">2. Phantom Collapse</button>
+            <button id="tabGtBtn" class="diag-tab" type="button">3. Ground Truth (High-N)</button>
           </div>
 
           <!-- Stage 1: Auto Parameter Sweep -->
@@ -967,6 +1020,54 @@
                 <tbody id="sweepBody"></tbody>
               </table>
             </div>
+          </div>
+
+          <!-- Stage 2: Phantom Collapse Breakdown -->
+          <div id="panePhantom" class="diag-pane hidden">
+            <div class="row-between" style="margin-bottom:8px;">
+              <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                <span class="muted" style="font-size:12px;">
+                  Ranks every phantom by exact collapse score (<code>lockValue + dasPenalty + inputCost</code>).
+                </span>
+                <label class="muted" style="display:inline-flex; align-items:center; gap:4px; font-size:12px; cursor:pointer;">
+                  <input type="checkbox" id="phGroupTiesChk" checked /> Group identical outcomes
+                </label>
+              </div>
+              <div style="display:flex; gap:6px; align-items:center;">
+                <button id="phSendToGtBtn" class="hidden" type="button" title="Compare selected phantoms in Ground Truth tab">Compare in Ground Truth →</button>
+                <button id="runPhantomBtn" class="primary" type="button">Run Phantom Breakdown</button>
+              </div>
+            </div>
+
+            <div id="phError" class="error-box hidden"></div>
+            <div id="phMeta" class="triage-banner hidden"></div>
+
+            <div id="phRankWrap" class="results-wrap ph-scroll hidden">
+              <table class="ph-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Default</th>
+                    <th>Weighted Avg</th>
+                    <th>No-Adj Avg</th>
+                    <th>Adj Gain</th>
+                    <th>DAS</th>
+                    <th>#Adj</th>
+                    <th>Compare</th>
+                  </tr>
+                </thead>
+                <tbody id="phRankBody"></tbody>
+              </table>
+            </div>
+
+            <div id="phDetailHeader" class="row-between hidden" style="margin-top:10px;"></div>
+            <div id="phDetailWrap" class="results-wrap hidden">
+              <table>
+                <thead id="phDetailHead"></thead>
+                <tbody id="phDetailBody"></tbody>
+              </table>
+            </div>
+            <div id="phAdjList" class="gt-inspector hidden"></div>
           </div>
 
           <!-- Stage 3: High-N Ground Truth Comparison -->
@@ -1411,9 +1512,10 @@
         overrides: new Map(), // index -> partial/full params object
         replays: new Map(),   // index -> { elapsedMs, queryUsed, overridden, parsed, selectedKey, matchesActual, pieceUsed }
         sweeps: new Map(),    // index -> { running, cancelId, baseQuery, rows }
+        phantomsByIndex: new Map(), // index -> { running, queryUsed, data, error, selectedA, selectedB }
         gtByIndex: new Map(), // index -> { running, reachableQuery, reachable, selectedA, selectedB, selectedC, data, selectedCell }
         activeDiagTab: "sweep",
-        customPreview: null,  // { source, id, mode: "placement"|"afterBoard", placement, afterRows, caption }
+        customPreview: null,  // { source, id, mode: "placement"|"ply2Placement"|"afterBoard", placement, beforeRows, afterRows, caption }
         inFlight: false,
       };
 
@@ -1444,8 +1546,10 @@
       const elRawOutputPre = $("rawOutputPre");
       const elDiagStatusNote = $("diagStatusNote");
       const elTabSweepBtn = $("tabSweepBtn");
+      const elTabPhantomBtn = $("tabPhantomBtn");
       const elTabGtBtn = $("tabGtBtn");
       const elPaneSweep = $("paneSweep");
+      const elPanePhantom = $("panePhantom");
       const elPaneGt = $("paneGt");
       const elRunSweepBtn = $("runSweepBtn");
       const elStopSweepBtn = $("stopSweepBtn");
@@ -1453,6 +1557,18 @@
       const elSweepTriage = $("sweepTriage");
       const elSweepResultsWrap = $("sweepResultsWrap");
       const elSweepBody = $("sweepBody");
+      const elPhGroupTiesChk = $("phGroupTiesChk");
+      const elPhSendToGtBtn = $("phSendToGtBtn");
+      const elRunPhantomBtn = $("runPhantomBtn");
+      const elPhError = $("phError");
+      const elPhMeta = $("phMeta");
+      const elPhRankWrap = $("phRankWrap");
+      const elPhRankBody = $("phRankBody");
+      const elPhDetailHeader = $("phDetailHeader");
+      const elPhDetailWrap = $("phDetailWrap");
+      const elPhDetailHead = $("phDetailHead");
+      const elPhDetailBody = $("phDetailBody");
+      const elPhAdjList = $("phAdjList");
       const elGtMoveA = $("gtMoveA");
       const elGtMoveB = $("gtMoveB");
       const elGtMoveC = $("gtMoveC");
@@ -2138,6 +2254,123 @@
         renderCurrent();
       }
 
+      // ---- Stage 2: Phantom Collapse Breakdown ----
+      function getOrInitPhantomState(idx) {
+        let ph = state.phantomsByIndex.get(idx);
+        if (!ph) {
+          ph = { running: false, queryUsed: null, data: null, error: null, selectedA: 0, selectedB: null };
+          state.phantomsByIndex.set(idx, ph);
+        }
+        return ph;
+      }
+
+      function phantomOutcomeSignature(ph) {
+        const pieceSigs = PIECE_ORDER.map(p => {
+          const b = ph.byPiece ? ph.byPiece[p] : null;
+          return b ? `${b.key}:${b.totalValue}` : "null";
+        }).join("|");
+        return `${ph.weightedAvg}|${pieceSigs}`;
+      }
+
+      function getDisplayedPhantoms(phantoms, groupTies) {
+        if (!groupTies) {
+          return phantoms.map((ph, rawIdx) => ({ ph, rawIdx, tiedCount: 0 }));
+        }
+        const groups = [];
+        const sigMap = new Map();
+        for (let rawIdx = 0; rawIdx < phantoms.length; rawIdx++) {
+          const ph = phantoms[rawIdx];
+          const sig = phantomOutcomeSignature(ph);
+          if (sigMap.has(sig)) {
+            sigMap.get(sig).tiedCount++;
+          } else {
+            const g = { ph, rawIdx, tiedCount: 0 };
+            sigMap.set(sig, g);
+            groups.push(g);
+          }
+        }
+        return groups;
+      }
+
+      async function runPhantomBreakdown() {
+        const entry = state.entries[state.currentIndex];
+        if (!entry || state.inFlight) return;
+        const params = getEffectiveParams(entry);
+        const pieceUsed = PIECES[params.currentPieceIdx] || entry.piece;
+        const query = buildCommaQuery(entry.board, params, entry.secondBoard);
+        const phState = getOrInitPhantomState(entry.index);
+
+        phState.error = null;
+        phState.running = true;
+        state.inFlight = true;
+        elReplayBtn.disabled = true;
+        renderCurrent();
+
+        const t0 = performance.now();
+        try {
+          const resp = await fetch(`${getServerBase()}/debug-precompute?p=${query}`);
+          const text = await resp.text();
+          const elapsedMs = performance.now() - t0;
+          if (!resp.ok) {
+            phState.error = `HTTP ${resp.status}: ${text}`;
+            return;
+          }
+          if (text.startsWith("Unknown request type")) {
+            phState.error =
+              "Running live_game_server does not support /debug-precompute yet. " +
+              "Restart it with `npm run live_server` and try again.";
+            return;
+          }
+          const json = JSON.parse(text);
+          phState.queryUsed = query;
+          phState.data = json;
+          phState.selectedA = 0;
+
+          // Auto-select the runner-up distinct outcome as B if one exists!
+          const grouped = getDisplayedPhantoms(json.phantoms || [], true);
+          phState.selectedB = grouped.length >= 2 ? grouped[1].rawIdx : null;
+
+          // Sync main Replay Result panel with the exact response from this run
+          if (typeof json.response === "string") {
+            const parsed = parsePrecomputeResponse(json.response, entry.rows, pieceUsed, params.lines);
+            const actualNextId = entry.inferredNext && entry.inferredNext.contiguous
+              ? entry.inferredNext.nextPiece.id
+              : null;
+            let selectedKey = "Default";
+            if (actualNextId && parsed.rows.some(r => r.key === actualNextId)) selectedKey = actualNextId;
+            else if (parsed.rows.length > 0) selectedKey = parsed.rows[0].key;
+            let matchesActual = null;
+            if (actualNextId && entry.inferredNext.nextBoard) {
+              const rowForActual = parsed.rows.find(r => r.key === actualNextId);
+              if (rowForActual && rowForActual.boardAfter) {
+                matchesActual = rowForActual.boardAfter === entry.inferredNext.nextBoard;
+              } else if (parsed.isNone) {
+                matchesActual = false;
+              }
+            }
+            state.replays.set(entry.index, {
+              elapsedMs,
+              queryUsed: query,
+              overridden: hasOverrides(entry),
+              parsed,
+              selectedKey,
+              matchesActual,
+              pieceUsed,
+            });
+          }
+
+          elPingStatus.className = "ping ok";
+          elPingStatus.textContent = "Connected";
+        } catch (err) {
+          phState.error = `Could not reach /debug-precompute.\n${err}`;
+        } finally {
+          phState.running = false;
+          state.inFlight = false;
+          elReplayBtn.disabled = false;
+          renderCurrent();
+        }
+      }
+
       function getOrInitGtState(idx) {
         let gt = state.gtByIndex.get(idx);
         if (!gt) {
@@ -2316,11 +2549,14 @@
 
       function renderDiagnostics(entry, params, replay) {
         elTabSweepBtn.classList.toggle("active", state.activeDiagTab === "sweep");
+        elTabPhantomBtn.classList.toggle("active", state.activeDiagTab === "phantom");
         elTabGtBtn.classList.toggle("active", state.activeDiagTab === "gt");
         elPaneSweep.classList.toggle("hidden", state.activeDiagTab !== "sweep");
+        elPanePhantom.classList.toggle("hidden", state.activeDiagTab !== "phantom");
         elPaneGt.classList.toggle("hidden", state.activeDiagTab !== "gt");
 
         const sweep = state.sweeps.get(entry.index) || null;
+        const phState = state.phantomsByIndex.get(entry.index) || null;
         const gt = state.gtByIndex.get(entry.index) || null;
 
         // ---- Sweep Pane ----
@@ -2391,6 +2627,163 @@
               <td>${row.id !== "base" ? `<button class="btn-xs" type="button" data-sweep-apply="${rIdx}" title="Copy these params to Request State">Apply</button>` : ""}</td>
             </tr>`;
           }).join("");
+        }
+
+        // ---- Stage 2: Phantom Collapse Pane ----
+        const phRunning = Boolean(phState && phState.running);
+        elRunPhantomBtn.disabled = state.inFlight;
+        elRunPhantomBtn.textContent = phRunning ? "Running..." : "Run Phantom Breakdown";
+
+        if (phState && phState.error) {
+          elPhError.textContent = phState.error;
+          elPhError.classList.remove("hidden");
+        } else {
+          elPhError.classList.add("hidden");
+        }
+
+        if (!phState || !phState.data || !phState.data.phantoms || phState.data.phantoms.length === 0) {
+          elPhMeta.classList.add("hidden");
+          elPhRankWrap.classList.add("hidden");
+          elPhDetailHeader.classList.add("hidden");
+          elPhDetailWrap.classList.add("hidden");
+          elPhAdjList.classList.add("hidden");
+          elPhSendToGtBtn.classList.add("hidden");
+        } else {
+          const pData = phState.data;
+          const allPhantoms = pData.phantoms;
+          const displayed = getDisplayedPhantoms(allPhantoms, elPhGroupTiesChk.checked);
+          const selA = Math.max(0, Math.min(allPhantoms.length - 1, phState.selectedA || 0));
+          const selB = (phState.selectedB !== null && phState.selectedB >= 0 && phState.selectedB < allPhantoms.length && phState.selectedB !== selA)
+            ? phState.selectedB
+            : null;
+          const phA = allPhantoms[selA];
+          const phB = selB !== null ? allPhantoms[selB] : null;
+
+          const metaBits = [
+            `<span class="mono muted">${pData.totalPhantoms} phantoms · rt=${pData.reactionTime} · mode=${escapeHtml(pData.aiMode)} · ${pData.elapsedMs}ms</span>`,
+          ];
+          if (displayed.length >= 2) {
+            const gap12 = displayed[0].ph.weightedAvg - displayed[1].ph.weightedAvg;
+            metaBits.push(`<span class="tag ${gap12 < 10 ? "amber" : "green"}">#1 vs #2 margin: +${gap12.toFixed(2)}</span>`);
+          }
+          elPhMeta.innerHTML = metaBits.join(" ");
+          elPhMeta.classList.remove("hidden");
+
+          const canSendGt = Boolean(phA && phA.hasInitialPlacement);
+          elPhSendToGtBtn.classList.toggle("hidden", !canSendGt);
+
+          elPhRankBody.innerHTML = displayed.map((item, dispIdx) => {
+            const { ph, rawIdx, tiedCount } = item;
+            const isA = rawIdx === selA;
+            const isB = rawIdx === selB;
+            const cls = [
+              ph.isWinner ? "ph-winner" : "",
+              isA ? "ph-sel-a" : "",
+              isB ? "ph-sel-b" : "",
+            ].filter(Boolean).join(" ");
+
+            const defLabel = ph.hasInitialPlacement
+              ? formatRelCoords(ph.relRot, ph.relX, ph.relY)
+              : `N/A (rt=0)`;
+            const badges = [];
+            if (ph.isWinner) badges.push(`<span class="tag green">WIN</span>`);
+            if (isA) badges.push(`<span class="tag" style="color:var(--accent);border-color:var(--accent);background:#eff6ff;">A</span>`);
+            if (isB) badges.push(`<span class="tag amber">B</span>`);
+            if (tiedCount > 0) badges.push(`<span class="muted" style="font-size:10.5px;">(+${tiedCount} tied)</span>`);
+
+            const noAdjTxt = ph.noAdjWeightedAvg !== null ? ph.noAdjWeightedAvg.toFixed(2) : "—";
+            const adjGain = ph.noAdjWeightedAvg !== null ? (ph.weightedAvg - ph.noAdjWeightedAvg) : null;
+            const gainTxt = adjGain !== null
+              ? `<span class="${adjGain > 0.05 ? "gt-delta-pos" : "muted"}">${adjGain >= 0 ? "+" : ""}${adjGain.toFixed(2)}</span>`
+              : "—";
+
+            return `<tr class="${cls}" data-ph-select="${rawIdx}" title="Click to inspect as Phantom A">
+              <td>${dispIdx + 1}</td>
+              <td style="white-space:nowrap;"><strong>${escapeHtml(defLabel)}</strong> ${badges.join(" ")}</td>
+              <td><strong>${ph.weightedAvg !== null ? ph.weightedAvg.toFixed(2) : "—"}</strong></td>
+              <td class="muted">${noAdjTxt}</td>
+              <td>${gainTxt}</td>
+              <td>${ph.hasInitialPlacement ? ph.dasChargeAfter : "—"}</td>
+              <td>${ph.numAdjustments}</td>
+              <td>${!isA ? `<button class="btn-xs" type="button" data-ph-vs="${rawIdx}">${isB ? "Clear B" : "vs B"}</button>` : `<span class="muted">—</span>`}</td>
+            </tr>`;
+          }).join("");
+          elPhRankWrap.classList.remove("hidden");
+
+          // 7-Piece Breakdown Table (Single A or Side-by-side A vs B)
+          const aLabel = phA.hasInitialPlacement ? formatRelCoords(phA.relRot, phA.relX, phA.relY) : "rt=0";
+          if (!phB) {
+            elPhDetailHeader.innerHTML =
+              `<div><strong>Phantom A: ${escapeHtml(aLabel)}</strong> <span class="muted mono">weightedAvg=${phA.weightedAvg.toFixed(2)}${phA.noAdjWeightedAvg !== null ? ` · noAdj=${phA.noAdjWeightedAvg.toFixed(2)}` : ""}</span></div>` +
+              `<span class="muted" style="font-size:11.5px;">Click any piece row to preview · click <code>vs B</code> above to compare side-by-side</span>`;
+            elPhDetailHead.innerHTML = `<tr><th>Next</th><th>Chosen Move</th><th>Raw LockVal</th><th>DAS Pen</th><th>Input Cost</th><th>Total</th><th>DAS</th></tr>`;
+            elPhDetailBody.innerHTML = PIECE_ORDER.map(p => {
+              const pb = phA.byPiece ? phA.byPiece[p] : null;
+              if (!pb) return `<tr><td><strong>${p}</strong></td><td colspan="6" class="muted">none</td></tr>`;
+              const moveTxt = formatRelCoords(pb.relRot, pb.relX, pb.relY) + (pb.isContinue ? " (cont)" : " ★adj");
+              const penCls = pb.dasPenalty < -0.01 ? "ph-pen-neg" : "muted";
+              const penTxt = pb.dasPenalty < -0.01 ? `${pb.dasPenalty.toFixed(2)} (${pb.dasBucket})` : `0 (${pb.dasBucket})`;
+              const cid = `ph:A:${selA}:${p}`;
+              const isPrev = state.customPreview && state.customPreview.id === cid;
+              return `<tr class="${isPrev ? "selected" : ""}" data-ph-piece-preview="A" data-ph-raw="${selA}" data-ph-piece="${p}">
+                <td><strong>${p}</strong></td>
+                <td class="${pb.isContinue ? "" : "ph-adj-cell"}" style="white-space:nowrap;">${escapeHtml(moveTxt)}</td>
+                <td>${pb.rawLockValue.toFixed(2)}</td>
+                <td class="${penCls}" style="white-space:nowrap;">${escapeHtml(penTxt)}</td>
+                <td class="muted">${pb.inputCost.toFixed(2)}</td>
+                <td><strong>${pb.totalValue.toFixed(2)}</strong></td>
+                <td>${pb.dasChargeAfter}</td>
+              </tr>`;
+            }).join("");
+          } else {
+            const bLabel = phB.hasInitialPlacement ? formatRelCoords(phB.relRot, phB.relX, phB.relY) : "rt=0";
+            const gapAB = phA.weightedAvg - phB.weightedAvg;
+            elPhDetailHeader.innerHTML =
+              `<div><strong>A: ${escapeHtml(aLabel)}</strong> (${phA.weightedAvg.toFixed(2)}) vs <strong>B: ${escapeHtml(bLabel)}</strong> (${phB.weightedAvg.toFixed(2)}) ` +
+              `<span class="tag ${gapAB >= 0 ? "green" : "amber"}">A − B = ${gapAB >= 0 ? "+" : ""}${gapAB.toFixed(2)}</span></div>` +
+              `<span class="muted" style="font-size:11.5px;">Click any A or B cell to preview on board</span>`;
+            elPhDetailHead.innerHTML = `<tr><th>Next</th><th>A: ${escapeHtml(aLabel)}</th><th>B: ${escapeHtml(bLabel)}</th><th>Δ (A − B)</th></tr>`;
+
+            const renderSideCell = (pb, side, rawIdx, p) => {
+              if (!pb) return `<td class="muted">—</td>`;
+              const cid = `ph:${side}:${rawIdx}:${p}`;
+              const isPrev = state.customPreview && state.customPreview.id === cid;
+              const moveTxt = formatRelCoords(pb.relRot, pb.relX, pb.relY) + (pb.isContinue ? "" : " ★adj");
+              const penPart = pb.dasPenalty < -0.01 ? ` <span class="ph-pen-neg">${pb.dasPenalty.toFixed(1)}d</span>` : "";
+              const costPart = Math.abs(pb.inputCost) > 0.005 ? ` ${pb.inputCost.toFixed(1)}c` : "";
+              return `<td class="ph-cell${isPrev ? " previewing" : ""}" data-ph-piece-preview="${side}" data-ph-raw="${rawIdx}" data-ph-piece="${p}">
+                <div><strong class="${pb.isContinue ? "" : "ph-adj-cell"}">${escapeHtml(moveTxt)}</strong> → <strong>${pb.totalValue.toFixed(2)}</strong></div>
+                <div class="ph-sub">raw ${pb.rawLockValue.toFixed(1)}${penPart}${costPart} · d${pb.dasChargeAfter}</div>
+              </td>`;
+            };
+
+            elPhDetailBody.innerHTML = PIECE_ORDER.map(p => {
+              const pbA = phA.byPiece ? phA.byPiece[p] : null;
+              const pbB = phB.byPiece ? phB.byPiece[p] : null;
+              let deltaTd = `<td class="muted">—</td>`;
+              if (pbA && pbB) {
+                const d = pbA.totalValue - pbB.totalValue;
+                const cls = d > 0.05 ? "gt-delta-pos" : (d < -0.05 ? "gt-delta-neg" : "muted");
+                deltaTd = `<td class="${cls}">${d >= 0 ? "+" : ""}${d.toFixed(2)}</td>`;
+              }
+              return `<tr>
+                <td><strong>${p}</strong></td>
+                ${renderSideCell(pbA, "A", selA, p)}
+                ${renderSideCell(pbB, "B", selB, p)}
+                ${deltaTd}
+              </tr>`;
+            }).join("");
+          }
+          elPhDetailHeader.classList.remove("hidden");
+          elPhDetailWrap.classList.remove("hidden");
+
+          // Reachable adjustment keys summary for Phantom A
+          const adjSummary = phA.adjustmentKeys && phA.adjustmentKeys.length > 0
+            ? `<strong>Phantom A reachable adjustments (${phA.adjustmentKeys.length}):</strong> ${escapeHtml(phA.adjustmentKeys.join(", "))}` +
+              (phA.inputPrefix ? `<div class="muted" style="margin-top:2px;">Pre-reaction prefix: <code>${escapeHtml(phA.inputPrefix)}</code></div>` : "")
+            : `<span class="muted">Phantom A has no mid-air adjustment capture (locks before reaction time).</span>`;
+          elPhAdjList.innerHTML = adjSummary;
+          elPhAdjList.classList.remove("hidden");
         }
 
         // ---- Ground Truth Pane ----
@@ -2576,6 +2969,7 @@
         state.overrides.clear();
         state.replays.clear();
         state.sweeps.clear();
+        state.phantomsByIndex.clear();
         state.gtByIndex.clear();
         state.customPreview = null;
 
@@ -2694,9 +3088,13 @@
         renderCurrent();
       });
 
-      // Phase 1 Diagnostic Event Listeners
+      // Phase 1 & 2 Diagnostic Event Listeners
       elTabSweepBtn.addEventListener("click", () => {
         state.activeDiagTab = "sweep";
+        renderCurrent();
+      });
+      elTabPhantomBtn.addEventListener("click", () => {
+        state.activeDiagTab = "phantom";
         renderCurrent();
       });
       elTabGtBtn.addEventListener("click", () => {
@@ -2708,6 +3106,99 @@
           const q = buildCommaQuery(entry.board, getEffectiveParams(entry), entry.secondBoard);
           if (gt.reachableQuery !== q) {
             fetchReachableMovesForCurrent(true);
+          }
+        }
+      });
+
+      elRunPhantomBtn.addEventListener("click", runPhantomBreakdown);
+      elPhGroupTiesChk.addEventListener("change", () => renderCurrent());
+
+      elPhRankBody.addEventListener("click", e => {
+        const entry = state.entries[state.currentIndex];
+        const phState = entry ? state.phantomsByIndex.get(entry.index) : null;
+        if (!entry || !phState || !phState.data) return;
+
+        const vsBtn = e.target.closest("button[data-ph-vs]");
+        if (vsBtn) {
+          e.stopPropagation();
+          const rawIdx = Number(vsBtn.dataset.phVs);
+          phState.selectedB = phState.selectedB === rawIdx ? null : rawIdx;
+          renderCurrent();
+          return;
+        }
+
+        const tr = e.target.closest("tr[data-ph-select]");
+        if (!tr) return;
+        const rawIdx = Number(tr.dataset.phSelect);
+        phState.selectedA = rawIdx;
+        if (phState.selectedB === rawIdx) phState.selectedB = null;
+        const ph = phState.data.phantoms[rawIdx];
+        if (ph && ph.hasInitialPlacement) {
+          const pieceUsed = PIECES[getEffectiveParams(entry).currentPieceIdx] || entry.piece;
+          const sim = simulateLock(entry.rows, pieceUsed, ph.rot, ph.x, ph.y);
+          if (sim) {
+            state.customPreview = {
+              source: "phantom",
+              id: `ph:default:${rawIdx}`,
+              mode: "placement",
+              placement: sim,
+              afterRows: sim.afterRows,
+              caption: `Phantom A ${formatRelCoords(ph.relRot, ph.relX, ph.relY)}`,
+            };
+          }
+        }
+        renderCurrent();
+      });
+
+      elPhDetailBody.addEventListener("click", e => {
+        const el = e.target.closest("[data-ph-piece-preview]");
+        if (!el) return;
+        const entry = state.entries[state.currentIndex];
+        const phState = entry ? state.phantomsByIndex.get(entry.index) : null;
+        if (!entry || !phState || !phState.data) return;
+        const side = el.dataset.phPiecePreview;
+        const rawIdx = Number(el.dataset.phRaw);
+        const pieceId = el.dataset.phPiece;
+        const ph = phState.data.phantoms[rawIdx];
+        const pb = ph && ph.byPiece ? ph.byPiece[pieceId] : null;
+        if (!pb) return;
+        const pieceUsed = PIECES[getEffectiveParams(entry).currentPieceIdx] || entry.piece;
+        const sim = simulateLock(entry.rows, pieceUsed, pb.rot, pb.x, pb.y);
+        if (!sim) return;
+        state.customPreview = {
+          source: "phantom",
+          id: `ph:${side}:${rawIdx}:${pieceId}`,
+          mode: "placement",
+          placement: sim,
+          afterRows: sim.afterRows,
+          caption: `Phantom ${side} (${pieceId} → ${formatRelCoords(pb.relRot, pb.relX, pb.relY)})`,
+        };
+        renderCurrent();
+      });
+
+      elPhSendToGtBtn.addEventListener("click", async () => {
+        const entry = state.entries[state.currentIndex];
+        const phState = entry ? state.phantomsByIndex.get(entry.index) : null;
+        if (!entry || !phState || !phState.data) return;
+        const all = phState.data.phantoms;
+        const phA = all[phState.selectedA || 0];
+        const phB = phState.selectedB !== null ? all[phState.selectedB] : null;
+        const gt = getOrInitGtState(entry.index);
+        if (phA && phA.hasInitialPlacement) gt.selectedA = phA.defaultKey;
+        if (phB && phB.hasInitialPlacement) gt.selectedB = phB.defaultKey;
+        state.activeDiagTab = "gt";
+        renderCurrent();
+        if (!state.inFlight) {
+          const q = buildCommaQuery(entry.board, getEffectiveParams(entry), entry.secondBoard);
+          if (gt.reachableQuery !== q) {
+            await fetchReachableMovesForCurrent(false);
+            if (phA && phA.hasInitialPlacement && gt.reachable.some(r => r.key === phA.defaultKey)) {
+              gt.selectedA = phA.defaultKey;
+            }
+            if (phB && phB.hasInitialPlacement && gt.reachable.some(r => r.key === phB.defaultKey)) {
+              gt.selectedB = phB.defaultKey;
+            }
+            renderCurrent();
           }
         }
       });

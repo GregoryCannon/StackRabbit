@@ -1739,4 +1739,41 @@ TEST_CASE("runDebugGroundTruth validates arguments and compares placements acros
   CHECK(unreachableJson.find("\"key\":\"9|9|9\",\"reachable\":false") != std::string::npos);
 }
 
+TEST_CASE("runDebugPrecompute returns ranked phantom collapse breakdown matching winner") {
+  std::string board = makeFlatBoard(4);
+  std::string pipe = InputBuilder()
+                         .withBoard1(board)
+                         .withLevel(19)
+                         .withLines(0)
+                         .withCurPiece(IDX_L)
+                         .withNextPiece(-1)
+                         .withTimeline("X..")
+                         .withPlayoutCount(0)
+                         .withPlayoutLength(0)
+                         .withPruningBreadth(20)
+                         .withAggression("safe")
+                         .withDasCharge(16)
+                         .build()
+                     + "18|";
+
+  // Validation errors
+  CHECK(debug_pre::runDebugPrecompute("bad_pipe").rfind("Error:", 0) == 0);
+
+  std::string json = debug_pre::runDebugPrecompute(pipe);
+  REQUIRE(json.rfind("Error:", 0) != 0);
+  CHECK(json.find("\"aiMode\":\"STANDARD\"") != std::string::npos);
+  CHECK(json.find("\"useDas\":true") != std::string::npos);
+  CHECK(json.find("\"reactionTime\":18") != std::string::npos);
+  CHECK(json.find("\"isWinner\":true") != std::string::npos);
+  CHECK(json.find("\"weightedAvg\":") != std::string::npos);
+  CHECK(json.find("\"rawLockValue\":") != std::string::npos);
+  CHECK(json.find("\"dasPenalty\":") != std::string::npos);
+  CHECK(json.find("\"inputCost\":") != std::string::npos);
+
+  // Winner's response matches standard runRequest(PRECOMPUTE, pipe) exactly.
+  std::string expectedResponse = runRequest(PRECOMPUTE, pipe);
+  CHECK(json.find("\"response\":\"" + debug_gt::jsonEscape(expectedResponse) + "\"")
+        != std::string::npos);
+}
+
 #endif // SR_REQUEST_TYPE_TESTS

@@ -87,6 +87,57 @@ PrecomputeState preparePrecomputeState(GameState gameState, const Piece *curPiec
 std::string collapseAndFormatPrecompute(const PrecomputeState &state, const unsigned int board[20],
                                         const Piece *piece, int level, int lines, bool pushDown);
 
+/** Per-next-piece breakdown for one phantom inside collapseAndFormatPrecompute. */
+struct PrecomputePieceBreakdown {
+  bool valid = false;
+  bool isContinue = false;
+  std::string key; // "rot|x|y"
+  int rot = 0;
+  int x = 0;
+  int y = 0;
+  int relRot = 0; // relative to spawn (INITIAL_X, piece->initialY)
+  int relX = 0;
+  int relY = 0;
+  double rawLockValue = 0.0;
+  double dasPenalty = 0.0;
+  const char *dasBucket = "tap"; // "full" | "partial" | "min" | "tap"
+  double inputCost = 0.0;
+  double totalValue = 0.0;
+  int dasChargeAfter = -1;
+  int linesCleared = 0;
+};
+
+/** Full collapse diagnostic breakdown for one phantom. */
+struct PrecomputePhantomBreakdown {
+  int phantomIndex = 0;
+  bool hasInitialPlacement = false;
+  std::string defaultKey; // "rot|x|y", or "" when reactionTime == 0
+  int rot = 0;
+  int x = 0;
+  int y = 0;
+  int relRot = 0;
+  int relX = 0;
+  int relY = 0;
+  int dasChargeAfter = -1;
+  int linesCleared = 0;
+  std::string inputPrefix;
+  int numAdjustments = 0;
+  std::vector<std::string> adjustmentKeys;
+  double weightedAvg = 0.0;      // NES-weighted score WITH adjustments
+  double noAdjWeightedAvg = 0.0; // NES-weighted score using initial placement only
+  bool hasNoAdjAvg = false;
+  bool isWinner = false;
+  PrecomputePieceBreakdown byPiece[7]; // indexed by PIECE_LIST (I,O,L,J,T,S,Z)
+};
+
+/**
+ * Evaluates every phantom in `state` using the exact same collapse math and
+ * tie-breaking as collapseAndFormatPrecompute, returning per-phantom and
+ * per-next-piece breakdowns sorted by descending weightedAvg (winner first).
+ */
+std::vector<PrecomputePhantomBreakdown> analyzePrecomputeCollapse(const PrecomputeState &state,
+                                                                  const Piece *piece);
+
 /**
  * Formats one spawn-entry placement from fullMoveSearch into the wire format:
  * "relRot,relX,relY|inputSequence|boardAfter|levelAfter|linesAfter|dasChargeAfter".

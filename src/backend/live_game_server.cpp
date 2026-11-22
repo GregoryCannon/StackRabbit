@@ -30,6 +30,12 @@
 //   GET /get-move-ab-test?p=<pipe>  -> 200 + JSON A/B move comparison computed
 //                                      synchronously; 400 if p absent; 500 on
 //                                      delimiter/validation/engine error
+//   GET /debug-precompute?p=<pipe>  -> 200 + JSON phantom collapse breakdown
+//                                      (ranked phantoms, per-next-piece raw lock
+//                                      value, DAS penalty, input cost, reachable
+//                                      adjustments, plus exact precompute response);
+//                                      503 "Busy" if async precompute is running;
+//                                      400 if p absent; 500 on pipe error
 //   GET /debug-ground-truth?p=<pipe>[&keys=k1,k2][&n=2000][&conts=5]
 //                                   -> 200 + JSON high-N ground-truth playout
 //                                      comparison across all 7 next pieces for
@@ -90,6 +96,7 @@
 // Pull in all the engine code the same way entrypoint.cpp does.
 #include "main.cpp"
 #include "debug_ground_truth.hpp"
+#include "debug_precompute.hpp"
 
 namespace {
 
@@ -628,6 +635,31 @@ RouteResult handleGetMoveAbTest(const std::string &query) {
   return {200, response, suffix};
 }
 
+RouteResult handleDebugPrecompute(const std::string &query, double calibratedMovesPerMs7T) {
+  auto received = std::chrono::steady_clock::now();
+  std::string enginePipe;
+  RouteResult parseError;
+  if (!parseEnginePipeQuery(query, enginePipe, parseError)) {
+    return parseError;
+  }
+  {
+    std::lock_guard<std::mutex> lock(g_slot.mutex);
+    if (g_slot.state == AsyncSlot::State::RUNNING) {
+      return {503, "Busy", ""};
+    }
+  }
+  EngineTimingContext timing;
+  timing.hasRequestReceived = true;
+  timing.requestReceived = received;
+  timing.calibratedMovesPerMs7T = calibratedMovesPerMs7T;
+  std::string response = debug_pre::runDebugPrecompute(enginePipe, &timing);
+  std::string suffix = formatDurationSuffix(received);
+  if (isEngineRejection(response)) {
+    return {500, response, suffix};
+  }
+  return {200, response, suffix};
+}
+
 RouteResult handleDebugGroundTruth(const std::string &query) {
   auto started = std::chrono::steady_clock::now();
   std::string enginePipe;
@@ -723,6 +755,9 @@ RouteResult routeRequest(const std::string &path, const std::string &query,
   }
   if (path == "/get-move-ab-test") {
     return handleGetMoveAbTest(query);
+  }
+  if (path == "/debug-precompute") {
+    return handleDebugPrecompute(query, calibratedMovesPerMs7T);
   }
   if (path == "/debug-ground-truth") {
     return handleDebugGroundTruth(query);

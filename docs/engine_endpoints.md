@@ -70,6 +70,11 @@ Routes:
     precompute shape (an optional trailing `reactionTime` field is ignored).
   - Returns `400` if `p` is absent, and `500` on `|` delimiter, validation
     rejection, or engine exception.
+- `GET /debug-precompute?p=<pipe>` → `200` + synchronous JSON phantom collapse
+  breakdown (ranked phantoms, per-next-piece `rawLockValue` / `dasPenalty` /
+  `inputCost` / `totalValue`, reachable adjustments, and exact `response`
+  string; `503` `Busy` while an async `/precompute` job is running; `400` if
+  `p` is absent; `500` on `|` delimiter or pipe validation error).
 - `GET /debug-ground-truth?p=<pipe>[&keys=k1,k2][&n=2000][&conts=5]` → `200` +
   synchronous JSON ground-truth playout comparison across all 7 next pieces for
   selected first-piece lock keys (default: top 4 by `fastEval`) plus the full
