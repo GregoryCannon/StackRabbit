@@ -550,6 +550,182 @@
       padding: 32px 16px;
       color: var(--muted);
     }
+
+    /* Phase 1 Diagnostics (Parameter Sweep & Ground Truth) */
+    .diag-tabs {
+      display: flex;
+      gap: 6px;
+      border-bottom: 1px solid var(--border);
+      margin-top: 10px;
+      padding-bottom: 8px;
+    }
+
+    .diag-tab {
+      font-size: 12px;
+      font-weight: 500;
+      padding: 5px 10px;
+      border-radius: 5px;
+      background: var(--surface-alt);
+      border: 1px solid var(--border);
+      color: var(--muted);
+    }
+
+    .diag-tab.active {
+      background: #eff6ff;
+      border-color: var(--accent);
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .diag-pane {
+      margin-top: 10px;
+    }
+
+    .triage-banner {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 10px;
+      padding: 8px 10px;
+      border-radius: 5px;
+      background: var(--surface-alt);
+      border: 1px solid var(--border);
+      font-size: 12px;
+      align-items: center;
+    }
+
+    .sweep-table td.sweep-diff {
+      background: #fffbeb;
+      color: var(--amber);
+      font-weight: 600;
+    }
+
+    .sweep-table td.sweep-cell {
+      cursor: pointer;
+      white-space: nowrap;
+      font-size: 11.5px;
+    }
+
+    .sweep-table td.sweep-cell:hover {
+      background: #eff6ff;
+    }
+
+    .sweep-table td.sweep-cell.previewing {
+      outline: 2px solid var(--accent);
+      outline-offset: -2px;
+      background: #dbeafe;
+    }
+
+    .btn-xs {
+      padding: 2px 6px;
+      font-size: 11px;
+    }
+
+    .gt-controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: flex-end;
+      margin-bottom: 10px;
+    }
+
+    .gt-field {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .gt-field label {
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .gt-field select {
+      font-family: var(--mono);
+      font-size: 12px;
+      max-width: 250px;
+    }
+
+    .gt-summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .gt-card {
+      background: var(--surface-alt);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      padding: 8px 10px;
+      font-family: var(--mono);
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .gt-card:hover {
+      border-color: var(--border-hover);
+    }
+
+    .gt-card.winner {
+      border-color: #86efac;
+      background: #f0fdf4;
+    }
+
+    .gt-card.previewing {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 1px var(--accent);
+    }
+
+    .gt-big {
+      font-size: 15px;
+      font-weight: 700;
+      margin: 2px 0;
+    }
+
+    .gt-table td.gt-cell {
+      cursor: pointer;
+      white-space: nowrap;
+      font-size: 11.5px;
+      line-height: 1.3;
+    }
+
+    .gt-cont-line {
+      font-size: 10.5px;
+      color: var(--accent);
+      margin-top: 1px;
+    }
+
+    .gt-table td.gt-cell:hover {
+      background: #eff6ff;
+    }
+
+    .gt-table td.gt-cell.previewing {
+      outline: 2px solid var(--accent);
+      outline-offset: -2px;
+      background: #dbeafe;
+    }
+
+    .gt-delta-pos {
+      color: var(--green);
+      font-weight: 600;
+    }
+
+    .gt-delta-neg {
+      color: var(--red);
+      font-weight: 600;
+    }
+
+    .gt-inspector {
+      margin-top: 8px;
+      padding: 8px 10px;
+      border-radius: 5px;
+      background: var(--surface-alt);
+      border: 1px solid var(--border);
+      font-family: var(--mono);
+      font-size: 11.5px;
+      word-break: break-word;
+    }
   </style>
 </head>
 
@@ -741,6 +917,104 @@
           <div id="replayPlaceholder" class="muted" style="margin-top:8px;">
             Click <strong>Replay Precompute</strong> (or press <code>R</code>) to run the parameters above against
             <code>/precompute-sync</code>.
+          </div>
+        </div>
+
+        <!-- Phase 1 Diagnostics: Auto Parameter Sweep (Stage 1) + Ground Truth (Stage 3) -->
+        <div class="card">
+          <div class="row-between">
+            <h2 class="card-title">Diagnostics</h2>
+            <span id="diagStatusNote" class="muted" style="font-size:11.5px;"></span>
+          </div>
+
+          <div class="diag-tabs">
+            <button id="tabSweepBtn" class="diag-tab active" type="button">1. Parameter Sweep</button>
+            <button id="tabGtBtn" class="diag-tab" type="button">2. Ground Truth (High-N)</button>
+          </div>
+
+          <!-- Stage 1: Auto Parameter Sweep -->
+          <div id="paneSweep" class="diag-pane">
+            <div class="row-between" style="margin-bottom:8px;">
+              <span class="muted" style="font-size:12px;">
+                Sequentially sweeps depth, reaction time, mode, DAS, and high budget to isolate which subsystem drives a placement.
+              </span>
+              <div style="display:flex; gap:6px; align-items:center;">
+                <button id="runSweepBtn" class="primary" type="button">Run Sweep</button>
+                <button id="stopSweepBtn" class="hidden" type="button">Stop</button>
+              </div>
+            </div>
+
+            <div id="sweepError" class="error-box hidden"></div>
+            <div id="sweepTriage" class="triage-banner hidden"></div>
+
+            <div id="sweepResultsWrap" class="results-wrap hidden">
+              <table class="sweep-table">
+                <thead>
+                  <tr>
+                    <th>Variant</th>
+                    <th>Default</th>
+                    <th>I</th>
+                    <th>O</th>
+                    <th>L</th>
+                    <th>J</th>
+                    <th>T</th>
+                    <th>S</th>
+                    <th>Z</th>
+                    <th>Time</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="sweepBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Stage 3: High-N Ground Truth Comparison -->
+          <div id="paneGt" class="diag-pane hidden">
+            <div class="gt-controls">
+              <div class="gt-field">
+                <label for="gtMoveA">Move A (Engine / Baseline)</label>
+                <select id="gtMoveA"></select>
+              </div>
+              <div class="gt-field">
+                <label for="gtMoveB">Move B (Human / Alt)</label>
+                <select id="gtMoveB"></select>
+              </div>
+              <div class="gt-field">
+                <label for="gtMoveC">Move C (Optional)</label>
+                <select id="gtMoveC"></select>
+              </div>
+              <div class="gt-field">
+                <label for="gtN">Playouts (N)</label>
+                <select id="gtN">
+                  <option value="500">500</option>
+                  <option value="1000">1000</option>
+                  <option value="2000" selected>2000</option>
+                  <option value="4000">4000</option>
+                </select>
+              </div>
+              <div class="gt-field">
+                <label for="gtConts">Top Conts</label>
+                <select id="gtConts">
+                  <option value="3">3</option>
+                  <option value="5" selected>5</option>
+                </select>
+              </div>
+              <button id="gtLoadMovesBtn" type="button" title="Fetch all legal first placements">Load Moves</button>
+              <button id="gtRunBtn" class="primary" type="button">Run Ground Truth</button>
+            </div>
+
+            <div id="gtError" class="error-box hidden"></div>
+            <div id="gtVerdict" class="triage-banner hidden"></div>
+            <div id="gtSummaryGrid" class="gt-summary-grid hidden"></div>
+
+            <div id="gtResultsWrap" class="results-wrap hidden">
+              <table class="gt-table">
+                <thead id="gtHead"></thead>
+                <tbody id="gtBody"></tbody>
+              </table>
+            </div>
+            <div id="gtInspector" class="gt-inspector hidden"></div>
           </div>
         </div>
       </div>
@@ -1136,6 +1410,10 @@
         currentIndex: 0,
         overrides: new Map(), // index -> partial/full params object
         replays: new Map(),   // index -> { elapsedMs, queryUsed, overridden, parsed, selectedKey, matchesActual, pieceUsed }
+        sweeps: new Map(),    // index -> { running, cancelId, baseQuery, rows }
+        gtByIndex: new Map(), // index -> { running, reachableQuery, reachable, selectedA, selectedB, selectedC, data, selectedCell }
+        activeDiagTab: "sweep",
+        customPreview: null,  // { source, id, mode: "placement"|"afterBoard", placement, afterRows, caption }
         inFlight: false,
       };
 
@@ -1164,6 +1442,31 @@
       const elReplayStatus = $("replayStatus");
       const elResultsBody = $("resultsBody");
       const elRawOutputPre = $("rawOutputPre");
+      const elDiagStatusNote = $("diagStatusNote");
+      const elTabSweepBtn = $("tabSweepBtn");
+      const elTabGtBtn = $("tabGtBtn");
+      const elPaneSweep = $("paneSweep");
+      const elPaneGt = $("paneGt");
+      const elRunSweepBtn = $("runSweepBtn");
+      const elStopSweepBtn = $("stopSweepBtn");
+      const elSweepError = $("sweepError");
+      const elSweepTriage = $("sweepTriage");
+      const elSweepResultsWrap = $("sweepResultsWrap");
+      const elSweepBody = $("sweepBody");
+      const elGtMoveA = $("gtMoveA");
+      const elGtMoveB = $("gtMoveB");
+      const elGtMoveC = $("gtMoveC");
+      const elGtN = $("gtN");
+      const elGtConts = $("gtConts");
+      const elGtLoadMovesBtn = $("gtLoadMovesBtn");
+      const elGtRunBtn = $("gtRunBtn");
+      const elGtError = $("gtError");
+      const elGtVerdict = $("gtVerdict");
+      const elGtSummaryGrid = $("gtSummaryGrid");
+      const elGtResultsWrap = $("gtResultsWrap");
+      const elGtHead = $("gtHead");
+      const elGtBody = $("gtBody");
+      const elGtInspector = $("gtInspector");
 
       const PARAM_INPUTS = {
         level: { el: $("pLevel"), type: "int" },
@@ -1315,6 +1618,7 @@
             matchesActual,
             pieceUsed,
           });
+          state.customPreview = null;
 
           elPingStatus.className = "ping ok";
           elPingStatus.textContent = "Connected";
@@ -1354,7 +1658,41 @@
         let clearedSet = new Set();
         let caption = "";
 
-        if (showAfter) {
+        const preview = state.customPreview;
+        if (preview && preview.mode === "afterBoard" && preview.afterRows) {
+          displayRows = preview.afterRows;
+          caption = preview.caption || "Preview board";
+        } else if (preview && preview.mode === "ply2Placement" && preview.placement && preview.beforeRows) {
+          if (showAfter && preview.afterRows) {
+            displayRows = preview.afterRows;
+            caption = `After ${preview.caption || "ply 2"}`;
+          } else {
+            displayRows = preview.beforeRows;
+            for (const [r, c] of preview.placement.cells) {
+              if (r >= 0 && r < 20) pieceCellSet.add(r * 10 + c);
+            }
+            clearedSet = new Set(preview.placement.clearedRows);
+            caption = preview.caption || "Ply 2 placement";
+          }
+        } else if (preview && preview.mode === "placement" && preview.placement) {
+          if (showAfter && preview.placement.afterRows) {
+            displayRows = preview.placement.afterRows;
+            caption = `After ${preview.caption || "preview"}`;
+          } else {
+            for (const [r, c] of preview.placement.cells) {
+              if (r >= 0 && r < 20) pieceCellSet.add(r * 10 + c);
+            }
+            clearedSet = new Set(preview.placement.clearedRows);
+            if (actualPlacement && actualPlacement.afterBoardStr !== preview.placement.afterBoardStr) {
+              for (const [r, c] of actualPlacement.cells) {
+                if (r >= 0 && r < 20) ghostActualSet.add(r * 10 + c);
+              }
+              caption = `${preview.caption || "Preview"} · dashed = actual`;
+            } else {
+              caption = preview.caption || "Preview";
+            }
+          }
+        } else if (showAfter) {
           if (replayRow && replayRow.afterRows) {
             displayRows = replayRow.afterRows;
             caption = `After replay (${replayRow.key})`;
@@ -1553,6 +1891,665 @@
 
           elRawOutputPre.textContent = replay.parsed.raw;
         }
+
+        renderDiagnostics(entry, params, replay);
+      }
+
+      // ---------------------------------------------------------------------------
+      // Phase 1 Diagnostics: Parameter Sweep (Stage 1) & Ground Truth (Stage 3)
+      // ---------------------------------------------------------------------------
+      const PIECE_ORDER = ["I", "O", "L", "J", "T", "S", "Z"];
+      let sweepRunSeq = 0;
+
+      function formatRelCoords(relRot, relX, relY) {
+        return `[${relRot},${relX >= 0 ? "+" + relX : relX},${relY}]`;
+      }
+
+      function lockKeyFromResolved(resolved) {
+        if (!resolved) return null;
+        return `${resolved.rot}|${resolved.x}|${resolved.y}`;
+      }
+
+      function placementLabelFromRow(row) {
+        if (!row) return "—";
+        if (row.kind === "continue") return "cont";
+        if (row.kind === "none") return "none";
+        if (row.kind === "na") return "N/A";
+        if (row.resolved) return formatRelCoords(row.resolved.relRot, row.resolved.relX, row.resolved.relY);
+        return `(${row.relRot},${row.relX},${row.relY})`;
+      }
+
+      function placementKeyFromRow(row) {
+        if (!row) return "";
+        if (row.kind === "none") return "none";
+        if (row.kind === "na") return "na";
+        return lockKeyFromResolved(row.resolved) || row.boardAfter || row.kind;
+      }
+
+      function buildSweepVariants(baseParams) {
+        const variants = [
+          { id: "base", label: "Baseline", axis: "base", params: { ...baseParams } },
+        ];
+        if (!(baseParams.playoutLength === 0 && baseParams.playoutCount === 0)) {
+          variants.push({
+            id: "depth0",
+            label: "Depth 0 (eval)",
+            axis: "depth",
+            params: { ...baseParams, playoutLength: 0, playoutCount: 0, pruningBreadth: 20 },
+          });
+        }
+        if (baseParams.reactionTime !== 0) {
+          variants.push({
+            id: "rt0",
+            label: "RT = 0",
+            axis: "rt",
+            params: { ...baseParams, reactionTime: 0 },
+          });
+        }
+        if (baseParams.playoutLength !== 4) {
+          variants.push({
+            id: "depth4",
+            label: "Depth 4",
+            axis: "depth",
+            params: { ...baseParams, playoutLength: 4 },
+          });
+        }
+        if (baseParams.playoutLength !== 12) {
+          variants.push({
+            id: "depth12",
+            label: "Depth 12",
+            axis: "depth",
+            params: { ...baseParams, playoutLength: 12 },
+          });
+        }
+        for (const mode of ["safe", "aggro", "hyper"]) {
+          if (mode !== baseParams.aggressionLevel) {
+            variants.push({
+              id: `mode_${mode}`,
+              label: `Mode: ${mode}`,
+              axis: "mode",
+              params: { ...baseParams, aggressionLevel: mode },
+            });
+          }
+        }
+        if (baseParams.dasCharge >= 0) {
+          variants.push({
+            id: "tap",
+            label: "Tap (DAS=-1)",
+            axis: "das",
+            params: { ...baseParams, dasCharge: -1 },
+          });
+        }
+        const highMs = (baseParams.pruningBreadth === -2 && baseParams.playoutCount >= 1500) ? 4000 : 2000;
+        variants.push({
+          id: "highBudget",
+          label: `Budget ${highMs}ms`,
+          axis: "budget",
+          params: { ...baseParams, pruningBreadth: -2, playoutCount: highMs },
+        });
+        return variants;
+      }
+
+      function computeSweepTriage(rows) {
+        const base = rows.find(r => r.id === "base" && r.status === "done" && r.parsed);
+        if (!base) return [];
+        const baseDefaultKey = placementKeyFromRow(base.parsed.defaultRow);
+        const basePieceKeys = Object.fromEntries(
+          PIECE_ORDER.map(p => [p, placementKeyFromRow(base.parsed.rows.find(r => r.key === p))])
+        );
+
+        const diffCount = (row) => {
+          if (!row || row.status !== "done" || !row.parsed) return null;
+          let diffs = 0;
+          for (const p of PIECE_ORDER) {
+            const k = placementKeyFromRow(row.parsed.rows.find(r => r.key === p));
+            if (k !== basePieceKeys[p]) diffs++;
+          }
+          const defDiff = row.id !== "rt0" && placementKeyFromRow(row.parsed.defaultRow) !== baseDefaultKey;
+          return { diffs, defDiff };
+        };
+
+        const badges = [];
+        const high = rows.find(r => r.id === "highBudget");
+        const hd = diffCount(high);
+        if (hd) {
+          if (hd.defDiff || hd.diffs > 0) {
+            badges.push({ cls: "red", text: `High budget flipped (${hd.diffs}/7 pieces) → likely search / tournament issue` });
+          } else {
+            badges.push({ cls: "green", text: `High budget agrees → preference is real under current eval/playouts` });
+          }
+        }
+
+        const rt0 = rows.find(r => r.id === "rt0");
+        const rd = diffCount(rt0);
+        if (rd && rd.diffs > 0) {
+          badges.push({ cls: "amber", text: `RT=0 differs on ${rd.diffs}/7 pieces → reaction-time phantom compromise` });
+        }
+
+        const d0 = rows.find(r => r.id === "depth0");
+        const d0d = diffCount(d0);
+        if (d0d && (d0d.defDiff || d0d.diffs > 0)) {
+          badges.push({ cls: "amber", text: `Depth 0 differs (${d0d.diffs}/7) → playouts override fastEval` });
+        }
+
+        const modeRows = rows.filter(r => r.axis === "mode");
+        const modeFlipped = modeRows.filter(r => {
+          const d = diffCount(r);
+          return d && (d.defDiff || d.diffs > 0);
+        });
+        if (modeFlipped.length > 0) {
+          badges.push({ cls: "amber", text: `Aggression mode flips (${modeFlipped.map(r => r.label.replace("Mode: ", "")).join(", ")})` });
+        }
+
+        const tap = rows.find(r => r.id === "tap");
+        const td = diffCount(tap);
+        if (td && (td.defDiff || td.diffs > 0)) {
+          badges.push({ cls: "amber", text: `Tap mode differs (${td.diffs}/7) → DAS reachability / penalty effect` });
+        }
+        return badges;
+      }
+
+      async function runParameterSweep() {
+        const entry = state.entries[state.currentIndex];
+        if (!entry || state.inFlight) return;
+        const idx = entry.index;
+        const baseParams = getEffectiveParams(entry);
+        const pieceUsed = PIECES[baseParams.currentPieceIdx] || entry.piece;
+        const baseQuery = buildCommaQuery(entry.board, baseParams, entry.secondBoard);
+        const variants = buildSweepVariants(baseParams);
+        const cancelId = ++sweepRunSeq;
+
+        const existingReplay = state.replays.get(idx);
+        const rows = variants.map(v => ({
+          ...v,
+          status: "pending",
+          elapsedMs: null,
+          parsed: null,
+          error: null,
+        }));
+
+        // Reuse baseline replay if its query matches!
+        if (existingReplay && existingReplay.queryUsed === baseQuery) {
+          rows[0].status = "done";
+          rows[0].elapsedMs = existingReplay.elapsedMs;
+          rows[0].parsed = existingReplay.parsed;
+        }
+
+        const sweepObj = { running: true, cancelId, baseQuery, rows };
+        state.sweeps.set(idx, sweepObj);
+        state.inFlight = true;
+        elReplayBtn.disabled = true;
+        renderCurrent();
+
+        try {
+          for (const row of rows) {
+            if (sweepObj.cancelId !== sweepRunSeq || !sweepObj.running) break;
+            if (row.status === "done") continue;
+
+            row.status = "running";
+            renderCurrent();
+
+            const query = buildCommaQuery(entry.board, row.params, entry.secondBoard);
+            const t0 = performance.now();
+            try {
+              const resp = await fetch(`${getServerBase()}/precompute-sync?p=${query}`);
+              const text = await resp.text();
+              row.elapsedMs = performance.now() - t0;
+              if (!resp.ok) {
+                row.status = "error";
+                row.error = `HTTP ${resp.status}: ${text}`;
+              } else {
+                row.parsed = parsePrecomputeResponse(text, entry.rows, pieceUsed, row.params.lines);
+                row.status = "done";
+                // Also populate main replay if baseline was just computed
+                if (row.id === "base" && !state.replays.has(idx)) {
+                  state.replays.set(idx, {
+                    elapsedMs: row.elapsedMs,
+                    queryUsed: query,
+                    overridden: hasOverrides(entry),
+                    parsed: row.parsed,
+                    selectedKey: "Default",
+                    matchesActual: null,
+                    pieceUsed,
+                  });
+                }
+              }
+            } catch (err) {
+              row.status = "error";
+              row.error = String(err);
+              break;
+            }
+            renderCurrent();
+          }
+        } finally {
+          sweepObj.running = false;
+          state.inFlight = false;
+          elReplayBtn.disabled = false;
+          renderCurrent();
+        }
+      }
+
+      function stopParameterSweep() {
+        const sweepObj = state.sweeps.get(state.currentIndex);
+        if (sweepObj) {
+          sweepObj.running = false;
+          sweepRunSeq++;
+        }
+        renderCurrent();
+      }
+
+      function getOrInitGtState(idx) {
+        let gt = state.gtByIndex.get(idx);
+        if (!gt) {
+          gt = {
+            running: false,
+            reachableQuery: null,
+            reachable: [],
+            selectedA: "",
+            selectedB: "",
+            selectedC: "",
+            data: null,
+            error: null,
+            selectedCell: null,
+          };
+          state.gtByIndex.set(idx, gt);
+        }
+        return gt;
+      }
+
+      function chooseDefaultGtKeys(entry, replay, sweep, reachable) {
+        const keys = new Set(reachable.map(r => r.key));
+        let keyA = "";
+        if (replay && replay.parsed && replay.parsed.defaultRow && replay.parsed.defaultRow.resolved) {
+          const k = lockKeyFromResolved(replay.parsed.defaultRow.resolved);
+          if (keys.has(k)) keyA = k;
+        }
+        if (!keyA && reachable.length > 0) keyA = reachable[0].key;
+
+        let keyB = "";
+        // Prefer logged actual move if different from A
+        if (entry.inferredNext && entry.inferredNext.contiguous && entry.inferredNext.placement) {
+          const ak = lockKeyFromResolved(entry.inferredNext.placement);
+          if (ak && ak !== keyA && keys.has(ak)) keyB = ak;
+        }
+        // Otherwise prefer a differing high-budget or RT=0 move from sweep
+        if (!keyB && sweep && sweep.rows) {
+          for (const vid of ["highBudget", "rt0", "depth0"]) {
+            const sr = sweep.rows.find(r => r.id === vid && r.status === "done" && r.parsed);
+            if (!sr) continue;
+            const candidates = [sr.parsed.defaultRow, ...sr.parsed.rows];
+            for (const cr of candidates) {
+              const ck = cr && cr.resolved ? lockKeyFromResolved(cr.resolved) : null;
+              if (ck && ck !== keyA && keys.has(ck)) {
+                keyB = ck;
+                break;
+              }
+            }
+            if (keyB) break;
+          }
+        }
+        if (!keyB) {
+          const alt = reachable.find(r => r.key !== keyA);
+          if (alt) keyB = alt.key;
+        }
+        return { keyA, keyB };
+      }
+
+      function parseGroundTruthJson(text) {
+        if (text.startsWith("Unknown request type")) {
+          throw new Error(
+            "Running live_game_server does not support /debug-ground-truth yet. " +
+            "Restart it with `npm run live_server` (rebuilds & restarts) and click Load Moves."
+          );
+        }
+        return JSON.parse(text);
+      }
+
+      async function fetchReachableMovesForCurrent(silent = false) {
+        const entry = state.entries[state.currentIndex];
+        if (!entry || state.inFlight) return false;
+        const params = getEffectiveParams(entry);
+        const query = buildCommaQuery(entry.board, params, entry.secondBoard);
+        const gt = getOrInitGtState(entry.index);
+        gt.error = null;
+        gt.running = true;
+        state.inFlight = true;
+        elReplayBtn.disabled = true;
+        renderCurrent();
+
+        try {
+          const resp = await fetch(`${getServerBase()}/debug-ground-truth?p=${query}&n=0&conts=1`);
+          const text = await resp.text();
+          if (!resp.ok) {
+            gt.error = `HTTP ${resp.status}: ${text}`;
+            return false;
+          }
+          const json = parseGroundTruthJson(text);
+          gt.reachableQuery = query;
+          gt.reachable = json.reachablePlacements || [];
+          const { keyA, keyB } = chooseDefaultGtKeys(
+            entry,
+            state.replays.get(entry.index) || null,
+            state.sweeps.get(entry.index) || null,
+            gt.reachable
+          );
+          if (!gt.selectedA || !gt.reachable.some(r => r.key === gt.selectedA)) gt.selectedA = keyA;
+          if (!gt.selectedB || !gt.reachable.some(r => r.key === gt.selectedB)) gt.selectedB = keyB;
+          if (gt.selectedC && !gt.reachable.some(r => r.key === gt.selectedC)) gt.selectedC = "";
+          return true;
+        } catch (err) {
+          gt.error = err instanceof Error && err.message.includes("live_game_server")
+            ? err.message
+            : (silent ? `Failed to load reachable moves: ${err}` : `Could not reach /debug-ground-truth.\n${err}`);
+          return false;
+        } finally {
+          gt.running = false;
+          state.inFlight = false;
+          elReplayBtn.disabled = false;
+          renderCurrent();
+        }
+      }
+
+      async function runGroundTruthComparison() {
+        const entry = state.entries[state.currentIndex];
+        if (!entry || state.inFlight) return;
+        const params = getEffectiveParams(entry);
+        const query = buildCommaQuery(entry.board, params, entry.secondBoard);
+        const gt = getOrInitGtState(entry.index);
+
+        if (gt.reachableQuery !== query || gt.reachable.length === 0) {
+          const ok = await fetchReachableMovesForCurrent(false);
+          if (!ok) return;
+        }
+
+        const keys = [gt.selectedA, gt.selectedB, gt.selectedC].filter(Boolean);
+        const uniqueKeys = [...new Set(keys)];
+        const nVal = parseInt(elGtN.value, 10) || 2000;
+        const contsVal = parseInt(elGtConts.value, 10) || 5;
+
+        gt.error = null;
+        gt.running = true;
+        state.inFlight = true;
+        elReplayBtn.disabled = true;
+        renderCurrent();
+
+        try {
+          const keysParam = uniqueKeys.length > 0 ? `&keys=${encodeURIComponent(uniqueKeys.join(","))}` : "";
+          const url = `${getServerBase()}/debug-ground-truth?p=${query}${keysParam}&n=${nVal}&conts=${contsVal}`;
+          const resp = await fetch(url);
+          const text = await resp.text();
+          if (!resp.ok) {
+            gt.error = `HTTP ${resp.status}: ${text}`;
+            return;
+          }
+          const json = parseGroundTruthJson(text);
+          gt.reachableQuery = query;
+          gt.reachable = json.reachablePlacements || gt.reachable;
+          gt.data = json;
+          gt.selectedCell = null;
+          elPingStatus.className = "ping ok";
+          elPingStatus.textContent = "Connected";
+        } catch (err) {
+          gt.error = `Could not reach /debug-ground-truth.\n${err}`;
+        } finally {
+          gt.running = false;
+          state.inFlight = false;
+          elReplayBtn.disabled = false;
+          renderCurrent();
+        }
+      }
+
+      function populateGtSelect(selectEl, reachable, selectedVal, allowEmpty) {
+        const opts = [];
+        if (allowEmpty) {
+          opts.push(`<option value="">(None)</option>`);
+        }
+        for (const r of reachable) {
+          const label = `${formatRelCoords(r.relRot, r.relX, r.relY)} · eval ${Number(r.fastEval).toFixed(1)}` +
+            (r.dasAfter >= 0 ? ` · d${r.dasAfter}` : "") +
+            (r.linesCleared > 0 ? ` · +${r.linesCleared}L` : "");
+          opts.push(`<option value="${escapeHtml(r.key)}">${escapeHtml(label)}</option>`);
+        }
+        selectEl.innerHTML = opts.join("");
+        selectEl.value = selectedVal || "";
+      }
+
+      function renderDiagnostics(entry, params, replay) {
+        elTabSweepBtn.classList.toggle("active", state.activeDiagTab === "sweep");
+        elTabGtBtn.classList.toggle("active", state.activeDiagTab === "gt");
+        elPaneSweep.classList.toggle("hidden", state.activeDiagTab !== "sweep");
+        elPaneGt.classList.toggle("hidden", state.activeDiagTab !== "gt");
+
+        const sweep = state.sweeps.get(entry.index) || null;
+        const gt = state.gtByIndex.get(entry.index) || null;
+
+        // ---- Sweep Pane ----
+        const sweepRunning = Boolean(sweep && sweep.running);
+        elRunSweepBtn.disabled = state.inFlight;
+        elRunSweepBtn.textContent = sweepRunning ? "Sweeping..." : "Run Sweep";
+        elStopSweepBtn.classList.toggle("hidden", !sweepRunning);
+
+        if (!sweep) {
+          elSweepError.classList.add("hidden");
+          elSweepTriage.classList.add("hidden");
+          elSweepResultsWrap.classList.add("hidden");
+        } else {
+          elSweepError.classList.add("hidden");
+          const badges = computeSweepTriage(sweep.rows);
+          if (badges.length > 0) {
+            elSweepTriage.innerHTML = badges
+              .map(b => `<span class="tag ${b.cls}">${escapeHtml(b.text)}</span>`)
+              .join(" ");
+            elSweepTriage.classList.remove("hidden");
+          } else {
+            elSweepTriage.classList.add("hidden");
+          }
+
+          const baseRow = sweep.rows.find(r => r.id === "base" && r.status === "done" && r.parsed);
+          const baseDefKey = baseRow ? placementKeyFromRow(baseRow.parsed.defaultRow) : "";
+          const basePieceKeys = baseRow
+            ? Object.fromEntries(PIECE_ORDER.map(p => [p, placementKeyFromRow(baseRow.parsed.rows.find(r => r.key === p))]))
+            : {};
+
+          elSweepResultsWrap.classList.remove("hidden");
+          elSweepBody.innerHTML = sweep.rows.map((row, rIdx) => {
+            if (row.status === "pending") {
+              return `<tr><td><strong>${escapeHtml(row.label)}</strong></td><td colspan="10" class="muted">queued...</td></tr>`;
+            }
+            if (row.status === "running") {
+              return `<tr><td><strong>${escapeHtml(row.label)}</strong></td><td colspan="10" style="color:var(--accent);">running...</td></tr>`;
+            }
+            if (row.status === "error") {
+              return `<tr><td><strong>${escapeHtml(row.label)}</strong></td><td colspan="10" style="color:var(--red);">${escapeHtml(row.error || "error")}</td></tr>`;
+            }
+            if (!row.parsed || row.parsed.isNone) {
+              return `<tr><td><strong>${escapeHtml(row.label)}</strong></td><td colspan="8" style="color:var(--red);">none</td><td>${row.elapsedMs ? row.elapsedMs.toFixed(0) + "ms" : "—"}</td><td></td></tr>`;
+            }
+
+            const defRow = row.parsed.defaultRow;
+            const defKey = placementKeyFromRow(defRow);
+            const defDiff = row.id !== "base" && row.id !== "rt0" && baseRow && defKey !== baseDefKey;
+            const defCellId = `sweep:${rIdx}:Default`;
+            const defPreview = state.customPreview && state.customPreview.id === defCellId;
+            const defCls = ["sweep-cell", defDiff ? "sweep-diff" : "", defPreview ? "previewing" : ""].filter(Boolean).join(" ");
+
+            const pieceTds = PIECE_ORDER.map(p => {
+              const pr = row.parsed.rows.find(r => r.key === p);
+              const pk = placementKeyFromRow(pr);
+              const diff = row.id !== "base" && baseRow && pk !== basePieceKeys[p];
+              const cid = `sweep:${rIdx}:${p}`;
+              const isPrev = state.customPreview && state.customPreview.id === cid;
+              const cls = ["sweep-cell", diff ? "sweep-diff" : "", isPrev ? "previewing" : ""].filter(Boolean).join(" ");
+              return `<td class="${cls}" data-sweep-row="${rIdx}" data-sweep-key="${p}" title="Click to preview on board">${escapeHtml(placementLabelFromRow(pr))}</td>`;
+            }).join("");
+
+            return `<tr>
+              <td style="white-space:nowrap;"><strong>${escapeHtml(row.label)}</strong></td>
+              <td class="${defCls}" data-sweep-row="${rIdx}" data-sweep-key="Default" title="Click to preview on board">${escapeHtml(placementLabelFromRow(defRow))}</td>
+              ${pieceTds}
+              <td class="muted" style="white-space:nowrap;">${row.elapsedMs !== null ? row.elapsedMs.toFixed(0) + "ms" : "—"}</td>
+              <td>${row.id !== "base" ? `<button class="btn-xs" type="button" data-sweep-apply="${rIdx}" title="Copy these params to Request State">Apply</button>` : ""}</td>
+            </tr>`;
+          }).join("");
+        }
+
+        // ---- Ground Truth Pane ----
+        const gtRunning = Boolean(gt && gt.running);
+        elGtLoadMovesBtn.disabled = state.inFlight;
+        elGtRunBtn.disabled = state.inFlight;
+        elGtRunBtn.textContent = gtRunning ? "Running GT..." : "Run Ground Truth";
+
+        const reachable = gt ? gt.reachable : [];
+        populateGtSelect(elGtMoveA, reachable, gt ? gt.selectedA : "", false);
+        populateGtSelect(elGtMoveB, reachable, gt ? gt.selectedB : "", false);
+        populateGtSelect(elGtMoveC, reachable, gt ? gt.selectedC : "", true);
+
+        if (gt && gt.error) {
+          elGtError.textContent = gt.error;
+          elGtError.classList.remove("hidden");
+        } else {
+          elGtError.classList.add("hidden");
+        }
+
+        if (!gt || !gt.data || !gt.data.candidates || gt.data.candidates.length === 0) {
+          elGtVerdict.classList.add("hidden");
+          elGtSummaryGrid.classList.add("hidden");
+          elGtResultsWrap.classList.add("hidden");
+          elGtInspector.classList.add("hidden");
+        } else {
+          const data = gt.data;
+          const cands = data.candidates.filter(c => c.reachable);
+          const bestCand = cands.reduce((acc, c) => (!acc || c.weightedAvg > acc.weightedAvg ? c : acc), null);
+
+          // Auto-verdict comparing Replay Default vs Ground Truth winner
+          const verdictTags = [
+            `<span class="mono muted">N=${data.playoutCount}, depth=${data.playoutLength}, mode=${escapeHtml(data.aiMode)}, ${data.elapsedMs}ms</span>`,
+          ];
+          if (cands.length >= 2) {
+            const cA = cands[0], cB = cands[1];
+            const gap = cA.weightedAvg - cB.weightedAvg;
+            const combSe = Math.sqrt(cA.weightedSe * cA.weightedSe + cB.weightedSe * cB.weightedSe);
+            const sign = gap >= 0 ? "+" : "";
+            verdictTags.push(`<span class="tag ${gap >= 0 ? "green" : "amber"}">A − B = ${sign}${gap.toFixed(2)} ± ${combSe.toFixed(2)}</span>`);
+
+            const repDefKey = (replay && replay.parsed && replay.parsed.defaultRow && replay.parsed.defaultRow.resolved)
+              ? lockKeyFromResolved(replay.parsed.defaultRow.resolved)
+              : null;
+            if (repDefKey && bestCand) {
+              if (repDefKey === bestCand.key) {
+                verdictTags.push(`<span class="tag green">GT agrees with Replay Default</span>`);
+              } else if (cands.some(c => c.key === repDefKey)) {
+                const repCand = cands.find(c => c.key === repDefKey);
+                const diff = bestCand.weightedAvg - repCand.weightedAvg;
+                const dSe = Math.sqrt(bestCand.weightedSe ** 2 + repCand.weightedSe ** 2);
+                if (diff > 2 * dSe) {
+                  verdictTags.push(`<span class="tag red">GT prefers ${formatRelCoords(bestCand.relRot, bestCand.relX, bestCand.relY)} (+${diff.toFixed(1)}) → search / tournament / RT effect</span>`);
+                } else {
+                  verdictTags.push(`<span class="tag amber">Within ~2 SE of Replay Default</span>`);
+                }
+              }
+            }
+          }
+          elGtVerdict.innerHTML = verdictTags.join(" ");
+          elGtVerdict.classList.remove("hidden");
+
+          // Summary cards (clickable to preview ply-1 board!)
+          elGtSummaryGrid.innerHTML = cands.map((c, ci) => {
+            const lbl = String.fromCharCode(65 + ci);
+            const isWin = bestCand && c.key === bestCand.key;
+            const cid = `gt:ply1:${ci}`;
+            const isPrev = state.customPreview && state.customPreview.id === cid;
+            const cls = ["gt-card", isWin ? "winner" : "", isPrev ? "previewing" : ""].filter(Boolean).join(" ");
+            return `<div class="${cls}" data-gt-ply1="${ci}" title="Click to preview board after ply 1">
+              <div class="row-between">
+                <strong>${lbl}: ${formatRelCoords(c.relRot, c.relX, c.relY)}</strong>
+                <span class="muted">${escapeHtml(c.key)}</span>
+              </div>
+              <div class="gt-big">${c.weightedAvg.toFixed(2)} <span class="muted" style="font-size:11px; font-weight:400;">± ${c.weightedSe.toFixed(2)}</span></div>
+              <div class="muted" style="font-size:11px;">
+                ply1 eval=${c.fastEval.toFixed(1)} · das=${c.dasAfter} · +${c.linesCleared}L
+              </div>
+            </div>`;
+          }).join("");
+          elGtSummaryGrid.classList.remove("hidden");
+
+          // 7-piece table
+          const headCols = [`<th>Next</th>`];
+          cands.forEach((c, ci) => {
+            const lbl = String.fromCharCode(65 + ci);
+            headCols.push(`<th>${lbl}: ${formatRelCoords(c.relRot, c.relX, c.relY)}</th>`);
+          });
+          if (cands.length >= 2) {
+            headCols.push(`<th>A − B</th>`);
+          }
+          if (data.useDas) {
+            headCols.push(`<th>DAS Pen (part / min)</th>`);
+          }
+          elGtHead.innerHTML = `<tr>${headCols.join("")}</tr>`;
+
+          elGtBody.innerHTML = PIECE_ORDER.map(p => {
+            const tds = [`<td><strong>${p}</strong></td>`];
+            cands.forEach((c, ci) => {
+              const cell = c.byPiece ? c.byPiece[p] : null;
+              const cid = `gt:ply2:${ci}:${p}`;
+              const isPrev = state.customPreview && state.customPreview.id === cid;
+              if (!cell) {
+                tds.push(`<td class="muted">—</td>`);
+              } else {
+                const deathTxt = cell.deathPct > 0 ? ` · ${cell.deathPct.toFixed(1)}%☠` : "";
+                const rankTxt = cell.bestContEvalRank > 0 ? ` · #${cell.bestContEvalRank}` : "";
+                const contRel = cell.bestContRel
+                  ? formatRelCoords(cell.bestContRel[0], cell.bestContRel[1], cell.bestContRel[2])
+                  : cell.bestCont;
+                const ply2Clears = Math.max(0, (cell.linesCleared || 0) - (c.linesCleared || 0));
+                const clrTxt = ply2Clears > 0 ? ` +${ply2Clears}L` : "";
+                tds.push(
+                  `<td class="gt-cell${isPrev ? " previewing" : ""}" data-gt-cand="${ci}" data-gt-piece="${p}" title="Click to preview next-piece placement on board">` +
+                  `<div><strong>${cell.mean.toFixed(1)}</strong> <span class="muted">±${cell.se.toFixed(1)}${deathTxt}${rankTxt}</span></div>` +
+                  `<div class="gt-cont-line">${escapeHtml(contRel)}${clrTxt}</div>` +
+                  `</td>`
+                );
+              }
+            });
+            if (cands.length >= 2) {
+              const pA = cands[0].byPiece ? cands[0].byPiece[p] : null;
+              const pB = cands[1].byPiece ? cands[1].byPiece[p] : null;
+              if (pA && pB) {
+                const d = pA.mean - pB.mean;
+                const cls = d > 0.5 ? "gt-delta-pos" : (d < -0.5 ? "gt-delta-neg" : "muted");
+                tds.push(`<td class="${cls}">${d >= 0 ? "+" : ""}${d.toFixed(1)}</td>`);
+              } else {
+                tds.push(`<td class="muted">—</td>`);
+              }
+            }
+            if (data.useDas) {
+              const penParts = cands.map((c, ci) => {
+                const cell = c.byPiece ? c.byPiece[p] : null;
+                if (!cell) return "—";
+                const lbl = String.fromCharCode(65 + ci);
+                const pp = Math.round(cell.partialPenalty);
+                const mp = Math.round(cell.minPenalty);
+                return (pp === 0 && mp === 0) ? `${lbl}:0` : `${lbl}:${pp}/${mp}`;
+              });
+              tds.push(`<td class="muted" style="white-space:nowrap; font-size:11px;">${escapeHtml(penParts.join(" · "))}</td>`);
+            }
+            return `<tr>${tds.join("")}</tr>`;
+          }).join("");
+          elGtResultsWrap.classList.remove("hidden");
+
+          // Selected cell inspector
+          if (gt.selectedCell) {
+            elGtInspector.innerHTML = gt.selectedCell;
+            elGtInspector.classList.remove("hidden");
+          } else {
+            elGtInspector.innerHTML = `<span class="muted">Click any candidate card (ply 1) or piece cell (ply 2) to preview its resulting board and <code>fastEval</code> breakdown.</span>`;
+            elGtInspector.classList.remove("hidden");
+          }
+        }
+
+        elDiagStatusNote.textContent = state.customPreview
+          ? `Board preview: ${state.customPreview.caption}`
+          : "";
       }
 
       function selectState(index) {
@@ -1560,7 +2557,16 @@
         const clamped = Math.max(0, Math.min(state.entries.length - 1, index));
         if (clamped === state.currentIndex && !elViewer.classList.contains("hidden")) return;
         state.currentIndex = clamped;
+        state.customPreview = null;
         renderCurrent();
+        if (state.activeDiagTab === "gt" && !state.inFlight) {
+          const entry = state.entries[state.currentIndex];
+          const gt = getOrInitGtState(entry.index);
+          const q = buildCommaQuery(entry.board, getEffectiveParams(entry), entry.secondBoard);
+          if (gt.reachableQuery !== q) {
+            fetchReachableMovesForCurrent(true);
+          }
+        }
       }
 
       function loadFromTextarea(collapseOnSuccess = true) {
@@ -1569,6 +2575,9 @@
         state.currentIndex = 0;
         state.overrides.clear();
         state.replays.clear();
+        state.sweeps.clear();
+        state.gtByIndex.clear();
+        state.customPreview = null;
 
         if (entries.length === 0) {
           elParseSummary.textContent = elLogInput.value.trim() ? "No valid precompute requests found." : "";
@@ -1681,6 +2690,167 @@
         const replay = state.replays.get(state.currentIndex);
         if (!replay) return;
         replay.selectedKey = tr.dataset.key;
+        state.customPreview = null;
+        renderCurrent();
+      });
+
+      // Phase 1 Diagnostic Event Listeners
+      elTabSweepBtn.addEventListener("click", () => {
+        state.activeDiagTab = "sweep";
+        renderCurrent();
+      });
+      elTabGtBtn.addEventListener("click", () => {
+        state.activeDiagTab = "gt";
+        renderCurrent();
+        const entry = state.entries[state.currentIndex];
+        if (entry && !state.inFlight) {
+          const gt = getOrInitGtState(entry.index);
+          const q = buildCommaQuery(entry.board, getEffectiveParams(entry), entry.secondBoard);
+          if (gt.reachableQuery !== q) {
+            fetchReachableMovesForCurrent(true);
+          }
+        }
+      });
+
+      elRunSweepBtn.addEventListener("click", runParameterSweep);
+      elStopSweepBtn.addEventListener("click", stopParameterSweep);
+
+      elSweepBody.addEventListener("click", e => {
+        const applyBtn = e.target.closest("button[data-sweep-apply]");
+        if (applyBtn) {
+          const entry = state.entries[state.currentIndex];
+          const sweep = entry ? state.sweeps.get(entry.index) : null;
+          const row = sweep ? sweep.rows[Number(applyBtn.dataset.sweepApply)] : null;
+          if (!entry || !row) return;
+          const ov = {};
+          for (const k of PARAM_KEYS) {
+            if (row.params[k] !== entry.params[k]) ov[k] = row.params[k];
+          }
+          if (Object.keys(ov).length === 0) state.overrides.delete(entry.index);
+          else state.overrides.set(entry.index, ov);
+          state.customPreview = null;
+          renderCurrent();
+          return;
+        }
+
+        const td = e.target.closest("td[data-sweep-row]");
+        if (!td) return;
+        const entry = state.entries[state.currentIndex];
+        const sweep = entry ? state.sweeps.get(entry.index) : null;
+        if (!sweep) return;
+        const rIdx = Number(td.dataset.sweepRow);
+        const key = td.dataset.sweepKey;
+        const row = sweep.rows[rIdx];
+        if (!row || !row.parsed) return;
+        const target = key === "Default" ? row.parsed.defaultRow : row.parsed.rows.find(r => r.key === key);
+        if (!target || !target.resolved) return;
+
+        state.customPreview = {
+          source: "sweep",
+          id: `sweep:${rIdx}:${key}`,
+          mode: "placement",
+          placement: target.resolved,
+          afterRows: target.afterRows,
+          caption: `${row.label} (${key})`,
+        };
+        renderCurrent();
+      });
+
+      elGtMoveA.addEventListener("change", () => {
+        const entry = state.entries[state.currentIndex];
+        if (entry) getOrInitGtState(entry.index).selectedA = elGtMoveA.value;
+      });
+      elGtMoveB.addEventListener("change", () => {
+        const entry = state.entries[state.currentIndex];
+        if (entry) getOrInitGtState(entry.index).selectedB = elGtMoveB.value;
+      });
+      elGtMoveC.addEventListener("change", () => {
+        const entry = state.entries[state.currentIndex];
+        if (entry) getOrInitGtState(entry.index).selectedC = elGtMoveC.value;
+      });
+      elGtLoadMovesBtn.addEventListener("click", () => fetchReachableMovesForCurrent(false));
+      elGtRunBtn.addEventListener("click", runGroundTruthComparison);
+
+      elGtSummaryGrid.addEventListener("click", e => {
+        const card = e.target.closest("[data-gt-ply1]");
+        if (!card) return;
+        const entry = state.entries[state.currentIndex];
+        const gt = entry ? state.gtByIndex.get(entry.index) : null;
+        if (!gt || !gt.data) return;
+        const cands = gt.data.candidates.filter(c => c.reachable);
+        const ci = Number(card.dataset.gtPly1);
+        const c = cands[ci];
+        if (!c || !c.boardAfter) return;
+        const lbl = String.fromCharCode(65 + ci);
+        const pieceUsed = PIECES[getEffectiveParams(entry).currentPieceIdx] || entry.piece;
+        const ply1Sim = simulateLock(entry.rows, pieceUsed, c.rot, c.x, c.y);
+        state.customPreview = ply1Sim
+          ? {
+              source: "gt",
+              id: `gt:ply1:${ci}`,
+              mode: "placement",
+              placement: ply1Sim,
+              afterRows: boardStrToRows(c.boardAfter),
+              caption: `GT ${lbl} ${formatRelCoords(c.relRot, c.relX, c.relY)}`,
+            }
+          : {
+              source: "gt",
+              id: `gt:ply1:${ci}`,
+              mode: "afterBoard",
+              afterRows: boardStrToRows(c.boardAfter),
+              caption: `GT ${lbl} ${formatRelCoords(c.relRot, c.relX, c.relY)} (after ply 1)`,
+            };
+        gt.selectedCell = `<strong>${lbl}: ${formatRelCoords(c.relRot, c.relX, c.relY)}</strong> (key=${escapeHtml(c.key)}) · ply1 eval=<strong>${c.fastEval.toFixed(2)}</strong> · ${escapeHtml(c.fastEvalExpl || "no explanation")}`;
+        renderCurrent();
+      });
+
+      elGtBody.addEventListener("click", e => {
+        const td = e.target.closest("td[data-gt-cand]");
+        if (!td) return;
+        const entry = state.entries[state.currentIndex];
+        const gt = entry ? state.gtByIndex.get(entry.index) : null;
+        if (!gt || !gt.data) return;
+        const cands = gt.data.candidates.filter(c => c.reachable);
+        const ci = Number(td.dataset.gtCand);
+        const pieceId = td.dataset.gtPiece;
+        const c = cands[ci];
+        const cell = c && c.byPiece ? c.byPiece[pieceId] : null;
+        if (!cell || !cell.boardAfter) return;
+        const lbl = String.fromCharCode(65 + ci);
+        const contRel = cell.bestContRel ? formatRelCoords(cell.bestContRel[0], cell.bestContRel[1], cell.bestContRel[2]) : cell.bestCont;
+        const ply1Rows = c.boardAfter ? boardStrToRows(c.boardAfter) : null;
+        const nextPieceObj = PIECE_BY_ID[pieceId];
+        let ply2Sim = null;
+        if (ply1Rows && nextPieceObj && cell.bestCont) {
+          const [cRot, cX, cY] = cell.bestCont.split("|").map(v => parseInt(v, 10));
+          if (!Number.isNaN(cRot) && !Number.isNaN(cX) && !Number.isNaN(cY)) {
+            ply2Sim = simulateLock(ply1Rows, nextPieceObj, cRot, cX, cY);
+          }
+        }
+        state.customPreview = ply2Sim
+          ? {
+              source: "gt",
+              id: `gt:ply2:${ci}:${pieceId}`,
+              mode: "ply2Placement",
+              beforeRows: ply1Rows,
+              placement: ply2Sim,
+              afterRows: boardStrToRows(cell.boardAfter),
+              caption: `GT ${lbl} → ${pieceId} ${contRel}`,
+            }
+          : {
+              source: "gt",
+              id: `gt:ply2:${ci}:${pieceId}`,
+              mode: "afterBoard",
+              afterRows: boardStrToRows(cell.boardAfter),
+              caption: `GT ${lbl} → ${pieceId} ${contRel} (after ply 2)`,
+            };
+        const ply2Clears = Math.max(0, (cell.linesCleared || 0) - (c.linesCleared || 0));
+        gt.selectedCell =
+          `<strong>${lbl} ${formatRelCoords(c.relRot, c.relX, c.relY)} → Next ${pieceId} ${contRel}</strong> ` +
+          `(cont#${cell.bestContEvalRank}, ply2 +${ply2Clears}L) · ` +
+          `GT=<strong>${cell.mean.toFixed(2)} ± ${cell.se.toFixed(2)}</strong> · ` +
+          `death=${cell.deathPct.toFixed(1)}% · ply2 eval=${cell.contEval.toFixed(2)}` +
+          `<div class="muted" style="margin-top:3px;">${escapeHtml(cell.contEvalExpl || "")}</div>`;
         renderCurrent();
       });
 

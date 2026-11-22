@@ -92,6 +92,14 @@ sortPossibilitiesDesc(const std::vector<Possibility> &possibilities);
 int searchDepth1(GameState gameState, const Piece *firstPiece, const EvalContext *evalContext,
                  OUT std::vector<Possibility> &possibilities, bool generateExplanation = false);
 
+int searchDepth2FromFirstMoves(const FirstMoveSearchResult &firstMoves, const Piece *secondPiece,
+                               int secondPieceDasCharge, char const *dasInputFrameTimeline,
+                               const EvalContext *evalContext,
+                               OUT std::vector<Possibility> &possibilities,
+                               bool generateExplanation = false,
+                               OUT std::vector<int> *dasChargesForThirdPiece = nullptr,
+                               const std::atomic<bool> *cancelFlag = nullptr);
+
 int searchDepth2(GameState gameState, const Piece *firstPiece, const Piece *secondPiece,
                  int firstPieceDasCharge, int secondPieceDasCharge,
                  char const *dasInputFrameTimeline, const EvalContext *evalContext,

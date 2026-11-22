@@ -18,6 +18,7 @@
 #include "vendor/doctest.h"
 
 #include "../backend/main.cpp"
+#include "../backend/debug_ground_truth.hpp"
 
 #include "helpers.hpp"
 #include "board_format_tests.hpp"

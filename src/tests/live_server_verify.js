@@ -519,6 +519,52 @@ function main() {
   run(host, port, fixtures).catch((err) => fail(err && err.stack ? err.stack : String(err)));
 }
 
+async function verifyDebugGroundTruthRoute(host, port, fixture) {
+  const pipe = buildPipeString(fixture);
+  const ok = await get(host, port, `/debug-ground-truth?p=${pipe}&n=10&conts=2`);
+  if (ok.status !== 200) {
+    fail(`/debug-ground-truth expected 200, got ${ok.status}: ${ok.body}`);
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(ok.body);
+  } catch (err) {
+    fail(`/debug-ground-truth returned invalid JSON: ${err.message}`);
+  }
+  if (
+    !Array.isArray(parsed.reachablePlacements) ||
+    parsed.reachablePlacements.length === 0 ||
+    !Array.isArray(parsed.candidates) ||
+    parsed.candidates.length === 0
+  ) {
+    fail(`/debug-ground-truth JSON missing reachablePlacements or candidates`);
+  }
+
+  const missing = await get(host, port, "/debug-ground-truth");
+  if (missing.status !== 400) {
+    fail(`/debug-ground-truth without p expected 400, got ${missing.status}`);
+  }
+
+  const badN = await get(host, port, `/debug-ground-truth?p=${pipe}&n=abc`);
+  if (badN.status !== 400) {
+    fail(`/debug-ground-truth with bad n expected 400, got ${badN.status}`);
+  }
+
+  const junk = await get(host, port, `/debug-ground-truth?p=${JUNK_PIPE}`);
+  if (junk.status !== 500) {
+    fail(`/debug-ground-truth with junk p expected 500, got ${junk.status}`);
+  }
+
+  const legacy = await get(
+    host,
+    port,
+    `/debug-ground-truth?p=${buildPipeString(fixture, "|")}`
+  );
+  if (legacy.status !== 500) {
+    fail(`/debug-ground-truth with '|' delimiter expected 500, got ${legacy.status}`);
+  }
+}
+
 async function run(host, port, fixtures) {
   const mismatches = [];
   const hardFailures = [];
@@ -555,6 +601,10 @@ async function run(host, port, fixtures) {
   console.log("Synchronous route check: /get-move-ab-test ...");
   await verifyGetMoveAbTestRoute(host, port, fixtures[0]);
   console.log("  200 valid JSON (11 & 12 fields), 400 missing p, 500 junk & '|' delimiter.");
+
+  console.log("Synchronous route check: /debug-ground-truth ...");
+  await verifyDebugGroundTruthRoute(host, port, fixtures[0]);
+  console.log("  200 valid JSON, 400 missing p / bad n, 500 junk & '|' delimiter.");
 
   console.log("Percent-encoded comma check (fixture 0) ...");
   const encodedResult = await kickAndAwaitFull(

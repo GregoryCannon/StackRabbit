@@ -1693,4 +1693,50 @@ TEST_CASE("tiered tournament Round 1 rescues top-eval candidate with deceptive c
   CHECK(response.rfind("Default:1,1,12|", 0) == 0);
 }
 
+TEST_CASE("runDebugGroundTruth validates arguments and compares placements across 7 pieces") {
+  std::string board = makeFlatBoard(4);
+  std::string pipe = InputBuilder()
+                         .withBoard1(board)
+                         .withLevel(18)
+                         .withLines(0)
+                         .withCurPiece(IDX_L)
+                         .withNextPiece(-1)
+                         .withTimeline("X..")
+                         .withPlayoutCount(0)
+                         .withPlayoutLength(2)
+                         .withPruningBreadth(20)
+                         .withAggression("safe")
+                         .withDasCharge(16)
+                         .build()
+                     + "18|";
+
+  // Validation errors
+  CHECK(debug_gt::runDebugGroundTruth(pipe, {}, -1, 5).rfind("Error:", 0) == 0);
+  CHECK(debug_gt::runDebugGroundTruth(pipe, {}, 50000, 5).rfind("Error:", 0) == 0);
+  CHECK(debug_gt::runDebugGroundTruth(pipe, {}, 10, 0).rfind("Error:", 0) == 0);
+  CHECK(debug_gt::runDebugGroundTruth(pipe, {"a", "b", "c", "d", "e", "f", "g"}, 10, 5)
+            .rfind("Error:", 0)
+        == 0);
+  CHECK(debug_gt::runDebugGroundTruth("bad_pipe", {}, 10, 5).rfind("Error:", 0) == 0);
+
+  // Valid eval-only + playout runs
+  std::string json = debug_gt::runDebugGroundTruth(pipe, {}, /* playoutCount= */ 20,
+                                                   /* maxConts= */ 3);
+  REQUIRE(json.rfind("Error:", 0) != 0);
+  CHECK(json.find("\"aiMode\":\"STANDARD\"") != std::string::npos);
+  CHECK(json.find("\"playoutCount\":20") != std::string::npos);
+  CHECK(json.find("\"reachablePlacements\":[") != std::string::npos);
+  CHECK(json.find("\"candidates\":[") != std::string::npos);
+  CHECK(json.find("\"weightedAvg\":") != std::string::npos);
+  CHECK(json.find("\"bestContEvalRank\":") != std::string::npos);
+  for (const char *p : {"\"I\":", "\"O\":", "\"L\":", "\"J\":", "\"T\":", "\"S\":", "\"Z\":"}) {
+    CHECK(json.find(p) != std::string::npos);
+  }
+
+  // Unreachable key is reported cleanly rather than crashing.
+  std::string unreachableJson =
+      debug_gt::runDebugGroundTruth(pipe, {"9|9|9"}, /* playoutCount= */ 0, /* maxConts= */ 3);
+  CHECK(unreachableJson.find("\"key\":\"9|9|9\",\"reachable\":false") != std::string::npos);
+}
+
 #endif // SR_REQUEST_TYPE_TESTS

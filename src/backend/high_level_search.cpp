@@ -124,14 +124,13 @@ FirstMoveSearchResult buildFirstMoveBranches(const GameState &gameState, const P
  * When `dasChargesForThirdPiece` is non-null, appends each second placement's post-lock DAS
  * charge index-aligned with `possibilities` (-1 in tap mode).
  */
-static int searchDepth2FromFirstMoves(const FirstMoveSearchResult &firstMoves,
-                                      const Piece *secondPiece, int secondPieceDasCharge,
-                                      char const *dasInputFrameTimeline,
-                                      const EvalContext *evalContext,
-                                      OUT std::vector<Possibility> &possibilities,
-                                      bool generateExplanation = false,
-                                      OUT std::vector<int> *dasChargesForThirdPiece = nullptr,
-                                      const std::atomic<bool> *cancelFlag = nullptr) {
+int searchDepth2FromFirstMoves(const FirstMoveSearchResult &firstMoves, const Piece *secondPiece,
+                               int secondPieceDasCharge, char const *dasInputFrameTimeline,
+                               const EvalContext *evalContext,
+                               OUT std::vector<Possibility> &possibilities,
+                               bool generateExplanation,
+                               OUT std::vector<int> *dasChargesForThirdPiece,
+                               const std::atomic<bool> *cancelFlag) {
   if (!firstMoves.useDas && secondPieceDasCharge >= 0) {
     fprintf(stderr,
             "Error: searchDepth2FromFirstMoves received secondPieceDasCharge (%d) for tap-mode "

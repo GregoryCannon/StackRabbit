@@ -70,6 +70,12 @@ Routes:
     precompute shape (an optional trailing `reactionTime` field is ignored).
   - Returns `400` if `p` is absent, and `500` on `|` delimiter, validation
     rejection, or engine exception.
+- `GET /debug-ground-truth?p=<pipe>[&keys=k1,k2][&n=2000][&conts=5]` → `200` +
+  synchronous JSON ground-truth playout comparison across all 7 next pieces for
+  selected first-piece lock keys (default: top 4 by `fastEval`) plus the full
+  list of reachable placements (`503` `Busy` while an async `/precompute` job is
+  running; `400` on missing `p` or invalid `n`/`conts`/`keys`; `500` on `|`
+  delimiter or pipe validation error).
 
 The comma-delimited URL contract: the `p` parameter is the request string
 delimited by `,` so queries are valid unencoded in browsers and match the

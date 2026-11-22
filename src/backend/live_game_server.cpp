@@ -30,6 +30,14 @@
 //   GET /get-move-ab-test?p=<pipe>  -> 200 + JSON A/B move comparison computed
 //                                      synchronously; 400 if p absent; 500 on
 //                                      delimiter/validation/engine error
+//   GET /debug-ground-truth?p=<pipe>[&keys=k1,k2][&n=2000][&conts=5]
+//                                   -> 200 + JSON high-N ground-truth playout
+//                                      comparison across all 7 next pieces for
+//                                      selected first-piece lock keys (plus all
+//                                      reachable placements); 503 "Busy" if an
+//                                      async precompute is running; 400 on
+//                                      missing p or invalid n/conts/keys; 500 on
+//                                      pipe validation error
 //   GET /async-result               -> 200 + full result once computed, else
 //                                      200 + backup response, else 504 "Still
 //                                      calculating", else 404 "No previous
@@ -81,6 +89,7 @@
 
 // Pull in all the engine code the same way entrypoint.cpp does.
 #include "main.cpp"
+#include "debug_ground_truth.hpp"
 
 namespace {
 
@@ -452,19 +461,19 @@ std::string percentDecode(const std::string &s) {
   return out;
 }
 
-// Extracts the value of the `p` query parameter, still percent-encoded.
+// Extracts the value of a named query parameter, still percent-encoded.
 // The name is matched at a parameter boundary (start of the query string or
-// right after '&') so a differently-named parameter that merely contains
-// "p=" can never capture the value.
-bool extractPipeParam(const std::string &query, std::string &value) {
+// right after '&') so a differently-named parameter can never capture it.
+bool extractQueryParam(const std::string &query, const char *name, std::string &value) {
+  const std::string prefix = std::string(name) + "=";
   size_t searchFrom = 0;
   for (;;) {
-    size_t found = query.find("p=", searchFrom);
+    size_t found = query.find(prefix, searchFrom);
     if (found == std::string::npos) {
       return false;
     }
     if (found == 0 || query[found - 1] == '&') {
-      size_t valueStart = found + 2;
+      size_t valueStart = found + prefix.size();
       size_t valueEnd = query.find('&', valueStart);
       value = query.substr(valueStart, valueEnd == std::string::npos ? std::string::npos
                                                                      : valueEnd - valueStart);
@@ -472,6 +481,10 @@ bool extractPipeParam(const std::string &query, std::string &value) {
     }
     searchFrom = found + 1;
   }
+}
+
+bool extractPipeParam(const std::string &query, std::string &value) {
+  return extractQueryParam(query, "p", value);
 }
 
 // ---------------------------------------------------------------------------
@@ -615,6 +628,88 @@ RouteResult handleGetMoveAbTest(const std::string &query) {
   return {200, response, suffix};
 }
 
+RouteResult handleDebugGroundTruth(const std::string &query) {
+  auto started = std::chrono::steady_clock::now();
+  std::string enginePipe;
+  RouteResult parseError;
+  if (!parseEnginePipeQuery(query, enginePipe, parseError)) {
+    return parseError;
+  }
+  {
+    std::lock_guard<std::mutex> lock(g_slot.mutex);
+    if (g_slot.state == AsyncSlot::State::RUNNING) {
+      return {503, "Busy", ""};
+    }
+  }
+
+  int playoutCount = debug_gt::DEFAULT_DEBUG_PLAYOUTS;
+  std::string nRaw;
+  if (extractQueryParam(query, "n", nRaw) && !nRaw.empty()) {
+    std::string nDecoded = percentDecode(nRaw);
+    if (!debug_gt::isPlainInt(nDecoded)) {
+      return {400, "Error: invalid n parameter (expected integer): " + nDecoded, ""};
+    }
+    playoutCount = std::atoi(nDecoded.c_str());
+    if (playoutCount < 0 || playoutCount > CANONICAL_SEQUENCE_BATCH_SIZE) {
+      return {400,
+              "Error: invalid n parameter (expected 0-"
+                  + std::to_string(CANONICAL_SEQUENCE_BATCH_SIZE)
+                  + "): "
+                  + nDecoded,
+              ""};
+    }
+  }
+
+  int maxConts = debug_gt::DEFAULT_DEBUG_CONTS;
+  std::string contsRaw;
+  if (extractQueryParam(query, "conts", contsRaw) && !contsRaw.empty()) {
+    std::string contsDecoded = percentDecode(contsRaw);
+    if (!debug_gt::isPlainInt(contsDecoded)) {
+      return {400, "Error: invalid conts parameter (expected integer): " + contsDecoded, ""};
+    }
+    maxConts = std::atoi(contsDecoded.c_str());
+    if (maxConts < 1 || maxConts > debug_gt::MAX_DEBUG_CONTS) {
+      return {400,
+              "Error: invalid conts parameter (expected 1-"
+                  + std::to_string(debug_gt::MAX_DEBUG_CONTS)
+                  + "): "
+                  + contsDecoded,
+              ""};
+    }
+  }
+
+  std::vector<std::string> requestedKeys;
+  std::string keysRaw;
+  if (extractQueryParam(query, "keys", keysRaw) && !keysRaw.empty()) {
+    std::string keysDecoded = percentDecode(keysRaw);
+    size_t pos = 0;
+    while (pos <= keysDecoded.size()) {
+      size_t comma = keysDecoded.find(',', pos);
+      std::string token =
+          keysDecoded.substr(pos, comma == std::string::npos ? std::string::npos : comma - pos);
+      if (!token.empty()) {
+        requestedKeys.push_back(token);
+      }
+      if (comma == std::string::npos) {
+        break;
+      }
+      pos = comma + 1;
+    }
+    if (static_cast<int>(requestedKeys.size()) > debug_gt::MAX_DEBUG_KEYS) {
+      return {400, "Error: too many keys (max " + std::to_string(debug_gt::MAX_DEBUG_KEYS) + ").",
+              ""};
+    }
+  }
+
+  std::string response =
+      debug_gt::runDebugGroundTruth(enginePipe, requestedKeys, playoutCount, maxConts);
+  std::string suffix = formatDurationSuffix(started);
+  if (isEngineRejection(response)) {
+    return {500, response, suffix};
+  }
+  return {200, response, suffix};
+}
+
 RouteResult routeRequest(const std::string &path, const std::string &query,
                          double calibratedMovesPerMs7T) {
   if (path == "/ping") {
@@ -628,6 +723,9 @@ RouteResult routeRequest(const std::string &path, const std::string &query,
   }
   if (path == "/get-move-ab-test") {
     return handleGetMoveAbTest(query);
+  }
+  if (path == "/debug-ground-truth") {
+    return handleDebugGroundTruth(query);
   }
   if (path == "/async-result") {
     return handleAsyncResult();
