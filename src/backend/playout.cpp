@@ -143,12 +143,10 @@ float playSequence(GameState gameState, const PieceRangeContext pieceRangeContex
         return 0; // 0% chance of continuing perfect
       }
     } else {
+      // Score intermediate line clears with the root search's weights so plies 1-2, intermediate
+      // playout plies, the leaf ply, and terminal guaranteedBurns all price burns consistently.
       FastEvalWeights rewardWeights =
-          (originalAiMode == DIG || evalContext->aiMode == DIG)
-              ? getWeights(STANDARD, /* useTestWeights= */ false, aggressionLevel)
-              : getWeights(originalAiMode, /* useTestWeights= */ false,
-                           aggressionLevel); // When the AI is digging, still deduct from the
-                                             // overall value of the sequence at standard amounts
+          getWeights(originalAiMode, /* useTestWeights= */ false, aggressionLevel);
       int shouldRewardClears = (originalAiMode == LINEOUT);
       totalReward += getLineClearFactor(gameState.lines - oldLines, rewardWeights,
                                         shouldRewardClears, oldLines, evalContext->lineoutAt29);
