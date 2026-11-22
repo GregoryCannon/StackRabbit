@@ -465,26 +465,42 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
   int samplesSoFar = 0;
 
   // ---- Round 1: screen every candidate on its eval-best continuation(s) (the wide net).
+  // Candidates are ordered descending by fast-eval score; top-eval candidates screen extra
+  // continuations when R1's budget share covers TMT_MIN_PLAYOUTS across them, falling back to
+  // 1 continuation per candidate on tight budgets.
   TMT_TRACE("TRACE: entering R1 (n1 pending)\n");
-  // r1Conts = largest cont count whose floor-level spend fits R1's share (see TMT_R1_MAX_CONTS).
-  int r1MaxConts = std::min(TMT_R1_MAX_CONTS, TMT_CONTINUATIONS_PER_CANDIDATE);
-  int r1Conts = 1;
-  while (r1Conts < r1MaxConts
-         && (long long)candidateCount * (r1Conts + 1) * TMT_MIN_PLAYOUTS
-                <= (long long)(totalBudget * TMT_R1_BUDGET_SHARE)) {
-    r1Conts++;
+  auto getTieredR1Conts = [](int candidateIdx, int availConts) {
+    int limit = 1;
+    if (candidateIdx < TMT_R1_TIER1_CANDIDATES) {
+      limit = TMT_R1_TIER1_CONTS;
+    } else if (candidateIdx < TMT_R1_TIER1_CANDIDATES + TMT_R1_TIER2_CANDIDATES) {
+      limit = TMT_R1_TIER2_CONTS;
+    }
+    return std::min(std::min(limit, TMT_CONTINUATIONS_PER_CANDIDATE), availConts);
+  };
+  int tieredR1Entries = 0;
+  int baseR1Entries = 0;
+  for (int i = 0; i < candidateCount; i++) {
+    int avail = (int)candidates[i].conts.size();
+    tieredR1Entries += getTieredR1Conts(i, avail);
+    baseR1Entries += std::min(1, avail);
   }
+  const bool useTieredR1 = (long long)tieredR1Entries * TMT_MIN_PLAYOUTS
+                           <= (long long)(totalBudget * TMT_R1_BUDGET_SHARE);
+  const float r1BudgetShare = useTieredR1 ? TMT_R1_BUDGET_SHARE : TMT_R1_FALLBACK_BUDGET_SHARE;
+  const float r2BudgetShare = useTieredR1 ? TMT_R2_BUDGET_SHARE : TMT_R2_FALLBACK_BUDGET_SHARE;
+  const int r1Entries = useTieredR1 ? tieredR1Entries : baseR1Entries;
+  auto getR1ContsForCandidate = [&](int candidateIdx) {
+    int avail = (int)candidates[candidateIdx].conts.size();
+    return useTieredR1 ? getTieredR1Conts(candidateIdx, avail) : std::min(1, avail);
+  };
   int n1 = 0;
   if (isTimed) {
     double remMs = msBetween(SteadyClock::now(), deadline) - clockSafetyMs;
-    int r1Entries = 0;
-    for (auto const &candidate : candidates) {
-      r1Entries += std::min(r1Conts, (int)candidate.conts.size());
-    }
-    n1 = getTimedRoundSampleCount(remMs * TMT_R1_BUDGET_SHARE, initMovesPerMs, r1Entries,
-                                  playoutLength, CANONICAL_SEQUENCE_BATCH_SIZE);
+    n1 = getTimedRoundSampleCount(remMs * r1BudgetShare, initMovesPerMs, r1Entries, playoutLength,
+                                  CANONICAL_SEQUENCE_BATCH_SIZE);
     if (n1 == 0) {
-      // Very tight deadlines can fail R1's 38% share threshold yet still fit TMT_MIN_PLAYOUTS
+      // Very tight deadlines can fail R1's share threshold yet still fit TMT_MIN_PLAYOUTS
       // inside the remaining window; otherwise return eval-only rather than noisy samples.
       if (getTimedRoundSampleCount(remMs, initMovesPerMs, r1Entries, playoutLength,
                                    CANONICAL_SEQUENCE_BATCH_SIZE)
@@ -495,11 +511,12 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
       }
     }
   } else {
-    n1 = getRoundSampleCount(totalBudget * TMT_R1_BUDGET_SHARE, candidateCount * r1Conts);
+    n1 = getRoundSampleCount(totalBudget * r1BudgetShare, r1Entries);
   }
+  n1 = std::min(n1, TMT_R1_MAX_PLAYOUTS);
   if (TMT_LOGGING_ENABLED) {
-    printf("TMT setup: candidates=%d r1Conts=%d totalBudget=%lld playoutLength=%d\n",
-           candidateCount, r1Conts, totalBudget, playoutLength);
+    printf("TMT setup: candidates=%d r1Entries=%d tiered=%d totalBudget=%lld playoutLength=%d\n",
+           candidateCount, r1Entries, (int)useTieredR1, totalBudget, playoutLength);
     for (auto const &candidate : candidates) {
       for (auto const &cont : candidate.conts) {
         if (!cont.seqScores.empty()) {
@@ -510,11 +527,12 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
   }
   SteadyClock::time_point r1Start = SteadyClock::now();
   long long totalPlayoutMovesRun = 0;
-  for (auto &candidate : candidates) {
+  for (int i = 0; i < candidateCount; i++) {
     if (budget.isCancelled()) {
       return lockValueMap;
     }
-    int contsToPlay = std::min(r1Conts, (int)candidate.conts.size());
+    TournamentCandidate &candidate = candidates[i];
+    int contsToPlay = getR1ContsForCandidate(i);
     for (int c = 0; c < contsToPlay; c++) {
       totalPlayoutMovesRun += playTournamentSamples(
           candidate.conts[c], n1, samplesSoFar, playoutLength, pieceRangeContextLookup,
@@ -568,10 +586,7 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
   cutTournamentCandidatesByRank(candidates, std::min(TMT_FINALIST_COUNT, survivorsAfterVeto),
                                 TMT_RANK_UPPER_BOUND);
   int survivorsAfterCut1 = countTournamentSurvivors(candidates);
-  int spentSoFar = 0;
-  for (auto const &candidate : candidates) {
-    spentSoFar += std::min(r1Conts, (int)candidate.conts.size()) * n1;
-  }
+  int spentSoFar = r1Entries * n1;
   if (TMT_LOGGING_ENABLED) {
     printf("TMT cut1 done: survivors(%d)=", survivorsAfterCut1);
     for (auto const &candidate : candidates) {
@@ -595,22 +610,29 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
   };
 
   // ---- Round 2: sample every cont of each survivor (discovery: eval-best isn't always best).
+  int actualR2Entries = 0;
+  for (auto const &candidate : candidates) {
+    if (!candidate.eliminated) {
+      actualR2Entries += (int)candidate.conts.size();
+    }
+  }
   int n2 = 0;
   if (isTimed) {
     double remAfterR1 = msBetween(SteadyClock::now(), deadline) - clockSafetyMs;
-    int actualR2Entries = 0;
-    for (auto const &candidate : candidates) {
-      if (!candidate.eliminated) {
-        actualR2Entries += (int)candidate.conts.size();
-      }
-    }
-    constexpr double r2ShareOfRemaining = TMT_R2_BUDGET_SHARE / (1.0f - TMT_R1_BUDGET_SHARE);
+    const double r2ShareOfRemaining = r2BudgetShare / (1.0f - r1BudgetShare);
     n2 = getTimedRoundSampleCount(remAfterR1 * r2ShareOfRemaining, getObservedMovesPerMs(),
                                   actualR2Entries, playoutLength,
                                   CANONICAL_SEQUENCE_BATCH_SIZE - samplesSoFar);
+    if (n2 == 0
+        && getTimedRoundSampleCount(remAfterR1, getObservedMovesPerMs(), actualR2Entries,
+                                    playoutLength, CANONICAL_SEQUENCE_BATCH_SIZE - samplesSoFar)
+               >= TMT_MIN_PLAYOUTS) {
+      // Avoid skipping discovery completely when R2's share lands just shy of TMT_MIN_PLAYOUTS
+      // while the remaining window still comfortably fits the minimum sample floor.
+      n2 = TMT_MIN_PLAYOUTS;
+    }
   } else {
-    n2 = getRoundSampleCount(totalBudget * TMT_R2_BUDGET_SHARE,
-                             survivorsAfterCut1 * TMT_CONTINUATIONS_PER_CANDIDATE);
+    n2 = getRoundSampleCount(totalBudget * r2BudgetShare, actualR2Entries);
   }
   if (n2 > 0) {
     SteadyClock::time_point r2Start = SteadyClock::now();
@@ -633,7 +655,7 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
       totalPlayoutMovesRun += r2MovesRun;
     }
     samplesSoFar += n2;
-    spentSoFar += survivorsAfterCut1 * TMT_CONTINUATIONS_PER_CANDIDATE * n2;
+    spentSoFar += actualR2Entries * n2;
   }
   TMT_TRACE("TRACE: R2 done (n2=%d)\n", n2);
   if (TMT_LOGGING_ENABLED) {
@@ -648,35 +670,17 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
     }
   }
 
-  // ---- Cut 2: paired veto vs the leader, then cap at TMT_R3_COUNT by raw pooled mean.
-  // False positives get corrected by round 3 and the LCBs; cut alternates never recover.
+  // ---- Cut 2: keep the top TMT_R3_COUNT survivors by raw pooled mean for Round 3 deepening.
+  // Keeping all TMT_R3_COUNT finalists (rather than vetoing down to 1) ensures the top few
+  // placements in each lock-value map stay well-calibrated with tight LCBs for 7-piece precompute
+  // averaging.
   leaderIdx = getTournamentLeaderIndex(candidates);
   const TournamentCont &leaderCont2 = getTournamentBestCont(candidates[leaderIdx]);
   if (TMT_LOGGING_ENABLED) {
     printf("TMT cut2: leader=%s score=%.2f\n", candidates[leaderIdx].key.c_str(),
            getTournamentContScore(leaderCont2));
   }
-  for (int i = 0; i < candidateCount; i++) {
-    if (candidates[i].eliminated || i == leaderIdx) {
-      continue;
-    }
-    float pairedMeanDiff, pairedStandardError;
-    if (isTournamentCandidateSignificantlyWorse(candidates[i], leaderCont2, &pairedMeanDiff,
-                                                &pairedStandardError)) {
-      candidates[i].eliminated = true;
-      if (TMT_LOGGING_ENABLED) {
-        printf("  cut2 VETO %s meanDiff=%.2f se=%.2f (z=%.2f)\n", candidates[i].key.c_str(),
-               pairedMeanDiff, pairedStandardError,
-               pairedMeanDiff / std::max(pairedStandardError, 0.0001f));
-      }
-    } else if (TMT_LOGGING_ENABLED) {
-      printf("  cut2 keep %s meanDiff=%.2f se=%.2f (z=%.2f)\n", candidates[i].key.c_str(),
-             pairedMeanDiff, pairedStandardError,
-             pairedMeanDiff / std::max(pairedStandardError, 0.0001f));
-    }
-  }
-  int survivorsAfterCut2Veto = countTournamentSurvivors(candidates);
-  cutTournamentCandidatesByRank(candidates, std::min(TMT_R3_COUNT, survivorsAfterCut2Veto),
+  cutTournamentCandidatesByRank(candidates, std::min(TMT_R3_COUNT, survivorsAfterCut1),
                                 TMT_RANK_RAW_MEAN);
   int finalists = countTournamentSurvivors(candidates);
   if (TMT_LOGGING_ENABLED) {
@@ -767,13 +771,14 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
           logTournamentCont("R3", candidate.key, candidate.conts[contIdx], n1 + n2);
         }
       }
+      samplesSoFar += n3;
     }
   }
   TMT_TRACE("TRACE: R3 done (n3=%d)\n", n3);
   if (PLAYOUT_LOGGING_ENABLED || TMT_LOGGING_ENABLED) {
-    printf("Tournament: candidates=%d r1Conts=%d n1=%d survivors1=%d n2=%d finalists=%d n3=%d "
+    printf("Tournament: candidates=%d r1Entries=%d n1=%d survivors1=%d n2=%d finalists=%d n3=%d "
            "samplesSoFar=%d\n",
-           candidateCount, r1Conts, n1, survivorsAfterCut1, n2, finalists, n3, samplesSoFar);
+           candidateCount, r1Entries, n1, survivorsAfterCut1, n2, finalists, n3, samplesSoFar);
   }
 
   // ---- Build the map: record the highest-sample-count playout estimate per distinct

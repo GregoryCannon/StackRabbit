@@ -1146,8 +1146,9 @@ TEST_CASE("playSequence preserves originalAiMode weights across mid-playout mode
     LockPlacement best0 = pickLockPlacement(g, &initialCtx, locks0);
     GameState after0 = advanceGameState(g, best0, &initialCtx);
     REQUIRE(after0.numTrueHoles == 0);
-    FastEvalWeights stdWeights = getWeights(STANDARD, /* useTestWeights= */ false, SAFE);
-    float reward0 = getLineClearFactor(after0.lines - g.lines, stdWeights, false, g.lines,
+    // Intermediate burns in a DIG-rooted playout use DIG weights (matching plies 1-2, the leaf
+    // ply, and terminal guaranteedBurns) rather than STANDARD weights.
+    float reward0 = getLineClearFactor(after0.lines - g.lines, initialCtx.weights, false, g.lines,
                                        initialCtx.lineoutAt29);
 
     const EvalContext ply1Ctx = getEvalContext(after0, contexts, /* useTestWeights= */ false, SAFE);
@@ -1171,6 +1172,13 @@ TEST_CASE("playSequence preserves originalAiMode weights across mid-playout mode
                                      initialCtx.aiMode, /* playoutDataList= */ nullptr);
     CHECK(actualScore == doctest::Approx(reward0 + expectedDigEval));
 
+    // Also verify under HYPER aggression: intermediate burns in a DIG-rooted playout must still
+    // use DIG's burnCoef (-1), not STANDARD HYPER's -30 (which otherwise makes stalling/covering
+    // the well outscore actually digging out a hole at depth >= 4).
+    float actualHyperScore = playSequence(g, contexts, seq, /* playoutLength= */ 2, HYPER,
+                                          initialCtx.aiMode, /* playoutDataList= */ nullptr);
+    CHECK(actualHyperScore == doctest::Approx(reward0 + expectedDigEval));
+
     // Also verify that when the hole is cleared on the root candidate move before getPlayoutScore
     // is called (so after0 already has numTrueHoles == 0), passing initialCtx.aiMode (DIG) into
     // getPlayoutScore still evaluates the playout leaf with DIG weights rather than STANDARD.
@@ -1180,6 +1188,22 @@ TEST_CASE("playSequence preserves originalAiMode weights across mid-playout mode
                                                /* playoutLength= */ 1, SAFE, initialCtx.aiMode,
                                                /* playoutDataList= */ nullptr);
     CHECK(scoreFromPostRootMove == doctest::Approx(expectedDigEval));
+  }
+
+  SUBCASE("HYPER DIG depth-8 precompute prefers digging over covering the well") {
+    // Regression test: with a hole at row 19 col 3 on level 26 (lines=204, DIG mode) under HYPER
+    // aggression at playoutLength=8, scoring intermediate burns at DIG's burnCoef keeps the engine
+    // digging (3,-5,17) instead of covering the well on the right (2,3,15) to stall burns past the
+    // horizon.
+    std::string board = std::string(160, '0')
+                        + "0000001110"
+                          "0000001110"
+                          "0011001110"
+                          "1110111111";
+    REQUIRE(board.size() == 200);
+    std::string pipe = board + "|26|204|2|-1|X..|2000|8|-1|hyper|15|18|";
+    std::string response = mainProcess(pipe.c_str(), PRECOMPUTE);
+    CHECK(response.rfind("Default:3,-5,17|", 0) == 0);
   }
 
   SUBCASE("Pre-killscreen playout stops immediately upon reaching Level 29 LINEOUT and evaluates "
@@ -1596,6 +1620,38 @@ TEST_CASE("tournament transposition check prevents deferred I -> I from beating 
   timing.requestReceived = std::chrono::steady_clock::now();
   timing.calibratedMovesPerMs7T = 123.0;
   checkITakesTetris(mainProcess(timedPipe.c_str(), PRECOMPUTE, &timing));
+}
+
+TEST_CASE("tiered tournament Round 1 rescues top-eval candidate with deceptive cont#0") {
+  // Regression test: on this level 19 hyper board with J (lines=85, rt=60, das=15), [1,1,12]
+  // (1|4|11) beats [1,4,12] (1|7|11) by ~109 pts in true depth-8 playouts, but its eval-best
+  // cont#0 on next=S (and O) creates a central chasm. Tiered R1 screens cont#1 on top-eval
+  // candidates so 1|4|11 is not cut before Round 2 discovery.
+  std::string board = std::string(130, '0')
+                      + "1000000100"
+                        "1000011110"
+                        "1100111110"
+                        "1101111111"
+                        "1111111110"
+                        "1111111110"
+                        "1111111110";
+  REQUIRE(board.size() == 200);
+  std::string pipe = InputBuilder()
+                         .withBoard1(board)
+                         .withLevel(19)
+                         .withLines(85)
+                         .withCurPiece(IDX_J)
+                         .withNextPiece(-1)
+                         .withTimeline("X.....")
+                         .withPlayoutCount(3500)
+                         .withPlayoutLength(8)
+                         .withPruningBreadth(-1)
+                         .withAggression("hyper")
+                         .withDasCharge(15)
+                         .build()
+                     + "60|";
+  std::string response = runRequest(PRECOMPUTE, pipe);
+  CHECK(response.rfind("Default:1,1,12|", 0) == 0);
 }
 
 #endif // SR_REQUEST_TYPE_TESTS
