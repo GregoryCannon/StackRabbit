@@ -558,7 +558,7 @@ PrecomputeState preparePrecomputeState(GameState gameState, const Piece *curPiec
     return PrecomputeState();
   }
   const FirstMoveSearchResult firstMoves = buildFirstMoveBranches(
-      gameState, curPiece, state.useDAS ? DAS_CHARGE_MAX : -1,
+      gameState, curPiece, state.useDAS ? dasCharge : -1,
       state.useDAS ? inputFrameTimeline : evalContext->pieceRangeContext.inputFrameTimeline,
       evalContext);
   SearchBudget lookupBudget =

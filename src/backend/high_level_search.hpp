@@ -63,18 +63,16 @@ DasLockValueMaps getLockValueLookupDasMapsWithFirstMoves(
     const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3],
     const SearchBudget *budget = nullptr);
 
-DasLockValueMaps getLockValueLookupDasMaps(GameState gameState, const Piece *firstPiece,
-                                           const Piece *secondPiece, int pruningBreadth,
-                                           int playoutCount, int playoutLength,
-                                           char const *dasInputFrameTimeline,
-                                           const EvalContext *evalContext,
-                                           const PieceRangeContext pieceRangeContextLookup[3],
-                                           const SearchBudget *budget = nullptr);
+DasLockValueMaps getLockValueLookupDasMaps(
+    GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int pruningBreadth,
+    int playoutCount, int playoutLength, int firstPieceDasCharge, char const *dasInputFrameTimeline,
+    const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3],
+    const SearchBudget *budget = nullptr);
 
 std::string getLockValueLookupDas(GameState gameState, const Piece *firstPiece,
                                   const Piece *secondPiece, int pruningBreadth, int playoutCount,
-                                  int playoutLength, char const *dasInputFrameTimeline,
-                                  const EvalContext *evalContext,
+                                  int playoutLength, int firstPieceDasCharge,
+                                  char const *dasInputFrameTimeline, const EvalContext *evalContext,
                                   const PieceRangeContext pieceRangeContextLookup[3],
                                   const SearchBudget *budget = nullptr);
 
@@ -95,8 +93,8 @@ int searchDepth1(GameState gameState, const Piece *firstPiece, const EvalContext
                  OUT std::vector<Possibility> &possibilities, bool generateExplanation = false);
 
 int searchDepth2(GameState gameState, const Piece *firstPiece, const Piece *secondPiece,
-                 int dasCharge, int secondPieceDasCharge, char const *dasInputFrameTimeline,
-                 const EvalContext *evalContext, OUT std::vector<Possibility> &possibilities,
-                 bool generateExplanation = false);
+                 int firstPieceDasCharge, int secondPieceDasCharge,
+                 char const *dasInputFrameTimeline, const EvalContext *evalContext,
+                 OUT std::vector<Possibility> &possibilities, bool generateExplanation = false);
 
 #endif

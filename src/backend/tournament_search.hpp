@@ -86,7 +86,7 @@ std::unordered_map<std::string, float> getLockValueLookupTournamentFromPossibili
 
 std::unordered_map<std::string, float>
 getLockValueLookupTournament(GameState gameState, const Piece *firstPiece, const Piece *secondPiece,
-                             int playoutLength, const SearchBudget &budget, int dasCharge,
+                             int playoutLength, const SearchBudget &budget, int firstPieceDasCharge,
                              int secondPieceDasCharge, char const *dasInputFrameTimeline,
                              const EvalContext *evalContext,
                              const PieceRangeContext pieceRangeContextLookup[3]);

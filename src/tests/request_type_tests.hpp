@@ -131,10 +131,9 @@ TEST_CASE("GET_LOCK_VALUE_LOOKUP_DAS returns an array of three maps") {
   CHECK(output.find('|') != std::string::npos);
 }
 
-TEST_CASE("GET_LOCK_VALUE_LOOKUP_DAS keeps its 3-map shape in DAS mode (dasCharge >= 0)") {
-  // The bucket structure is charge-agnostic (the buckets exist precisely because
-  // the player's charge is unknown); dasCharge only tells the C++ side that DAS
-  // mode is active so the searches run through fullMoveSearch.
+TEST_CASE("GET_LOCK_VALUE_LOOKUP_DAS filters first-piece placements by dasCharge") {
+  // When dasCharge >= 0, first-piece reachability starts from that charge; when -1,
+  // it defaults to DAS_CHARGE_MAX. The three-map bucket shape always holds.
   for (int dasCharge : {0, 5, 10, 16}) {
     auto input = InputBuilder()
                      .withBoard1(makeFlatBoard(4))
@@ -149,6 +148,38 @@ TEST_CASE("GET_LOCK_VALUE_LOOKUP_DAS keeps its 3-map shape in DAS mode (dasCharg
     CHECK(countOccurrences(output, ",\n") == 2);
     CHECK(output.find('|') != std::string::npos);
   }
+
+  // On a tall level-19 board with low incoming DAS (0), far-left placements reachable at full
+  // charge (e.g. Z at 1|-1|11) are excluded from all three maps, whereas dasCharge == -1
+  // falls back to DAS_CHARGE_MAX and includes them.
+  const std::string tallBoard = "00000000000000000000000000000000000000000000000000"
+                                "00000000000000000000000000000000000000000000000000"
+                                "00000000001000000000100101100010111111111111111110"
+                                "11111111101111111110111111111011111111101111111110";
+  REQUIRE(tallBoard.size() == 200);
+  auto makeTallInput = [&](int charge) {
+    return InputBuilder()
+        .withBoard1(tallBoard)
+        .withLevel(19)
+        .withLines(130)
+        .withCurPiece(IDX_Z)
+        .withNextPiece(IDX_J)
+        .withTimeline("X.....")
+        .withPlayoutCount(0)
+        .withPlayoutLength(0)
+        .withPruningBreadth(20)
+        .withAggression("aggro")
+        .withDasCharge(charge)
+        .build();
+  };
+  std::string outZero = runRequest(GET_LOCK_VALUE_LOOKUP_DAS, makeTallInput(0));
+  std::string outFull = runRequest(GET_LOCK_VALUE_LOOKUP_DAS, makeTallInput(16));
+  std::string outDefault = runRequest(GET_LOCK_VALUE_LOOKUP_DAS, makeTallInput(-1));
+
+  CHECK(outZero.find("\"1|-1|11\"") == std::string::npos);
+  CHECK(outFull.find("\"1|-1|11\"") != std::string::npos);
+  CHECK(outDefault.find("\"1|-1|11\"") != std::string::npos);
+  CHECK(outZero.find("\"1|2|10\"") != std::string::npos);
 }
 
 /** Extracts the numeric value stored for `key` in a "{...}" penalty/value map. */
@@ -283,13 +314,14 @@ TEST_CASE(
   const EvalContext ctx = getEvalContext(g, contexts, /* useTestWeights= */ false, SAFE);
   const Piece *O = &PIECE_LIST[IDX_O];
 
-  const DasLockValueMaps maps =
-      getLockValueLookupDasMaps(g, O, O, /* pruningBreadth= */ 20, /* playoutCount= */ 0,
-                                /* playoutLength= */ 0, "X..", &ctx, contexts);
+  const DasLockValueMaps maps = getLockValueLookupDasMaps(
+      g, O, O, /* pruningBreadth= */ 20, /* playoutCount= */ 0,
+      /* playoutLength= */ 0, /* firstPieceDasCharge= */ DAS_CHARGE_MAX, "X..", &ctx, contexts);
 
   // Verify shallow maps.lockValue equals unpenalized full-charge searchDepth2 max eval.
   std::vector<Possibility> rawFull;
-  searchDepth2(g, O, O, /* dasCharge= */ -1, /* secondPieceDasCharge= */ 15, "X..", &ctx, rawFull);
+  searchDepth2(g, O, O, /* firstPieceDasCharge= */ DAS_CHARGE_MAX, /* secondPieceDasCharge= */ 15,
+               "X..", &ctx, rawFull);
   std::unordered_map<std::string, float> expectedRaw;
   for (const Possibility &p : rawFull) {
     const std::string key = encodeLockPosition(p.firstPlacement);
@@ -508,10 +540,10 @@ TEST_CASE("GET_MOVE_AB_TEST returns valid JSON with formatted placement and expl
   }
 }
 
-TEST_CASE("searchDepth2 rejects dasCharge + secondPieceDasCharge passed together") {
-  // The two DAS modes are mutually exclusive (programmer-error guard in searchDepth2):
-  // dasCharge = generic DAS search (second piece inherits dasChargeAfter);
-  // secondPieceDasCharge = DAS bucket hypothesis (second piece's charge prescribed).
+TEST_CASE("searchDepth2 validates firstPieceDasCharge and secondPieceDasCharge combinations") {
+  // firstPieceDasCharge selects tap (-1) vs DAS (0..16) for piece 1;
+  // secondPieceDasCharge inherits dasChargeAfter (-1) or prescribes piece 2's charge (0..16).
+  // Prescribing secondPieceDasCharge in tap mode is invalid and returns 0.
   GameState g = {};
   g.level = 18;
   g.lines = 0;
@@ -530,22 +562,29 @@ TEST_CASE("searchDepth2 rejects dasCharge + secondPieceDasCharge passed together
   const Piece *I = &PIECE_LIST[IDX_I];
 
   std::vector<Possibility> rejected;
-  CHECK(searchDepth2(g, J, I, /* dasCharge= */ 16, /* secondPieceDasCharge= */ 10, "X..", &ctx,
-                     rejected)
+  CHECK(searchDepth2(g, J, I, /* firstPieceDasCharge= */ -1, /* secondPieceDasCharge= */ 10, "X..",
+                     &ctx, rejected)
         == 0);
   CHECK(rejected.size() == 0);
 
-  std::vector<Possibility> genericMode;
-  CHECK(searchDepth2(g, J, I, /* dasCharge= */ 16, /* secondPieceDasCharge= */ -1, "X..", &ctx,
-                     genericMode)
+  std::vector<Possibility> prescribedBoth;
+  CHECK(searchDepth2(g, J, I, /* firstPieceDasCharge= */ 16, /* secondPieceDasCharge= */ 10, "X..",
+                     &ctx, prescribedBoth)
         > 0);
-  std::vector<Possibility> bucketMode;
-  CHECK(searchDepth2(g, J, I, /* dasCharge= */ -1, /* secondPieceDasCharge= */ 10, "X..", &ctx,
-                     bucketMode)
+  std::vector<Possibility> lowFirstPrescribedSecond;
+  CHECK(searchDepth2(g, J, I, /* firstPieceDasCharge= */ 0, /* secondPieceDasCharge= */ 10, "X..",
+                     &ctx, lowFirstPrescribedSecond)
+        > 0);
+  // Lower incoming first-piece DAS charge can reach at most as many placements as full charge.
+  CHECK(lowFirstPrescribedSecond.size() <= prescribedBoth.size());
+
+  std::vector<Possibility> inheritMode;
+  CHECK(searchDepth2(g, J, I, /* firstPieceDasCharge= */ 16, /* secondPieceDasCharge= */ -1, "X..",
+                     &ctx, inheritMode)
         > 0);
   std::vector<Possibility> tapMode;
-  CHECK(searchDepth2(g, J, I, /* dasCharge= */ -1, /* secondPieceDasCharge= */ -1, "X..", &ctx,
-                     tapMode)
+  CHECK(searchDepth2(g, J, I, /* firstPieceDasCharge= */ -1, /* secondPieceDasCharge= */ -1, "X..",
+                     &ctx, tapMode)
         > 0);
 }
 

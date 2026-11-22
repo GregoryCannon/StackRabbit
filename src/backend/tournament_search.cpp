@@ -898,16 +898,16 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
 /** Runs the whole 3-round tournament. See the block comment above for the scheme. */
 unordered_map<string, float>
 getLockValueLookupTournament(GameState gameState, const Piece *firstPiece, const Piece *secondPiece,
-                             int playoutLength, const SearchBudget &budget, int dasCharge,
+                             int playoutLength, const SearchBudget &budget, int firstPieceDasCharge,
                              int secondPieceDasCharge, char const *dasInputFrameTimeline,
                              const EvalContext *evalContext,
                              const PieceRangeContext pieceRangeContextLookup[3]) {
   // Enumerate every (first, second) pair with a fast eval (same first pass as legacy).
-  // DAS bucket mode (secondPieceDasCharge >= 0, dasCharge = -1) prescribes the second
-  // piece's starting charge for the pair enumeration (on dasInputFrameTimeline, the
-  // player's real timeline); the tournament rounds/playouts themselves stay tap-based.
+  // In DAS mode (firstPieceDasCharge >= 0), pair enumeration runs on dasInputFrameTimeline
+  // (the player's real timeline) with secondPieceDasCharge inherited (-1) or prescribed (>= 0);
+  // the tournament rounds/playouts themselves stay tap-based.
   std::vector<Possibility> possibilities;
-  searchDepth2(gameState, firstPiece, secondPiece, dasCharge, secondPieceDasCharge,
+  searchDepth2(gameState, firstPiece, secondPiece, firstPieceDasCharge, secondPieceDasCharge,
                dasInputFrameTimeline, evalContext, possibilities);
   return getLockValueLookupTournamentFromPossibilities(
       possibilities, secondPiece, playoutLength, budget, evalContext, pieceRangeContextLookup);

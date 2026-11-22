@@ -104,6 +104,12 @@ Lookup map shape: `[partialChargePenalties, minChargePenalties, deepValues]` —
 three maps keyed by lock position (returned in-process as `DasLockValueMaps`
 for `PRECOMPUTE`, or serialized as JSON for `GET_LOCK_VALUE_LOOKUP_DAS`).
 
+- **First-piece DAS charge**: When `dasCharge >= 0` (always true in DAS-mode
+  `PRECOMPUTE`, and optional for `GET_LOCK_VALUE_LOOKUP_DAS`), first-piece
+  reachability starts from that known spawn `dasCharge` so unreachable
+  high-charge placements are excluded from both the bucket maps and the deep
+  search. `GET_LOCK_VALUE_LOOKUP_DAS` with `dasCharge == -1` falls back to
+  `DAS_CHARGE_MAX`.
 - **Penalty maps**: The backend runs a shallow search with three possible DAS
   charges (`15`, `10`, `5`) to measure how much worse lower DAS charges are
   compared to full charge. These charges apply to the **second** piece, because

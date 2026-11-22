@@ -396,10 +396,14 @@ std::string mainProcess(char const *inputStr, RequestType requestType,
 
   case GET_LOCK_VALUE_LOOKUP_DAS: {
     // The real timeline goes to the DAS move search; the piece-range/playout
-    // contexts above already hold the derived tapper approximation.
+    // contexts above already hold the derived tapper approximation. When a
+    // starting dasCharge is provided (>= 0), filter first-piece reachability
+    // from that charge; -1 falls back to DAS_CHARGE_MAX.
+    const int firstPieceDasCharge = dasCharge >= 0 ? dasCharge : DAS_CHARGE_MAX;
     return getLockValueLookupDas(startingGameState, curPiece, nextPiece, pruningBreadth,
-                                 playoutCount, playoutLength, inputFrameTimeline.c_str(), &context,
-                                 pieceRangeContextLookup, budgetPtr);
+                                 playoutCount, playoutLength, firstPieceDasCharge,
+                                 inputFrameTimeline.c_str(), &context, pieceRangeContextLookup,
+                                 budgetPtr);
   }
 
   case GET_TOP_MOVES: {

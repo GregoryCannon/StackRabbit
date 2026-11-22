@@ -235,42 +235,28 @@ static int searchDepth2FromFirstMoves(const FirstMoveSearchResult &firstMoves,
 
 /** Searches 2-ply from a starting state, and performs a fast eval on each of the resulting states.
  * @returns the number of possibilities found (0 if the arguments are invalid)
- * @param dasCharge - the first piece's incoming DAS charge: -1 = tap mode, 0..16 = DAS
+ * @param firstPieceDasCharge - the first piece's incoming DAS charge: -1 = tap mode, 0..16 = DAS
  *   mode (searches run through fullMoveSearch on dasInputFrameTimeline, the player's real
- *   timeline). In DAS mode the second piece inherits each first placement's dasChargeAfter.
- * @param secondPieceDasCharge - DAS bucket mode: prescribes the SECOND piece's starting
- *   charge instead of inheriting it (the first piece is then always searched from a full
- *   charge, DAS_CHARGE_MAX). Used by the DAS penalty buckets to evaluate the hypothesis
- *   "the player ends the first placement with Q left over" -- the inherited value must
- *   not be used there because it is path-dependent (the same lock cell can end at 16 via
- *   a wall-charged drop or at 0 via a tuck).
- *   Mutually exclusive with dasCharge: at most one of the two may be >= 0 (checked below).
+ *   timeline).
+ * @param secondPieceDasCharge - the second piece's starting DAS charge in DAS mode: -1 = inherit
+ *   each first placement's dasChargeAfter, 0..16 = prescribe the second piece's starting charge
+ *   (used by DAS penalty buckets to evaluate the hypothesis "the player ends the first placement
+ *   with Q left over" independently of the path taken to the lock cell). Passing >= 0 with
+ *   firstPieceDasCharge < 0 (tap mode) is invalid and returns 0.
  * @param generateExplanation - when true, captures a per-move evalExplanation string
  *   (only used by GET_TOP_MOVES / GET_TOP_MOVES_HYBRID / GET_MOVE_AB_TEST paths).
  */
 int searchDepth2(GameState gameState, const Piece *firstPiece, const Piece *secondPiece,
-                 int dasCharge, int secondPieceDasCharge, char const *dasInputFrameTimeline,
-                 const EvalContext *evalContext, OUT std::vector<Possibility> &possibilities,
-                 bool generateExplanation) {
-  // The two DAS modes are mutually exclusive: dasCharge describes the first piece's
-  // incoming charge (second piece inherits), secondPieceDasCharge prescribes the second
-  // piece's charge for the bucket hypothesis. Passing both is a programmer error.
-  if (dasCharge >= 0 && secondPieceDasCharge >= 0) {
-    // TODO: this logs and returns an empty search rather than throwing, so the
-    // caller silently sees "no legal moves". Decide the contract: reject loudly
-    // (throw, surfacing as a 500) or define a documented precedence.
+                 int firstPieceDasCharge, int secondPieceDasCharge,
+                 char const *dasInputFrameTimeline, const EvalContext *evalContext,
+                 OUT std::vector<Possibility> &possibilities, bool generateExplanation) {
+  if (firstPieceDasCharge < 0 && secondPieceDasCharge >= 0) {
     fprintf(stderr,
-            "Error: searchDepth2 received both dasCharge (%d) and secondPieceDasCharge (%d) -- "
-            "they are mutually exclusive. Pass dasCharge for a generic DAS search, or "
-            "secondPieceDasCharge for the DAS bucket hypothesis.\n",
-            dasCharge, secondPieceDasCharge);
+            "Error: searchDepth2 received secondPieceDasCharge (%d) with tap-mode "
+            "firstPieceDasCharge (%d).\n",
+            secondPieceDasCharge, firstPieceDasCharge);
     return 0;
   }
-  const bool useDas = dasCharge >= 0 || secondPieceDasCharge >= 0;
-  // Bucket mode (secondPieceDasCharge >= 0) always searches the first piece from a
-  // full charge so every bucket/deep lookup enumerates the same set of lock cells.
-  const int firstPieceDasCharge =
-      useDas ? (secondPieceDasCharge >= 0 ? DAS_CHARGE_MAX : dasCharge) : -1;
 
   const FirstMoveSearchResult firstMoves = buildFirstMoveBranches(
       gameState, firstPiece, firstPieceDasCharge, dasInputFrameTimeline, evalContext);
@@ -805,23 +791,21 @@ getLockValueLookupFromPossibilities(const std::vector<Possibility> &possibilitie
 
 /** Calculates the valuation of every possible terminal position for a given piece on a given board,
  * and stores it in a map.
- * @param dasCharge - First piece's incoming DAS charge: -1 = tap mode, 0..16 = DAS mode (see
- * searchDepth2). Mutually exclusive with secondPieceDasCharge (searchDepth2 errors out if both are
- * >= 0).
- * @param secondPieceDasCharge - DAS bucket mode: forces the second piece's starting charge (the
- * bucket hypothesis) instead of inheriting the first placement's dasChargeAfter; the first piece is
- * then searched from DAS_CHARGE_MAX. -1 = not in bucket mode.
+ * @param firstPieceDasCharge - First piece's incoming DAS charge: -1 = tap mode, 0..16 = DAS mode
+ * (see searchDepth2).
+ * @param secondPieceDasCharge - Second piece's starting DAS charge in DAS mode: -1 = inherit
+ * dasChargeAfter, 0..16 = prescribed charge (invalid if firstPieceDasCharge < 0).
  * @param dasInputFrameTimeline - The player's real input frame timeline, consumed by the DAS move
  * search in DAS mode.
  */
 unordered_map<string, float>
 getLockValueLookup(GameState gameState, const Piece *firstPiece, const Piece *secondPiece,
-                   int pruningBreadth, int playoutCount, int playoutLength, int dasCharge,
+                   int pruningBreadth, int playoutCount, int playoutLength, int firstPieceDasCharge,
                    int secondPieceDasCharge, char const *dasInputFrameTimeline,
                    const EvalContext *evalContext,
                    const PieceRangeContext pieceRangeContextLookup[3]) {
   std::vector<Possibility> possibilities;
-  searchDepth2(gameState, firstPiece, secondPiece, dasCharge, secondPieceDasCharge,
+  searchDepth2(gameState, firstPiece, secondPiece, firstPieceDasCharge, secondPieceDasCharge,
                dasInputFrameTimeline, evalContext, possibilities);
   return getLockValueLookupFromPossibilities(possibilities, pruningBreadth, playoutCount,
                                              playoutLength, secondPiece, evalContext,
@@ -931,21 +915,19 @@ std::string getLockValueLookupEncoded(GameState gameState, const Piece *firstPie
  * precompute_tsan`; see AGENTS.md's rule against new non-const file-scope statics and
  * thread-unsafe libc calls on this path).
  */
-DasLockValueMaps getLockValueLookupDasMaps(GameState gameState, const Piece *firstPiece,
-                                           const Piece *secondPiece, int pruningBreadth,
-                                           int playoutCount, int playoutLength,
-                                           char const *dasInputFrameTimeline,
-                                           const EvalContext *evalContext,
-                                           const PieceRangeContext pieceRangeContextLookup[3],
-                                           const SearchBudget *budget) {
+DasLockValueMaps getLockValueLookupDasMaps(
+    GameState gameState, const Piece *firstPiece, const Piece *secondPiece, int pruningBreadth,
+    int playoutCount, int playoutLength, int firstPieceDasCharge, char const *dasInputFrameTimeline,
+    const EvalContext *evalContext, const PieceRangeContext pieceRangeContextLookup[3],
+    const SearchBudget *budget) {
   const FirstMoveSearchResult firstMoves = buildFirstMoveBranches(
-      gameState, firstPiece, DAS_CHARGE_MAX, dasInputFrameTimeline, evalContext);
+      gameState, firstPiece, firstPieceDasCharge, dasInputFrameTimeline, evalContext);
   return getLockValueLookupDasMapsWithFirstMoves(firstMoves, secondPiece, pruningBreadth,
                                                  playoutCount, playoutLength, dasInputFrameTimeline,
                                                  evalContext, pieceRangeContextLookup, budget);
 }
 
-/** Variant of getLockValueLookupDasMaps using precomputed full-charge firstMoves shared read-only
+/** Variant of getLockValueLookupDasMaps using precomputed DAS-mode firstMoves shared read-only
  * across concurrent per-next-piece precompute threads (see thread-safety contract above), reusing
  * the full-charge (15) possibility vector for the deep playouts when playouts are enabled.
  */
@@ -1047,13 +1029,13 @@ DasLockValueMaps getLockValueLookupDasMapsWithFirstMoves(
 
 std::string getLockValueLookupDas(GameState gameState, const Piece *firstPiece,
                                   const Piece *secondPiece, int pruningBreadth, int playoutCount,
-                                  int playoutLength, char const *dasInputFrameTimeline,
-                                  const EvalContext *evalContext,
+                                  int playoutLength, int firstPieceDasCharge,
+                                  char const *dasInputFrameTimeline, const EvalContext *evalContext,
                                   const PieceRangeContext pieceRangeContextLookup[3],
                                   const SearchBudget *budget) {
   const DasLockValueMaps maps = getLockValueLookupDasMaps(
       gameState, firstPiece, secondPiece, pruningBreadth, playoutCount, playoutLength,
-      dasInputFrameTimeline, evalContext, pieceRangeContextLookup, budget);
+      firstPieceDasCharge, dasInputFrameTimeline, evalContext, pieceRangeContextLookup, budget);
 
   // Compile result as array of JSONs
   std::string resultStr = std::string("[\n");
