@@ -655,7 +655,7 @@ TEST_CASE(
   CHECK(movesHex.status == 200);
   CHECK(moves40.status == 200);
   CHECK(movesHex.body == moves40.body);
-  CHECK(movesHex.body.find("\"tablebaseQ\":99.000000000") != std::string::npos);
+  CHECK(movesHex.body.find("\"tablebaseQ\":99") != std::string::npos);
 
   // /state-info reports disagree:true on I (boosted in TB) and disagree:false on O (all children
   // OUT
@@ -683,4 +683,134 @@ TEST_CASE(
 
   ctx.tablebase.close();
   std::remove(tbPath.c_str());
+}
+
+TEST_CASE("Heuristic breakdown features, lossless 2-ply branch-and-bound pruning, and survival") {
+  // 1. Complete 11-feature breakdown check on a 0-hole board:
+  // Col heights: [3, 2, 0, 0, 2, 2, 0, 4, 3, 4]
+  //   - r=3: cols 7, 9 -> 2 cells
+  //   - r=2: cols 0, 7, 8, 9 -> 4 cells
+  //   - r=1: cols 0, 1, 4, 5, 7, 8, 9 -> 7 cells
+  //   - r=0: cols 0, 1, 4, 5, 7, 8, 9 -> 7 cells (20 filled cells total, zero holes)
+  const uint64_t featBoard = mustParse(".......X.X\n"
+                                       "X......XXX\n"
+                                       "XX..XX.XXX\n"
+                                       "XX..XX.XXX");
+  REQUIRE(tb::isCanonicalBoard(featBoard));
+  const tb::HeuristicBreakdown hb = tb::evaluateBoardBreakdown(featBoard);
+  CHECK(hb.holes == 0);
+  CHECK(hb.overhangs == 0);
+  CHECK(hb.sealedHoles == 0);
+  CHECK(hb.sumHeightSq == 62);
+  CHECK(hb.height3Cols == 2);
+  CHECK(hb.ceilingCols == 2);
+  CHECK(hb.bumpiness == 13);
+  CHECK(hb.wellDepthSq == 4);
+  CHECK(hb.parityImbalance == 4);
+  CHECK(hb.safeFlatPairs == 2);
+  CHECK(hb.rowFillSq == (2 * 2 + 4 * 4 + 7 * 7 + 7 * 7));
+
+  // Also check non-zero sealedHoles and overhangs in evaluateBoardBreakdown:
+  const uint64_t holeyBoard = mustParse("..........\n"
+                                        "..XX......\n"
+                                        ".XX....XXX\n"
+                                        "..X....X.X");
+  const tb::HeuristicBreakdown hbHoley = tb::evaluateBoardBreakdown(holeyBoard);
+  CHECK(hbHoley.holes == 4);
+  CHECK(hbHoley.overhangs == 3);
+  CHECK(hbHoley.sealedHoles == 1);
+
+  // 2. Verify bit-exact parity (== with zero epsilon!) between pruned pickBestTransition2Ply,
+  // unpruned pickBestTransition2Ply, and scoreTransition2Ply across 250 random boards x 7 pieces
+  // under default weights and an adversarial positive-weight stress config exercising every upper
+  // bound term (including dominant deathPenalty).
+  tb::EvalWeights stressPosW{};
+  stressPosW.lineClear = 3.5;
+  stressPosW.sealedHole = 4.0;
+  stressPosW.overhang = 2.5;
+  stressPosW.heightSq = 0.3;
+  stressPosW.height3Col = 1.8;
+  stressPosW.ceilingCol = 2.9;
+  stressPosW.bumpiness = 1.2;
+  stressPosW.wellDepthSq = 0.7;
+  stressPosW.parityImbalance = 0.9;
+  stressPosW.safeFlatPairBonus = 3.0;
+  stressPosW.rowFillSq = 0.25;
+  stressPosW.deathPenalty = 500.0;
+
+  tb::EvalWeights negRowFillW = tb::EvalWeights{};
+  negRowFillW.rowFillSq = -0.35;
+  negRowFillW.safeFlatPairBonus = -2.0;
+
+  tb::Rng rng(77777ULL);
+  uint64_t b = 0ULL;
+  tb::TransitionList tl;
+  for (int step = 0; step < 250; ++step) {
+    for (int p = 0; p < tb::NUM_PIECES; ++p) {
+      for (const tb::EvalWeights &w : {tb::EvalWeights{}, stressPosW, negRowFillW}) {
+        const auto pruned = tb::pickBestTransition2Ply(b, p, w, true);
+        const auto unpruned = tb::pickBestTransition2Ply(b, p, w, false);
+        CHECK(pruned.found == unpruned.found);
+        if (pruned.found) {
+          CHECK(pruned.transition.afterBoard == unpruned.transition.afterBoard);
+          CHECK(pruned.transition.linesCleared == unpruned.transition.linesCleared);
+          CHECK(pruned.score == unpruned.score);
+          CHECK(pruned.score
+                == tb::scoreTransition2Ply(pruned.transition.afterBoard,
+                                           pruned.transition.linesCleared, w));
+        }
+      }
+    }
+
+    const int nextP = rng.nextPiece();
+    tb::generateTransitions(b, nextP, tl);
+    b = tl.empty()
+            ? 0ULL
+            : tl[static_cast<int>(rng.nextU64() % static_cast<uint64_t>(tl.size()))].afterBoard;
+  }
+
+  // 3. Verify HTTP routes accept ply=1 and ply=2 (returning distinct scores) and reject bad ply.
+  tb::ServerContext ctx;
+  const auto mPly1 = tb::handleApiRequest("/moves", "board=0&piece=T&ply=1", ctx);
+  const auto mPly2 = tb::handleApiRequest("/moves", "board=0&piece=T&ply=2", ctx);
+  CHECK(mPly1.status == 200);
+  CHECK(mPly2.status == 200);
+  CHECK(mPly1.body != mPly2.body);
+  CHECK(mPly2.body.find("\"heuristicPly\":2") != std::string::npos);
+
+  const auto sPly2 = tb::handleApiRequest("/state-info", "board=0&ply=2", ctx);
+  CHECK(sPly2.status == 200);
+  CHECK(sPly2.body.find("\"heuristicPly\":2") != std::string::npos);
+  CHECK(tb::handleApiRequest("/moves", "board=0&piece=T&ply=3", ctx).status == 400);
+  CHECK(tb::handleApiRequest("/state-info", "board=0&ply=0", ctx).status == 400);
+
+  // 4. Verify 2-ply expectimax beats 1-ply NNB over 120 deterministic fixed-seed games.
+  int totalLines1 = 0;
+  int totalLines2 = 0;
+  for (uint64_t g = 0; g < 120; ++g) {
+    const uint64_t seed = 50000ULL + g * 1337ULL;
+    {
+      tb::Rng grng(seed);
+      uint64_t gb = 0ULL;
+      for (int step = 0; step < 2000; ++step) {
+        const auto ch = tb::pickBestTransition1Ply(gb, grng.nextPiece());
+        if (!ch.found)
+          break;
+        gb = ch.transition.afterBoard;
+        totalLines1 += ch.transition.linesCleared;
+      }
+    }
+    {
+      tb::Rng grng(seed);
+      uint64_t gb = 0ULL;
+      for (int step = 0; step < 2000; ++step) {
+        const auto ch = tb::pickBestTransition2Ply(gb, grng.nextPiece());
+        if (!ch.found)
+          break;
+        gb = ch.transition.afterBoard;
+        totalLines2 += ch.transition.linesCleared;
+      }
+    }
+  }
+  CHECK(totalLines2 > totalLines1);
 }

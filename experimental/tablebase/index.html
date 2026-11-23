@@ -446,8 +446,9 @@
         <div class="row-controls" style="margin-bottom:10px;">
           <label class="muted">AI Policy:</label>
           <select id="aiPolicySelect">
-            <option value="tb">Tablebase (fallback Heuristic)</option>
-            <option value="heur">Heuristic Only (1-ply)</option>
+            <option value="tb">Tablebase (fallback 2-ply Heuristic)</option>
+            <option value="heur2">Heuristic (2-ply Expectimax)</option>
+            <option value="heur1">Heuristic (1-ply Fast)</option>
           </select>
           <button id="btnStepAi" class="primary">Step AI (1)</button>
           <button id="btnAutoPlay">Autoplay</button>
@@ -497,7 +498,7 @@
                 <th>Holes'</th>
                 <th>TB Status</th>
                 <th>TB Q (r + V')</th>
-                <th>Heuristic</th>
+                <th id="heurColHeader">Heuristic (2-ply)</th>
                 <th>After Hex</th>
               </tr>
             </thead>
@@ -608,7 +609,7 @@
     let refreshSeq = 0;
     let tbLoaded = false;
     let autoTimer = null;
-    let seekAbort = false;
+    let seekSeq = 0;
 
     const gridEl = document.getElementById("boardGrid");
     const cellEls = [];
@@ -824,6 +825,10 @@
       }
     }
 
+    function selectedHeuristicPly() {
+      return document.getElementById("aiPolicySelect").value === "heur1" ? 1 : 2;
+    }
+
     async function refreshPosition() {
       const reqId = ++refreshSeq;
       const hex = formatHexBig(boardBig);
@@ -834,10 +839,12 @@
       renderPiecePills();
       renderBoard();
 
+      const ply = selectedHeuristicPly();
+      document.getElementById("heurColHeader").textContent = `Heuristic (${ply}-ply)`;
       try {
         const [movesRes, infoRes] = await Promise.all([
-          fetch(`${apiBase()}/moves?board=${hex}&piece=${currentPiece}`),
-          fetch(`${apiBase()}/state-info?board=${hex}`)
+          fetch(`${apiBase()}/moves?board=${hex}&piece=${currentPiece}&ply=${ply}`),
+          fetch(`${apiBase()}/state-info?board=${hex}&ply=${ply}`)
         ]);
         const movesData = await movesRes.json();
         const infoData = await infoRes.json();
@@ -1169,7 +1176,7 @@
         clearInterval(autoTimer);
         autoTimer = null;
       }
-      seekAbort = true;
+      seekSeq++;
       const btn = document.getElementById("btnAutoPlay");
       btn.textContent = "Autoplay";
       btn.classList.remove("active-toggle");
@@ -1210,11 +1217,11 @@
     document.getElementById("btnNextDisagree").addEventListener("click", async () => {
       if (!tbLoaded) return;
       stopAutoplay();
-      seekAbort = false;
+      const mySeek = ++seekSeq;
       for (let i = 0; i < 500; i++) {
-        if (seekAbort || !movesReady || currentMoves.length === 0) break;
+        if (mySeek !== seekSeq || !movesReady || currentMoves.length === 0) break;
         await stepAiOnce();
-        if (!movesReady || currentMoves.length === 0) break;
+        if (mySeek !== seekSeq || !movesReady || currentMoves.length === 0) break;
         const { bestHeur, bestTb } = chooseBestMoves(currentMoves);
         if (tbLoaded && bestTb && bestHeur && bestTb.afterBoardHex !== bestHeur.afterBoardHex) {
           break;
@@ -1274,6 +1281,7 @@
     });
 
     document.getElementById("btnLoadHex").addEventListener("click", () => {
+      stopAutoplay();
       const parsed = parseHexBig(document.getElementById("hexInput").value.trim());
       if (parsed === null) {
         alert("Expected 1..10 hexadecimal digits (0000000000 .. ffffffffff).");
@@ -1285,6 +1293,10 @@
     });
 
     document.getElementById("sortModeSelect").addEventListener("change", renderMovesTable);
+    document.getElementById("aiPolicySelect").addEventListener("change", () => {
+      stopAutoplay();
+      refreshPosition();
+    });
     document.getElementById("btnPing").addEventListener("click", async () => {
       await pingServer();
       await refreshPosition();

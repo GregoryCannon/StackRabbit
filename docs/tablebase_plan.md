@@ -115,15 +115,15 @@ Deliver a clean browser UI for human play, board editing, and side-by-side Table
 ### Phase 3: Baseline Heuristic Agent (`heuristic.hpp`, `benchmark_cli.cpp`)
 Create a fast, clean 4-row lineout agent to seed Round 0 state generation and serve as the out-of-tablebase fallback.
 
-- [ ] Implement `evalLineoutBoard(uint64_t board, const EvalWeights &w)`:
+- [x] Implement `evalLineoutBoard(uint64_t board, const EvalWeights &w)`:
   - Immediate line clear reward.
-  - True holes / covered cells penalty and overhang (tuck-setup) penalty.
-  - Column height penalty (quadratic penalty on `h = 3` and especially `h = 4`, where non-`I` pieces cannot rest).
-  - Surface bumpiness $\sum |h_i - h_{i+1}|$, flat-spot bonus (accommodating `O` bursts), and parity/narrow-well penalties.
-- [ ] Implement 1-ply NNB (`argmax_{b'} [w_clear * r + eval(b')]`) and 2-ply NNB expectimax (`r_1 + 1/7 * sum_{c2} max_{b''} [w_clear * r_2 + eval(b'')]`).
-- [ ] Add `benchmark_cli.cpp` to measure throughput (`moves/sec`) and average/median/p90 lines cleared over `N` fixed-seed games, plus a quick random/coordinate-search weight tuner so the baseline agent clears strong line counts cleanly.
-- [ ] **Verification**:
-  - Confirm deterministic fixed-seed game scores, verify 2-ply beats 1-ply, and verify single-core throughput (`> 100k moves/sec` for 1-ply, `> 20k moves/sec` for 2-ply).
+  - Sealed holes penalty and side-accessible overhang (tuck-setup) penalty.
+  - Column height penalties (`sumHeightSq`, `height3Cols`, and `ceilingCols` at `h = 4`).
+  - Surface bumpiness $\sum |h_i - h_{i+1}|$, `O`-safe flat-spot bonus (`h_i == h_{i+1} <= 2`), row-fill concentration $\sum c_r^2$, parity imbalance, and narrow-well (`depth >= 2`) penalties.
+- [x] Implement 1-ply NNB (`pickBestTransition1Ply`) and lossless branch-and-bound 2-ply NNB expectimax (`pickBestTransition2Ply` / `scoreTransition2Ply`, plus `ply=1|2` integration in `server_routes.hpp` and `index.html`).
+- [x] Add `benchmark_cli.cpp` to measure throughput (`moves/sec`) and average/median/p90 lines cleared over `N` fixed-seed games, plus a staged 1-ply + 2-ply weight tuner.
+- [x] **Verification**:
+  - Confirmed deterministic fixed-seed game scores, verified bit-exact pruning equivalence across 3,500+ random/adversarial cases, verified 2-ply beats 1-ply (`~11.0` vs `~7.8` mean lines on NNB pre-clear 4-row cap), and verified single-core throughput (`> 500k moves/sec` for 1-ply, `> 20k moves/sec` for 2-ply).
 
 ---
 

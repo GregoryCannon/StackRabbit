@@ -60,15 +60,14 @@ inline HttpRouteResult jsonErrorResponse(int status, std::string_view message) {
           std::string("{\"error\":\"") + jsonEscape(message) + "\"}"};
 }
 
-// Formats finite floating-point scores with 9 fractional digits (enough to preserve exact float32
-// ordering across /moves and /state-info) in a buffer large enough for +/-DBL_MAX without
-// truncation.
+// Formats finite doubles with 17 significant digits (std::numeric_limits<double>::max_digits10),
+// guaranteeing exact IEEE-754 double round-trip parity between C++ /state-info and JS /moves.
 inline std::string fmtDouble(double v) {
   if (!std::isfinite(v)) {
     return "null";
   }
-  char buf[384];
-  std::snprintf(buf, sizeof(buf), "%.9f", v);
+  char buf[64];
+  std::snprintf(buf, sizeof(buf), "%.17g", v);
   return std::string(buf);
 }
 
@@ -197,6 +196,29 @@ inline bool parsePieceParamStrict(std::string_view text, int &outPiece) {
   return false;
 }
 
+inline bool parsePlyParamStrict(const std::map<std::string, std::string> &params, int &outPly) {
+  const auto it = params.find("ply");
+  if (it == params.end()) {
+    outPly = 1;
+    return true;
+  }
+  if (it->second == "1") {
+    outPly = 1;
+    return true;
+  }
+  if (it->second == "2") {
+    outPly = 2;
+    return true;
+  }
+  return false;
+}
+
+inline double scoreTransitionByPly(uint64_t afterBoard, int linesCleared, int ply,
+                                   const EvalWeights &w) {
+  return (ply == 2) ? scoreTransition2Ply(afterBoard, linesCleared, w)
+                    : scoreTransition1Ply(afterBoard, linesCleared, w);
+}
+
 } // namespace detail
 
 struct ServerContext {
@@ -247,7 +269,7 @@ inline HttpRouteResult handleApiRequest(std::string_view path, std::string_view 
 
   if (path == "/moves") {
     for (const auto &kv : params) {
-      if (kv.first != "board" && kv.first != "piece") {
+      if (kv.first != "board" && kv.first != "piece" && kv.first != "ply") {
         return detail::jsonErrorResponse(400, "Unknown query parameter: " + kv.first);
       }
     }
@@ -265,6 +287,10 @@ inline HttpRouteResult handleApiRequest(std::string_view path, std::string_view 
     if (!detail::parsePieceParamStrict(pIt->second, pieceIdx)) {
       return detail::jsonErrorResponse(400, "Invalid 'piece' (expected 0..6 or I,O,L,J,T,S,Z)");
     }
+    int ply = 1;
+    if (!detail::parsePlyParamStrict(params, ply)) {
+      return detail::jsonErrorResponse(400, "Invalid 'ply' (expected 1 or 2)");
+    }
 
     float boardTbVal = 0.0f;
     const bool boardInTb = ctx.tablebase.lookup(board, boardTbVal);
@@ -281,6 +307,7 @@ inline HttpRouteResult handleApiRequest(std::string_view path, std::string_view 
     json += ",\"pieceChar\":\"";
     json.push_back(PIECE_CHARS[pieceIdx]);
     json += "\"";
+    json += ",\"heuristicPly\":" + std::to_string(ply);
     json += ",\"tablebaseLoaded\":";
     json += (ctx.tablebase.isLoaded() ? "true" : "false");
     json += ",\"inTablebase\":";
@@ -293,7 +320,8 @@ inline HttpRouteResult handleApiRequest(std::string_view path, std::string_view 
       if (i > 0)
         json.push_back(',');
       const Placement &m = placements[i];
-      const double heurQ = scoreTransition1Ply(m.afterBoard, m.linesCleared, ctx.weights);
+      const double heurQ =
+          detail::scoreTransitionByPly(m.afterBoard, m.linesCleared, ply, ctx.weights);
       float afterVal = 0.0f;
       const bool afterInTb = ctx.tablebase.lookup(m.afterBoard, afterVal);
       // Matches Value Iteration's closed-world boundary rule: V(b') = 0.0 when b' is outside S.
@@ -326,7 +354,7 @@ inline HttpRouteResult handleApiRequest(std::string_view path, std::string_view 
 
   if (path == "/state-info") {
     for (const auto &kv : params) {
-      if (kv.first != "board") {
+      if (kv.first != "board" && kv.first != "ply") {
         return detail::jsonErrorResponse(400, "Unknown query parameter: " + kv.first);
       }
     }
@@ -338,6 +366,10 @@ inline HttpRouteResult handleApiRequest(std::string_view path, std::string_view 
     if (!detail::parseBoardParamStrict(bIt->second, board)) {
       return detail::jsonErrorResponse(
           400, "Invalid 'board' (expected 1-10 hex chars or 40 board chars)");
+    }
+    int ply = 1;
+    if (!detail::parsePlyParamStrict(params, ply)) {
+      return detail::jsonErrorResponse(400, "Invalid 'ply' (expected 1 or 2)");
     }
 
     int heights[BOARD_WIDTH];
@@ -353,6 +385,7 @@ inline HttpRouteResult handleApiRequest(std::string_view path, std::string_view 
     json += "{\"boardHex\":\"" + formatBoardHex(board) + "\"";
     json += ",\"isCanonical\":";
     json += (isCanonicalBoard(board) ? "true" : "false");
+    json += ",\"heuristicPly\":" + std::to_string(ply);
     json += ",\"popcount\":" + std::to_string(popcount64(board));
     json += ",\"maxHeight\":" + std::to_string(getMaxHeight(board));
     json += ",\"holes\":" + std::to_string(hb.holes);
@@ -382,19 +415,20 @@ inline HttpRouteResult handleApiRequest(std::string_view path, std::string_view 
         json.push_back(',');
       generateTransitions(board, p, tl);
 
-      double bestHeur = -1e18;
+      double bestHeur = 0.0;
       uint64_t bestHeurAfter = 0;
       // Top-out (tl.empty()) contributes 0.0 to the 7-piece Bellman expectation sumBestTbQ;
       // when tl is non-empty, iteration i == 0 unconditionally initializes bestTbQ.
       double bestTbQ = 0.0;
-      double bestTbTieHeur = -1e18;
+      double bestTbTieHeur = 0.0;
       uint64_t bestTbAfter = 0;
       bool anyInTb = false;
       bool allInTb = !tl.empty();
 
       for (int i = 0; i < tl.size(); ++i) {
         const Transition &t = tl[i];
-        const double hScore = scoreTransition1Ply(t.afterBoard, t.linesCleared, ctx.weights);
+        const double hScore =
+            detail::scoreTransitionByPly(t.afterBoard, t.linesCleared, ply, ctx.weights);
         if (i == 0 || hScore > bestHeur) {
           bestHeur = hScore;
           bestHeurAfter = t.afterBoard;
