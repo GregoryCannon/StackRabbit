@@ -32,10 +32,12 @@ using namespace std;
  *      reaction time of zero means the piece has not been placed yet, so the
  *      single phantom starts from the spawn state.
  *   3. One adjustment move search per phantom from its mid-air state.
- *   4. One lock value lookup per next piece, run in-process on the same game
- *      state (seven concurrent threads). Each map value is rounded to two
- *      decimals first, because the collapse sums values the way they arrive
- *      over the wire.
+ *   4. Lock value lookups, run in-process on the same game state (seven
+ *      concurrent 2-ply lookups when any phantom can adjust; or one 1-ply
+ *      next-box-independent lookup — plus seven concurrent shallow DAS penalty
+ *      maps in DAS mode — when every initial placement locks before reaction
+ *      time). Each map value is rounded to two decimals first, because the
+ *      collapse sums values the way they arrive over the wire.
  *   5. The collapse: per phantom, the best value per next piece weighted by
  *      the NES piece-transition probabilities and averaged over the seven
  *      pieces; the phantom with the highest average wins.
@@ -138,8 +140,8 @@ double roundForConsumer(float value) {
   return strtod(buffer, NULL);
 }
 
-void roundCopyMap(const std::unordered_map<std::string, float> &source,
-                  OUT PrecomputeValueMap &out) {
+void roundAndCopyMap(const std::unordered_map<std::string, float> &source,
+                     OUT PrecomputeValueMap &out) {
   out.reserve(source.size());
   for (const auto &entry : source) {
     out[entry.first] = roundForConsumer(entry.second);
@@ -528,6 +530,7 @@ PrecomputeState preparePrecomputeState(GameState gameState, const Piece *curPiec
   // Step 3: one adjustment search per phantom that captured a mid-air state. Running this before
   // Step 4 ensures timed lock lookups observe the exact remaining budget and only the collapse
   // remains afterwards.
+  bool anyPhantomHasAdjustment = false;
   for (PrecomputePhantom &phantom : state.phantoms) {
     if (budget != nullptr && budget->isCancelled()) {
       return PrecomputeState();
@@ -535,6 +538,7 @@ PrecomputeState preparePrecomputeState(GameState gameState, const Piece *curPiec
     if (!phantom.hasAdjustmentState) {
       continue;
     }
+    anyPhantomHasAdjustment = true;
     std::vector<FullMovePossibility> adjustmentResults;
     fullMoveSearch(gameState, curPiece, inputFrameTimeline, phantom.adjustmentDasCharge,
                    /* trackInputSequences= */ true, adjustmentResults, phantom.adjustmentCtx,
@@ -548,10 +552,7 @@ PrecomputeState preparePrecomputeState(GameState gameState, const Piece *curPiec
     }
   }
 
-  // Step 4: one lock value lookup per next piece, values rounded for the collapse. The seven
-  // lookups are independent: one thread per next piece, each writing only its own slot, so no
-  // shared mutable state is touched. The playouts inside one lookup stay serial, so the slowest
-  // single lookup floors the pipeline's wall time — relevant when tuning the playout config.
+  // Step 4: lock value lookup(s), values rounded for the collapse.
   // Precompute the first piece's placements and resulting boards once so all seven next-piece
   // threads (and every DAS charge bucket) share them read-only.
   if (budget != nullptr && budget->isCancelled()) {
@@ -575,50 +576,98 @@ PrecomputeState preparePrecomputeState(GameState gameState, const Piece *curPiec
   }
   const SearchBudget *lookupBudgetPtr =
       lookupBudget.mode == BUDGET_TIME_MS ? &lookupBudget : budget;
-  auto runLookupForPiece = [&, lookupBudgetPtr](int i) {
+
+  auto runForSevenPieces = [](auto &&work) {
+#ifdef __EMSCRIPTEN__
+    // Single-threaded WASM runs the seven independent per-piece jobs sequentially.
+    for (int i = 0; i < 7; i++) {
+      work(i);
+    }
+#else
+    struct ThreadJoinGuard {
+      std::thread (&threads)[7];
+      ~ThreadJoinGuard() {
+        for (std::thread &t : threads) {
+          if (t.joinable()) {
+            t.join();
+          }
+        }
+      }
+    };
+    std::exception_ptr errors[7] = {};
+    std::thread threads[7];
+    {
+      ThreadJoinGuard joinGuard{threads};
+      for (int i = 0; i < 7; i++) {
+        threads[i] = std::thread([i, &work, &errors]() {
+          try {
+            work(i);
+          } catch (...) {
+            errors[i] = std::current_exception();
+          }
+        });
+      }
+    }
+    // All threads are joined before rethrowing, so a failure surfaces with the
+    // first failing piece's diagnostic (piece 0 first).
+    for (int i = 0; i < 7; i++) {
+      if (errors[i]) {
+        std::rethrow_exception(errors[i]);
+      }
+    }
+#endif
+  };
+
+  if (!anyPhantomHasAdjustment) {
+    // Every initial placement locks before reaction time, so no mid-air adjustment is possible.
+    // Run a single next-box-independent (1-ply) lock value lookup instead of seven 2-ply lookups.
+    // In DAS mode, still compute all seven shallow per-next-piece DAS penalty maps in parallel so
+    // the collapse averages ending-DAS penalties across all seven next pieces.
+    state.usedNoNextBoxPath = true;
+    if (state.useDAS) {
+      const std::atomic<bool> *cancelFlag =
+          lookupBudgetPtr != nullptr ? lookupBudgetPtr->cancelFlag : nullptr;
+      runForSevenPieces([&](int i) {
+        const Piece *nextPiece = &PIECE_LIST[i];
+        const DasPenaltyMaps penalties = getDasPenaltyMapsWithFirstMoves(
+            firstMoves, nextPiece, inputFrameTimeline, evalContext, cancelFlag);
+        roundAndCopyMap(penalties.partialPenalty, state.partialPenalties[i]);
+        roundAndCopyMap(penalties.minPenalty, state.minPenalties[i]);
+      });
+      if (budget != nullptr && budget->isCancelled()) {
+        return PrecomputeState();
+      }
+    }
+
+    roundAndCopyMap(getLockValueLookupNoNextBoxWithFirstMoves(
+                        firstMoves, pruningBreadth, playoutCount, playoutLength, evalContext,
+                        pieceRangeContextLookup, lookupBudgetPtr),
+                    state.lockValues[0]);
+    for (int i = 1; i < 7; i++) {
+      state.lockValues[i] = state.lockValues[0];
+    }
+    return state;
+  }
+
+  // Standard precompute: seven independent 2-ply lookups (one thread per next piece), each
+  // writing only its own slot, so no shared mutable state is touched. The playouts inside one
+  // lookup stay serial, so the slowest single lookup floors the pipeline's wall time.
+  runForSevenPieces([&](int i) {
     const Piece *nextPiece = &PIECE_LIST[i];
     if (state.useDAS) {
       const DasLockValueMaps maps = getLockValueLookupDasMapsWithFirstMoves(
           firstMoves, nextPiece, pruningBreadth, playoutCount, playoutLength, inputFrameTimeline,
           evalContext, pieceRangeContextLookup, lookupBudgetPtr);
-      roundCopyMap(maps.partialPenalty, state.partialPenalties[i]);
-      roundCopyMap(maps.minPenalty, state.minPenalties[i]);
-      roundCopyMap(maps.lockValue, state.lockValues[i]);
+      roundAndCopyMap(maps.partialPenalty, state.partialPenalties[i]);
+      roundAndCopyMap(maps.minPenalty, state.minPenalties[i]);
+      roundAndCopyMap(maps.lockValue, state.lockValues[i]);
     } else {
-      roundCopyMap(getLockValueLookupMappedWithFirstMoves(firstMoves, nextPiece, pruningBreadth,
-                                                          playoutCount, playoutLength, evalContext,
-                                                          pieceRangeContextLookup, lookupBudgetPtr),
-                   state.lockValues[i]);
+      roundAndCopyMap(getLockValueLookupMappedWithFirstMoves(
+                          firstMoves, nextPiece, pruningBreadth, playoutCount, playoutLength,
+                          evalContext, pieceRangeContextLookup, lookupBudgetPtr),
+                      state.lockValues[i]);
     }
-  };
-#ifdef __EMSCRIPTEN__
-  // Single-threaded WASM runs the seven independent lookups sequentially.
-  for (int i = 0; i < 7; i++) {
-    runLookupForPiece(i);
-  }
-#else
-  std::exception_ptr lookupErrors[7] = {};
-  std::thread lookupThreads[7];
-  for (int i = 0; i < 7; i++) {
-    lookupThreads[i] = std::thread([i, &runLookupForPiece, &lookupErrors]() {
-      try {
-        runLookupForPiece(i);
-      } catch (...) {
-        lookupErrors[i] = std::current_exception();
-      }
-    });
-  }
-  for (std::thread &lookupThread : lookupThreads) {
-    lookupThread.join();
-  }
-  // All threads are joined before rethrowing, so a failure surfaces with the
-  // first failing piece's diagnostic (piece 0 first).
-  for (int i = 0; i < 7; i++) {
-    if (lookupErrors[i]) {
-      std::rethrow_exception(lookupErrors[i]);
-    }
-  }
-#endif
+  });
 
   return state;
 }

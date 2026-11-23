@@ -520,4 +520,297 @@ TEST_CASE("precompute pipeline invariants hold across all structural regimes") {
   }
 }
 
+TEST_CASE("precompute uses next-box-independent lock lookup when all phantoms lock early") {
+  // Helper mirroring main.cpp context setup to cross-check state.lockValues[0] directly
+  // against getLockValueLookupNoNextBoxWithFirstMoves (proving 1-ply semantics, not just
+  // identical copies across the 7 slots).
+  auto directNnbLockValues = [](const std::string &boardStr, int level, int lines, int curPieceIdx,
+                                const std::string &timeline, int playoutCount, int playoutLength,
+                                int pruningBreadth, int dasCharge) {
+    GameState gs = {};
+    encodeBoard(boardStr.c_str(), gs.board);
+    gs.level = level;
+    gs.lines = lines;
+    getSurfaceArray(gs.board, gs.surfaceArray);
+    auto h1 = updateSurfaceAndHoles(gs.surfaceArray, gs.board, 9, false);
+    gs.numTrueHoles = h1.first;
+    gs.numPartialHoles = h1.second;
+
+    std::string dasEq;
+    char const *ctxTimeline = timeline.c_str();
+    if (dasCharge >= 0) {
+      dasEq = getDasEquivalentInputTimeline(timeline.c_str());
+      ctxTimeline = dasEq.c_str();
+    }
+    PieceRangeContext contexts[4] = {
+        getPieceRangeContext(ctxTimeline, 1, /* gravityDoubled= */ true),
+        getPieceRangeContext(ctxTimeline, 1, /* gravityDoubled= */ false),
+        getPieceRangeContext(ctxTimeline, 2, /* gravityDoubled= */ false),
+        getPieceRangeContext(ctxTimeline, 3, /* gravityDoubled= */ false),
+    };
+    const EvalContext evalCtx = getEvalContext(gs, contexts, /* useTestWeights= */ false, SAFE);
+    auto h2 = updateSurfaceAndHoles(gs.surfaceArray, gs.board,
+                                    evalCtx.countWellHoles ? -1 : evalCtx.wellColumn,
+                                    evalCtx.aiMode == DIG);
+    gs.numTrueHoles = h2.first;
+    gs.numPartialHoles = h2.second;
+
+    const FirstMoveSearchResult firstMoves =
+        buildFirstMoveBranches(gs, &PIECE_LIST[curPieceIdx], dasCharge,
+                               dasCharge >= 0 ? timeline.c_str() : ctxTimeline, &evalCtx);
+    const std::unordered_map<std::string, float> raw = getLockValueLookupNoNextBoxWithFirstMoves(
+        firstMoves, pruningBreadth, playoutCount, playoutLength, &evalCtx, contexts);
+    PrecomputeValueMap rounded;
+    for (const auto &entry : raw) {
+      char buf[32];
+      snprintf(buf, sizeof(buf), "%.2f", static_cast<double>(entry.second));
+      rounded[entry.first] = strtod(buf, NULL);
+    }
+    return rounded;
+  };
+
+  SUBCASE("standard precompute with mid-air adjustments stays on 2-ply path") {
+    const std::string rt8Pipe = makePrecomputePipe(makeWellBoard(4, 4, 9), 18, 0, IDX_T, "X.....",
+                                                   0, 0, 20, /* dasCharge= */ -1,
+                                                   /* reactionTime= */ 8);
+    const PreparedFixture rt8 = prepareFixtureFromPipe(rt8Pipe);
+    CHECK_FALSE(rt8.state.usedNoNextBoxPath);
+
+    const std::string rt0Pipe = makePrecomputePipe(makeEmptyBoard(), 18, 0, IDX_I, "X.....", 0, 0,
+                                                   20, /* dasCharge= */ -1, /* reactionTime= */ 0);
+    const PreparedFixture rt0 = prepareFixtureFromPipe(rt0Pipe);
+    CHECK_FALSE(rt0.state.usedNoNextBoxPath);
+
+    // Mixed phantom boundary: on a board with a high ledge on the left (row 4, height 16) and low
+    // right side (height 4), at reactionTime=16 some phantoms lock early while others capture
+    // mid-air adjustment states; NNB must NOT trigger when at least one phantom can adjust.
+    std::string steppedBoard = makeWellBoard(4, 4, 9);
+    for (int r = 4; r < 16; r++) {
+      for (int c = 0; c < 4; c++) {
+        steppedBoard[r * 10 + c] = '1';
+      }
+    }
+    const std::string mixedPipe =
+        makePrecomputePipe(steppedBoard, 18, 0, IDX_O, "X.....", 0, 0, 20, /* dasCharge= */ -1,
+                           /* reactionTime= */ 16);
+    const PreparedFixture mixed = prepareFixtureFromPipe(mixedPipe);
+    bool sawLockedEarly = false;
+    bool sawAdjustable = false;
+    for (const PrecomputePhantom &phantom : mixed.state.phantoms) {
+      if (phantom.hasAdjustmentState) {
+        sawAdjustable = true;
+      } else {
+        sawLockedEarly = true;
+      }
+    }
+    CHECK(sawLockedEarly);
+    CHECK(sawAdjustable);
+    CHECK_FALSE(mixed.state.usedNoNextBoxPath);
+  }
+
+  SUBCASE("tap mode runs single 1-ply lookup across eval-only, legacy, and tournament") {
+    const std::string board = makeWellBoard(4, 4, 9);
+
+    // Eval-only NNB (0 playouts).
+    const std::string evalOnlyPipe =
+        makePrecomputePipe(board, 18, 0, IDX_T, "X.....", 0, 0, 20,
+                           /* dasCharge= */ -1, /* reactionTime= */ 60);
+    const PreparedFixture evalOnly = prepareFixtureFromPipe(evalOnlyPipe);
+    CHECK(evalOnly.state.usedNoNextBoxPath);
+    CHECK(evalOnly.state.lockValues[0]
+          == directNnbLockValues(board, 18, 0, IDX_T, "X.....", 0, 0, 20, -1));
+    for (int i = 1; i < 7; i++) {
+      CHECK(evalOnly.state.lockValues[i] == evalOnly.state.lockValues[0]);
+    }
+    CHECK(runRequest(PRECOMPUTE, evalOnlyPipe) == collapseFixture(evalOnly, evalOnly.state));
+
+    // Legacy fixed playouts.
+    const std::string legacyPipe = makePrecomputePipe(board, 18, 0, IDX_T, "X.....", 49, 2, 20,
+                                                      /* dasCharge= */ -1, /* reactionTime= */ 60);
+    const PreparedFixture legacy = prepareFixtureFromPipe(legacyPipe);
+    CHECK(legacy.state.usedNoNextBoxPath);
+    REQUIRE_FALSE(legacy.state.phantoms.empty());
+    for (const PrecomputePhantom &phantom : legacy.state.phantoms) {
+      CHECK_FALSE(phantom.hasAdjustmentState);
+      CHECK(phantom.possibleAdjustments.empty());
+    }
+    REQUIRE_FALSE(legacy.state.lockValues[0].empty());
+    CHECK(legacy.state.lockValues[0]
+          == directNnbLockValues(board, 18, 0, IDX_T, "X.....", 49, 2, 20, -1));
+    for (int i = 0; i < 7; i++) {
+      if (i > 0) {
+        CHECK(legacy.state.lockValues[i] == legacy.state.lockValues[0]);
+      }
+      CHECK(legacy.state.partialPenalties[i].empty());
+      CHECK(legacy.state.minPenalties[i].empty());
+    }
+    const std::string legacyResp = collapseFixture(legacy, legacy.state);
+    checkResponseWellFormed(legacyResp);
+    CHECK(runRequest(PRECOMPUTE, legacyPipe) == legacyResp);
+
+    // Fixed-playout tournament (-1).
+    const std::string tmtPipe = makePrecomputePipe(board, 18, 0, IDX_T, "X.....", 1500, 2, -1,
+                                                   /* dasCharge= */ -1, /* reactionTime= */ 60);
+    const PreparedFixture tmt = prepareFixtureFromPipe(tmtPipe);
+    CHECK(tmt.state.usedNoNextBoxPath);
+    REQUIRE_FALSE(tmt.state.lockValues[0].empty());
+    CHECK(tmt.state.lockValues[0]
+          == directNnbLockValues(board, 18, 0, IDX_T, "X.....", 1500, 2, -1, -1));
+    for (int i = 1; i < 7; i++) {
+      CHECK(tmt.state.lockValues[i] == tmt.state.lockValues[0]);
+    }
+    const std::string tmtResp = collapseFixture(tmt, tmt.state);
+    checkResponseWellFormed(tmtResp);
+    CHECK(runRequest(PRECOMPUTE, tmtPipe) == tmtResp);
+
+    // Timed tournament (-2).
+    const std::string timedPipe = makePrecomputePipe(board, 18, 0, IDX_T, "X.....", 40, 2, -2,
+                                                     /* dasCharge= */ -1, /* reactionTime= */ 60);
+    const PreparedFixture timed = prepareFixtureFromPipe(timedPipe);
+    CHECK(timed.state.usedNoNextBoxPath);
+    REQUIRE_FALSE(timed.state.lockValues[0].empty());
+    for (int i = 1; i < 7; i++) {
+      CHECK(timed.state.lockValues[i] == timed.state.lockValues[0]);
+    }
+    checkResponseWellFormed(collapseFixture(timed, timed.state));
+  }
+
+  SUBCASE("DAS mode shares 1-ply lock values and averages 7 DAS penalty maps across all tiers") {
+    const std::string board = makeWellBoard(6, 4, 9);
+
+    // Eval-only DAS NNB.
+    const std::string evalDasPipe = makePrecomputePipe(board, 19, 0, IDX_L, "X.....", 0, 0, 20,
+                                                       /* dasCharge= */ 16, /* reactionTime= */ 60);
+    const PreparedFixture evalDas = prepareFixtureFromPipe(evalDasPipe);
+    CHECK(evalDas.state.usedNoNextBoxPath);
+    CHECK(evalDas.state.lockValues[0]
+          == directNnbLockValues(board, 19, 0, IDX_L, "X.....", 0, 0, 20, 16));
+    CHECK(runRequest(PRECOMPUTE, evalDasPipe) == collapseFixture(evalDas, evalDas.state));
+
+    // Legacy fixed-playout DAS NNB.
+    const std::string legacyDasPipe = makePrecomputePipe(
+        board, 19, 0, IDX_L, "X.....", 49, 2, 20, /* dasCharge= */ 16, /* reactionTime= */ 60);
+    const PreparedFixture legacyDas = prepareFixtureFromPipe(legacyDasPipe);
+    CHECK(legacyDas.state.usedNoNextBoxPath);
+    CHECK(legacyDas.state.lockValues[0]
+          == directNnbLockValues(board, 19, 0, IDX_L, "X.....", 49, 2, 20, 16));
+    CHECK(runRequest(PRECOMPUTE, legacyDasPipe) == collapseFixture(legacyDas, legacyDas.state));
+
+    // Fixed-playout tournament (-1) DAS NNB.
+    const std::string dasPipe = makePrecomputePipe(board, 19, 0, IDX_L, "X.....", 1500, 2, -1,
+                                                   /* dasCharge= */ 16, /* reactionTime= */ 60);
+    const PreparedFixture das = prepareFixtureFromPipe(dasPipe);
+    CHECK(das.state.usedNoNextBoxPath);
+    REQUIRE_FALSE(das.state.lockValues[0].empty());
+    CHECK(das.state.lockValues[0]
+          == directNnbLockValues(board, 19, 0, IDX_L, "X.....", 1500, 2, -1, 16));
+    bool anyPenaltyDiffersAcrossPieces = false;
+    for (int i = 0; i < 7; i++) {
+      if (i > 0) {
+        CHECK(das.state.lockValues[i] == das.state.lockValues[0]);
+      }
+      CHECK_FALSE(das.state.partialPenalties[i].empty());
+      CHECK_FALSE(das.state.minPenalties[i].empty());
+      for (const auto &entry : das.state.partialPenalties[i]) {
+        CHECK(entry.second <= 0.0);
+      }
+      for (const auto &entry : das.state.minPenalties[i]) {
+        CHECK(entry.second <= 0.0);
+      }
+      if (i > 0
+          && (das.state.partialPenalties[i] != das.state.partialPenalties[0]
+              || das.state.minPenalties[i] != das.state.minPenalties[0])) {
+        anyPenaltyDiffersAcrossPieces = true;
+      }
+    }
+    CHECK(anyPenaltyDiffersAcrossPieces);
+    const std::string dasResp = collapseFixture(das, das.state);
+    checkResponseWellFormed(dasResp);
+    CHECK(runRequest(PRECOMPUTE, dasPipe) == dasResp);
+
+    // Timed tournament (-2) DAS NNB.
+    const std::string timedDasPipe = makePrecomputePipe(
+        board, 19, 0, IDX_L, "X.....", 40, 2, -2, /* dasCharge= */ 10, /* reactionTime= */ 60);
+    const PreparedFixture timedDas = prepareFixtureFromPipe(timedDasPipe);
+    CHECK(timedDas.state.usedNoNextBoxPath);
+    REQUIRE_FALSE(timedDas.state.lockValues[0].empty());
+    for (int i = 0; i < 7; i++) {
+      if (i > 0) {
+        CHECK(timedDas.state.lockValues[i] == timedDas.state.lockValues[0]);
+      }
+      CHECK_FALSE(timedDas.state.partialPenalties[i].empty());
+      CHECK_FALSE(timedDas.state.minPenalties[i].empty());
+    }
+    checkResponseWellFormed(collapseFixture(timedDas, timedDas.state));
+  }
+
+  SUBCASE("1-ply tournament trace disables tiered R1 and keeps 1 continuation per candidate") {
+    GameState gs = {};
+    const std::string board = makeWellBoard(4, 4, 9);
+    encodeBoard(board.c_str(), gs.board);
+    gs.level = 18;
+    gs.lines = 0;
+    getSurfaceArray(gs.board, gs.surfaceArray);
+    updateSurfaceAndHoles(gs.surfaceArray, gs.board, 9, false);
+    const PieceRangeContext contexts[4] = {
+        getPieceRangeContext("X.....", 1, /* gravityDoubled= */ true),
+        getPieceRangeContext("X.....", 1, /* gravityDoubled= */ false),
+        getPieceRangeContext("X.....", 2, /* gravityDoubled= */ false),
+        getPieceRangeContext("X.....", 3, /* gravityDoubled= */ false),
+    };
+    const EvalContext evalCtx = getEvalContext(gs, contexts, /* useTestWeights= */ false, SAFE);
+    std::vector<Possibility> depth1;
+    searchDepth1(gs, &PIECE_LIST[IDX_T], &evalCtx, depth1);
+    TournamentTrace trace;
+    getLockValueLookupTournamentFromPossibilities(
+        depth1, &PIECE_LIST[IDX_T], /* playoutLength= */ 2,
+        SearchBudget::fromPlayoutCount(-1, 3000), &evalCtx, contexts, &trace);
+    CHECK_FALSE(trace.useTieredR1);
+    REQUIRE_FALSE(trace.candidates.empty());
+    for (const TournamentCandidateTrace &cand : trace.candidates) {
+      REQUIRE(cand.conts.size() == 1);
+      CHECK(cand.conts[0].contKey == "none");
+    }
+  }
+
+  SUBCASE("getDasPenaltyMapsWithFirstMoves validates mode and matches full DAS lookup penalties") {
+    GameState gs = {};
+    const std::string board = makeWellBoard(6, 4, 9);
+    encodeBoard(board.c_str(), gs.board);
+    gs.level = 19;
+    gs.lines = 0;
+    getSurfaceArray(gs.board, gs.surfaceArray);
+    updateSurfaceAndHoles(gs.surfaceArray, gs.board, 9, false);
+    const std::string eqTimeline = getDasEquivalentInputTimeline("X.....");
+    const PieceRangeContext contexts[4] = {
+        getPieceRangeContext(eqTimeline.c_str(), 1, /* gravityDoubled= */ true),
+        getPieceRangeContext(eqTimeline.c_str(), 1, /* gravityDoubled= */ false),
+        getPieceRangeContext(eqTimeline.c_str(), 2, /* gravityDoubled= */ false),
+        getPieceRangeContext(eqTimeline.c_str(), 3, /* gravityDoubled= */ false),
+    };
+    const EvalContext evalCtx = getEvalContext(gs, contexts, /* useTestWeights= */ false, SAFE);
+
+    // Tap-mode firstMoves rejected and outFullChargePossibilities cleared.
+    const FirstMoveSearchResult tapFirst = buildFirstMoveBranches(
+        gs, &PIECE_LIST[IDX_L], /* firstPieceDasCharge= */ -1, eqTimeline.c_str(), &evalCtx);
+    std::vector<Possibility> stale(1);
+    const DasPenaltyMaps badPenalties = getDasPenaltyMapsWithFirstMoves(
+        tapFirst, &PIECE_LIST[IDX_I], "X.....", &evalCtx, /* cancelFlag= */ nullptr, &stale);
+    CHECK(badPenalties.partialPenalty.empty());
+    CHECK(badPenalties.minPenalty.empty());
+    CHECK(stale.empty());
+
+    // DAS-mode penalties match getLockValueLookupDasMapsWithFirstMoves verbatim.
+    const FirstMoveSearchResult dasFirst = buildFirstMoveBranches(
+        gs, &PIECE_LIST[IDX_L], /* firstPieceDasCharge= */ 16, "X.....", &evalCtx);
+    const DasPenaltyMaps penalties =
+        getDasPenaltyMapsWithFirstMoves(dasFirst, &PIECE_LIST[IDX_I], "X.....", &evalCtx);
+    const DasLockValueMaps fullMaps = getLockValueLookupDasMapsWithFirstMoves(
+        dasFirst, &PIECE_LIST[IDX_I], /* pruningBreadth= */ 20, /* playoutCount= */ 0,
+        /* playoutLength= */ 0, "X.....", &evalCtx, contexts);
+    CHECK(penalties.partialPenalty == fullMaps.partialPenalty);
+    CHECK(penalties.minPenalty == fullMaps.minPenalty);
+  }
+}
+
 #endif // SR_PRECOMPUTE_PROPERTY_TESTS

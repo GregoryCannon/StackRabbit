@@ -26,6 +26,15 @@ std::string getLockValueLookupEncoded(GameState gameState, const Piece *firstPie
                                       const SearchBudget *budget = nullptr);
 
 /**
+ * The partial-charge and min-charge DAS penalty maps (relative to full charge,
+ * clamped at zero) for one next piece.
+ */
+struct DasPenaltyMaps {
+  std::unordered_map<std::string, float> partialPenalty;
+  std::unordered_map<std::string, float> minPenalty;
+};
+
+/**
  * The three value maps behind a DAS lock value lookup: the partial-charge and
  * min-charge penalty maps (relative to full charge, clamped at zero) and the
  * deep lock value map. Returned directly so in-process consumers can use the
@@ -42,6 +51,7 @@ struct FirstMoveBranch {
   LockPlacement firstPlacement;
   int dasChargeAfter; // DAS mode only: leftover charge after first placement (-1 in tap mode)
   GameState afterFirstMove;
+  float firstMoveEval;
   float firstMoveReward;
   float firstMoveTiebreak;
 };
@@ -56,6 +66,17 @@ FirstMoveSearchResult buildFirstMoveBranches(const GameState &gameState, const P
                                              int firstPieceDasCharge,
                                              char const *dasInputFrameTimeline,
                                              const EvalContext *evalContext);
+
+DasPenaltyMaps
+getDasPenaltyMapsWithFirstMoves(const FirstMoveSearchResult &firstMoves, const Piece *secondPiece,
+                                char const *dasInputFrameTimeline, const EvalContext *evalContext,
+                                const std::atomic<bool> *cancelFlag = nullptr,
+                                OUT std::vector<Possibility> *outFullChargePossibilities = nullptr);
+
+std::unordered_map<std::string, float> getLockValueLookupNoNextBoxWithFirstMoves(
+    const FirstMoveSearchResult &firstMoves, int pruningBreadth, int playoutCount,
+    int playoutLength, const EvalContext *evalContext,
+    const PieceRangeContext pieceRangeContextLookup[3], const SearchBudget *budget = nullptr);
 
 DasLockValueMaps getLockValueLookupDasMapsWithFirstMoves(
     const FirstMoveSearchResult &firstMoves, const Piece *secondPiece, int pruningBreadth,

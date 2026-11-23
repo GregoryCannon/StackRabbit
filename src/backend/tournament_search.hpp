@@ -83,7 +83,7 @@ constexpr float TMT_CUT1_VETO_Z = 0;
 /** Diagnostic trace of one continuation inside a tournament candidate. */
 struct TournamentContTrace {
   int evalRank = 0;
-  std::string contKey; // "rot|x|y"
+  std::string contKey; // "rot|x|y" in 2-ply mode, or "none" in 1-ply mode
   float evalScoreInclReward = 0.0f;
   float immediateReward = 0.0f;
   int samples = 0;
@@ -135,7 +135,7 @@ struct TournamentTrace {
 };
 
 std::unordered_map<std::string, float> getLockValueLookupTournamentFromPossibilities(
-    const std::vector<Possibility> &possibilities, const Piece *secondPiece, int playoutLength,
+    const std::vector<Possibility> &possibilities, const Piece *lastSeenPiece, int playoutLength,
     const SearchBudget &budget, const EvalContext *evalContext,
     const PieceRangeContext pieceRangeContextLookup[3], TournamentTrace *outTrace = nullptr);
 

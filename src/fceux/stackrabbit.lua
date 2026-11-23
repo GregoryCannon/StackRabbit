@@ -5,7 +5,6 @@ USE_DAS = true -- When playing DAS, use the regular INPUT_TIMELINE to choose the
 IS_PAL = false
 EMULATION_SPEED_PERCENT = 100 -- Must match FCEUX's "Emulation Speed" setting (e.g. 200 for 200%)
 USE_PUSHDOWN = true
-DEBUG_MODE = true
 SHOULD_RECORD_GAMES = true
 SAVE_SCORES = true
 AGGRESSION_LEVEL = "aggro" -- How much the agent values burning lines: "safe", "aggro", or "hyper"
@@ -40,13 +39,13 @@ TIMELINE_30_HZ = "X.";
 
 -- Config constants
 SHOULD_ADJUST = true
-REACTION_TIME_FRAMES = 18
+REACTION_TIME_FRAMES = 60
 -- The first piece's precompute (reaction time 0) is queried this many frames
 -- after the kick -- much later than the usual reaction window, since there are
 -- ~90 frames of startup and the result only needs to be ready before the first
 -- placement starts.
 FIRST_PIECE_RESULT_FRAMES = 20
-INPUT_TIMELINE = TIMELINE_20_HZ;
+INPUT_TIMELINE = TIMELINE_10_HZ;
 PLAYOUT_COUNT = 160
 PLAYOUT_LENGTH = 8
 PRUNING_BREADTH = -2
@@ -674,9 +673,7 @@ function runGameFrame()
   elseif gamePhase >= 2 and gamePhase < 8 then
     if gamePhaseLastFrame == 1 then
       if not USE_PUSHDOWN and not isFirstPiece and not gameOver and getInputForFrame(inputSequenceIndex + 1) ~= "*" then
-        if (DEBUG_MODE) then
-          error("Server mistimed lock delay")
-        end
+        error("Server mistimed lock delay")
       end
       asPieceLocks()
       return
@@ -684,12 +681,10 @@ function runGameFrame()
 
     -- If the agent is mistaken about the board state, crash immediately so I can debug it
     if gamePhase == 6 and not gameOver and getEncodedBoard() ~= stateForNextPiece.board then
-      if (DEBUG_MODE) then
-        emu.pause()
-        print(getEncodedBoard())
-        print(stateForNextPiece.board)
-        error("Divergence")
-      end
+      emu.pause()
+      print(getEncodedBoard())
+      print(stateForNextPiece.board)
+      error("Divergence")
     end
 
   -- Resets the index for the next piece. Disables user input when the game is not over.

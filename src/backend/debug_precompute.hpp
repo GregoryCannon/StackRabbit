@@ -246,6 +246,7 @@ inline std::string runDebugPrecompute(const std::string &enginePipe,
   out << "{";
   out << "\"aiMode\":\"" << debug_gt::aiModeName(evalContext.aiMode) << "\",";
   out << "\"useDas\":" << (preState.useDAS ? "true" : "false") << ",";
+  out << "\"usedNoNextBoxPath\":" << (preState.usedNoNextBoxPath ? "true" : "false") << ",";
   out << "\"reactionTime\":" << preState.reactionTime << ",";
   out << "\"elapsedMs\":" << debug_gt::fmtDouble(elapsedMs, 1) << ",";
   out << "\"response\":\"" << debug_gt::jsonEscape(responseStr) << "\",";

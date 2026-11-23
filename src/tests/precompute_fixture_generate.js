@@ -63,22 +63,22 @@ const BOARD_ENCODING = "abcdefghijklmnopqrstuvwxyzABCDEF";
  * - no_moves_*: a fully right-well board ("0,,20": every column but the well
  *   full). Only the vertical I fits the 1-wide well, so the other pieces have no
  *   legal moves and the whole response is exactly "none".
- * - piece_none_* / continue_*: a 16-high flat stack ("4," + 16 full rows) where
+ * - piece_none_* / continue_*: a 16-high right-well stack ("4,,16") where
  *   every placement locks well before the reaction time, so no phantom gets an
  *   adjustment search state. The per-piece fallback is then "continue" when the
  *   winning phantom's input sequence is longer than the reaction time (rt=8;
- *   sequences carry ~12 trailing lock frames) and "none" when it is shorter
- *   (rt=20). The overhang ("ledge") variants additionally exercise the tuck
- *   path: flat 6 with a 5-deep shaft carved at col 4.
+ *   sequences carry ~18 trailing lock frames, ~27 frames total) and "none" when
+ *   it is not longer (rt=30). The overhang ("ledge") variants additionally
+ *   exercise the tuck path: flat 6 with a 5-deep shaft carved at col 4.
  */
-const TALL_STACK_BOARD = "4,FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF,0"; // 16-high flat stack
+const TALL_STACK_BOARD = "4,,16"; // 16-high right-well stack
 const LEDGE_BOARD = "14,FFEpEpEpEpEp,0"; // flat 6, 5-deep shaft at col 4
 const SYNTHETIC_FIXTURES = [
   { tag: "no_moves_O", board: "0,,20", piece: "O", level: 18, lines: 0, reactionTime: 8, dasCharge: -1, useProductionParams: false },
   { tag: "no_moves_S", board: "0,,20", piece: "S", level: 18, lines: 0, reactionTime: 8, dasCharge: 10, useProductionParams: false },
   { tag: "no_moves_T_prod", board: "0,,20", piece: "T", level: 18, lines: 0, reactionTime: 8, dasCharge: -1, useProductionParams: true },
-  { tag: "piece_none_tall_rt20", board: TALL_STACK_BOARD, piece: "O", level: 18, lines: 100, reactionTime: 20, dasCharge: -1, useProductionParams: false },
-  { tag: "piece_none_tall_rt20_das", board: TALL_STACK_BOARD, piece: "T", level: 18, lines: 100, reactionTime: 20, dasCharge: 16, useProductionParams: false },
+  { tag: "piece_none_tall_rt30", board: TALL_STACK_BOARD, piece: "O", level: 18, lines: 100, reactionTime: 30, dasCharge: -1, useProductionParams: false },
+  { tag: "piece_none_tall_rt30_das", board: TALL_STACK_BOARD, piece: "T", level: 18, lines: 100, reactionTime: 30, dasCharge: 16, useProductionParams: false },
   { tag: "continue_tall_rt8", board: TALL_STACK_BOARD, piece: "L", level: 18, lines: 100, reactionTime: 8, dasCharge: -1, useProductionParams: false },
   { tag: "continue_tall_rt8_das", board: TALL_STACK_BOARD, piece: "J", level: 18, lines: 100, reactionTime: 8, dasCharge: 5, useProductionParams: false },
   { tag: "continue_ledge", board: LEDGE_BOARD, piece: "L", level: 18, lines: 40, reactionTime: 8, dasCharge: -1, useProductionParams: false },
@@ -147,23 +147,37 @@ function normalizeTimeline(timeline) {
   return timeline.replace(/-/g, ".");
 }
 
+// Drop the final moves of each logged game where the stack is already in an
+// unavoidable top-out spiral (0-2 pieces from game over, with no legal moves
+// left after 1-2 pieces). Whole-response "none" and per-piece "none" quotas
+// are covered cleanly by SYNTHETIC_FIXTURES instead.
+const EXCLUDE_TERMINAL_MOVES = 3;
+
 function loadPositions() {
   const raw = fs.readFileSync(POSITION_LOG_PATH, "utf8").trim().split("\n");
   const header = JSON.parse(raw[0]);
   if (header.type !== "header") {
     throw new Error("position_log.jsonl missing header line");
   }
-  const positions = [];
+  const all = [];
+  const maxMoveByGame = new Map();
   for (let i = 1; i < raw.length; i++) {
     const d = JSON.parse(raw[i]);
-    positions.push({
+    all.push({
       gameId: d.gameId,
       moveIndex: d.moveIndex,
       board: d.board,
       level: d.level,
       lines: d.lines,
     });
+    const prev = maxMoveByGame.get(d.gameId);
+    if (prev === undefined || d.moveIndex > prev) {
+      maxMoveByGame.set(d.gameId, d.moveIndex);
+    }
   }
+  const positions = all.filter(
+    (p) => maxMoveByGame.get(p.gameId) - p.moveIndex >= EXCLUDE_TERMINAL_MOVES
+  );
   return { timeline: normalizeTimeline(header.timeline), positions };
 }
 

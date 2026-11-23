@@ -55,7 +55,8 @@ struct PrecomputeState {
   std::vector<PrecomputePhantom> phantoms;
   bool useDAS = false; // false = tap mode (incoming dasCharge == -1)
   int reactionTime = 0;
-  PrecomputeValueMap lockValues[7];       // one map per next piece
+  bool usedNoNextBoxPath = false;   // true when every initial placement locked before reactionTime
+  PrecomputeValueMap lockValues[7]; // one map per next piece (shared 1-ply map in NNB mode)
   PrecomputeValueMap partialPenalties[7]; // DAS mode only
   PrecomputeValueMap minPenalties[7];     // DAS mode only
 };
@@ -64,11 +65,14 @@ struct PrecomputeState {
  * Steps 1-4 of the pipeline: the current piece's full move search with the
  * player's real timeline, DAS charge and reaction time; the phantom placements;
  * one adjustment search per phantom that captured a mid-air state; and finally
- * one lock value lookup per next piece (seven concurrent threads, one per piece).
- * Running the phantom and adjustment searches before the timed lock lookups lets
- * timed requests measure their exact duration against the deadline before
- * sizing playouts. A current piece with no legal placement yields a state with
- * no phantoms (the adjustment and lookup steps are skipped entirely).
+ * the lock value lookups (seven concurrent 2-ply lookups when at least one
+ * phantom can adjust, or one 1-ply next-box-independent lookup plus seven
+ * concurrent shallow DAS penalty maps in DAS mode when every initial placement
+ * locks before reaction time). Running the phantom and adjustment searches
+ * before the timed lock lookups lets timed requests measure their exact
+ * duration against the deadline before sizing playouts. A current piece with
+ * no legal placement yields a state with no phantoms (the adjustment and
+ * lookup steps are skipped entirely).
  */
 PrecomputeState preparePrecomputeState(GameState gameState, const Piece *curPiece,
                                        char const *inputFrameTimeline, int dasCharge,

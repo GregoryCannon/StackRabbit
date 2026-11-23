@@ -1662,10 +1662,11 @@ TEST_CASE("tournament transposition check prevents deferred I -> I from beating 
 }
 
 TEST_CASE("tiered tournament Round 1 rescues top-eval candidate with deceptive cont#0") {
-  // Regression test: on this level 19 hyper board with J (lines=85, rt=60, das=15), [1,1,12]
-  // (1|4|11) beats [1,4,12] (1|7|11) by ~109 pts in true depth-8 playouts, but its eval-best
-  // cont#0 on next=S (and O) creates a central chasm. Tiered R1 screens cont#1 on top-eval
-  // candidates so 1|4|11 is not cut before Round 2 discovery.
+  // Regression test for 2-ply tiered Round 1: on this level 19 hyper board with J (lines=85,
+  // das=15) and next=S, 1|4|11 ([1,1,12]) is a top-eval candidate whose eval-best cont#0 creates
+  // a central chasm. Tiered R1 screens extra continuations for top-eval candidates so 1|4|11
+  // survives Cut 1 and beats 1|7|11 ([1,4,12]) in the deep lookup. (Tested directly on the 2-ply
+  // DAS tournament path rather than PRECOMPUTE rt=60, which takes the 1-ply no-next-box path.)
   std::string board = std::string(130, '0')
                       + "1000000100"
                         "1000011110"
@@ -1680,17 +1681,21 @@ TEST_CASE("tiered tournament Round 1 rescues top-eval candidate with deceptive c
                          .withLevel(19)
                          .withLines(85)
                          .withCurPiece(IDX_J)
-                         .withNextPiece(-1)
+                         .withNextPiece(IDX_S)
                          .withTimeline("X.....")
                          .withPlayoutCount(3500)
                          .withPlayoutLength(8)
                          .withPruningBreadth(-1)
                          .withAggression("hyper")
                          .withDasCharge(15)
-                         .build()
-                     + "60|";
-  std::string response = runRequest(PRECOMPUTE, pipe);
-  CHECK(response.rfind("Default:1,1,12|", 0) == 0);
+                         .build();
+  std::string output = runRequest(GET_LOCK_VALUE_LOOKUP_DAS, pipe);
+  size_t sep1 = output.find(",\n");
+  size_t sep2 = output.find(",\n", sep1 + 1);
+  REQUIRE(sep1 != std::string::npos);
+  REQUIRE(sep2 != std::string::npos);
+  std::string deepValues = output.substr(sep2 + 2, output.size() - sep2 - 3);
+  CHECK(lookupMapValue(deepValues, "1|4|11") > lookupMapValue(deepValues, "1|7|11"));
 }
 
 TEST_CASE("runDebugGroundTruth validates arguments and compares placements across 7 pieces") {

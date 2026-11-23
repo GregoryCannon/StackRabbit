@@ -92,14 +92,15 @@ struct GameStatePtrEqual {
     }                                                                                              \
   } while (0)
 
-/** One continuation (second placement) sampled for a candidate. Pools are trailing-aligned:
- * any two conts' last k scores cover the same sequence windows (paired-test invariant). */
+/** One continuation sampled for a candidate (a second placement in 2-ply mode, or the single
+ * post-first-piece state in 1-ply mode). Pools are trailing-aligned: any two conts' last k scores
+ * cover the same sequence windows (paired-test invariant). */
 struct TournamentCont {
   GameState resultingState;
-  float immediateReward;        // Line clear reward from the first + second placements
-  float evalScoreInclReward;    // Fast eval of the pair, used for ordering/tie-breaking
+  float immediateReward;        // Line clear reward from the root placement(s)
+  float evalScoreInclReward;    // Fast eval of the position, used for ordering/tie-breaking
   std::vector<float> seqScores; // Pooled per-sequence playout scores, in play order
-  std::string contKey;          // encodeLockPosition of the second placement (debugging aid)
+  std::string contKey;          // Second placement key in 2-ply mode, or "none" in 1-ply mode
 };
 
 /** Mean of the pooled playout scores (excluding immediate reward). */
@@ -368,19 +369,20 @@ void cutTournamentCandidatesByRank(
  */
 int playTournamentSamples(OUT TournamentCont &cont, int sampleCount, int batchOffset,
                           int playoutLength, const PieceRangeContext pieceRangeContextLookup[3],
-                          int secondPieceIndex, AggressionLevel aggressionLevel,
+                          int lastSeenPieceIndex, AggressionLevel aggressionLevel,
                           AiMode originalAiMode, const std::atomic<bool> *cancelFlag = nullptr) {
   cont.seqScores.reserve(cont.seqScores.size() + sampleCount);
   int movesExecuted = 0;
   getPlayoutScore(cont.resultingState, sampleCount, playoutLength, pieceRangeContextLookup,
-                  secondPieceIndex, aggressionLevel, originalAiMode, /* playoutDataList */ NULL,
+                  lastSeenPieceIndex, aggressionLevel, originalAiMode, /* playoutDataList */ NULL,
                   &cont.seqScores, batchOffset, &movesExecuted, cancelFlag);
   return movesExecuted;
 }
 
-/** Runs the 3-round tournament over precomputed 2-ply possibilities. See block comment above. */
+/** Runs the 3-round tournament over precomputed 1-ply or 2-ply possibilities. See block comment
+ * above. */
 unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
-    const std::vector<Possibility> &possibilities, const Piece *secondPiece, int playoutLength,
+    const std::vector<Possibility> &possibilities, const Piece *lastSeenPiece, int playoutLength,
     const SearchBudget &budget, const EvalContext *evalContext,
     const PieceRangeContext pieceRangeContextLookup[3], TournamentTrace *outTrace) {
   unordered_map<string, float> lockValueMap;
@@ -440,13 +442,16 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
     } else {
       candidateIdx = found->second;
     }
-    if ((int)candidates[candidateIdx].conts.size() < TMT_CONTINUATIONS_PER_CANDIDATE) {
+    const bool isDepth1 = lockLocationEquals(possibility.secondPlacement, NULL_LOCK_LOCATION);
+    const int maxConts = isDepth1 ? 1 : TMT_CONTINUATIONS_PER_CANDIDATE;
+    if ((int)candidates[candidateIdx].conts.size() < maxConts) {
       TournamentCont newCont = {possibility.resultingState,
                                 possibility.immediateReward,
                                 possibility.evalScoreInclReward,
                                 {},
-                                encodeLockPosition(possibility.secondPlacement)};
-      candidates[candidateIdx].conts.push_back(newCont);
+                                isDepth1 ? "none"
+                                         : encodeLockPosition(possibility.secondPlacement)};
+      candidates[candidateIdx].conts.push_back(std::move(newCont));
     }
   }
   int candidateCount = (int)candidates.size();
@@ -478,7 +483,7 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
                          std::max(perEntry, (long long)TMT_MIN_PLAYOUTS));
   };
 
-  const int secondPieceIndex = secondPiece->index;
+  const int lastSeenPieceIndex = lastSeenPiece->index;
   // samplesSoFar doubles as the next round's batch offset (fresh window per round). NB: with
   // extreme budgets the window can wrap and overlap earlier rounds; within-round CRN holds.
   int samplesSoFar = 0;
@@ -504,8 +509,9 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
     tieredR1Entries += getTieredR1Conts(i, avail);
     baseR1Entries += std::min(1, avail);
   }
-  const bool useTieredR1 = (long long)tieredR1Entries * TMT_MIN_PLAYOUTS
-                           <= (long long)(totalBudget * TMT_R1_BUDGET_SHARE);
+  const bool useTieredR1 = tieredR1Entries > baseR1Entries
+                           && (long long)tieredR1Entries * TMT_MIN_PLAYOUTS
+                                  <= (long long)(totalBudget * TMT_R1_BUDGET_SHARE);
   const float r1BudgetShare = useTieredR1 ? TMT_R1_BUDGET_SHARE : TMT_R1_FALLBACK_BUDGET_SHARE;
   const float r2BudgetShare = useTieredR1 ? TMT_R2_BUDGET_SHARE : TMT_R2_FALLBACK_BUDGET_SHARE;
   const int r1Entries = useTieredR1 ? tieredR1Entries : baseR1Entries;
@@ -558,7 +564,7 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
     for (int c = 0; c < contsToPlay; c++) {
       totalPlayoutMovesRun += playTournamentSamples(
           candidate.conts[c], n1, samplesSoFar, playoutLength, pieceRangeContextLookup,
-          secondPieceIndex, evalContext->aggressionLevel, evalContext->aiMode, budget.cancelFlag);
+          lastSeenPieceIndex, evalContext->aggressionLevel, evalContext->aiMode, budget.cancelFlag);
     }
   }
   const double r1ElapsedMs = msBetween(r1Start, SteadyClock::now());
@@ -671,7 +677,7 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
       }
       for (auto &cont : candidate.conts) {
         r2MovesRun += playTournamentSamples(
-            cont, n2, samplesSoFar, playoutLength, pieceRangeContextLookup, secondPieceIndex,
+            cont, n2, samplesSoFar, playoutLength, pieceRangeContextLookup, lastSeenPieceIndex,
             evalContext->aggressionLevel, evalContext->aiMode, budget.cancelFlag);
       }
     }
@@ -765,7 +771,7 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
                   candidate.conts[contIdx].contKey.c_str());
         chunkMovesRun += playTournamentSamples(candidate.conts[contIdx], chunkSize, samplesSoFar,
                                                playoutLength, pieceRangeContextLookup,
-                                               secondPieceIndex, evalContext->aggressionLevel,
+                                               lastSeenPieceIndex, evalContext->aggressionLevel,
                                                evalContext->aiMode, budget.cancelFlag);
       }
       lastChunkMs = msBetween(chunkStart, SteadyClock::now());
@@ -793,7 +799,7 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
         TMT_TRACE("TRACE: R3 playing %s cont=%s\n", candidate.key.c_str(),
                   candidate.conts[contIdx].contKey.c_str());
         playTournamentSamples(candidate.conts[contIdx], n3, samplesSoFar, playoutLength,
-                              pieceRangeContextLookup, secondPieceIndex,
+                              pieceRangeContextLookup, lastSeenPieceIndex,
                               evalContext->aggressionLevel, evalContext->aiMode, budget.cancelFlag);
         if (TMT_LOGGING_ENABLED) {
           logTournamentCont("R3", candidate.key, candidate.conts[contIdx], n1 + n2);
@@ -811,7 +817,7 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
   }
 
   // ---- Build the map: record the highest-sample-count playout estimate per distinct
-  // post-2-piece GameState so transposed positions replace lower-sample estimates with their
+  // post-placement GameState so transposed positions replace lower-sample estimates with their
   // deeper counterparts, then publish each first placement's best LCB across all possibilities
   // whose resulting state was sampled.
   struct StatePlayoutEstimate {
@@ -893,10 +899,10 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
         }
         TournamentCont const &cont = candidate.conts[contIdx];
         std::vector<float> legacyScores;
-        float legacyMean =
-            getPlayoutScore(cont.resultingState, validatePlayoutCount, playoutLength,
-                            pieceRangeContextLookup, secondPieceIndex, evalContext->aggressionLevel,
-                            evalContext->aiMode, /* playoutDataList */ NULL, &legacyScores);
+        float legacyMean = getPlayoutScore(cont.resultingState, validatePlayoutCount, playoutLength,
+                                           pieceRangeContextLookup, lastSeenPieceIndex,
+                                           evalContext->aggressionLevel, evalContext->aiMode,
+                                           /* playoutDataList */ NULL, &legacyScores);
         float legacySum = 0;
         float legacySumSquared = 0;
         float legacyMin = 1e9;
