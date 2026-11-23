@@ -263,6 +263,32 @@
       border-radius: 3px;
     }
 
+    .board-grid.drawing {
+      border-color: var(--accent);
+      cursor: crosshair;
+      user-select: none;
+      touch-action: none;
+    }
+
+    .board-grid.drawing .cell:hover {
+      outline: 1.5px solid rgba(37, 99, 235, 0.55);
+      outline-offset: -1.5px;
+      z-index: 1;
+    }
+
+    .draw-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      padding: 6px 8px;
+      border-radius: 5px;
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      font-size: 12px;
+    }
+
     .cell {
       width: var(--cell);
       height: var(--cell);
@@ -821,6 +847,7 @@
       <label for="serverUrl" class="muted">Server</label>
       <input id="serverUrl" type="text" value="http://localhost:3000" style="width:185px;" spellcheck="false" />
       <span id="pingStatus" class="ping" title="Click to ping server">Checking...</span>
+      <button id="drawBoardBtn" type="button">Draw Board</button>
       <button id="toggleLogBtn">Hide Log</button>
     </div>
   </header>
@@ -846,19 +873,29 @@
 
     <section id="emptyState" class="card empty">
       Paste precompute logs above to step through game states with <strong>← / →</strong> and replay any move against
-      <code>/precompute-sync</code>.
+      <code>/precompute-sync</code>, or
+      <button id="emptyDrawBtn" class="primary" type="button" style="margin-left:6px;">Draw Board</button>
+      to paint a board from scratch.
     </section>
 
     <section id="viewer" class="viewer hidden">
       <!-- Left: Board -->
       <div class="card board-col">
-        <div class="nav-row">
+        <div id="logNavRow" class="nav-row">
           <button id="prevBtn" title="Previous (←)">◀ Prev</button>
           <span id="stateCounter" class="counter">1 / 1</span>
           <button id="nextBtn" title="Next (→)">Next ▶</button>
         </div>
 
         <input id="stateSlider" type="range" min="0" max="0" value="0" />
+
+        <div id="drawToolbar" class="draw-toolbar hidden">
+          <span style="color:var(--accent); font-weight:600;">Draw Mode <span class="muted" style="font-weight:400;">· click &amp; drag</span></span>
+          <div style="display:flex; gap:5px; align-items:center;">
+            <button id="drawCopyLogBtn" class="btn-xs hidden" type="button" title="Copy board &amp; params from current log state">Copy Log Board</button>
+            <button id="drawClearBtn" class="btn-xs" type="button">Clear Board</button>
+          </div>
+        </div>
 
         <div class="board-area">
           <div class="board-grid" id="boardGrid"></div>
@@ -1611,31 +1648,111 @@
       // ---------------------------------------------------------------------------
       // App State
       // ---------------------------------------------------------------------------
+      function createEmptyDrawEntry() {
+        const board = "0".repeat(200);
+        const params = {
+          level: 19,
+          lines: 100,
+          currentPieceIdx: 2, // L
+          nextPieceIdx: -1,
+          inputFrameTimeline: "X..",
+          playoutCount: 300,
+          playoutLength: 8,
+          pruningBreadth: -2,
+          aggressionLevel: "aggro",
+          dasCharge: 16,
+          reactionTime: 18,
+        };
+        return {
+          index: 0,
+          board,
+          rows: boardStrToRows(board),
+          secondBoard: null,
+          params,
+          piece: PIECES[params.currentPieceIdx],
+          canonicalCommaInput: buildCommaQuery(board, params, null),
+          log: {
+            backupMs: null,
+            fullMs: null,
+            precomputeTimeMs: null,
+            asyncResultMs: null,
+            backupUsed: false,
+            halted: false,
+          },
+          inferredNext: null,
+        };
+      }
+
+      function createSession(entries = []) {
+        return {
+          entries,
+          currentIndex: 0,
+          overrides: new Map(),
+          replays: new Map(),
+          sweeps: new Map(),
+          phantomsByIndex: new Map(),
+          gtByIndex: new Map(),
+          tmtByIndex: new Map(),
+        };
+      }
+
+      const sessions = {
+        log: createSession([]),
+        draw: createSession([createEmptyDrawEntry()]),
+      };
+
       const state = {
-        entries: [],
+        mode: "log", // "log" | "draw"
+        entries: sessions.log.entries,
         currentIndex: 0,
-        overrides: new Map(), // index -> partial/full params object
-        replays: new Map(),   // index -> { elapsedMs, queryUsed, overridden, parsed, selectedKey, matchesActual, pieceUsed }
-        sweeps: new Map(),    // index -> { running, cancelId, baseQuery, rows }
-        phantomsByIndex: new Map(), // index -> { running, queryUsed, data, error, selectedA, selectedB }
-        gtByIndex: new Map(), // index -> { running, reachableQuery, reachable, selectedA, selectedB, selectedC, data, selectedCell }
-        tmtByIndex: new Map(), // index -> { running, nextPiece, sortBy, data, error, selectedCandKey }
+        overrides: sessions.log.overrides,
+        replays: sessions.log.replays,
+        sweeps: sessions.log.sweeps,
+        phantomsByIndex: sessions.log.phantomsByIndex,
+        gtByIndex: sessions.log.gtByIndex,
+        tmtByIndex: sessions.log.tmtByIndex,
         activeDiagTab: "sweep",
         customPreview: null,  // { source, id, mode: "placement"|"ply2Placement"|"afterBoard", placement, beforeRows, afterRows, caption }
         inFlight: false,
       };
 
+      function switchMode(newMode) {
+        if (state.mode === newMode) return;
+        // Stash active session scalar fields
+        const cur = sessions[state.mode];
+        cur.entries = state.entries;
+        cur.currentIndex = state.currentIndex;
+
+        // Swap to target session (Maps are shared by reference)
+        state.mode = newMode;
+        const next = sessions[newMode];
+        state.entries = next.entries;
+        state.currentIndex = next.currentIndex;
+        state.overrides = next.overrides;
+        state.replays = next.replays;
+        state.sweeps = next.sweeps;
+        state.phantomsByIndex = next.phantomsByIndex;
+        state.gtByIndex = next.gtByIndex;
+        state.tmtByIndex = next.tmtByIndex;
+        state.customPreview = null;
+      }
+
       const $ = id => document.getElementById(id);
       const elServerUrl = $("serverUrl");
       const elPingStatus = $("pingStatus");
+      const elDrawBoardBtn = $("drawBoardBtn");
       const elLogDrawer = $("logDrawer");
       const elToggleLogBtn = $("toggleLogBtn");
       const elLogInput = $("logInput");
       const elParseSummary = $("parseSummary");
       const elEmptyState = $("emptyState");
       const elViewer = $("viewer");
+      const elLogNavRow = $("logNavRow");
       const elStateCounter = $("stateCounter");
       const elStateSlider = $("stateSlider");
+      const elDrawToolbar = $("drawToolbar");
+      const elDrawCopyLogBtn = $("drawCopyLogBtn");
+      const elDrawClearBtn = $("drawClearBtn");
       const elBoardGrid = $("boardGrid");
       const elShowAfterChk = $("showAfterChk");
       const elBoardCaption = $("boardCaption");
@@ -1722,6 +1839,8 @@
       for (let i = 0; i < 200; i++) {
         const cell = document.createElement("div");
         cell.className = "cell";
+        cell.dataset.r = String(Math.floor(i / 10));
+        cell.dataset.c = String(i % 10);
         elBoardGrid.appendChild(cell);
         boardCells.push(cell);
       }
@@ -1994,7 +2113,25 @@
           escapeHtml(seq.slice(splitIdx + 2));
       }
 
+      function updateDrawModeChrome() {
+        const isDraw = state.mode === "draw";
+        const logCount = sessions.log.entries.length;
+        if (isDraw) {
+          elDrawBoardBtn.textContent = logCount > 0 ? `Back to Log (${logCount})` : "Drawing Board";
+          elDrawBoardBtn.classList.toggle("primary", logCount === 0);
+        } else {
+          elDrawBoardBtn.textContent = "Draw Board";
+          elDrawBoardBtn.classList.remove("primary");
+        }
+        elBoardGrid.classList.toggle("drawing", isDraw);
+        elLogNavRow.classList.toggle("hidden", isDraw);
+        elStateSlider.classList.toggle("hidden", isDraw);
+        elDrawToolbar.classList.toggle("hidden", !isDraw);
+        elDrawCopyLogBtn.classList.toggle("hidden", !isDraw || logCount === 0);
+      }
+
       function renderCurrent() {
+        updateDrawModeChrome();
         const n = state.entries.length;
         if (n === 0) {
           elEmptyState.classList.remove("hidden");
@@ -2023,30 +2160,37 @@
 
         // Tags
         const tags = [];
+        if (state.mode === "draw") tags.push(`<span class="tag" style="color:var(--accent);border-color:#93c5fd;background:#eff6ff;">CUSTOM BOARD</span>`);
         if (entry.log.backupUsed) tags.push(`<span class="tag amber">BACKUP USED</span>`);
         if (entry.log.halted) tags.push(`<span class="tag red">HALTED</span>`);
         if (hasOverrides(entry)) tags.push(`<span class="tag amber">MODIFIED</span>`);
         elStateTags.innerHTML = tags.join(" ");
 
         // Logged timing line
-        const tParts = [];
-        if (entry.log.backupMs !== null) tParts.push(`backup=<strong>${entry.log.backupMs.toFixed(2)}ms</strong>`);
-        if (entry.log.fullMs !== null) tParts.push(`full=<strong>${entry.log.fullMs.toFixed(2)}ms</strong>`);
-        if (entry.log.precomputeTimeMs !== null) tParts.push(`precompute=<strong>${entry.log.precomputeTimeMs.toFixed(2)}ms</strong>`);
-        if (entry.log.asyncResultMs !== null) tParts.push(`async-result=<strong>${entry.log.asyncResultMs.toFixed(2)}ms</strong>`);
-        elTimingLine.innerHTML = tParts.length > 0 ? tParts.join("") : `No timing metadata in log`;
-
-        // Actual move inferred from #i -> #i+1
-        if (idx === n - 1) {
-          elActualMoveLine.innerHTML = `Last entry in log`;
-        } else if (entry.inferredNext && entry.inferredNext.contiguous) {
-          const p = entry.inferredNext.placement;
-          const clr = entry.inferredNext.linesDelta > 0 ? ` (+${entry.inferredNext.linesDelta}L)` : "";
-          elActualMoveLine.innerHTML =
-            `<span>Actual move → #${idx + 2}: <strong>[${p.relRot}, ${p.relX >= 0 ? "+" + p.relX : p.relX}, ${p.relY}]</strong>${clr}</span>` +
-            `<span>Next piece: <strong>${entry.inferredNext.nextPiece.id}</strong></span>`;
+        if (state.mode === "draw") {
+          const filledCount = entry.board.split("1").length - 1;
+          elTimingLine.innerHTML = `<span>Custom board: <strong>${filledCount}</strong> filled cells · click &amp; drag on grid to paint/erase</span>`;
+          elActualMoveLine.innerHTML = `<span class="muted">Edit parameters above, then press <strong>R</strong> to replay or use Diagnostics below.</span>`;
         } else {
-          elActualMoveLine.innerHTML = `Next entry (#${idx + 2}) is not a single-piece transition (gap or new game)`;
+          const tParts = [];
+          if (entry.log.backupMs !== null) tParts.push(`backup=<strong>${entry.log.backupMs.toFixed(2)}ms</strong>`);
+          if (entry.log.fullMs !== null) tParts.push(`full=<strong>${entry.log.fullMs.toFixed(2)}ms</strong>`);
+          if (entry.log.precomputeTimeMs !== null) tParts.push(`precompute=<strong>${entry.log.precomputeTimeMs.toFixed(2)}ms</strong>`);
+          if (entry.log.asyncResultMs !== null) tParts.push(`async-result=<strong>${entry.log.asyncResultMs.toFixed(2)}ms</strong>`);
+          elTimingLine.innerHTML = tParts.length > 0 ? tParts.join("") : `No timing metadata in log`;
+
+          // Actual move inferred from #i -> #i+1
+          if (idx === n - 1) {
+            elActualMoveLine.innerHTML = `Last entry in log`;
+          } else if (entry.inferredNext && entry.inferredNext.contiguous) {
+            const p = entry.inferredNext.placement;
+            const clr = entry.inferredNext.linesDelta > 0 ? ` (+${entry.inferredNext.linesDelta}L)` : "";
+            elActualMoveLine.innerHTML =
+              `<span>Actual move → #${idx + 2}: <strong>[${p.relRot}, ${p.relX >= 0 ? "+" + p.relX : p.relX}, ${p.relY}]</strong>${clr}</span>` +
+              `<span>Next piece: <strong>${entry.inferredNext.nextPiece.id}</strong></span>`;
+          } else {
+            elActualMoveLine.innerHTML = `Next entry (#${idx + 2}) is not a single-piece transition (gap or new game)`;
+          }
         }
 
         // Replay result panel
@@ -3277,9 +3421,12 @@
       }
 
       function loadFromTextarea(collapseOnSuccess = true) {
+        switchMode("log");
         const entries = parseLogs(elLogInput.value);
         state.entries = entries;
+        sessions.log.entries = entries;
         state.currentIndex = 0;
+        sessions.log.currentIndex = 0;
         state.overrides.clear();
         state.replays.clear();
         state.sweeps.clear();
@@ -3322,6 +3469,136 @@
         if (!collapsed) elLogInput.focus();
       });
 
+      function openDrawBoard() {
+        switchMode("draw");
+        elLogDrawer.classList.add("collapsed");
+        elToggleLogBtn.textContent = "Edit / Paste Log";
+        renderCurrent();
+      }
+
+      elDrawBoardBtn.addEventListener("click", () => {
+        if (state.mode === "draw") {
+          if (sessions.log.entries.length > 0) {
+            switchMode("log");
+            renderCurrent();
+          }
+        } else {
+          openDrawBoard();
+        }
+      });
+
+      $("emptyDrawBtn").addEventListener("click", openDrawBoard);
+
+      function invalidateDrawResults() {
+        state.replays.clear();
+        state.sweeps.clear();
+        state.phantomsByIndex.clear();
+        state.gtByIndex.clear();
+        state.tmtByIndex.clear();
+        state.customPreview = null;
+      }
+
+      elDrawClearBtn.addEventListener("click", () => {
+        if (state.mode !== "draw" || state.entries.length === 0) return;
+        const entry = state.entries[0];
+        entry.rows = new Array(20).fill(0);
+        entry.board = "0".repeat(200);
+        entry.canonicalCommaInput = buildCommaQuery(entry.board, getEffectiveParams(entry), null);
+        invalidateDrawResults();
+        elShowAfterChk.checked = false;
+        renderCurrent();
+      });
+
+      elDrawCopyLogBtn.addEventListener("click", () => {
+        if (state.mode !== "draw" || sessions.log.entries.length === 0) return;
+        const logIdx = Math.max(0, Math.min(sessions.log.entries.length - 1, sessions.log.currentIndex));
+        const src = sessions.log.entries[logIdx];
+        const srcOv = sessions.log.overrides.get(src.index);
+        const effParams = srcOv ? { ...src.params, ...srcOv } : { ...src.params };
+        const entry = state.entries[0];
+        entry.board = src.board;
+        entry.rows = src.rows.slice();
+        entry.params = { ...effParams };
+        entry.piece = PIECES[effParams.currentPieceIdx] || src.piece;
+        entry.canonicalCommaInput = buildCommaQuery(entry.board, entry.params, null);
+        state.overrides.clear();
+        invalidateDrawResults();
+        elShowAfterChk.checked = false;
+        renderCurrent();
+      });
+
+      // Click-and-drag board painting in Draw Mode:
+      // Clicking an empty cell fills it & drags fill; clicking a full cell clears it & drags erase.
+      let dragPaintValue = null;
+
+      function applyDrawCell(r, c, val) {
+        if (state.mode !== "draw" || state.entries.length === 0) return;
+        if (r < 0 || r >= 20 || c < 0 || c >= 10) return;
+        const entry = state.entries[0];
+        const bit = 1 << (9 - c);
+        const wasFilled = Boolean(entry.rows[r] & bit);
+        const wantFilled = val === 1;
+        if (wasFilled === wantFilled) return;
+
+        if (wantFilled) entry.rows[r] |= bit;
+        else entry.rows[r] &= ~bit;
+        entry.board = rowsToBoardStr(entry.rows);
+        entry.canonicalCommaInput = buildCommaQuery(entry.board, getEffectiveParams(entry), null);
+        invalidateDrawResults();
+        renderCurrent();
+      }
+
+      elBoardGrid.addEventListener("mousedown", e => {
+        if (state.mode !== "draw" || e.button !== 0 || state.entries.length === 0) return;
+        const cell = e.target.closest(".cell");
+        if (!cell) return;
+        e.preventDefault();
+        const r = Number(cell.dataset.r);
+        const c = Number(cell.dataset.c);
+        const entry = state.entries[0];
+        const isFilled = Boolean(entry.rows[r] & (1 << (9 - c)));
+        dragPaintValue = isFilled ? 0 : 1;
+        if (elShowAfterChk.checked) elShowAfterChk.checked = false;
+        if (state.customPreview) state.customPreview = null;
+        applyDrawCell(r, c, dragPaintValue);
+      });
+
+      elBoardGrid.addEventListener("mouseover", e => {
+        if (dragPaintValue === null || state.mode !== "draw") return;
+        const cell = e.target.closest(".cell");
+        if (!cell) return;
+        applyDrawCell(Number(cell.dataset.r), Number(cell.dataset.c), dragPaintValue);
+      });
+
+      elBoardGrid.addEventListener("touchstart", e => {
+        if (state.mode !== "draw" || state.entries.length === 0 || e.touches.length !== 1) return;
+        const t = e.touches[0];
+        const cell = document.elementFromPoint(t.clientX, t.clientY)?.closest(".cell");
+        if (!cell || !elBoardGrid.contains(cell)) return;
+        e.preventDefault();
+        const r = Number(cell.dataset.r);
+        const c = Number(cell.dataset.c);
+        const entry = state.entries[0];
+        const isFilled = Boolean(entry.rows[r] & (1 << (9 - c)));
+        dragPaintValue = isFilled ? 0 : 1;
+        if (elShowAfterChk.checked) elShowAfterChk.checked = false;
+        if (state.customPreview) state.customPreview = null;
+        applyDrawCell(r, c, dragPaintValue);
+      }, { passive: false });
+
+      elBoardGrid.addEventListener("touchmove", e => {
+        if (dragPaintValue === null || state.mode !== "draw" || e.touches.length !== 1) return;
+        const t = e.touches[0];
+        const cell = document.elementFromPoint(t.clientX, t.clientY)?.closest(".cell");
+        if (!cell || !elBoardGrid.contains(cell)) return;
+        e.preventDefault();
+        applyDrawCell(Number(cell.dataset.r), Number(cell.dataset.c), dragPaintValue);
+      }, { passive: false });
+
+      window.addEventListener("mouseup", () => { dragPaintValue = null; });
+      window.addEventListener("touchend", () => { dragPaintValue = null; });
+      window.addEventListener("blur", () => { dragPaintValue = null; });
+
       elPingStatus.addEventListener("click", checkPing);
       elServerUrl.addEventListener("change", checkPing);
 
@@ -3359,6 +3636,7 @@
           }
           elResetParamsBtn.classList.toggle("hidden", !hasOverrides(entry));
           const tags = [];
+          if (state.mode === "draw") tags.push(`<span class="tag" style="color:var(--accent);border-color:#93c5fd;background:#eff6ff;">CUSTOM BOARD</span>`);
           if (entry.log.backupUsed) tags.push(`<span class="tag amber">BACKUP USED</span>`);
           if (entry.log.halted) tags.push(`<span class="tag red">HALTED</span>`);
           if (hasOverrides(entry)) tags.push(`<span class="tag amber">MODIFIED</span>`);
