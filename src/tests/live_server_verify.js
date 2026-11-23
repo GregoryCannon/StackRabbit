@@ -689,6 +689,108 @@ async function verifyDebugTournamentRoute(host, port, fixture) {
   }
 }
 
+function parseJsonOrFail(label, body) {
+  try {
+    return JSON.parse(body);
+  } catch (err) {
+    fail(`${label} returned invalid JSON: ${err.message}`);
+  }
+}
+
+async function verifyDebugPlayoutCompareRoute(host, port, fixture) {
+  const pipe = buildPipeString(fixture);
+  // First fetch reachable pairs via /debug-ground-truth so we pick two guaranteed-valid pairs.
+  const gtRes = await get(host, port, `/debug-ground-truth?p=${pipe}&n=0&conts=1`);
+  if (gtRes.status !== 200) {
+    fail(`/debug-playout-compare setup (/debug-ground-truth) failed: ${gtRes.status}`);
+  }
+  const gt = parseJsonOrFail("/debug-playout-compare setup", gtRes.body);
+  if (gt.candidates.length < 2) {
+    fail(`/debug-playout-compare setup expected >= 2 candidates`);
+  }
+  const cA = gt.candidates[0];
+  const cB = gt.candidates[1];
+  const pairA = encodeURIComponent(`${cA.key};${cA.byPiece.I.bestCont}`);
+  const pairB = encodeURIComponent(`${cB.key};${cB.byPiece.I.bestCont}`);
+
+  const ok = await get(
+    host,
+    port,
+    `/debug-playout-compare?p=${pipe}&next=I&a=${pairA}&b=${pairB}&n=10`
+  );
+  if (ok.status !== 200) {
+    fail(`/debug-playout-compare expected 200, got ${ok.status}: ${ok.body}`);
+  }
+  const parsed = parseJsonOrFail("/debug-playout-compare", ok.body);
+  if (
+    !parsed.sideA ||
+    !parsed.sideB ||
+    typeof parsed.sideA.depth0Eval !== "number" ||
+    !Array.isArray(parsed.leafTermDeltas) ||
+    !Array.isArray(parsed.depthCurve) ||
+    !Array.isArray(parsed.traces) ||
+    parsed.traces.length === 0
+  ) {
+    fail(`/debug-playout-compare JSON missing sideA/sideB, leafTermDeltas, depthCurve, or traces`);
+  }
+
+  // HTTP 400 validation checks (missing/malformed params)
+  const badChecks = [
+    [`missing a`, `/debug-playout-compare?p=${pipe}&next=I&b=${pairB}`],
+    [`missing next`, `/debug-playout-compare?p=${pipe}&a=${pairA}&b=${pairB}`],
+    [`invalid next`, `/debug-playout-compare?p=${pipe}&next=X&a=${pairA}&b=${pairB}`],
+    [`malformed a (2-ply)`, `/debug-playout-compare?p=${pipe}&next=I&a=badpair&b=${pairB}&n=10`],
+    [`2-ply a in NNB mode`, `/debug-playout-compare?p=${pipe}&next=NNB&a=${pairA}&b=${encodeURIComponent(cB.key)}&n=10`],
+    [`bad n`, `/debug-playout-compare?p=${pipe}&next=I&a=${pairA}&b=${pairB}&n=abc`],
+    [`first in 2-ply mode`, `/debug-playout-compare?p=${pipe}&next=I&first=I&a=${pairA}&b=${pairB}&n=10`],
+    [`invalid first in NNB`, `/debug-playout-compare?p=${pipe}&next=NNB&first=X&a=${encodeURIComponent(cA.key)}&b=${encodeURIComponent(cB.key)}&n=10`],
+  ];
+  for (const [label, url] of badChecks) {
+    const res = await get(host, port, url);
+    if (res.status !== 400) {
+      fail(`/debug-playout-compare (${label}) expected 400, got ${res.status}: ${res.body}`);
+    }
+  }
+
+  // 1-ply NNB mode (overall and filtered by 1st playout piece)
+  const keyA = encodeURIComponent(cA.key);
+  const keyB = encodeURIComponent(cB.key);
+  const nnbOk = await get(
+    host,
+    port,
+    `/debug-playout-compare?p=${pipe}&next=NNB&a=${keyA}&b=${keyB}&n=10`
+  );
+  if (nnbOk.status !== 200) {
+    fail(`/debug-playout-compare NNB expected 200, got ${nnbOk.status}: ${nnbOk.body}`);
+  }
+  const nnbParsed = parseJsonOrFail("/debug-playout-compare NNB", nnbOk.body);
+  if (!nnbParsed.isNoNextBox || nnbParsed.nextPiece !== "NNB" || nnbParsed.traces.length === 0) {
+    fail(`/debug-playout-compare NNB JSON missing expected fields`);
+  }
+  const nnbFiltered = await get(
+    host,
+    port,
+    `/debug-playout-compare?p=${pipe}&next=NNB&first=I&a=${keyA}&b=${keyB}&n=10`
+  );
+  if (nnbFiltered.status !== 200) {
+    fail(`/debug-playout-compare NNB first=I expected 200, got ${nnbFiltered.status}: ${nnbFiltered.body}`);
+  }
+  const nnbFilteredParsed = parseJsonOrFail("/debug-playout-compare NNB first=I", nnbFiltered.body);
+  if (nnbFilteredParsed.filterFirstPiece !== "I") {
+    fail(`/debug-playout-compare NNB first=I mismatch: ${nnbFiltered.body}`);
+  }
+
+  // Unreachable placement returns 500
+  const unreachable = await get(
+    host,
+    port,
+    `/debug-playout-compare?p=${pipe}&next=NNB&a=${encodeURIComponent("0|9|19")}&b=${keyB}&n=10`
+  );
+  if (unreachable.status !== 500) {
+    fail(`/debug-playout-compare unreachable move expected 500, got ${unreachable.status}`);
+  }
+}
+
 async function run(host, port, fixtures) {
   const mismatches = [];
   const hardFailures = [];
@@ -737,6 +839,10 @@ async function run(host, port, fixtures) {
   console.log("Synchronous route check: /debug-tournament ...");
   await verifyDebugTournamentRoute(host, port, fixtures[0]);
   console.log("  200 valid JSON, 400 missing p / bad next, 500 legacy pruningBreadth.");
+
+  console.log("Synchronous route check: /debug-playout-compare ...");
+  await verifyDebugPlayoutCompareRoute(host, port, fixtures[0]);
+  console.log("  200 valid JSON, 400 missing a / bad n.");
 
   console.log("Percent-encoded comma check (fixture 0) ...");
   const encodedResult = await kickAndAwaitFull(

@@ -53,6 +53,16 @@
 //                                      pruningBreadth -1 or -2; 503 "Busy" if
 //                                      async precompute running; 400 on missing
 //                                      p/next; 500 on pipe error
+//   GET
+//   /debug-playout-compare?p=<pipe>&next=<0..6|I..Z|NNB|-1>&a=<spec>&b=<spec>[&n=500][&first=<0..6|I..Z>]
+//                                   -> 200 + JSON paired playout decomposition
+//                                      (additive eval-factor deltas, quantiles,
+//                                      behavioral counters, depth curve, and up to
+//                                      4 curated ply-by-ply sequence traces) for two
+//                                      2-ply pairs (fk;sk) or two 1-ply NNB moves
+//                                      (fk); 503 "Busy" if async precompute running;
+//                                      400 on missing/invalid params; 500 on pipe
+//                                      error or unreachable placement/pair
 //   GET /async-result               -> 200 + full result once computed, else
 //                                      200 + backup response, else 504 "Still
 //                                      calculating", else 404 "No previous
@@ -107,6 +117,7 @@
 #include "debug_ground_truth.hpp"
 #include "debug_precompute.hpp"
 #include "debug_tournament.hpp"
+#include "debug_playout_compare.hpp"
 
 namespace {
 
@@ -803,6 +814,111 @@ RouteResult handleDebugTournament(const std::string &query, double calibratedMov
   return {200, response, suffix};
 }
 
+RouteResult handleDebugPlayoutCompare(const std::string &query) {
+  auto started = std::chrono::steady_clock::now();
+  std::string enginePipe;
+  RouteResult parseError;
+  if (!parseEnginePipeQuery(query, enginePipe, parseError)) {
+    return parseError;
+  }
+  {
+    std::lock_guard<std::mutex> lock(g_slot.mutex);
+    if (g_slot.state == AsyncSlot::State::RUNNING) {
+      return {503, "Busy", ""};
+    }
+  }
+
+  std::string nextRaw;
+  if (!extractQueryParam(query, "next", nextRaw) || nextRaw.empty()) {
+    return {400, "Missing required query parameter: next (expected 0-6, I/O/L/J/T/S/Z, or NNB/-1)",
+            ""};
+  }
+  const std::string nextDecoded = percentDecode(nextRaw);
+  const int nextIdx = debug_tmt::parseNextPieceArg(nextDecoded);
+  if (nextIdx == debug_tmt::NEXT_PIECE_INVALID) {
+    return {400,
+            "Error: invalid next parameter (expected 0-6, I/O/L/J/T/S/Z, or NNB/-1): "
+                + nextDecoded,
+            ""};
+  }
+  const bool isNnb = (nextIdx == debug_tmt::NEXT_PIECE_NNB);
+
+  int filterFirstIdx = -1;
+  std::string firstRaw;
+  if (extractQueryParam(query, "first", firstRaw) && !firstRaw.empty()) {
+    if (!isNnb) {
+      return {400, "Error: first piece filter is only valid when next=NNB.", ""};
+    }
+    const std::string firstDecoded = percentDecode(firstRaw);
+    const int parsedFirst = debug_tmt::parsePieceIndex(firstDecoded);
+    if (parsedFirst == debug_tmt::NEXT_PIECE_INVALID) {
+      return {400,
+              "Error: invalid first parameter (expected 0-6 or I/O/L/J/T/S/Z): " + firstDecoded,
+              ""};
+    }
+    filterFirstIdx = parsedFirst;
+  }
+
+  std::string aRaw, bRaw;
+  if (!extractQueryParam(query, "a", aRaw) || aRaw.empty()) {
+    return {400,
+            isNnb ? "Missing required query parameter: a (expected ply-1 key like 1|5|10)"
+                  : "Missing required query parameter: a (expected firstKey;secondKey)",
+            ""};
+  }
+  if (!extractQueryParam(query, "b", bRaw) || bRaw.empty()) {
+    return {400,
+            isNnb ? "Missing required query parameter: b (expected ply-1 key like 1|-1|13)"
+                  : "Missing required query parameter: b (expected firstKey;secondKey)",
+            ""};
+  }
+  const std::string aDecoded = percentDecode(aRaw);
+  const std::string bDecoded = percentDecode(bRaw);
+  if (isNnb) {
+    int r = 0, x = 0, y = 0;
+    if (!debug_tmt::parseLockKey(aDecoded, r, x, y)) {
+      return {400, "Error: invalid a parameter (expected ply-1 key like 1|5|10): " + aDecoded, ""};
+    }
+    if (!debug_tmt::parseLockKey(bDecoded, r, x, y)) {
+      return {400, "Error: invalid b parameter (expected ply-1 key like 1|-1|13): " + bDecoded, ""};
+    }
+  } else {
+    std::string fk, sk;
+    if (!debug_pc::parsePairSpec(aDecoded, fk, sk)) {
+      return {400, "Error: invalid a parameter (expected firstKey;secondKey): " + aDecoded, ""};
+    }
+    if (!debug_pc::parsePairSpec(bDecoded, fk, sk)) {
+      return {400, "Error: invalid b parameter (expected firstKey;secondKey): " + bDecoded, ""};
+    }
+  }
+
+  int playoutCount = debug_pc::DEFAULT_COMPARE_PLAYOUTS;
+  std::string nRaw;
+  if (extractQueryParam(query, "n", nRaw) && !nRaw.empty()) {
+    std::string nDecoded = percentDecode(nRaw);
+    if (!debug_gt::isPlainInt(nDecoded)) {
+      return {400, "Error: invalid n parameter (expected integer): " + nDecoded, ""};
+    }
+    playoutCount = std::atoi(nDecoded.c_str());
+    if (playoutCount < 1 || playoutCount > CANONICAL_SEQUENCE_BATCH_SIZE) {
+      return {400,
+              "Error: invalid n parameter (expected 1-"
+                  + std::to_string(CANONICAL_SEQUENCE_BATCH_SIZE)
+                  + "): "
+                  + nDecoded,
+              ""};
+    }
+  }
+
+  std::string response = debug_pc::runDebugPlayoutCompare(enginePipe, nextIdx, aDecoded, bDecoded,
+                                                          playoutCount, filterFirstIdx);
+  std::string suffix = formatDurationSuffix(started);
+  if (isEngineRejection(response)) {
+    return {500, response, suffix};
+  }
+  return {200, response, suffix};
+}
+
 RouteResult routeRequest(const std::string &path, const std::string &query,
                          double calibratedMovesPerMs7T) {
   if (path == "/ping") {
@@ -825,6 +941,9 @@ RouteResult routeRequest(const std::string &path, const std::string &query,
   }
   if (path == "/debug-tournament") {
     return handleDebugTournament(query, calibratedMovesPerMs7T);
+  }
+  if (path == "/debug-playout-compare") {
+    return handleDebugPlayoutCompare(query);
   }
   if (path == "/async-result") {
     return handleAsyncResult();

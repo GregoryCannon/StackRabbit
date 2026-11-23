@@ -285,12 +285,20 @@ inline bool parseDebugPipe(const std::string &pipeStr, ParsedDebugPipe &out,
   return true;
 }
 
+// Per-next-piece ground-truth summary for one first-piece candidate.
+// - 2-ply mode: bestCont / contEval / boardAfter describe the highest-playout-mean ply-2
+//   continuation among the top maxConts fastEval candidates for that next piece.
+// - 1-ply NNB mode: mean / se / deathPct / sampleCount bucket the N playouts by their first
+//   random piece (seq[0]), and bestCont / bestContTuck / contEval / boardAfter record the
+//   deterministic greedy ply-0 move chosen by fastMoveSearch + pickLockPlacement for seq[0].
 struct PieceGtResult {
   bool valid = false;
+  int sampleCount = 0;
   double mean = 0.0;
   double se = 0.0;
   double deathPct = 0.0;
   std::string bestCont;
+  char bestContTuck = '.';
   int bestContRelRot = 0;
   int bestContRelX = 0;
   int bestContRelY = 0;
@@ -302,6 +310,38 @@ struct PieceGtResult {
   double minPenalty = 0.0;
   std::string boardAfter;
 };
+
+// Mirrors playout.cpp's dispatch rule for switching from canonical NES batches to exhaustive lists.
+inline bool isExhaustivePlayout(int playoutCount, int playoutLength) {
+  return (playoutCount == 7 && playoutLength == 1)
+         || (playoutCount == 49 && playoutLength == 2)
+         || (playoutCount == 343 && playoutLength == 3)
+         || (playoutCount == 2401 && playoutLength == 4);
+}
+
+inline void computeMeanAndSe(const std::vector<double> &values, double &outMean, double &outSe) {
+  if (values.empty()) {
+    outMean = 0.0;
+    outSe = 0.0;
+    return;
+  }
+  double sum = 0.0;
+  for (double v : values) {
+    sum += v;
+  }
+  outMean = sum / static_cast<double>(values.size());
+  if (values.size() <= 1) {
+    outSe = 0.0;
+    return;
+  }
+  double sumSq = 0.0;
+  for (double v : values) {
+    const double diff = v - outMean;
+    sumSq += diff * diff;
+  }
+  outSe = std::sqrt(
+      sumSq / static_cast<double>(values.size() - 1) / static_cast<double>(values.size()));
+}
 
 struct CandidateGtResult {
   std::string key;
@@ -393,8 +433,7 @@ inline std::string runDebugGroundTruth(const std::string &enginePipe,
       continue;
     }
     std::string expl;
-    float ev = b.firstMoveReward
-               + fastEval(req.gameState, b.afterFirstMove, b.firstPlacement, &evalContext, &expl);
+    float ev = fastEval(req.gameState, b.afterFirstMove, b.firstPlacement, &evalContext, &expl);
     keyToReachIdx[k] = reachable.size();
     reachable.push_back({k, i, ev, std::move(expl)});
   }
@@ -481,6 +520,8 @@ inline std::string runDebugGroundTruth(const std::string &enginePipe,
             double total = b.firstMoveEval;
             double se = 0.0;
             double deathPct = 0.0;
+            std::vector<double> bucketScores[7];
+            int bucketDeaths[7] = {};
             if (runPlayouts) {
               std::vector<float> scores;
               float plMean = getPlayoutScore(
@@ -488,37 +529,98 @@ inline std::string runDebugGroundTruth(const std::string &enginePipe,
                   evalContext.aggressionLevel, evalContext.aiMode, /* playoutDataList= */ nullptr,
                   &scores, /* sequenceOffset= */ 0);
               total = static_cast<double>(b.firstMoveReward) + static_cast<double>(plMean);
-              if (scores.size() > 1) {
+              const bool useExhaustive = isExhaustivePlayout(playoutCount, req.playoutLength);
+              const int *seqBase = canonicalPieceSequencesForLastPiece[req.curPiece->index];
+              if (!scores.empty()) {
                 double sumSq = 0.0;
                 int deaths = 0;
-                for (float s : scores) {
-                  double d = static_cast<double>(s) - static_cast<double>(plMean);
-                  sumSq += d * d;
-                  if (s <= evalContext.weights.deathCoef + 100.0f) {
+                for (size_t i = 0; i < scores.size(); i++) {
+                  const float score = scores[i];
+                  const double diff = static_cast<double>(score) - static_cast<double>(plMean);
+                  sumSq += diff * diff;
+                  const bool isDeath = score <= evalContext.weights.deathCoef + 100.0f;
+                  if (isDeath) {
                     deaths++;
                   }
+                  const int firstPieceIdx =
+                      useExhaustive ? exhaustivePieceSequences[i * EXHAUSTIVE_SEQUENCE_LENGTH]
+                                    : seqBase[i * SEQUENCE_LENGTH];
+                  if (firstPieceIdx >= 0 && firstPieceIdx < 7) {
+                    bucketScores[firstPieceIdx].push_back(static_cast<double>(b.firstMoveReward)
+                                                          + static_cast<double>(score));
+                    if (isDeath) {
+                      bucketDeaths[firstPieceIdx]++;
+                    }
+                  }
                 }
-                se = std::sqrt(sumSq
-                               / static_cast<double>(scores.size() - 1)
-                               / static_cast<double>(scores.size()));
+                if (scores.size() > 1) {
+                  se = std::sqrt(sumSq
+                                 / static_cast<double>(scores.size() - 1)
+                                 / static_cast<double>(scores.size()));
+                }
                 deathPct = 100.0 * static_cast<double>(deaths) / static_cast<double>(scores.size());
-              } else if (scores.size() == 1) {
-                deathPct = scores[0] <= evalContext.weights.deathCoef + 100.0f ? 100.0 : 0.0;
               }
             }
             cand.weightedAvg = total;
             cand.weightedSe = se;
             cand.deathPct = deathPct;
-            for (int p = 0; p < 7; p++) {
-              PieceGtResult &pr = cand.byPiece[p];
+            const bool earlyKillscreenStop =
+                evalContext.aiMode != LINEOUT && getAiMode(b.afterFirstMove, contexts) == LINEOUT;
+            const EvalContext ply0Ctx =
+                getEvalContext(b.afterFirstMove, contexts, /* useTestWeights= */ false,
+                               evalContext.aggressionLevel);
+            for (int pieceIdx = 0; pieceIdx < 7; pieceIdx++) {
+              PieceGtResult &pr = cand.byPiece[pieceIdx];
               pr.valid = true;
-              pr.mean = total;
-              pr.se = se;
-              pr.deathPct = deathPct;
               pr.bestCont = "none";
+              pr.bestContTuck = '.';
               pr.contEval = b.firstMoveEval;
               pr.linesCleared = cand.linesCleared;
               pr.boardAfter = cand.boardAfter;
+
+              if (!earlyKillscreenStop) {
+                const Piece *nextPiece = &PIECE_LIST[pieceIdx];
+                std::vector<LockPlacement> ply0Moves;
+                fastMoveSearch(b.afterFirstMove, nextPiece,
+                               ply0Ctx.pieceRangeContext.inputFrameTimeline, ply0Moves);
+                if (ply0Moves.empty()) {
+                  pr.contEval = ply0Ctx.weights.deathCoef;
+                  pr.contEvalExpl = "TOP OUT (no legal fastMoveSearch placements)";
+                } else {
+                  LockPlacement bestMove = pickLockPlacement(b.afterFirstMove, &ply0Ctx, ply0Moves);
+                  GameState afterPly0 = advanceGameState(b.afterFirstMove, bestMove, &ply0Ctx);
+                  std::string expl;
+                  float ply0Eval = fastEval(b.afterFirstMove, afterPly0, bestMove, &ply0Ctx, &expl);
+                  pr.bestCont =
+                      encodeLockPosition({bestMove.x, bestMove.y, bestMove.rotationIndex});
+                  pr.bestContTuck = bestMove.tuckInput;
+                  pr.bestContRelRot = bestMove.rotationIndex;
+                  pr.bestContRelX = bestMove.x - INITIAL_X;
+                  pr.bestContRelY = bestMove.y - nextPiece->initialY;
+                  pr.bestContEvalRank = 0;
+                  pr.contEval = ply0Eval;
+                  pr.contEvalExpl = std::move(expl);
+                  pr.linesCleared = afterPly0.lines - req.gameState.lines;
+                  pr.boardAfter = boardToBitString(afterPly0.board);
+                }
+              }
+
+              const std::vector<double> &bucket = bucketScores[pieceIdx];
+              pr.sampleCount = static_cast<int>(bucket.size());
+              if (!bucket.empty()) {
+                double bucketMean = 0.0;
+                double bucketSe = 0.0;
+                computeMeanAndSe(bucket, bucketMean, bucketSe);
+                pr.mean = bucketMean;
+                pr.se = bucketSe;
+                pr.deathPct = 100.0
+                              * static_cast<double>(bucketDeaths[pieceIdx])
+                              / static_cast<double>(bucket.size());
+              } else {
+                pr.mean = total;
+                pr.se = runPlayouts ? 0.0 : se;
+                pr.deathPct = runPlayouts ? 0.0 : deathPct;
+              }
             }
           } catch (...) {
             candErrors[idx] = std::current_exception();
@@ -857,10 +959,15 @@ inline std::string runDebugGroundTruth(const std::string &enginePipe,
               << fmtDouble(pr.mean, 2)
               << ",\"se\":"
               << fmtDouble(pr.se, 2)
+              << ",\"sampleCount\":"
+              << pr.sampleCount
               << ",\"deathPct\":"
               << fmtDouble(pr.deathPct, 2)
               << ",\"bestCont\":\""
               << jsonEscape(pr.bestCont)
+              << "\""
+              << ",\"bestContTuck\":\""
+              << pr.bestContTuck
               << "\""
               << ",\"bestContRel\":["
               << pr.bestContRelRot

@@ -215,18 +215,25 @@
       align-items: start;
     }
 
-    @media (max-width: 880px) {
-      .viewer {
-        grid-template-columns: 1fr;
-      }
-    }
-
     /* Board side */
     .board-col {
       display: flex;
       flex-direction: column;
       gap: 10px;
       min-width: 340px;
+      position: sticky;
+      top: 12px;
+      align-self: start;
+    }
+
+    @media (max-width: 880px) {
+      .viewer {
+        grid-template-columns: 1fr;
+      }
+
+      .board-col {
+        position: static;
+      }
     }
 
     .nav-row {
@@ -523,6 +530,36 @@
       background: #f1f5f9;
     }
 
+    table.static-table tbody tr {
+      cursor: default;
+    }
+
+    table.static-table tbody tr:hover {
+      background: inherit;
+    }
+
+    table.static-table tbody tr.clickable-row {
+      cursor: pointer;
+    }
+
+    table.static-table tbody tr.clickable-row:hover {
+      background: #f1f5f9;
+    }
+
+    table.static-table tbody tr.pc-depth-current {
+      background: #eff6ff;
+      font-weight: 600;
+    }
+
+    table.static-table tbody tr.pc-depth-current:hover {
+      background: #dbeafe;
+    }
+
+    .expl-wrap {
+      margin-top: 3px;
+      overflow-wrap: anywhere;
+    }
+
     tbody tr.selected {
       background: #eff6ff;
       box-shadow: inset 3px 0 0 var(--accent);
@@ -687,6 +724,9 @@
       font-family: var(--mono);
       font-size: 12px;
       cursor: pointer;
+      min-width: 0;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
 
     .gt-card:hover {
@@ -837,6 +877,43 @@
       background: #eff6ff;
       border-color: #bfdbfe;
     }
+
+    /* Stage 5: Playout Compare (Score Decomposition + Traces) */
+    .pc-grid-2 {
+      display: grid;
+      grid-template-columns: 1.3fr 1fr;
+      gap: 10px;
+      margin-top: 10px;
+      align-items: start;
+    }
+
+    @media (max-width: 980px) {
+      .pc-grid-2 {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .pc-step-cell {
+      cursor: pointer;
+      white-space: nowrap;
+      font-size: 11px;
+      line-height: 1.3;
+    }
+
+    .pc-step-cell:hover {
+      background: #eff6ff;
+    }
+
+    .pc-step-cell.previewing {
+      outline: 2px solid var(--accent);
+      outline-offset: -2px;
+      background: #dbeafe;
+    }
+
+    .pc-tuck {
+      color: var(--amber);
+      font-weight: 600;
+    }
   </style>
 </head>
 
@@ -890,9 +967,11 @@
         <input id="stateSlider" type="range" min="0" max="0" value="0" />
 
         <div id="drawToolbar" class="draw-toolbar hidden">
-          <span style="color:var(--accent); font-weight:600;">Draw Mode <span class="muted" style="font-weight:400;">· click &amp; drag</span></span>
+          <span style="color:var(--accent); font-weight:600;">Draw Mode <span class="muted" style="font-weight:400;">·
+              click &amp; drag</span></span>
           <div style="display:flex; gap:5px; align-items:center;">
-            <button id="drawCopyLogBtn" class="btn-xs hidden" type="button" title="Copy board &amp; params from current log state">Copy Log Board</button>
+            <button id="drawCopyLogBtn" class="btn-xs hidden" type="button"
+              title="Copy board &amp; params from current log state">Copy Log Board</button>
             <button id="drawClearBtn" class="btn-xs" type="button">Clear Board</button>
           </div>
         </div>
@@ -1054,13 +1133,15 @@
             <button id="tabPhantomBtn" class="diag-tab" type="button">2. Phantom Collapse</button>
             <button id="tabGtBtn" class="diag-tab" type="button">3. Ground Truth (High-N)</button>
             <button id="tabTmtBtn" class="diag-tab" type="button">4. Tournament Funnel</button>
+            <button id="tabPcBtn" class="diag-tab" type="button">5. Playout Compare</button>
           </div>
 
           <!-- Stage 1: Auto Parameter Sweep -->
           <div id="paneSweep" class="diag-pane">
             <div class="row-between" style="margin-bottom:8px;">
               <span class="muted" style="font-size:12px;">
-                Sequentially sweeps depth, reaction time, mode, DAS, and high budget to isolate which subsystem drives a placement.
+                Sequentially sweeps depth, reaction time, mode, DAS, and high budget to isolate which subsystem drives a
+                placement.
               </span>
               <div style="display:flex; gap:6px; align-items:center;">
                 <button id="runSweepBtn" class="primary" type="button">Run Sweep</button>
@@ -1100,13 +1181,16 @@
                 <span class="muted" style="font-size:12px;">
                   Ranks every phantom by exact collapse score (<code>lockValue + dasPenalty + inputCost</code>).
                 </span>
-                <label class="muted" style="display:inline-flex; align-items:center; gap:4px; font-size:12px; cursor:pointer;">
+                <label class="muted"
+                  style="display:inline-flex; align-items:center; gap:4px; font-size:12px; cursor:pointer;">
                   <input type="checkbox" id="phGroupTiesChk" checked /> Group identical outcomes
                 </label>
               </div>
               <div style="display:flex; gap:6px; align-items:center;">
-                <button id="phOpenNnbFunnelBtn" class="hidden" type="button" title="Inspect the 1-ply NNB tournament funnel">Inspect NNB Funnel →</button>
-                <button id="phSendToGtBtn" class="hidden" type="button" title="Compare selected phantoms in Ground Truth tab">Compare in Ground Truth →</button>
+                <button id="phOpenNnbFunnelBtn" class="hidden" type="button"
+                  title="Inspect the 1-ply NNB tournament funnel">Inspect NNB Funnel →</button>
+                <button id="phSendToGtBtn" class="hidden" type="button"
+                  title="Compare selected phantoms in Ground Truth tab">Compare in Ground Truth →</button>
                 <button id="runPhantomBtn" class="primary" type="button">Run Phantom Breakdown</button>
               </div>
             </div>
@@ -1266,6 +1350,141 @@
                 </thead>
                 <tbody id="tmtContBody"></tbody>
               </table>
+            </div>
+          </div>
+
+          <!-- Stage 5: Playout Compare (Score Decomposition + Curated Traces) -->
+          <div id="panePc" class="diag-pane hidden">
+            <div class="gt-controls">
+              <div class="gt-field">
+                <label for="pcNextPiece">Next Piece</label>
+                <select id="pcNextPiece">
+                  <option value="NNB">NNB (No Next Box, 1-ply)</option>
+                  <option value="I">I (0)</option>
+                  <option value="O">O (1)</option>
+                  <option value="L">L (2)</option>
+                  <option value="J">J (3)</option>
+                  <option value="T">T (4)</option>
+                  <option value="S">S (5)</option>
+                  <option value="Z">Z (6)</option>
+                </select>
+              </div>
+              <div id="pcFirstFilterWrap" class="gt-field hidden">
+                <label for="pcFirstFilter">1st Playout Piece</label>
+                <select id="pcFirstFilter">
+                  <option value="">All (NES mix)</option>
+                  <option value="I">I</option>
+                  <option value="O">O</option>
+                  <option value="L">L</option>
+                  <option value="J">J</option>
+                  <option value="T">T</option>
+                  <option value="S">S</option>
+                  <option value="Z">Z</option>
+                </select>
+              </div>
+              <div class="gt-field">
+                <label id="pcPairALabel" for="pcPairA">Pair A (ply1;ply2 keys)</label>
+                <input id="pcPairA" type="text" placeholder="1|5|10;1|0|12"
+                  style="width:155px; font-family:var(--mono);" spellcheck="false" />
+              </div>
+              <div class="gt-field">
+                <label id="pcPairBLabel" for="pcPairB">Pair B (ply1;ply2 keys)</label>
+                <input id="pcPairB" type="text" placeholder="1|-1|13;1|0|12"
+                  style="width:155px; font-family:var(--mono);" spellcheck="false" />
+              </div>
+              <div class="gt-field">
+                <label for="pcN">Playouts (N)</label>
+                <select id="pcN">
+                  <option value="250">250</option>
+                  <option value="500" selected>500</option>
+                  <option value="1000">1000</option>
+                  <option value="2000">2000</option>
+                </select>
+              </div>
+              <button id="pcSwapBtn" type="button" title="Swap A and B">A ↔ B</button>
+              <button id="runPcBtn" class="primary" type="button">Run Playout Compare</button>
+            </div>
+
+            <div class="muted" style="font-size:11.5px; margin-bottom:8px;">
+              Tip: click <strong>Why?</strong> in <strong>3. Ground Truth</strong> (on any 2-ply piece row, or overall / per-1st-piece in 1-ply NNB mode) to auto-fill A &amp; B and run.
+            </div>
+
+            <div id="pcError" class="error-box hidden"></div>
+            <div id="pcHeadline" class="triage-banner hidden"></div>
+            <div id="pcCards" class="gt-summary-grid hidden"></div>
+
+            <div id="pcBehaviorWrap" class="results-wrap hidden">
+              <table class="static-table">
+                <thead>
+                  <tr>
+                    <th>Metric</th>
+                    <th id="pcBehHeadA">Pair A</th>
+                    <th id="pcBehHeadB">Pair B</th>
+                  </tr>
+                </thead>
+                <tbody id="pcBehaviorBody"></tbody>
+              </table>
+            </div>
+
+            <div id="pcSplitGrid" class="pc-grid-2 hidden">
+              <div>
+                <div class="muted" style="font-size:11.5px; margin-bottom:4px;"><strong>Additive Score Delta (A −
+                    B)</strong></div>
+                <div class="results-wrap" style="margin-top:0;">
+                  <table class="static-table">
+                    <thead>
+                      <tr>
+                        <th>Component</th>
+                        <th>A</th>
+                        <th>B</th>
+                        <th>A − B</th>
+                      </tr>
+                    </thead>
+                    <tbody id="pcDeltaBody"></tbody>
+                  </table>
+                </div>
+              </div>
+              <div>
+                <div class="muted" style="font-size:11.5px; margin-bottom:4px;"><strong>Depth Curve</strong></div>
+                <div class="results-wrap" style="margin-top:0;">
+                  <table class="static-table">
+                    <thead>
+                      <tr>
+                        <th>Depth</th>
+                        <th>A</th>
+                        <th>B</th>
+                        <th>A − B</th>
+                      </tr>
+                    </thead>
+                    <tbody id="pcDepthBody"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div id="pcTraceSection" class="hidden" style="margin-top:12px;">
+              <div class="row-between" style="margin-bottom:6px;">
+                <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                  <strong style="font-size:12px;">Representative Sequence Trace</strong>
+                  <select id="pcTraceSelect" style="font-family:var(--mono); font-size:11.5px;"></select>
+                </div>
+                <span class="muted" style="font-size:11.5px;">Click any ply cell to preview piece &amp; board on
+                  left</span>
+              </div>
+              <div class="results-wrap" style="margin-top:0;">
+                <table class="static-table">
+                  <thead>
+                    <tr>
+                      <th>Ply</th>
+                      <th>Piece</th>
+                      <th id="pcTraceHeadA">Side A</th>
+                      <th id="pcTraceHeadB">Side B</th>
+                    </tr>
+                  </thead>
+                  <tbody id="pcTraceBody"></tbody>
+                </table>
+              </div>
+              <div id="pcStepExpl" class="gt-inspector hidden"></div>
             </div>
           </div>
         </div>
@@ -1702,6 +1921,7 @@
           phantomsByIndex: new Map(),
           gtByIndex: new Map(),
           tmtByIndex: new Map(),
+          pcByIndex: new Map(),
         };
       }
 
@@ -1720,8 +1940,9 @@
         phantomsByIndex: sessions.log.phantomsByIndex,
         gtByIndex: sessions.log.gtByIndex,
         tmtByIndex: sessions.log.tmtByIndex,
+        pcByIndex: sessions.log.pcByIndex,
         activeDiagTab: "sweep",
-        customPreview: null,  // { source, id, mode: "placement"|"ply2Placement"|"afterBoard", placement, beforeRows, afterRows, caption }
+        customPreview: null,  // { source, id, mode: "placement"|"overlayPlacement"|"afterBoard", placement, beforeRows, afterRows, caption }
         inFlight: false,
       };
 
@@ -1743,6 +1964,7 @@
         state.phantomsByIndex = next.phantomsByIndex;
         state.gtByIndex = next.gtByIndex;
         state.tmtByIndex = next.tmtByIndex;
+        state.pcByIndex = next.pcByIndex;
         state.customPreview = null;
       }
 
@@ -1781,10 +2003,12 @@
       const elTabPhantomBtn = $("tabPhantomBtn");
       const elTabGtBtn = $("tabGtBtn");
       const elTabTmtBtn = $("tabTmtBtn");
+      const elTabPcBtn = $("tabPcBtn");
       const elPaneSweep = $("paneSweep");
       const elPanePhantom = $("panePhantom");
       const elPaneGt = $("paneGt");
       const elPaneTmt = $("paneTmt");
+      const elPanePc = $("panePc");
       const elRunSweepBtn = $("runSweepBtn");
       const elStopSweepBtn = $("stopSweepBtn");
       const elSweepError = $("sweepError");
@@ -1830,6 +2054,32 @@
       const elTmtContHeader = $("tmtContHeader");
       const elTmtContWrap = $("tmtContWrap");
       const elTmtContBody = $("tmtContBody");
+      const elPcNextPiece = $("pcNextPiece");
+      const elPcFirstFilterWrap = $("pcFirstFilterWrap");
+      const elPcFirstFilter = $("pcFirstFilter");
+      const elPcPairALabel = $("pcPairALabel");
+      const elPcPairBLabel = $("pcPairBLabel");
+      const elPcPairA = $("pcPairA");
+      const elPcPairB = $("pcPairB");
+      const elPcN = $("pcN");
+      const elPcSwapBtn = $("pcSwapBtn");
+      const elRunPcBtn = $("runPcBtn");
+      const elPcError = $("pcError");
+      const elPcHeadline = $("pcHeadline");
+      const elPcCards = $("pcCards");
+      const elPcBehaviorWrap = $("pcBehaviorWrap");
+      const elPcBehHeadA = $("pcBehHeadA");
+      const elPcBehHeadB = $("pcBehHeadB");
+      const elPcBehaviorBody = $("pcBehaviorBody");
+      const elPcSplitGrid = $("pcSplitGrid");
+      const elPcDeltaBody = $("pcDeltaBody");
+      const elPcDepthBody = $("pcDepthBody");
+      const elPcTraceSection = $("pcTraceSection");
+      const elPcTraceSelect = $("pcTraceSelect");
+      const elPcTraceHeadA = $("pcTraceHeadA");
+      const elPcTraceHeadB = $("pcTraceHeadB");
+      const elPcTraceBody = $("pcTraceBody");
+      const elPcStepExpl = $("pcStepExpl");
 
       const PARAM_INPUTS = {
         level: { el: $("pLevel"), type: "int" },
@@ -2027,7 +2277,7 @@
         if (preview && preview.mode === "afterBoard" && preview.afterRows) {
           displayRows = preview.afterRows;
           caption = preview.caption || "Preview board";
-        } else if (preview && preview.mode === "ply2Placement" && preview.placement && preview.beforeRows) {
+        } else if (preview && preview.mode === "overlayPlacement" && preview.placement && preview.beforeRows) {
           if (showAfter && preview.afterRows) {
             displayRows = preview.afterRows;
             caption = `After ${preview.caption || "ply 2"}`;
@@ -2918,6 +3168,136 @@
         }
       }
 
+      // ---- Stage 5: Playout Compare (Score Decomposition + Curated Traces) ----
+      function getOrInitPcState(entry) {
+        let pc = state.pcByIndex.get(entry.index);
+        if (!pc) {
+          const defaultNext = isEntryNnbDefault(entry)
+            ? "NNB"
+            : ((entry.inferredNext && entry.inferredNext.contiguous && entry.inferredNext.nextPiece)
+              ? entry.inferredNext.nextPiece.id
+              : "I");
+          pc = {
+            running: false,
+            nextPiece: defaultNext,
+            firstFilter: "",
+            specA: "",
+            specB: "",
+            overrideDepth: null,
+            data: null,
+            error: null,
+            traceIdx: 0,
+            selectedStepExpl: null,
+          };
+          state.pcByIndex.set(entry.index, pc);
+        }
+        return pc;
+      }
+
+      async function runPlayoutCompare(overrideDepth = undefined) {
+        const entry = state.entries[state.currentIndex];
+        if (!entry || state.inFlight) return;
+        const params = getEffectiveParams(entry);
+        const pc = getOrInitPcState(entry);
+        if (overrideDepth !== undefined) {
+          pc.overrideDepth = overrideDepth;
+        }
+        pc.nextPiece = elPcNextPiece.value || pc.nextPiece;
+        pc.firstFilter = pc.nextPiece === "NNB" ? (elPcFirstFilter.value || "") : "";
+        pc.specA = elPcPairA.value.trim();
+        pc.specB = elPcPairB.value.trim();
+        if (!pc.specA || !pc.specB) {
+          pc.error = pc.nextPiece === "NNB"
+            ? "Provide both Move A and Move B (ply-1 key like 1|5|10), or click 'Why?' in Tab 3 (Ground Truth)."
+            : "Provide both Pair A and Pair B (format: firstKey;secondKey), or click 'Why?' on a piece row in Tab 3 (Ground Truth).";
+          renderCurrent();
+          return;
+        }
+        const nVal = parseInt(elPcN.value, 10) || 500;
+        const effectiveParams = pc.overrideDepth !== null
+          ? { ...params, playoutLength: pc.overrideDepth }
+          : params;
+        const query = buildCommaQuery(entry.board, effectiveParams, entry.secondBoard);
+
+        pc.error = null;
+        pc.running = true;
+        state.inFlight = true;
+        elReplayBtn.disabled = true;
+        renderCurrent();
+
+        try {
+          const firstParam = (pc.nextPiece === "NNB" && pc.firstFilter)
+            ? `&first=${encodeURIComponent(pc.firstFilter)}`
+            : "";
+          const url = `${getServerBase()}/debug-playout-compare?p=${query}` +
+            `&next=${encodeURIComponent(pc.nextPiece)}` +
+            firstParam +
+            `&a=${encodeURIComponent(pc.specA)}` +
+            `&b=${encodeURIComponent(pc.specB)}` +
+            `&n=${nVal}`;
+          const resp = await fetch(url);
+          const text = await resp.text();
+          if (!resp.ok) {
+            pc.error = `HTTP ${resp.status}: ${text}`;
+            return;
+          }
+          if (text.startsWith("Unknown request type")) {
+            pc.error =
+              "Running live_game_server does not support /debug-playout-compare yet. " +
+              "Restart it with `npm run live_server` and try again.";
+            return;
+          }
+          const json = JSON.parse(text);
+          pc.data = json;
+          pc.traceIdx = 0;
+          pc.selectedStepExpl = null;
+          if (state.customPreview && state.customPreview.source === "pc") {
+            state.customPreview = null;
+          }
+          elPingStatus.className = "ping ok";
+          elPingStatus.textContent = "Connected";
+        } catch (err) {
+          pc.error = `Could not reach /debug-playout-compare.\n${err}`;
+        } finally {
+          pc.running = false;
+          state.inFlight = false;
+          elReplayBtn.disabled = false;
+          renderCurrent();
+        }
+      }
+
+      function openPlayoutCompareFromGt(pieceSpec) {
+        const entry = state.entries[state.currentIndex];
+        if (!entry) return;
+        const gt = state.gtByIndex.get(entry.index);
+        if (!gt || !gt.data || !gt.data.candidates) return;
+        const cands = gt.data.candidates.filter(c => c.reachable);
+        if (cands.length < 2) return;
+
+        const pc = getOrInitPcState(entry);
+        pc.overrideDepth = null;
+        if (pieceSpec === "NNB" || pieceSpec.startsWith("NNB:")) {
+          pc.nextPiece = "NNB";
+          pc.firstFilter = pieceSpec.includes(":") ? pieceSpec.split(":")[1] : "";
+          pc.specA = cands[0].key;
+          pc.specB = cands[1].key;
+        } else {
+          const cellA = cands[0].byPiece ? cands[0].byPiece[pieceSpec] : null;
+          const cellB = cands[1].byPiece ? cands[1].byPiece[pieceSpec] : null;
+          if (!cellA || !cellB) return;
+          pc.nextPiece = pieceSpec;
+          pc.firstFilter = "";
+          pc.specA = `${cands[0].key};${cellA.bestCont}`;
+          pc.specB = `${cands[1].key};${cellB.bestCont}`;
+        }
+        pc.error = null;
+        state.activeDiagTab = "pc";
+        renderCurrent();
+        if (!state.inFlight) {
+          runPlayoutCompare(null);
+        }
+      }
+
       function populateGtSelect(selectEl, reachable, selectedVal, allowEmpty) {
         const opts = [];
         if (allowEmpty) {
@@ -2933,20 +3313,469 @@
         selectEl.value = selectedVal || "";
       }
 
+      function deltaClass(val, threshold = 0.5) {
+        return val > threshold ? "gt-delta-pos" : (val < -threshold ? "gt-delta-neg" : "muted");
+      }
+
+      function formatGtMoveMeta(cell, cand) {
+        const hasMove = Boolean(cell && cell.bestCont && cell.bestCont !== "none");
+        const contRel = hasMove
+          ? (cell.bestContRel ? formatRelCoords(cell.bestContRel[0], cell.bestContRel[1], cell.bestContRel[2]) : cell.bestCont)
+          : (cell && cell.contEvalExpl && cell.contEvalExpl.startsWith("TOP OUT") ? "TOP OUT" : "none");
+        const tuckInput = hasMove && cell.bestContTuck && cell.bestContTuck !== "." ? cell.bestContTuck : "";
+        const stepClears = Math.max(0, ((cell && cell.linesCleared) || 0) - ((cand && cand.linesCleared) || 0));
+        return { hasMove, contRel, tuckInput, stepClears };
+      }
+
+      function renderGroundTruthPane(entry, replay, gt) {
+        const gtRunning = gt && gt.running;
+        const gtMode = gt ? gt.mode : (isEntryNnbDefault(entry) ? "nnb" : "2ply");
+        elGtMode.value = gtMode;
+        elGtConts.disabled = gtMode === "nnb";
+        elGtLoadMovesBtn.disabled = state.inFlight;
+        elGtRunBtn.disabled = state.inFlight;
+        elGtRunBtn.textContent = gtRunning ? "Running GT..." : "Run Ground Truth";
+
+        const reachable = gt ? gt.reachable : [];
+        populateGtSelect(elGtMoveA, reachable, gt ? gt.selectedA : "", false);
+        populateGtSelect(elGtMoveB, reachable, gt ? gt.selectedB : "", false);
+        populateGtSelect(elGtMoveC, reachable, gt ? gt.selectedC : "", true);
+
+        if (gt && gt.error) {
+          elGtError.textContent = gt.error;
+          elGtError.classList.remove("hidden");
+        } else {
+          elGtError.classList.add("hidden");
+        }
+
+        if (!gt || !gt.data || !gt.data.candidates || gt.data.candidates.length === 0) {
+          elGtVerdict.classList.add("hidden");
+          elGtSummaryGrid.classList.add("hidden");
+          elGtResultsWrap.classList.add("hidden");
+          elGtInspector.classList.add("hidden");
+          return;
+        }
+
+        const data = gt.data;
+        const isGtNnb = Boolean(data.isNoNextBox);
+        const cands = data.candidates.filter(c => c.reachable);
+        const effScore = (c) => isGtNnb && data.useDas ? (c.weightedAvg + (c.avgDasPenalty || 0)) : c.weightedAvg;
+        const bestCand = cands.reduce((acc, c) => (!acc || effScore(c) > effScore(acc) ? c : acc), null);
+
+        // Auto-verdict comparing Replay Default vs Ground Truth winner
+        const verdictTags = [
+          `<span class="mono muted">N=${data.playoutCount}, depth=${data.playoutLength}, mode=${escapeHtml(data.aiMode)}, ${data.elapsedMs}ms</span>`,
+        ];
+        if (isGtNnb) {
+          verdictTags.push(`<span class="tag green">1-ply NNB</span>`);
+          verdictTags.push(`<button class="btn-link-xs" type="button" data-open-funnel="NNB" title="Inspect 1-ply NNB tournament funnel">Funnel (NNB)</button>`);
+          if (cands.length >= 2) {
+            verdictTags.push(`<button class="btn-link-xs" type="button" data-open-pc="NNB" title="Decompose 1-ply NNB playout score difference (A vs B) across all canonical sequences">Why? (A vs B)</button>`);
+          }
+        }
+        if (cands.length >= 2) {
+          const cA = cands[0], cB = cands[1];
+          const gap = effScore(cA) - effScore(cB);
+          const combSe = Math.sqrt(cA.weightedSe * cA.weightedSe + cB.weightedSe * cB.weightedSe);
+          const sign = gap >= 0 ? "+" : "";
+          verdictTags.push(`<span class="tag ${gap >= 0 ? "green" : "amber"}">A − B = ${sign}${gap.toFixed(2)} ± ${combSe.toFixed(2)}</span>`);
+
+          const repDefKey = (replay && replay.parsed && replay.parsed.defaultRow && replay.parsed.defaultRow.resolved)
+            ? lockKeyFromResolved(replay.parsed.defaultRow.resolved)
+            : null;
+          if (repDefKey && bestCand) {
+            if (repDefKey === bestCand.key) {
+              verdictTags.push(`<span class="tag green">GT agrees with Replay Default</span>`);
+            } else if (cands.some(c => c.key === repDefKey)) {
+              const repCand = cands.find(c => c.key === repDefKey);
+              const diff = effScore(bestCand) - effScore(repCand);
+              const dSe = Math.sqrt(bestCand.weightedSe ** 2 + repCand.weightedSe ** 2);
+              if (diff > 2 * dSe) {
+                verdictTags.push(`<span class="tag red">GT prefers ${formatRelCoords(bestCand.relRot, bestCand.relX, bestCand.relY)} (+${diff.toFixed(1)}) → search / tournament / RT effect</span>`);
+              } else {
+                verdictTags.push(`<span class="tag amber">Within ~2 SE of Replay Default</span>`);
+              }
+            }
+          }
+        }
+        elGtVerdict.innerHTML = verdictTags.join(" ");
+        elGtVerdict.classList.remove("hidden");
+
+        // Summary cards (clickable to preview ply-1 board)
+        elGtSummaryGrid.innerHTML = cands.map((c, ci) => {
+          const lbl = String.fromCharCode(65 + ci);
+          const isWin = bestCand && c.key === bestCand.key;
+          const cid = `gt:ply1:${ci}`;
+          const isPrev = state.customPreview && state.customPreview.id === cid;
+          const cls = ["gt-card", isWin ? "winner" : "", isPrev ? "previewing" : ""].filter(Boolean).join(" ");
+          const mainVal = effScore(c);
+          const nnbExtra = isGtNnb
+            ? ` · death=${(c.deathPct || 0).toFixed(1)}%` +
+              (data.useDas ? ` · raw=${c.weightedAvg.toFixed(1)} · dasPen=${(c.avgDasPenalty || 0).toFixed(1)}` : "")
+            : "";
+          return `<div class="${cls}" data-gt-ply1="${ci}" title="Click to preview board after ply 1">
+            <div class="row-between">
+              <strong>${lbl}: ${formatRelCoords(c.relRot, c.relX, c.relY)}</strong>
+              <span class="muted">${escapeHtml(c.key)}</span>
+            </div>
+            <div class="gt-big">${mainVal.toFixed(2)} <span class="muted" style="font-size:11px; font-weight:400;">± ${c.weightedSe.toFixed(2)}</span></div>
+            <div class="muted" style="font-size:11px;">
+              ply1 eval=${c.fastEval.toFixed(1)} · das=${c.dasAfter} · +${c.linesCleared}L${nnbExtra}
+            </div>
+          </div>`;
+        }).join("");
+        elGtSummaryGrid.classList.remove("hidden");
+
+        const appliedPen = (c, cell) => (!data.useDas || !cell)
+          ? 0
+          : (c.dasAfter >= 15 ? 0 : (c.dasAfter >= 10 ? cell.partialPenalty : cell.minPenalty));
+
+        const headCols = [
+          isGtNnb
+            ? `<th title="First random playout piece (seq[0]) in the 1-ply NNB canonical sequences">1st Piece</th>`
+            : `<th>Next</th>`,
+        ];
+        cands.forEach((c, ci) => {
+          const lbl = String.fromCharCode(65 + ci);
+          const dasSuffix = isGtNnb && data.useDas ? ` (d${c.dasAfter})` : "";
+          headCols.push(`<th>${lbl}: ${formatRelCoords(c.relRot, c.relX, c.relY)}${dasSuffix}</th>`);
+        });
+        if (cands.length >= 2) {
+          headCols.push(`<th title="${isGtNnb && data.useDas ? "A − B playout delta + applied DAS penalty delta" : "A − B playout delta"}">A − B</th>`);
+        }
+        if (data.useDas) {
+          headCols.push(`<th>DAS Pen (part / min)</th>`);
+        }
+        elGtHead.innerHTML = `<tr>${headCols.join("")}</tr>`;
+
+        elGtBody.innerHTML = PIECE_ORDER.map(p => {
+          const canWhy = cands.length >= 2 && (isGtNnb || (cands[0].byPiece?.[p] && cands[1].byPiece?.[p]));
+          const whyAttr = isGtNnb ? `NNB:${p}` : p;
+          const whyTitle = isGtNnb
+            ? `Decompose 1-ply NNB playout difference (A vs B) on sequences starting with ${p}`
+            : `Decompose playout score difference (A vs B) for next ${p}`;
+          const whyBtn = canWhy
+            ? `<button class="btn-link-xs" type="button" data-open-pc="${whyAttr}" title="${whyTitle}">Why?</button>`
+            : "";
+          const funnelBtn = isGtNnb
+            ? ""
+            : `<button class="btn-link-xs" type="button" data-open-funnel="${p}" title="Inspect ${p} tournament funnel">Funnel</button>`;
+          const tds = [`<td style="white-space:nowrap;"><strong>${p}</strong>${funnelBtn}${whyBtn}</td>`];
+
+          cands.forEach((c, ci) => {
+            const cell = c.byPiece ? c.byPiece[p] : null;
+            const cid = `gt:ply2:${ci}:${p}`;
+            const isPrev = state.customPreview && state.customPreview.id === cid;
+            if (!cell) {
+              tds.push(`<td class="muted">—</td>`);
+              return;
+            }
+            const meta = formatGtMoveMeta(cell, c);
+            const tuckBadge = meta.tuckInput ? ` <span class="pc-tuck">TUCK(${escapeHtml(meta.tuckInput)})</span>` : "";
+            const clrTxt = meta.hasMove && meta.stepClears > 0 ? ` +${meta.stepClears}L` : "";
+            const moveHtml = meta.hasMove
+              ? `${escapeHtml(meta.contRel)}${tuckBadge}${clrTxt}`
+              : `<span style="color:${meta.contRel === "TOP OUT" ? "var(--red)" : "var(--muted)"};">${escapeHtml(meta.contRel)}</span>`;
+
+            if (isGtNnb) {
+              const app = appliedPen(c, cell);
+              const dasTxt = app < -0.05 ? ` · <span class="ph-pen-neg">das ${app.toFixed(1)}</span>` : "";
+              let topLine;
+              let metaTxt;
+              if (cell.sampleCount > 0) {
+                const deathTxt = cell.deathPct > 0 ? ` · ${cell.deathPct.toFixed(1)}%☠` : "";
+                topLine = `<strong>${cell.mean.toFixed(1)}</strong> <span class="muted">±${cell.se.toFixed(1)}${deathTxt}</span>`;
+                metaTxt = ` · n=${cell.sampleCount}${dasTxt}`;
+              } else if (data.playoutCount === 0 || data.playoutLength === 0) {
+                topLine = `<span class="muted">${cell.mean.toFixed(1)} (eval)</span>`;
+                metaTxt = dasTxt;
+              } else {
+                topLine = `<span class="muted">— (n=0)</span>`;
+                metaTxt = dasTxt;
+              }
+              tds.push(
+                `<td class="gt-cell${isPrev ? " previewing" : ""}" data-gt-cand="${ci}" data-gt-piece="${p}" title="Click to preview greedy playout ply-0 placement for ${p} on board">` +
+                `<div>${topLine}</div>` +
+                `<div class="gt-cont-line">${moveHtml}<span class="muted">${metaTxt}</span></div>` +
+                `</td>`
+              );
+            } else {
+              const deathTxt = cell.deathPct > 0 ? ` · ${cell.deathPct.toFixed(1)}%☠` : "";
+              const rankTxt = cell.bestContEvalRank > 0 ? ` · #${cell.bestContEvalRank}` : "";
+              tds.push(
+                `<td class="gt-cell${isPrev ? " previewing" : ""}" data-gt-cand="${ci}" data-gt-piece="${p}" title="Click to preview next-piece placement on board">` +
+                `<div><strong>${cell.mean.toFixed(1)}</strong> <span class="muted">±${cell.se.toFixed(1)}${deathTxt}${rankTxt}</span></div>` +
+                `<div class="gt-cont-line">${moveHtml}</div>` +
+                `</td>`
+              );
+            }
+          });
+
+          if (cands.length >= 2) {
+            const cA = cands[0], cB = cands[1];
+            const pA = cA.byPiece ? cA.byPiece[p] : null;
+            const pB = cB.byPiece ? cB.byPiece[p] : null;
+            const hasValues = pA && pB && (!isGtNnb || (pA.sampleCount > 0 && pB.sampleCount > 0) || data.playoutCount === 0 || data.playoutLength === 0);
+            if (hasValues) {
+              const plDiff = pA.mean - pB.mean;
+              const dasDiff = isGtNnb ? (appliedPen(cA, pA) - appliedPen(cB, pB)) : 0;
+              const d = plDiff + dasDiff;
+              const tip = Math.abs(dasDiff) > 0.05
+                ? ` title="playout ${plDiff >= 0 ? "+" : ""}${plDiff.toFixed(1)} · DAS ${dasDiff >= 0 ? "+" : ""}${dasDiff.toFixed(1)}"`
+                : "";
+              tds.push(`<td class="${deltaClass(d, 0.5)}"${tip}>${d >= 0 ? "+" : ""}${d.toFixed(1)}</td>`);
+            } else {
+              tds.push(`<td class="muted">—</td>`);
+            }
+          }
+
+          if (data.useDas) {
+            const penParts = cands.map((c, ci) => {
+              const cell = c.byPiece ? c.byPiece[p] : null;
+              if (!cell) return "—";
+              const lbl = String.fromCharCode(65 + ci);
+              const pp = Math.round(cell.partialPenalty);
+              const mp = Math.round(cell.minPenalty);
+              if (isGtNnb) {
+                const app = Math.round(appliedPen(c, cell));
+                return (app === 0 && pp === 0 && mp === 0) ? `${lbl}:0` : `${lbl}:${app} (${pp}/${mp})`;
+              }
+              return (pp === 0 && mp === 0) ? `${lbl}:0` : `${lbl}:${pp}/${mp}`;
+            });
+            tds.push(`<td class="muted" style="white-space:nowrap; font-size:11px;">${escapeHtml(penParts.join(" · "))}</td>`);
+          }
+          return `<tr>${tds.join("")}</tr>`;
+        }).join("");
+        elGtResultsWrap.classList.remove("hidden");
+
+        if (gt.selectedCell) {
+          elGtInspector.innerHTML = gt.selectedCell;
+        } else {
+          elGtInspector.innerHTML = isGtNnb
+            ? `<span class="muted">Rows bucket 1-ply NNB playouts by the first random playout piece (<code>seq[0]</code>) and show the deterministic greedy playout move taken on ply 0. Click any candidate card (ply 1) or piece cell (ply 0) to preview on the board &amp; inspect <code>fastEval</code>, or click <strong>Why?</strong> to decompose A vs B.</span>`
+            : `<span class="muted">Click any candidate card (ply 1) or piece cell (ply 2) to preview its resulting board and <code>fastEval</code> breakdown.</span>`;
+        }
+        elGtInspector.classList.remove("hidden");
+      }
+
+      function renderPlayoutComparePane(pc) {
+        const pcIsNnbSelected = pc.nextPiece === "NNB";
+        elPcNextPiece.value = pc.nextPiece;
+        elPcFirstFilterWrap.classList.toggle("hidden", !pcIsNnbSelected);
+        elPcFirstFilter.value = pc.firstFilter || "";
+        elPcPairALabel.textContent = pcIsNnbSelected ? "Move A (ply1 key)" : "Pair A (ply1;ply2 keys)";
+        elPcPairBLabel.textContent = pcIsNnbSelected ? "Move B (ply1 key)" : "Pair B (ply1;ply2 keys)";
+        elPcPairA.placeholder = pcIsNnbSelected ? "1|5|10" : "1|5|10;1|0|12";
+        elPcPairB.placeholder = pcIsNnbSelected ? "1|-1|13" : "1|-1|13;1|0|12";
+        if (document.activeElement !== elPcPairA && elPcPairA.value !== pc.specA) {
+          elPcPairA.value = pc.specA;
+        }
+        if (document.activeElement !== elPcPairB && elPcPairB.value !== pc.specB) {
+          elPcPairB.value = pc.specB;
+        }
+        elRunPcBtn.disabled = state.inFlight;
+        elRunPcBtn.textContent = pc.running ? "Comparing..." : "Run Playout Compare";
+
+        if (pc.error) {
+          elPcError.textContent = pc.error;
+          elPcError.classList.remove("hidden");
+        } else {
+          elPcError.classList.add("hidden");
+        }
+
+        if (!pc.data) {
+          elPcHeadline.classList.add("hidden");
+          elPcCards.classList.add("hidden");
+          elPcBehaviorWrap.classList.add("hidden");
+          elPcSplitGrid.classList.add("hidden");
+          elPcTraceSection.classList.add("hidden");
+          return;
+        }
+
+        const d = pc.data;
+        const isPcNnb = Boolean(d.isNoNextBox || d.nextPiece === "NNB");
+        const sA = d.sideA;
+        const sB = d.sideB;
+        const lblA = isPcNnb || !sA.secondRel
+          ? formatRelCoords(sA.firstRel[0], sA.firstRel[1], sA.firstRel[2])
+          : `${formatRelCoords(sA.firstRel[0], sA.firstRel[1], sA.firstRel[2])} → ${d.nextPiece}${formatRelCoords(sA.secondRel[0], sA.secondRel[1], sA.secondRel[2])}`;
+        const lblB = isPcNnb || !sB.secondRel
+          ? formatRelCoords(sB.firstRel[0], sB.firstRel[1], sB.firstRel[2])
+          : `${formatRelCoords(sB.firstRel[0], sB.firstRel[1], sB.firstRel[2])} → ${d.nextPiece}${formatRelCoords(sB.secondRel[0], sB.secondRel[1], sB.secondRel[2])}`;
+        const sign = d.meanDiff >= 0 ? "+" : "";
+        const q = d.quantiles;
+        const surv = d.survival;
+
+        const nLabel = (d.requestedPlayoutCount && d.playoutCount < d.requestedPlayoutCount)
+          ? `N=${d.playoutCount} (max of ${d.requestedPlayoutCount} req in batch)`
+          : `N=${d.playoutCount}`;
+        const tiesPart = d.ties > 0 ? ` · Ties ${((100 * d.ties) / d.playoutCount).toFixed(1)}%` : "";
+        const headlineParts = [
+          `<span class="mono muted">${nLabel}, depth=${d.playoutLength}, mode=${escapeHtml(d.aiMode)}, ${d.elapsedMs}ms</span>`,
+        ];
+        if (isPcNnb) {
+          headlineParts.push(`<span class="tag green">${d.filterFirstPiece ? `1-ply NNB · 1st=${escapeHtml(d.filterFirstPiece)}` : "1-ply NNB"}</span>`);
+        }
+        headlineParts.push(
+          `<span class="tag ${d.meanDiff >= 0 ? "green" : "amber"}">A − B = ${sign}${d.meanDiff.toFixed(2)} ± ${d.pairedSe.toFixed(2)}</span>`,
+          `<span class="mono">Win rate: A ${((100 * d.winsA) / d.playoutCount).toFixed(1)}% · B ${((100 * d.winsB) / d.playoutCount).toFixed(1)}%${tiesPart}</span>`,
+          `<span class="mono muted">Quantiles (A−B): p10=${q.p10}, p25=${q.p25}, <strong>p50=${q.p50}</strong>, p75=${q.p75}, p90=${q.p90}</span>`,
+        );
+        elPcHeadline.innerHTML = headlineParts.join(" ");
+        elPcHeadline.classList.remove("hidden");
+
+        // Side A & B cards (clickable to preview post-ply-1 or post-ply-2 board)
+        const previewTitle = isPcNnb ? "Click to preview post-ply-1 board" : "Click to preview post-ply-2 board";
+        elPcCards.innerHTML = [
+          { side: "A", s: sA, lbl: lblA, win: d.meanDiff >= 0 },
+          { side: "B", s: sB, lbl: lblB, win: d.meanDiff < 0 },
+        ].map(item => {
+          const cid = `pc:pair:${item.side}`;
+          const isPrev = state.customPreview && state.customPreview.id === cid;
+          const cls = ["gt-card", item.win ? "winner" : "", isPrev ? "previewing" : ""].filter(Boolean).join(" ");
+          const formattedExpl = (item.s.depth0Expl || "").replace(/;/g, "; ");
+          return `<div class="${cls}" data-pc-pair-preview="${item.side}" title="${previewTitle}">
+            <div class="row-between"><strong>${item.side}: ${escapeHtml(item.lbl)}</strong></div>
+            <div class="gt-big">${item.s.mean.toFixed(2)} <span class="muted" style="font-size:11px; font-weight:400;">(depth 0: ${item.s.depth0Eval.toFixed(1)})</span></div>
+            <div class="muted" style="font-size:10.5px; line-height:1.35;">holes=${item.s.trueHoles}/${item.s.partialHoles} · ${escapeHtml(formattedExpl)}</div>
+          </div>`;
+        }).join("");
+        elPcCards.classList.remove("hidden");
+
+        // Behavioral stats table
+        elPcBehHeadA.textContent = `A: ${lblA}`;
+        elPcBehHeadB.textContent = `B: ${lblB}`;
+        const behRows = [
+          ["Deaths % (bothAlive / onlyA / onlyB / bothDead)", `${sA.deathPct.toFixed(1)}%`, `${sB.deathPct.toFixed(1)}%  (${surv.bothAlive}/${surv.onlyAAlive}/${surv.onlyBAlive}/${surv.bothDead})`, ""],
+          ["Avg Tetrises / Got Tetris %", `${sA.avgTetrises.toFixed(2)} (${sA.gotTetrisPct.toFixed(1)}%)`, `${sB.avgTetrises.toFixed(2)} (${sB.gotTetrisPct.toFixed(1)}%)`, ""],
+          ["Avg Burns / Total Lines", `${sA.avgBurns.toFixed(2)} burns · ${sA.avgLines.toFixed(2)}L`, `${sB.avgBurns.toFixed(2)} burns · ${sB.avgLines.toFixed(2)}L`, ""],
+          [
+            `Avg Tuck Moves / DIG-Mode Moves (of ${d.playoutLength})`,
+            `${sA.avgTuckPlies.toFixed(2)} tucks · ${sA.avgDigPlies.toFixed(2)} DIG`,
+            `${sB.avgTuckPlies.toFixed(2)} tucks · ${sB.avgDigPlies.toFixed(2)} DIG`,
+            `Tuck moves = playout placements using a tuck/spin. DIG-mode moves = playout moves where the board was in DIG mode (aiMode == DIG) instead of STANDARD.`,
+          ],
+          ["Ever Covered Well % / Inaccessible Left %", `well ${sA.everCoveredWellPct.toFixed(1)}% · inaccL ${sA.everInaccLeftPct.toFixed(1)}%`, `well ${sB.everCoveredWellPct.toFixed(1)}% · inaccL ${sB.everInaccLeftPct.toFixed(1)}%`, ""],
+        ];
+        if (sA.startedWithHole || sB.startedWithHole) {
+          behRows.push([
+            "Starting Hole Cleared (Tuck / Line / Still at End)",
+            sA.startedWithHole
+              ? `tuck ${sA.holeClearedByTuckPct.toFixed(1)}% · line ${sA.holeClearedByLinePct.toFixed(1)}% · end ${sA.stillHasHoleAtEndPct.toFixed(1)}%`
+              : `started clean (end ${sA.stillHasHoleAtEndPct.toFixed(1)}%)`,
+            sB.startedWithHole
+              ? `tuck ${sB.holeClearedByTuckPct.toFixed(1)}% · line ${sB.holeClearedByLinePct.toFixed(1)}% · end ${sB.stillHasHoleAtEndPct.toFixed(1)}%`
+              : `started clean (end ${sB.stillHasHoleAtEndPct.toFixed(1)}%)`,
+            "",
+          ]);
+        }
+        elPcBehaviorBody.innerHTML = behRows.map(r =>
+          `<tr${r[3] ? ` title="${escapeHtml(r[3])}"` : ""}><td class="muted">${escapeHtml(r[0])}</td><td>${escapeHtml(r[1])}</td><td>${escapeHtml(r[2])}</td></tr>`
+        ).join("");
+        elPcBehaviorWrap.classList.remove("hidden");
+
+        // Additive Score Delta Table (top components + leaf eval breakdown)
+        const deltaRows = [];
+        for (const t of (d.topDeltas || [])) {
+          if (Math.abs(t.aMean) < 0.005 && Math.abs(t.bMean) < 0.005 && Math.abs(t.delta) < 0.005) continue;
+          deltaRows.push(`<tr style="background:var(--surface-alt);"><td><strong>${escapeHtml(t.name)}</strong></td><td>${t.aMean.toFixed(2)}</td><td>${t.bMean.toFixed(2)}</td><td class="${deltaClass(t.delta, 0.1)}">${t.delta >= 0 ? "+" : ""}${t.delta.toFixed(2)}</td></tr>`);
+        }
+        for (const lt of (d.leafTermDeltas || [])) {
+          deltaRows.push(`<tr><td style="padding-left:16px;">↳ ${escapeHtml(lt.name)}</td><td class="muted">${lt.aMean.toFixed(2)}</td><td class="muted">${lt.bMean.toFixed(2)}</td><td class="${deltaClass(lt.delta, 0.2)}">${lt.delta >= 0 ? "+" : ""}${lt.delta.toFixed(2)}</td></tr>`);
+        }
+        elPcDeltaBody.innerHTML = deltaRows.join("");
+
+        // Depth curve table (click any depth > 0 row to re-run decomposition at that depth)
+        elPcDepthBody.innerHTML = (d.depthCurve || []).map(pt => {
+          const isCur = pt.depth === d.playoutLength;
+          const clickable = pt.depth > 0;
+          const rowClasses = [clickable ? "clickable-row" : "", isCur ? "pc-depth-current" : ""].filter(Boolean).join(" ");
+          const trAttr = clickable
+            ? `${rowClasses ? ` class="${rowClasses}"` : ""} data-pc-depth="${pt.depth}" title="Click to run full decomposition &amp; traces at depth ${pt.depth}"`
+            : `${rowClasses ? ` class="${rowClasses}"` : ""} title="Depth 0 is fastEval only (shown on A/B cards above)"`;
+          return `<tr${trAttr}>
+            <td>depth ${pt.depth}${pt.depth === 0 ? " (eval)" : (isCur ? " ✓" : "")}</td>
+            <td>${pt.scoreA.toFixed(1)}</td>
+            <td>${pt.scoreB.toFixed(1)}</td>
+            <td class="${deltaClass(pt.diff, 0.5)}">${pt.diff >= 0 ? "+" : ""}${pt.diff.toFixed(1)}</td>
+          </tr>`;
+        }).join("");
+        elPcSplitGrid.classList.remove("hidden");
+
+        // Representative Sequence Traces
+        elPcTraceHeadA.textContent = isPcNnb ? "Move A" : "Pair A";
+        elPcTraceHeadB.textContent = isPcNnb ? "Move B" : "Pair B";
+        const traces = d.traces || [];
+        if (traces.length > 0) {
+          const tIdx = Math.max(0, Math.min(traces.length - 1, pc.traceIdx || 0));
+          pc.traceIdx = tIdx;
+          elPcTraceSelect.innerHTML = traces.map((tr, i) => {
+            const s = tr.diff >= 0 ? "+" : "";
+            return `<option value="${i}">${escapeHtml(tr.label)} · seq#${tr.seqIdx} (A=${tr.scoreA.toFixed(1)} vs B=${tr.scoreB.toFixed(1)}, ${s}${tr.diff.toFixed(1)})</option>`;
+          }).join("");
+          elPcTraceSelect.value = String(tIdx);
+
+          const tr = traces[tIdx];
+          const maxPlies = Math.max(tr.stepsA.length, tr.stepsB.length);
+          const fmtStepTd = (st, side, ply) => {
+            if (!st) return `<td class="muted">—</td>`;
+            const cid = `pc:step:${tIdx}:${side}:${ply}`;
+            const isPrev = state.customPreview && state.customPreview.id === cid;
+            if (st.died) {
+              return `<td class="pc-step-cell${isPrev ? " previewing" : ""}" data-pc-step-side="${side}" data-pc-step-ply="${ply}" style="color:var(--red);"><strong>TOP OUT</strong> (${st.evalScore.toFixed(0)})</td>`;
+            }
+            const mv = formatRelCoords(st.rel[0], st.rel[1], st.rel[2]);
+            const tuck = st.tuckInput && st.tuckInput !== "." ? ` <span class="pc-tuck">TUCK(${escapeHtml(st.tuckInput)})</span>` : "";
+            const clr = st.cleared > 0 ? ` <strong>+${st.cleared}L</strong>` : "";
+            const rew = Math.abs(st.stepReward) > 0.05 ? ` rew=${st.stepReward.toFixed(0)}` : "";
+            return `<td class="pc-step-cell${isPrev ? " previewing" : ""}" data-pc-step-side="${side}" data-pc-step-ply="${ply}" title="Click to preview piece on board">
+              <div><span class="muted">[${escapeHtml(st.aiMode)}]</span> <strong>${escapeHtml(mv)}</strong>${tuck}${clr}</div>
+              <div class="ph-sub">h=${st.trueHoles}/${st.partialHoles.toFixed(1)}${rew} · ev=${st.evalScore.toFixed(1)}</div>
+            </td>`;
+          };
+
+          const rowsHtml = [];
+          for (let ply = 0; ply < maxPlies; ply++) {
+            const stepA = tr.stepsA[ply] || null;
+            const stepB = tr.stepsB[ply] || null;
+            const pChar = (stepA && stepA.piece) || (stepB && stepB.piece) || "?";
+            rowsHtml.push(`<tr>
+              <td>${ply}</td>
+              <td><strong>${escapeHtml(pChar)}</strong></td>
+              ${fmtStepTd(stepA, "A", ply)}
+              ${fmtStepTd(stepB, "B", ply)}
+            </tr>`);
+          }
+          elPcTraceBody.innerHTML = rowsHtml.join("");
+          if (pc.selectedStepExpl) {
+            elPcStepExpl.innerHTML = pc.selectedStepExpl;
+            elPcStepExpl.classList.remove("hidden");
+          } else {
+            elPcStepExpl.classList.add("hidden");
+          }
+          elPcTraceSection.classList.remove("hidden");
+        } else {
+          elPcTraceSection.classList.add("hidden");
+        }
+      }
+
       function renderDiagnostics(entry, params, replay) {
         elTabSweepBtn.classList.toggle("active", state.activeDiagTab === "sweep");
         elTabPhantomBtn.classList.toggle("active", state.activeDiagTab === "phantom");
         elTabGtBtn.classList.toggle("active", state.activeDiagTab === "gt");
         elTabTmtBtn.classList.toggle("active", state.activeDiagTab === "tmt");
+        elTabPcBtn.classList.toggle("active", state.activeDiagTab === "pc");
         elPaneSweep.classList.toggle("hidden", state.activeDiagTab !== "sweep");
         elPanePhantom.classList.toggle("hidden", state.activeDiagTab !== "phantom");
         elPaneGt.classList.toggle("hidden", state.activeDiagTab !== "gt");
         elPaneTmt.classList.toggle("hidden", state.activeDiagTab !== "tmt");
+        elPanePc.classList.toggle("hidden", state.activeDiagTab !== "pc");
 
         const sweep = state.sweeps.get(entry.index) || null;
         const phState = state.phantomsByIndex.get(entry.index) || null;
         const gt = state.gtByIndex.get(entry.index) || null;
         const tmt = getOrInitTmtState(entry);
+        const pc = getOrInitPcState(entry);
 
         // ---- Sweep Pane ----
         const sweepRunning = Boolean(sweep && sweep.running);
@@ -3181,204 +4010,7 @@
         }
 
         // ---- Ground Truth Pane ----
-        const gtRunning = Boolean(gt && gt.running);
-        const gtMode = gt ? gt.mode : (isEntryNnbDefault(entry) ? "nnb" : "2ply");
-        elGtMode.value = gtMode;
-        elGtConts.disabled = gtMode === "nnb";
-        elGtLoadMovesBtn.disabled = state.inFlight;
-        elGtRunBtn.disabled = state.inFlight;
-        elGtRunBtn.textContent = gtRunning ? "Running GT..." : "Run Ground Truth";
-
-        const reachable = gt ? gt.reachable : [];
-        populateGtSelect(elGtMoveA, reachable, gt ? gt.selectedA : "", false);
-        populateGtSelect(elGtMoveB, reachable, gt ? gt.selectedB : "", false);
-        populateGtSelect(elGtMoveC, reachable, gt ? gt.selectedC : "", true);
-
-        if (gt && gt.error) {
-          elGtError.textContent = gt.error;
-          elGtError.classList.remove("hidden");
-        } else {
-          elGtError.classList.add("hidden");
-        }
-
-        if (!gt || !gt.data || !gt.data.candidates || gt.data.candidates.length === 0) {
-          elGtVerdict.classList.add("hidden");
-          elGtSummaryGrid.classList.add("hidden");
-          elGtResultsWrap.classList.add("hidden");
-          elGtInspector.classList.add("hidden");
-        } else {
-          const data = gt.data;
-          const isGtNnb = Boolean(data.isNoNextBox);
-          const cands = data.candidates.filter(c => c.reachable);
-          const effScore = (c) => isGtNnb && data.useDas ? (c.weightedAvg + (c.avgDasPenalty || 0)) : c.weightedAvg;
-          const bestCand = cands.reduce((acc, c) => (!acc || effScore(c) > effScore(acc) ? c : acc), null);
-
-          // Auto-verdict comparing Replay Default vs Ground Truth winner
-          const verdictTags = [
-            `<span class="mono muted">N=${data.playoutCount}, depth=${data.playoutLength}, mode=${escapeHtml(data.aiMode)}, ${data.elapsedMs}ms</span>`,
-          ];
-          if (isGtNnb) {
-            verdictTags.push(`<span class="tag green">1-ply NNB</span>`);
-          }
-          if (cands.length >= 2) {
-            const cA = cands[0], cB = cands[1];
-            const gap = effScore(cA) - effScore(cB);
-            const combSe = Math.sqrt(cA.weightedSe * cA.weightedSe + cB.weightedSe * cB.weightedSe);
-            const sign = gap >= 0 ? "+" : "";
-            verdictTags.push(`<span class="tag ${gap >= 0 ? "green" : "amber"}">A − B = ${sign}${gap.toFixed(2)} ± ${combSe.toFixed(2)}</span>`);
-
-            const repDefKey = (replay && replay.parsed && replay.parsed.defaultRow && replay.parsed.defaultRow.resolved)
-              ? lockKeyFromResolved(replay.parsed.defaultRow.resolved)
-              : null;
-            if (repDefKey && bestCand) {
-              if (repDefKey === bestCand.key) {
-                verdictTags.push(`<span class="tag green">GT agrees with Replay Default</span>`);
-              } else if (cands.some(c => c.key === repDefKey)) {
-                const repCand = cands.find(c => c.key === repDefKey);
-                const diff = effScore(bestCand) - effScore(repCand);
-                const dSe = Math.sqrt(bestCand.weightedSe ** 2 + repCand.weightedSe ** 2);
-                if (diff > 2 * dSe) {
-                  verdictTags.push(`<span class="tag red">GT prefers ${formatRelCoords(bestCand.relRot, bestCand.relX, bestCand.relY)} (+${diff.toFixed(1)}) → search / tournament / RT effect</span>`);
-                } else {
-                  verdictTags.push(`<span class="tag amber">Within ~2 SE of Replay Default</span>`);
-                }
-              }
-            }
-          }
-          elGtVerdict.innerHTML = verdictTags.join(" ");
-          elGtVerdict.classList.remove("hidden");
-
-          // Summary cards (clickable to preview ply-1 board!)
-          elGtSummaryGrid.innerHTML = cands.map((c, ci) => {
-            const lbl = String.fromCharCode(65 + ci);
-            const isWin = bestCand && c.key === bestCand.key;
-            const cid = `gt:ply1:${ci}`;
-            const isPrev = state.customPreview && state.customPreview.id === cid;
-            const cls = ["gt-card", isWin ? "winner" : "", isPrev ? "previewing" : ""].filter(Boolean).join(" ");
-            const mainVal = effScore(c);
-            const nnbExtra = isGtNnb
-              ? ` · death=${(c.deathPct || 0).toFixed(1)}%` +
-                (data.useDas ? ` · raw=${c.weightedAvg.toFixed(1)} · dasPen=${(c.avgDasPenalty || 0).toFixed(1)}` : "")
-              : "";
-            return `<div class="${cls}" data-gt-ply1="${ci}" title="Click to preview board after ply 1">
-              <div class="row-between">
-                <strong>${lbl}: ${formatRelCoords(c.relRot, c.relX, c.relY)}</strong>
-                <span class="muted">${escapeHtml(c.key)}</span>
-              </div>
-              <div class="gt-big">${mainVal.toFixed(2)} <span class="muted" style="font-size:11px; font-weight:400;">± ${c.weightedSe.toFixed(2)}</span></div>
-              <div class="muted" style="font-size:11px;">
-                ply1 eval=${c.fastEval.toFixed(1)} · das=${c.dasAfter} · +${c.linesCleared}L${nnbExtra}
-              </div>
-            </div>`;
-          }).join("");
-          elGtSummaryGrid.classList.remove("hidden");
-
-          if (isGtNnb && !data.useDas) {
-            elGtResultsWrap.classList.add("hidden");
-          } else if (isGtNnb) {
-            // 1-ply NNB DAS mode: show per-next-piece DAS penalties (raw 1-ply playout score is shared).
-            const headCols = [`<th>Next</th>`];
-            cands.forEach((c, ci) => {
-              const lbl = String.fromCharCode(65 + ci);
-              headCols.push(`<th>${lbl}: ${formatRelCoords(c.relRot, c.relX, c.relY)} (d${c.dasAfter})</th>`);
-            });
-            elGtHead.innerHTML = `<tr>${headCols.join("")}</tr>`;
-            elGtBody.innerHTML = PIECE_ORDER.map(p => {
-              const tds = [`<td style="white-space:nowrap;"><strong>${p}</strong></td>`];
-              cands.forEach(c => {
-                const cell = c.byPiece ? c.byPiece[p] : null;
-                if (!cell) {
-                  tds.push(`<td class="muted">—</td>`);
-                } else {
-                  const applied = c.dasAfter >= 15 ? 0 : (c.dasAfter >= 10 ? cell.partialPenalty : cell.minPenalty);
-                  const cls = applied < -0.05 ? "ph-pen-neg" : "muted";
-                  tds.push(
-                    `<td class="${cls}" style="white-space:nowrap;">` +
-                    `<strong>${applied.toFixed(1)}</strong> <span class="muted">(part ${cell.partialPenalty.toFixed(1)} / min ${cell.minPenalty.toFixed(1)})</span>` +
-                    `</td>`
-                  );
-                }
-              });
-              return `<tr>${tds.join("")}</tr>`;
-            }).join("");
-            elGtResultsWrap.classList.remove("hidden");
-          } else {
-            // 7-piece 2-ply table
-            const headCols = [`<th>Next</th>`];
-            cands.forEach((c, ci) => {
-              const lbl = String.fromCharCode(65 + ci);
-              headCols.push(`<th>${lbl}: ${formatRelCoords(c.relRot, c.relX, c.relY)}</th>`);
-            });
-            if (cands.length >= 2) {
-              headCols.push(`<th>A − B</th>`);
-            }
-            if (data.useDas) {
-              headCols.push(`<th>DAS Pen (part / min)</th>`);
-            }
-            elGtHead.innerHTML = `<tr>${headCols.join("")}</tr>`;
-
-            elGtBody.innerHTML = PIECE_ORDER.map(p => {
-              const tds = [`<td style="white-space:nowrap;"><strong>${p}</strong><button class="btn-link-xs" type="button" data-open-funnel="${p}" title="Inspect ${p} tournament funnel">Funnel</button></td>`];
-              cands.forEach((c, ci) => {
-                const cell = c.byPiece ? c.byPiece[p] : null;
-                const cid = `gt:ply2:${ci}:${p}`;
-                const isPrev = state.customPreview && state.customPreview.id === cid;
-                if (!cell) {
-                  tds.push(`<td class="muted">—</td>`);
-                } else {
-                  const deathTxt = cell.deathPct > 0 ? ` · ${cell.deathPct.toFixed(1)}%☠` : "";
-                  const rankTxt = cell.bestContEvalRank > 0 ? ` · #${cell.bestContEvalRank}` : "";
-                  const contRel = cell.bestContRel
-                    ? formatRelCoords(cell.bestContRel[0], cell.bestContRel[1], cell.bestContRel[2])
-                    : cell.bestCont;
-                  const ply2Clears = Math.max(0, (cell.linesCleared || 0) - (c.linesCleared || 0));
-                  const clrTxt = ply2Clears > 0 ? ` +${ply2Clears}L` : "";
-                  tds.push(
-                    `<td class="gt-cell${isPrev ? " previewing" : ""}" data-gt-cand="${ci}" data-gt-piece="${p}" title="Click to preview next-piece placement on board">` +
-                    `<div><strong>${cell.mean.toFixed(1)}</strong> <span class="muted">±${cell.se.toFixed(1)}${deathTxt}${rankTxt}</span></div>` +
-                    `<div class="gt-cont-line">${escapeHtml(contRel)}${clrTxt}</div>` +
-                    `</td>`
-                  );
-                }
-              });
-              if (cands.length >= 2) {
-                const pA = cands[0].byPiece ? cands[0].byPiece[p] : null;
-                const pB = cands[1].byPiece ? cands[1].byPiece[p] : null;
-                if (pA && pB) {
-                  const d = pA.mean - pB.mean;
-                  const cls = d > 0.5 ? "gt-delta-pos" : (d < -0.5 ? "gt-delta-neg" : "muted");
-                  tds.push(`<td class="${cls}">${d >= 0 ? "+" : ""}${d.toFixed(1)}</td>`);
-                } else {
-                  tds.push(`<td class="muted">—</td>`);
-                }
-              }
-              if (data.useDas) {
-                const penParts = cands.map((c, ci) => {
-                  const cell = c.byPiece ? c.byPiece[p] : null;
-                  if (!cell) return "—";
-                  const lbl = String.fromCharCode(65 + ci);
-                  const pp = Math.round(cell.partialPenalty);
-                  const mp = Math.round(cell.minPenalty);
-                  return (pp === 0 && mp === 0) ? `${lbl}:0` : `${lbl}:${pp}/${mp}`;
-                });
-                tds.push(`<td class="muted" style="white-space:nowrap; font-size:11px;">${escapeHtml(penParts.join(" · "))}</td>`);
-              }
-              return `<tr>${tds.join("")}</tr>`;
-            }).join("");
-            elGtResultsWrap.classList.remove("hidden");
-          }
-
-          // Selected cell inspector
-          if (gt.selectedCell) {
-            elGtInspector.innerHTML = gt.selectedCell;
-            elGtInspector.classList.remove("hidden");
-          } else {
-            elGtInspector.innerHTML = isGtNnb
-              ? `<span class="muted">Click any candidate card above to preview its resulting ply-1 board and <code>fastEval</code> breakdown.</span>`
-              : `<span class="muted">Click any candidate card (ply 1) or piece cell (ply 2) to preview its resulting board and <code>fastEval</code> breakdown.</span>`;
-            elGtInspector.classList.remove("hidden");
-          }
-        }
+        renderGroundTruthPane(entry, replay, gt);
 
         // ---- Stage 4: Tournament Funnel Pane ----
         const isTmtMode = params.pruningBreadth < 0;
@@ -3499,6 +4131,9 @@
           }
         }
 
+        // ---- Stage 5: Playout Compare Pane ----
+        renderPlayoutComparePane(pc);
+
         elDiagStatusNote.textContent = state.customPreview
           ? `Board preview: ${state.customPreview.caption}`
           : "";
@@ -3534,6 +4169,7 @@
         state.phantomsByIndex.clear();
         state.gtByIndex.clear();
         state.tmtByIndex.clear();
+        state.pcByIndex.clear();
         state.customPreview = null;
 
         if (entries.length === 0) {
@@ -3596,6 +4232,7 @@
         state.phantomsByIndex.clear();
         state.gtByIndex.clear();
         state.tmtByIndex.clear();
+        state.pcByIndex.clear();
         state.customPreview = null;
       }
 
@@ -3735,6 +4372,10 @@
           if (key === "pruningBreadth") {
             $("pPlayoutCountLabel").textContent = val === -2 ? "Budget (ms)" : "Playouts";
           }
+          if (key === "playoutLength") {
+            const pc = state.pcByIndex.get(entry.index);
+            if (pc) pc.overrideDepth = null;
+          }
           elResetParamsBtn.classList.toggle("hidden", !hasOverrides(entry));
           const tags = [];
           if (state.mode === "draw") tags.push(`<span class="tag" style="color:var(--accent);border-color:#93c5fd;background:#eff6ff;">CUSTOM BOARD</span>`);
@@ -3807,13 +4448,163 @@
         state.activeDiagTab = "tmt";
         renderCurrent();
       });
+      elTabPcBtn.addEventListener("click", () => {
+        state.activeDiagTab = "pc";
+        renderCurrent();
+      });
 
-      // Cross-tab Funnel shortcut buttons inside Phantom Collapse & Ground Truth tables
+      // Cross-tab Funnel & Playout-Compare shortcut buttons
       document.addEventListener("click", e => {
-        const btn = e.target.closest("button[data-open-funnel]");
-        if (!btn) return;
-        e.stopPropagation();
-        openFunnelForPiece(btn.dataset.openFunnel);
+        const funnelBtn = e.target.closest("button[data-open-funnel]");
+        if (funnelBtn) {
+          e.stopPropagation();
+          openFunnelForPiece(funnelBtn.dataset.openFunnel);
+          return;
+        }
+        const pcBtn = e.target.closest("button[data-open-pc]");
+        if (pcBtn) {
+          e.stopPropagation();
+          openPlayoutCompareFromGt(pcBtn.dataset.openPc);
+        }
+      });
+
+      elPcNextPiece.addEventListener("change", () => {
+        const entry = state.entries[state.currentIndex];
+        if (!entry) return;
+        const pc = getOrInitPcState(entry);
+        pc.nextPiece = elPcNextPiece.value;
+        if (pc.nextPiece !== "NNB") pc.firstFilter = "";
+        renderCurrent();
+      });
+      elPcFirstFilter.addEventListener("change", () => {
+        const entry = state.entries[state.currentIndex];
+        if (!entry) return;
+        const pc = getOrInitPcState(entry);
+        pc.firstFilter = elPcFirstFilter.value;
+        if (pc.data && pc.specA && pc.specB && !state.inFlight) {
+          runPlayoutCompare();
+        }
+      });
+      elPcN.addEventListener("change", () => {
+        const entry = state.entries[state.currentIndex];
+        if (!entry) return;
+        const pc = getOrInitPcState(entry);
+        if (pc.data && pc.specA && pc.specB && !state.inFlight) {
+          runPlayoutCompare();
+        }
+      });
+      elPcPairA.addEventListener("input", () => {
+        const entry = state.entries[state.currentIndex];
+        if (entry) getOrInitPcState(entry).specA = elPcPairA.value;
+      });
+      elPcPairB.addEventListener("input", () => {
+        const entry = state.entries[state.currentIndex];
+        if (entry) getOrInitPcState(entry).specB = elPcPairB.value;
+      });
+      elPcSwapBtn.addEventListener("click", () => {
+        const entry = state.entries[state.currentIndex];
+        if (!entry) return;
+        const pc = getOrInitPcState(entry);
+        const tmp = pc.specA;
+        pc.specA = pc.specB;
+        pc.specB = tmp;
+        elPcPairA.value = pc.specA;
+        elPcPairB.value = pc.specB;
+        if (pc.specA && pc.specB && !state.inFlight) {
+          runPlayoutCompare();
+        } else {
+          renderCurrent();
+        }
+      });
+      elRunPcBtn.addEventListener("click", () => runPlayoutCompare(null));
+
+      elPcDepthBody.addEventListener("click", e => {
+        const tr = e.target.closest("tr[data-pc-depth]");
+        if (!tr || state.inFlight) return;
+        const depth = Number(tr.dataset.pcDepth);
+        if (!Number.isNaN(depth) && depth > 0) {
+          runPlayoutCompare(depth);
+        }
+      });
+
+      elPcCards.addEventListener("click", e => {
+        const card = e.target.closest("[data-pc-pair-preview]");
+        if (!card) return;
+        const entry = state.entries[state.currentIndex];
+        const pc = entry ? getOrInitPcState(entry) : null;
+        if (!pc || !pc.data) return;
+        const side = card.dataset.pcPairPreview;
+        const sideData = side === "A" ? pc.data.sideA : pc.data.sideB;
+        if (!sideData || !sideData.boardAfter) return;
+        const isPcNnb = Boolean(pc.data.isNoNextBox || pc.data.nextPiece === "NNB");
+        state.customPreview = {
+          source: "pc",
+          id: `pc:pair:${side}`,
+          mode: "afterBoard",
+          afterRows: boardStrToRows(sideData.boardAfter),
+          caption: `${isPcNnb ? "Move" : "Pair"} ${side} after ${isPcNnb ? "ply 1" : "ply 2"} (depth 0 eval=${sideData.depth0Eval.toFixed(1)})`,
+        };
+        renderCurrent();
+      });
+
+      elPcTraceSelect.addEventListener("change", () => {
+        const entry = state.entries[state.currentIndex];
+        if (!entry) return;
+        const pc = getOrInitPcState(entry);
+        pc.traceIdx = Number(elPcTraceSelect.value) || 0;
+        pc.selectedStepExpl = null;
+        if (state.customPreview && state.customPreview.source === "pc") {
+          state.customPreview = null;
+        }
+        renderCurrent();
+      });
+
+      elPcTraceBody.addEventListener("click", e => {
+        const td = e.target.closest("td[data-pc-step-side]");
+        if (!td) return;
+        const entry = state.entries[state.currentIndex];
+        const pc = entry ? getOrInitPcState(entry) : null;
+        if (!pc || !pc.data || !pc.data.traces) return;
+        const tr = pc.data.traces[pc.traceIdx || 0];
+        if (!tr) return;
+        const side = td.dataset.pcStepSide;
+        const ply = Number(td.dataset.pcStepPly);
+        const steps = side === "A" ? tr.stepsA : tr.stepsB;
+        const st = steps ? steps[ply] : null;
+        if (!st) return;
+
+        const beforeRows = st.boardBefore ? boardStrToRows(st.boardBefore) : null;
+        const afterRows = st.boardAfter ? boardStrToRows(st.boardAfter) : null;
+        const pieceObj = PIECE_BY_ID[st.piece];
+        let sim = null;
+        if (!st.died && beforeRows && pieceObj) {
+          sim = simulateLock(beforeRows, pieceObj, st.rot, st.x, st.y);
+        }
+        const mv = st.died ? "TOP OUT" : formatRelCoords(st.rel[0], st.rel[1], st.rel[2]);
+        const isPcNnb = Boolean(pc.data.isNoNextBox || pc.data.nextPiece === "NNB");
+        state.customPreview = sim
+          ? {
+              source: "pc",
+              id: `pc:step:${pc.traceIdx}:${side}:${ply}`,
+              mode: "overlayPlacement",
+              beforeRows,
+              placement: sim,
+              afterRows,
+              caption: `Seq#${tr.seqIdx} ${side} ply ${ply}: ${st.piece} ${mv}`,
+            }
+          : {
+              source: "pc",
+              id: `pc:step:${pc.traceIdx}:${side}:${ply}`,
+              mode: "afterBoard",
+              afterRows: afterRows || beforeRows,
+              caption: `Seq#${tr.seqIdx} ${side} ply ${ply}: ${st.piece} ${mv}`,
+            };
+        const formattedExpl = (st.expl || "").replace(/;/g, "; ");
+        pc.selectedStepExpl =
+          `<strong>Seq#${tr.seqIdx} · ${isPcNnb ? "Move" : "Pair"} ${side} · ply ${ply} (${escapeHtml(st.piece)} [${escapeHtml(st.aiMode)}] ${escapeHtml(mv)})</strong> ` +
+          `· eval=<strong>${st.evalScore.toFixed(1)}</strong> · holes=${st.trueHoles}/${st.partialHoles.toFixed(1)}` +
+          `<div class="muted expl-wrap">${escapeHtml(formattedExpl)}</div>`;
+        renderCurrent();
       });
 
       elTmtNextPiece.addEventListener("change", () => {
@@ -3881,15 +4672,15 @@
         const nextPieceObj = PIECE_BY_ID[tmt.data.nextPiece];
         if (!cand || !ct || !cand.boardAfter || !nextPieceObj) return;
         const ply1Rows = boardStrToRows(cand.boardAfter);
-        const ply2Sim = simulateLock(ply1Rows, nextPieceObj, ct.rot, ct.x, ct.y);
-        if (!ply2Sim) return;
+        const stepSim = simulateLock(ply1Rows, nextPieceObj, ct.rot, ct.x, ct.y);
+        if (!stepSim) return;
         state.customPreview = {
           source: "tmt",
           id: `tmt:cont:${candKey}:${cIdx}`,
-          mode: "ply2Placement",
+          mode: "overlayPlacement",
           beforeRows: ply1Rows,
-          placement: ply2Sim,
-          afterRows: ply2Sim.afterRows,
+          placement: stepSim,
+          afterRows: stepSim.afterRows,
           caption: `Tmt ${formatRelCoords(cand.relRot, cand.relX, cand.relY)} → ${tmt.data.nextPiece} ${formatRelCoords(ct.relRot, ct.relX, ct.relY)}`,
         };
         renderCurrent();
@@ -4103,40 +4894,55 @@
         const cell = c && c.byPiece ? c.byPiece[pieceId] : null;
         if (!cell || !cell.boardAfter) return;
         const lbl = String.fromCharCode(65 + ci);
-        const contRel = cell.bestContRel ? formatRelCoords(cell.bestContRel[0], cell.bestContRel[1], cell.bestContRel[2]) : cell.bestCont;
+        const isGtNnb = Boolean(gt.data.isNoNextBox);
+        const meta = formatGtMoveMeta(cell, c);
         const ply1Rows = c.boardAfter ? boardStrToRows(c.boardAfter) : null;
         const nextPieceObj = PIECE_BY_ID[pieceId];
-        let ply2Sim = null;
-        if (ply1Rows && nextPieceObj && cell.bestCont) {
+        let stepSim = null;
+        if (meta.hasMove && ply1Rows && nextPieceObj) {
           const [cRot, cX, cY] = cell.bestCont.split("|").map(v => parseInt(v, 10));
           if (!Number.isNaN(cRot) && !Number.isNaN(cX) && !Number.isNaN(cY)) {
-            ply2Sim = simulateLock(ply1Rows, nextPieceObj, cRot, cX, cY);
+            stepSim = simulateLock(ply1Rows, nextPieceObj, cRot, cX, cY);
           }
         }
-        state.customPreview = ply2Sim
+        const captionPrefix = isGtNnb ? `GT NNB ${lbl} → ply0 ${pieceId}` : `GT ${lbl} → ${pieceId}`;
+        state.customPreview = stepSim
           ? {
               source: "gt",
               id: `gt:ply2:${ci}:${pieceId}`,
-              mode: "ply2Placement",
+              mode: "overlayPlacement",
               beforeRows: ply1Rows,
-              placement: ply2Sim,
+              placement: stepSim,
               afterRows: boardStrToRows(cell.boardAfter),
-              caption: `GT ${lbl} → ${pieceId} ${contRel}`,
+              caption: `${captionPrefix} ${meta.contRel}`,
             }
           : {
               source: "gt",
               id: `gt:ply2:${ci}:${pieceId}`,
               mode: "afterBoard",
               afterRows: boardStrToRows(cell.boardAfter),
-              caption: `GT ${lbl} → ${pieceId} ${contRel} (after ply 2)`,
+              caption: `${captionPrefix} ${meta.contRel}`,
             };
-        const ply2Clears = Math.max(0, (cell.linesCleared || 0) - (c.linesCleared || 0));
-        gt.selectedCell =
-          `<strong>${lbl} ${formatRelCoords(c.relRot, c.relX, c.relY)} → Next ${pieceId} ${contRel}</strong> ` +
-          `(cont#${cell.bestContEvalRank}, ply2 +${ply2Clears}L) · ` +
-          `GT=<strong>${cell.mean.toFixed(2)} ± ${cell.se.toFixed(2)}</strong> · ` +
-          `death=${cell.deathPct.toFixed(1)}% · ply2 eval=${cell.contEval.toFixed(2)}` +
-          `<div class="muted" style="margin-top:3px;">${escapeHtml(cell.contEvalExpl || "")}</div>`;
+        const tuckTxt = meta.tuckInput ? ` TUCK(${meta.tuckInput})` : "";
+        const formattedExpl = (cell.contEvalExpl || "").replace(/;/g, "; ");
+        if (isGtNnb) {
+          const isMissingSamples = !cell.sampleCount && gt.data.playoutCount > 0 && gt.data.playoutLength > 0;
+          const gtScoreHtml = isMissingSamples
+            ? `GT=<strong>— (n=0)</strong>`
+            : `GT=<strong>${cell.mean.toFixed(2)} ± ${cell.se.toFixed(2)}</strong> · death=${cell.deathPct.toFixed(1)}%`;
+          gt.selectedCell =
+            `<strong>${lbl} ${formatRelCoords(c.relRot, c.relX, c.relY)} → 1st piece ${pieceId} ${escapeHtml(meta.contRel)}${escapeHtml(tuckTxt)}</strong> ` +
+            `(greedy playout ply 0, +${meta.stepClears}L, n=${cell.sampleCount || 0}) · ` +
+            `${gtScoreHtml} · ply0 eval=${cell.contEval.toFixed(2)}` +
+            `<div class="muted expl-wrap">${escapeHtml(formattedExpl)}</div>`;
+        } else {
+          gt.selectedCell =
+            `<strong>${lbl} ${formatRelCoords(c.relRot, c.relX, c.relY)} → Next ${pieceId} ${escapeHtml(meta.contRel)}</strong> ` +
+            `(cont#${cell.bestContEvalRank}, ply2 +${meta.stepClears}L) · ` +
+            `GT=<strong>${cell.mean.toFixed(2)} ± ${cell.se.toFixed(2)}</strong> · ` +
+            `death=${cell.deathPct.toFixed(1)}% · ply2 eval=${cell.contEval.toFixed(2)}` +
+            `<div class="muted expl-wrap">${escapeHtml(formattedExpl)}</div>`;
+        }
         renderCurrent();
       });
 

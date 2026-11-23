@@ -90,6 +90,18 @@ Routes:
   (`pruningBreadth == -1` or `-2`); `503` `Busy` while an async `/precompute`
   job is running; `400` on missing `p`/`next`; `500` on `|` delimiter, pipe
   error, or non-tournament `pruningBreadth`.
+- `GET /debug-playout-compare?p=<pipe>&next=<0..6|I..Z|NNB|-1>&a=<spec>&b=<spec>[&n=500][&first=<0..6|I..Z>]`
+  → `200` + synchronous JSON paired playout decomposition between two
+  `(firstKey;secondKey)` pairs in 2-ply mode, or two ply-1 `firstKey` placements
+  in 1-ply NNB mode (`next=NNB` or `-1`, with optional `first=` to restrict to
+  canonical sequences starting with a specific piece; returned `playoutCount` may
+  be smaller than `requestedPlayoutCount` if fewer matching rows exist in the
+  canonical batch), across `n` canonical sequences (if the pipe's `playoutLength`
+  is `0`, defaults to depth `8`; returns `sideA`/`sideB`, additive leaf-eval
+  factor deltas, quantiles, survival & behavioral stats, depth curve, and up to
+  4 curated ply-by-ply traces; `503` `Busy` while an async `/precompute` job is
+  running; `400` on missing/invalid params; `500` on pipe error or unreachable
+  placement/pair).
 
 The comma-delimited URL contract: the `p` parameter is the request string
 delimited by `,` so queries are valid unencoded in browsers and match the

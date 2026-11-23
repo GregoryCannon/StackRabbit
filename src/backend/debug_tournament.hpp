@@ -16,42 +16,46 @@ namespace debug_tmt {
 constexpr int NEXT_PIECE_NNB = -1;
 constexpr int NEXT_PIECE_INVALID = -2;
 
+inline int parsePieceIndex(const std::string &arg) {
+  if (arg.size() != 1) {
+    return NEXT_PIECE_INVALID;
+  }
+  char c = arg[0];
+  if (c >= '0' && c <= '6') {
+    return c - '0';
+  }
+  switch (c) {
+  case 'I':
+  case 'i':
+    return 0;
+  case 'O':
+  case 'o':
+    return 1;
+  case 'L':
+  case 'l':
+    return 2;
+  case 'J':
+  case 'j':
+    return 3;
+  case 'T':
+  case 't':
+    return 4;
+  case 'S':
+  case 's':
+    return 5;
+  case 'Z':
+  case 'z':
+    return 6;
+  default:
+    return NEXT_PIECE_INVALID;
+  }
+}
+
 inline int parseNextPieceArg(const std::string &arg) {
   if (arg == "-1" || arg == "NNB" || arg == "nnb" || arg == "none" || arg == "NONE") {
     return NEXT_PIECE_NNB;
   }
-  if (arg.size() == 1) {
-    char c = arg[0];
-    if (c >= '0' && c <= '6') {
-      return c - '0';
-    }
-    switch (c) {
-    case 'I':
-    case 'i':
-      return 0;
-    case 'O':
-    case 'o':
-      return 1;
-    case 'L':
-    case 'l':
-      return 2;
-    case 'J':
-    case 'j':
-      return 3;
-    case 'T':
-    case 't':
-      return 4;
-    case 'S':
-    case 's':
-      return 5;
-    case 'Z':
-    case 'z':
-      return 6;
-    default:
-      return NEXT_PIECE_INVALID;
-    }
-  }
-  return NEXT_PIECE_INVALID;
+  return parsePieceIndex(arg);
 }
 
 inline bool parseLockKey(const std::string &key, int &rot, int &x, int &y) {

@@ -1749,7 +1749,39 @@ TEST_CASE("runDebugGroundTruth validates arguments and compares placements acros
   REQUIRE(nnbJson.rfind("Error:", 0) != 0);
   CHECK(nnbJson.find("\"isNoNextBox\":true") != std::string::npos);
   CHECK(nnbJson.find("\"avgDasPenalty\":") != std::string::npos);
-  CHECK(nnbJson.find("\"bestCont\":\"none\"") != std::string::npos);
+  CHECK(nnbJson.find("\"bestCont\":\"none\"") == std::string::npos);
+  CHECK(nnbJson.find("\"bestContTuck\":\"") != std::string::npos);
+  // Verify ply-1 fastEval does not double-count firstMoveReward when ply 1 clears lines.
+  std::string wellPipe = InputBuilder()
+                             .withBoard1(makeWellBoard(4, 4, 9))
+                             .withLevel(18)
+                             .withLines(0)
+                             .withCurPiece(IDX_I)
+                             .withNextPiece(-1)
+                             .withTimeline("X.X.X.X.X.X.X.X.")
+                             .withPlayoutCount(0)
+                             .withPlayoutLength(0)
+                             .withPruningBreadth(-1)
+                             .withAggression("safe")
+                             .withDasCharge(-1)
+                             .build()
+                         + "0|";
+  std::string wellGtJson = debug_gt::runDebugGroundTruth(wellPipe, {},
+                                                         /* playoutCount= */ 0, /* maxConts= */ 1,
+                                                         /* noNextBox= */ true);
+  REQUIRE(wellGtJson.rfind("Error:", 0) != 0);
+  // Candidate 0 is the well-fill Tetris (+4 lines). In eval-only NNB mode, fastEval (summary)
+  // and weightedAvg (b.firstMoveEval) must match (no double-counting firstMoveReward).
+  size_t candsPos = wellGtJson.find("\"candidates\":[");
+  REQUIRE(candsPos != std::string::npos);
+  size_t fePos = wellGtJson.find("\"fastEval\":", candsPos);
+  size_t waPos = wellGtJson.find("\"weightedAvg\":", candsPos);
+  REQUIRE(fePos != std::string::npos);
+  REQUIRE(waPos != std::string::npos);
+  CHECK(wellGtJson.find("\"linesCleared\":4", candsPos) < waPos);
+  std::string feVal = wellGtJson.substr(fePos + 11, wellGtJson.find(',', fePos) - (fePos + 11));
+  std::string waVal = wellGtJson.substr(waPos + 14, wellGtJson.find(',', waPos) - (waPos + 14));
+  CHECK(feVal == waVal);
 }
 
 TEST_CASE("runDebugPrecompute returns ranked phantom collapse breakdown matching winner") {
@@ -1850,6 +1882,216 @@ TEST_CASE("runDebugTournament traces R1/Cut1/R2/Cut2/R3 and validates inputs") {
   CHECK(nnbJson.find("\"useTieredR1\":false") != std::string::npos);
   CHECK(nnbJson.find("\"contKey\":\"none\"") != std::string::npos);
   CHECK(nnbJson.find("\"isR3Cont\":true") != std::string::npos);
+}
+
+TEST_CASE("runDebugPlayoutCompare matches getPlayoutScore exactly and decomposes deltas") {
+  // Level-19 right-well board with a col-0 step where J [1,2,11] (overhang) and J [1,-4,14]
+  // (left wall) both answer Z with [1,-3,13]: verifies exact parity with getPlayoutScore plus
+  // score-delta, behavioral, depth-curve, and trace fields in both 2-ply and 1-ply NNB modes.
+  const std::string board = "00000000000000000000000000000000000000000000000000"
+                            "00000000000000000000000000000000000000000000000000"
+                            "00000000000000000000000000000000000010000001001000"
+                            "00111011001111111110111111111011111111101111111110";
+  REQUIRE(board.size() == 200);
+  std::string pipe = InputBuilder()
+                         .withBoard1(board)
+                         .withLevel(19)
+                         .withLines(10)
+                         .withCurPiece(IDX_J)
+                         .withNextPiece(-1)
+                         .withTimeline("X.....")
+                         .withPlayoutCount(300)
+                         .withPlayoutLength(8)
+                         .withPruningBreadth(-2)
+                         .withAggression("aggro")
+                         .withDasCharge(15)
+                         .build()
+                     + "0|";
+
+  // Validation error checks
+  CHECK(debug_pc::runDebugPlayoutCompare(pipe, debug_tmt::NEXT_PIECE_INVALID, "1|5|10;1|0|12",
+                                         "1|-1|13;1|0|12", 20)
+            .rfind("Error:", 0)
+        == 0);
+  CHECK(debug_pc::runDebugPlayoutCompare(pipe, IDX_Z, "badpair", "1|-1|13;1|0|12", 20)
+            .rfind("Error:", 0)
+        == 0);
+  CHECK(debug_pc::runDebugPlayoutCompare(pipe, IDX_Z, "1|5|10;1|0|12", "1|-1|13;1|0|12", 0)
+            .rfind("Error:", 0)
+        == 0);
+  CHECK(debug_pc::runDebugPlayoutCompare(pipe, IDX_Z, "1|5|10;1|0|12", "1|-1|13;1|0|12",
+                                         CANONICAL_SEQUENCE_BATCH_SIZE + 1)
+            .rfind("Error:", 0)
+        == 0);
+  CHECK(debug_pc::runDebugPlayoutCompare(pipe, IDX_Z, "1|5|10;1|0|12", "1|-1|13;1|0|12", 20,
+                                         /* filterFirstPieceIdx= */ IDX_I)
+            .rfind("Error:", 0)
+        == 0);
+  CHECK(debug_pc::runDebugPlayoutCompare(pipe, debug_tmt::NEXT_PIECE_NNB, "1|5|10", "1|-1|13", 20,
+                                         /* filterFirstPieceIdx= */ 7)
+            .rfind("Error:", 0)
+        == 0);
+  CHECK(debug_pc::runDebugPlayoutCompare(pipe, debug_tmt::NEXT_PIECE_NNB, "1|5|10;1|0|12",
+                                         "1|-1|13", 20)
+            .rfind("Error:", 0)
+        == 0);
+  // Unreachable placement/pair returns an explicit error
+  CHECK(debug_pc::runDebugPlayoutCompare(pipe, debug_tmt::NEXT_PIECE_NNB, "0|9|19", "1|-1|13", 10)
+            .rfind("Error:", 0)
+        == 0);
+  CHECK(debug_pc::runDebugPlayoutCompare(pipe, IDX_Z, "0|9|19;1|0|12", "1|-1|13;1|0|12", 10)
+            .rfind("Error:", 0)
+        == 0);
+
+  std::string json =
+      debug_pc::runDebugPlayoutCompare(pipe, IDX_Z, "1|5|10;1|0|12", "1|-1|13;1|0|12", 50);
+  REQUIRE(json.rfind("Error:", 0) != 0);
+  CHECK(json.find("\"sideA\":{") != std::string::npos);
+  CHECK(json.find("\"sideB\":{") != std::string::npos);
+  CHECK(json.find("\"depth0Eval\":") != std::string::npos);
+  CHECK(json.find("\"winsA\":") != std::string::npos);
+  CHECK(json.find("\"leafTermDeltas\":[") != std::string::npos);
+  CHECK(json.find("\"depthCurve\":[") != std::string::npos);
+  CHECK(json.find("\"traces\":[") != std::string::npos);
+  CHECK(json.find("\"quantiles\":{") != std::string::npos);
+
+  // Verify exact parity with getPlayoutScore on depth 8, N=50 for both sideA and sideB
+  debug_gt::ParsedDebugPipe parsed;
+  std::string parseErr;
+  REQUIRE(debug_gt::parseDebugPipe(pipe, parsed, parseErr));
+  const std::string eqTl = getDasEquivalentInputTimeline(parsed.inputFrameTimeline.c_str());
+  const PieceRangeContext contexts[4] = {
+      getPieceRangeContext(eqTl.c_str(), 1, true),
+      getPieceRangeContext(eqTl.c_str(), 1, false),
+      getPieceRangeContext(eqTl.c_str(), 2, false),
+      getPieceRangeContext(eqTl.c_str(), 3, false),
+  };
+  const EvalContext ctx = getEvalContext(parsed.gameState, contexts, false, parsed.aggressionLevel);
+  std::vector<Possibility> poss;
+  searchDepth2(parsed.gameState, parsed.curPiece, &PIECE_LIST[IDX_Z], parsed.dasCharge, 15,
+               parsed.inputFrameTimeline.c_str(), &ctx, poss);
+  const Possibility *pA = nullptr;
+  const Possibility *pB = nullptr;
+  for (const Possibility &p : poss) {
+    if (encodeLockPosition(p.firstPlacement) == "1|5|10"
+        && encodeLockPosition(p.secondPlacement) == "1|0|12") {
+      pA = &p;
+    }
+    if (encodeLockPosition(p.firstPlacement) == "1|-1|13"
+        && encodeLockPosition(p.secondPlacement) == "1|0|12") {
+      pB = &p;
+    }
+  }
+  REQUIRE(pA != nullptr);
+  REQUIRE(pB != nullptr);
+  const float expectedA =
+      pA->immediateReward
+      + getPlayoutScore(pA->resultingState, 50, 8, contexts, IDX_Z, AGGRO, ctx.aiMode, nullptr);
+  const float expectedB =
+      pB->immediateReward
+      + getPlayoutScore(pB->resultingState, 50, 8, contexts, IDX_Z, AGGRO, ctx.aiMode, nullptr);
+  const size_t sideAPos = json.find("\"sideA\":");
+  const size_t sideBPos = json.find("\"sideB\":");
+  REQUIRE(sideAPos != std::string::npos);
+  REQUIRE(sideBPos != std::string::npos);
+  const std::string sideASlice = json.substr(sideAPos, sideBPos - sideAPos);
+  const std::string sideBSlice = json.substr(sideBPos, json.find("\"meanDiff\":") - sideBPos);
+  char expectedBuf[32];
+  snprintf(expectedBuf, sizeof(expectedBuf), "\"mean\":%.2f", expectedA);
+  CHECK(sideASlice.find(expectedBuf) != std::string::npos);
+  snprintf(expectedBuf, sizeof(expectedBuf), "\"mean\":%.2f", expectedB);
+  CHECK(sideBSlice.find(expectedBuf) != std::string::npos);
+
+  // 1-ply NNB mode: exact parity with getPlayoutScore(..., curPiece=IDX_J) + first-piece filter
+  std::string nnbJson =
+      debug_pc::runDebugPlayoutCompare(pipe, debug_tmt::NEXT_PIECE_NNB, "1|5|10", "1|-1|13", 50);
+  REQUIRE(nnbJson.rfind("Error:", 0) != 0);
+  CHECK(nnbJson.find("\"isNoNextBox\":true") != std::string::npos);
+  CHECK(nnbJson.find("\"nextPiece\":\"NNB\"") != std::string::npos);
+  CHECK(nnbJson.find("\"filterFirstPiece\":null") != std::string::npos);
+  CHECK(nnbJson.find("\"ply1 immediateReward\"") != std::string::npos);
+  CHECK(nnbJson.find("\"secondRel\":null") != std::string::npos);
+
+  const FirstMoveSearchResult firstMoves = buildFirstMoveBranches(
+      parsed.gameState, parsed.curPiece, parsed.dasCharge, parsed.inputFrameTimeline.c_str(), &ctx);
+  const FirstMoveBranch *bA = nullptr;
+  for (const FirstMoveBranch &b : firstMoves.branches) {
+    if (encodeLockPosition({b.firstPlacement.x, b.firstPlacement.y, b.firstPlacement.rotationIndex})
+        == "1|5|10") {
+      bA = &b;
+      break;
+    }
+  }
+  REQUIRE(bA != nullptr);
+  const float expectedNnbA =
+      bA->firstMoveReward
+      + getPlayoutScore(bA->afterFirstMove, 50, 8, contexts, IDX_J, AGGRO, ctx.aiMode, nullptr);
+  const size_t nnbAPos = nnbJson.find("\"sideA\":");
+  const size_t nnbBPos = nnbJson.find("\"sideB\":");
+  REQUIRE(nnbAPos != std::string::npos);
+  REQUIRE(nnbBPos != std::string::npos);
+  snprintf(expectedBuf, sizeof(expectedBuf), "\"mean\":%.2f", expectedNnbA);
+  CHECK(nnbJson.substr(nnbAPos, nnbBPos - nnbAPos).find(expectedBuf) != std::string::npos);
+
+  std::string nnbFilteredJson = debug_pc::runDebugPlayoutCompare(
+      pipe, debug_tmt::NEXT_PIECE_NNB, "1|5|10", "1|-1|13", 25, /* filterFirstPieceIdx= */ IDX_Z);
+  REQUIRE(nnbFilteredJson.rfind("Error:", 0) != 0);
+  CHECK(nnbFilteredJson.find("\"filterFirstPiece\":\"Z\"") != std::string::npos);
+  CHECK(nnbFilteredJson.find("\"playoutCount\":25") != std::string::npos);
+
+  // Pin 1-ply NNB depth0Eval on a ply-1 Tetris (must NOT double-count firstMoveReward).
+  std::string wellPipe = InputBuilder()
+                             .withBoard1(makeWellBoard(4, 4, 9))
+                             .withLevel(18)
+                             .withLines(0)
+                             .withCurPiece(IDX_I)
+                             .withNextPiece(-1)
+                             .withTimeline("X.X.X.X.X.X.X.X.")
+                             .withPlayoutCount(10)
+                             .withPlayoutLength(2)
+                             .withPruningBreadth(-1)
+                             .withAggression("safe")
+                             .withDasCharge(-1)
+                             .build()
+                         + "0|";
+  debug_gt::ParsedDebugPipe wellParsed;
+  REQUIRE(debug_gt::parseDebugPipe(wellPipe, wellParsed, parseErr));
+  const PieceRangeContext wellCtxs[4] = {
+      getPieceRangeContext("X.X.X.X.X.X.X.X.", 1, true),
+      getPieceRangeContext("X.X.X.X.X.X.X.X.", 1, false),
+      getPieceRangeContext("X.X.X.X.X.X.X.X.", 2, false),
+      getPieceRangeContext("X.X.X.X.X.X.X.X.", 3, false),
+  };
+  const EvalContext wellEvalCtx = getEvalContext(wellParsed.gameState, wellCtxs, false, SAFE);
+  const FirstMoveSearchResult wellFirst = buildFirstMoveBranches(
+      wellParsed.gameState, wellParsed.curPiece, -1, "X.X.X.X.X.X.X.X.", &wellEvalCtx);
+  const FirstMoveBranch *tetrisBranch = nullptr;
+  const FirstMoveBranch *altBranch = nullptr;
+  for (const FirstMoveBranch &b : wellFirst.branches) {
+    if (b.afterFirstMove.lines == 4) {
+      tetrisBranch = &b;
+    } else if (altBranch == nullptr) {
+      altBranch = &b;
+    }
+  }
+  REQUIRE(tetrisBranch != nullptr);
+  REQUIRE(altBranch != nullptr);
+  REQUIRE(tetrisBranch->firstMoveReward > 1.0f);
+  const std::string tetrisKey =
+      encodeLockPosition({tetrisBranch->firstPlacement.x, tetrisBranch->firstPlacement.y,
+                          tetrisBranch->firstPlacement.rotationIndex});
+  const std::string altKey =
+      encodeLockPosition({altBranch->firstPlacement.x, altBranch->firstPlacement.y,
+                          altBranch->firstPlacement.rotationIndex});
+  std::string wellCompareJson =
+      debug_pc::runDebugPlayoutCompare(wellPipe, debug_tmt::NEXT_PIECE_NNB, tetrisKey, altKey, 5);
+  REQUIRE(wellCompareJson.rfind("Error:", 0) != 0);
+  snprintf(expectedBuf, sizeof(expectedBuf), "\"depth0Eval\":%.2f", tetrisBranch->firstMoveEval);
+  const size_t wAPos = wellCompareJson.find("\"sideA\":");
+  const size_t wBPos = wellCompareJson.find("\"sideB\":");
+  REQUIRE(wAPos != std::string::npos);
+  REQUIRE(wBPos != std::string::npos);
+  CHECK(wellCompareJson.substr(wAPos, wBPos - wAPos).find(expectedBuf) != std::string::npos);
 }
 
 #endif // SR_REQUEST_TYPE_TESTS
