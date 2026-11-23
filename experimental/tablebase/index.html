@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -25,7 +26,9 @@
       --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     }
 
-    * { box-sizing: border-box; }
+    * {
+      box-sizing: border-box;
+    }
 
     body {
       margin: 0;
@@ -60,13 +63,17 @@
       gap: 8px;
     }
 
-    input, select, button {
+    input,
+    select,
+    button {
       font-family: inherit;
       font-size: 12.5px;
       color: var(--text);
     }
 
-    input[type="text"], input[type="number"], select {
+    input[type="text"],
+    input[type="number"],
+    select {
       background: #fff;
       border: 1px solid var(--border);
       border-radius: 5px;
@@ -74,7 +81,10 @@
       outline: none;
     }
 
-    input:focus, select:focus { border-color: var(--accent); }
+    input:focus,
+    select:focus {
+      border-color: var(--accent);
+    }
 
     button {
       background: var(--surface-alt);
@@ -89,7 +99,10 @@
       border-color: var(--border-hover);
     }
 
-    button:disabled { opacity: 0.45; cursor: not-allowed; }
+    button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
 
     button.primary {
       background: var(--accent);
@@ -118,11 +131,31 @@
       font-weight: 600;
       font-family: var(--mono);
     }
-    .badge.ok { background: var(--green-bg); color: var(--green); }
-    .badge.warn { background: var(--amber-bg); color: var(--amber); }
-    .badge.err { background: var(--red-bg); color: var(--red); }
-    .badge.neutral { background: #e2e8f0; color: #334155; }
-    .badge.accent { background: #dbeafe; color: #1d4ed8; }
+
+    .badge.ok {
+      background: var(--green-bg);
+      color: var(--green);
+    }
+
+    .badge.warn {
+      background: var(--amber-bg);
+      color: var(--amber);
+    }
+
+    .badge.err {
+      background: var(--red-bg);
+      color: var(--red);
+    }
+
+    .badge.neutral {
+      background: #e2e8f0;
+      color: #334155;
+    }
+
+    .badge.accent {
+      background: #dbeafe;
+      color: #1d4ed8;
+    }
 
     main {
       display: grid;
@@ -134,7 +167,9 @@
     }
 
     @media (max-width: 960px) {
-      main { grid-template-columns: 1fr; }
+      main {
+        grid-template-columns: 1fr;
+      }
     }
 
     .card {
@@ -179,25 +214,21 @@
 
     /* Rows 0..11: Forbidden upper ceiling */
     .cell.forbidden-upper {
-      background: repeating-linear-gradient(
-        -45deg,
-        #1e293b,
-        #1e293b 4px,
-        #172033 4px,
-        #172033 8px
-      );
+      background: repeating-linear-gradient(-45deg,
+          #1e293b,
+          #1e293b 4px,
+          #172033 4px,
+          #172033 8px);
       opacity: 0.72;
     }
 
     /* Rows 12..15: 4-row Entry Zone above the pre-clear ceiling */
     .cell.entry-zone {
-      background: repeating-linear-gradient(
-        -45deg,
-        #1e293b,
-        #1e293b 5px,
-        #233047 5px,
-        #233047 10px
-      );
+      background: repeating-linear-gradient(-45deg,
+          #1e293b,
+          #1e293b 5px,
+          #233047 5px,
+          #233047 10px);
     }
 
     /* Red 4-row pre-clear ceiling line above playable rows 16..19 */
@@ -205,8 +236,13 @@
       border-top: 2px solid #ef4444;
     }
 
-    .cell.playable { background: #0f172a; }
-    .cell.editable { cursor: crosshair; }
+    .cell.playable {
+      background: #0f172a;
+    }
+
+    .cell.editable {
+      cursor: crosshair;
+    }
 
     .cell.filled {
       background: #64748b;
@@ -326,7 +362,8 @@
       font-size: 12px;
     }
 
-    th, td {
+    th,
+    td {
       padding: 6px 8px;
       text-align: left;
       border-bottom: 1px solid #eef2f6;
@@ -343,11 +380,25 @@
       z-index: 1;
     }
 
-    tbody tr { cursor: pointer; }
-    tbody tr:hover { background: #eff6ff; }
-    tbody tr.best-row { background: #f0fdf4; }
-    tbody tr.disagree-tb-row { background: #fffbeb; }
-    tbody tr.disagree-heur-row { background: #f0f9ff; }
+    tbody tr {
+      cursor: pointer;
+    }
+
+    tbody tr:hover {
+      background: #eff6ff;
+    }
+
+    tbody tr.best-row {
+      background: #f0fdf4;
+    }
+
+    tbody tr.disagree-tb-row {
+      background: #fffbeb;
+    }
+
+    tbody tr.disagree-heur-row {
+      background: #f0f9ff;
+    }
 
     .kbd {
       display: inline-block;
@@ -359,26 +410,40 @@
       font-size: 11px;
     }
 
-    .muted { color: var(--muted); }
+    .muted {
+      color: var(--muted);
+    }
+
     .banner {
       padding: 7px 10px;
       border-radius: 6px;
       margin-top: 8px;
       font-size: 12px;
     }
-    .banner.err { background: var(--red-bg); color: var(--red); }
-    .banner.warn { background: var(--amber-bg); color: var(--amber); }
+
+    .banner.err {
+      background: var(--red-bg);
+      color: var(--red);
+    }
+
+    .banner.warn {
+      background: var(--amber-bg);
+      color: var(--amber);
+    }
   </style>
 </head>
+
 <body>
   <header>
     <div class="row-controls">
       <h1>Very Low Lineout — Tablebase Harness</h1>
-      <span id="serverStatus" class="badge neutral" title="Click to ping server" style="cursor:pointer;">Connecting...</span>
+      <span id="serverStatus" class="badge neutral" title="Click to ping server"
+        style="cursor:pointer;">Connecting...</span>
     </div>
     <div class="row-controls">
       <label class="muted">Server:</label>
-      <input id="serverUrlInput" type="text" value="http://127.0.0.1:3030" style="width:180px;font-family:var(--mono);" />
+      <input id="serverUrlInput" type="text" value="http://127.0.0.1:3030"
+        style="width:180px;font-family:var(--mono);" />
       <button id="btnPing">Ping</button>
       <button id="btnReloadTb" title="Re-mmap the CLI-configured tablebase file">Reload TB</button>
     </div>
@@ -396,7 +461,8 @@
         <div class="board-wrap">
           <div id="boardGrid" class="board-grid" tabindex="0"></div>
           <div class="zone-legend">
-            Striped = Empty Ceiling / Entry Zone &middot; <span style="color:#dc2626;font-weight:600;">Red Line</span> = 4-Row Pre-Clear Cap &middot; Bottom 4 = Playfield
+            Striped = Empty Ceiling / Entry Zone &middot; <span style="color:#dc2626;font-weight:600;">Red Line</span> =
+            4-Row Pre-Clear Cap &middot; Bottom 4 = Playfield
           </div>
         </div>
 
@@ -422,15 +488,23 @@
 
         <div class="row-controls" style="margin-top:8px;">
           <label class="muted">Seed:</label>
-          <input id="seedInput" type="text" value="42" style="width:84px;font-family:var(--mono);" />
+          <input id="seedInput" type="text" value="42" style="width:96px;font-family:var(--mono);" />
+          <label class="muted" style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;"
+            title="Generate a fresh seed from the system clock on each New Game">
+            <input id="randomSeedCheckbox" type="checkbox" checked />
+            <span>Clock</span>
+          </label>
           <label class="muted">Hex:</label>
-          <input id="hexInput" type="text" value="0000000000" maxlength="10" style="width:105px;font-family:var(--mono);" />
+          <input id="hexInput" type="text" value="0000000000" maxlength="10"
+            style="width:105px;font-family:var(--mono);" />
           <button id="btnLoadHex">Set</button>
         </div>
 
         <div style="margin-top:10px;font-size:11.5px;" class="muted">
-          <div><span class="kbd">←</span><span class="kbd">→</span> Shift &nbsp; <span class="kbd">Z</span>/<span class="kbd">X</span> Spin &nbsp; <span class="kbd">Space</span> Drop</div>
-          <div style="margin-top:3px;"><span class="kbd">↓</span> Step down for 1-input tuck/spin (shift then spin at the same row performs combo <span class="kbd">E/I/F/G</span>; <span class="kbd">R</span> resets drop).</div>
+          <div><span class="kbd">←</span><span class="kbd">→</span> Shift &nbsp; <span class="kbd">Z</span>/<span
+              class="kbd">X</span> Spin &nbsp; <span class="kbd">Space</span> Drop</div>
+          <div style="margin-top:3px;"><span class="kbd">↓</span> Step down for 1-input tuck/spin (shift then spin at
+            the same row performs combo <span class="kbd">E/I/F/G</span>; <span class="kbd">R</span> resets drop).</div>
         </div>
       </div>
     </div>
@@ -452,7 +526,9 @@
           </select>
           <button id="btnStepAi" class="primary">Step AI (1)</button>
           <button id="btnAutoPlay">Autoplay</button>
-          <button id="btnNextDisagree" disabled title="Requires a loaded tablebase: steps AI forward until Tablebase and Heuristic pick different afterBoards">Step to Disagreement</button>
+          <button id="btnNextDisagree" disabled
+            title="Requires a loaded tablebase: steps AI forward until Tablebase and Heuristic pick different afterBoards">Step
+            to Disagreement</button>
           <label class="muted">Speed:</label>
           <input id="speedInput" type="range" min="1" max="60" value="12" style="width:90px;" />
           <span id="speedLabel" class="muted" style="font-family:var(--mono);width:48px;">12/s</span>
@@ -462,13 +538,17 @@
           <div class="stat-item"><span>Lines Cleared</span><span id="statLines" class="stat-val">0</span></div>
           <div class="stat-item"><span>Pieces Placed</span><span id="statPieces" class="stat-val">0</span></div>
           <div class="stat-item"><span>Tablebase V(b)</span><span id="statBoardVal" class="stat-val">—</span></div>
-          <div class="stat-item"><span>Bellman 1/7 Σ max Q</span><span id="statBackupVal" class="stat-val">—</span></div>
-          <div class="stat-item"><span>Holes (Open Overhangs)</span><span id="statHoles" class="stat-val">0 (0)</span></div>
-          <div class="stat-item"><span>Heuristic Board Score</span><span id="statHeur" class="stat-val">0.00</span></div>
+          <div class="stat-item"><span>Bellman 1/7 Σ max Q</span><span id="statBackupVal" class="stat-val">—</span>
+          </div>
+          <div class="stat-item"><span>Holes (Open Overhangs)</span><span id="statHoles" class="stat-val">0 (0)</span>
+          </div>
+          <div class="stat-item"><span>Heuristic Board Score</span><span id="statHeur" class="stat-val">0.00</span>
+          </div>
         </div>
 
         <div style="margin-top:10px;">
-          <div class="muted" style="font-size:12px;font-weight:600;">Per-Piece Best Q (click to switch current piece; amber = TB ≠ Heuristic):</div>
+          <div class="muted" style="font-size:12px;font-weight:600;">Per-Piece Best Q (click to switch current piece;
+            amber = TB ≠ Heuristic):</div>
           <div id="pieceEvStrip" class="piece-ev-strip"></div>
         </div>
       </div>
@@ -909,8 +989,8 @@
           ? "DEAD"
           : (p.bestTablebaseQ !== null ? p.bestTablebaseQ.toFixed(2) : p.bestHeuristicScore.toFixed(1));
         box.innerHTML = `<div style="font-weight:700;font-family:var(--mono);">${p.pieceChar}</div>` +
-                        `<div style="font-size:11px;font-family:var(--mono);">${valText}</div>` +
-                        `<div class="muted" style="font-size:10px;">${p.numTransitions} mv</div>`;
+          `<div style="font-size:11px;font-family:var(--mono);">${valText}</div>` +
+          `<div class="muted" style="font-size:10px;">${p.numTransitions} mv</div>`;
         box.addEventListener("click", () => {
           currentPiece = p.piece;
           resetCursor();
@@ -935,7 +1015,7 @@
       let bestTb = moves[0];
       for (const m of moves) {
         if (m.tablebaseQ > bestTb.tablebaseQ ||
-            (m.tablebaseQ === bestTb.tablebaseQ && m.heuristicScore > bestTb.heuristicScore)) {
+          (m.tablebaseQ === bestTb.tablebaseQ && m.heuristicScore > bestTb.heuristicScore)) {
           bestTb = m;
         }
       }
@@ -992,8 +1072,8 @@
         const tbStatus = !tbLoaded
           ? `<span class="muted">—</span>`
           : (m.afterInTablebase
-              ? `<span class="badge ok">IN</span>`
-              : `<span class="badge warn">OUT</span>`);
+            ? `<span class="badge ok">IN</span>`
+            : `<span class="badge warn">OUT</span>`);
         const tbQText = m.tablebaseQ !== null ? m.tablebaseQ.toFixed(4) : "—";
 
         tr.innerHTML =
@@ -1229,12 +1309,31 @@
       }
     });
 
+    function generateClockSeed() {
+      const nowMs = BigInt(Date.now());
+      const perfUs = BigInt(Math.floor((typeof performance !== "undefined" ? performance.now() : 0) * 1000));
+      return (nowMs * 1000000n + (perfUs % 1000000n)) & ((1n << 48n) - 1n);
+    }
+
+    function syncSeedInputState() {
+      const useClock = document.getElementById("randomSeedCheckbox").checked;
+      document.getElementById("seedInput").disabled = useClock;
+    }
+
+    document.getElementById("randomSeedCheckbox").addEventListener("change", syncSeedInputState);
+
     document.getElementById("btnNewGame").addEventListener("click", () => {
       stopAutoplay();
-      const parsedSeed = parseSeedBig(document.getElementById("seedInput").value);
-      if (parsedSeed === null) {
-        alert("Seed must be a non-negative integer.");
-        return;
+      let parsedSeed;
+      if (document.getElementById("randomSeedCheckbox").checked) {
+        parsedSeed = generateClockSeed();
+        document.getElementById("seedInput").value = parsedSeed.toString();
+      } else {
+        parsedSeed = parseSeedBig(document.getElementById("seedInput").value);
+        if (parsedSeed === null) {
+          alert("Seed must be a non-negative integer.");
+          return;
+        }
       }
       rng = new JsRng(parsedSeed);
       boardBig = 0n;
@@ -1317,6 +1416,12 @@
     });
 
     initBoardDom();
+    syncSeedInputState();
+    if (document.getElementById("randomSeedCheckbox").checked) {
+      const bootSeed = generateClockSeed();
+      document.getElementById("seedInput").value = bootSeed.toString();
+      rng = new JsRng(bootSeed);
+    }
     currentPiece = rng.nextPiece();
     resetCursor();
     (async () => {
@@ -1325,4 +1430,5 @@
     })();
   </script>
 </body>
+
 </html>

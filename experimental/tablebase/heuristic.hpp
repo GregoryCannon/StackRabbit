@@ -25,17 +25,17 @@ struct EvalWeights {
 };
 
 struct HeuristicBreakdown {
-  int holes = 0;            // Total covered empty cells beneath column surfaces
-  int overhangs = 0;        // Hole cells horizontally adjacent to an open column (1-tuck candidates)
-  int sealedHoles = 0;      // Covered holes not side-accessible from an open column (holes - overhangs)
-  int sumHeightSq = 0;      // Sum of h[c]^2 across columns 0..9
-  int height3Cols = 0;      // Columns at h == 3 (only horizontal I can rest on top)
-  int ceilingCols = 0;      // Columns at h == 4 (no piece can rest on top)
-  int bumpiness = 0;        // Sum of |h[c] - h[c+1]| across adjacent columns
-  int wellDepthSq = 0;      // Sum of d^2 for narrow wells with d = min(leftH, rightH) - h[c] >= 2
-  int parityImbalance = 0;  // |sum(even-col heights) - sum(odd-col heights)|
-  int safeFlatPairs = 0;    // Adjacent equal-height column pairs with h <= 2 (safe for O-piece)
-  int rowFillSq = 0;        // Sum of (filled cells in row r)^2 across rows 0..3
+  int holes = 0;       // Total covered empty cells beneath column surfaces
+  int overhangs = 0;   // Hole cells horizontally adjacent to an open column (1-tuck candidates)
+  int sealedHoles = 0; // Covered holes not side-accessible from an open column (holes - overhangs)
+  int sumHeightSq = 0; // Sum of h[c]^2 across columns 0..9
+  int height3Cols = 0; // Columns at h == 3 (only horizontal I can rest on top)
+  int ceilingCols = 0; // Columns at h == 4 (no piece can rest on top)
+  int bumpiness = 0;   // Sum of |h[c] - h[c+1]| across adjacent columns
+  int wellDepthSq = 0; // Sum of d^2 for narrow wells with d = min(leftH, rightH) - h[c] >= 2
+  int parityImbalance = 0; // |sum(even-col heights) - sum(odd-col heights)|
+  int safeFlatPairs = 0;   // Adjacent equal-height column pairs with h <= 2 (safe for O-piece)
+  int rowFillSq = 0;       // Sum of (filled cells in row r)^2 across rows 0..3
   double boardScore = 0.0;
 };
 
@@ -99,16 +99,16 @@ inline HeuristicBreakdown evaluateBoardBreakdown(uint64_t board,
   const int c3 = popcount64(r3);
   b.rowFillSq = c0 * c0 + c1 * c1 + c2 * c2 + c3 * c3;
 
-  b.boardScore = w.sealedHole * static_cast<double>(b.sealedHoles) +
-                 w.overhang * static_cast<double>(b.overhangs) +
-                 w.heightSq * static_cast<double>(b.sumHeightSq) +
-                 w.height3Col * static_cast<double>(b.height3Cols) +
-                 w.ceilingCol * static_cast<double>(b.ceilingCols) +
-                 w.bumpiness * static_cast<double>(b.bumpiness) +
-                 w.wellDepthSq * static_cast<double>(b.wellDepthSq) +
-                 w.parityImbalance * static_cast<double>(b.parityImbalance) +
-                 w.safeFlatPairBonus * static_cast<double>(b.safeFlatPairs) +
-                 w.rowFillSq * static_cast<double>(b.rowFillSq);
+  b.boardScore = w.sealedHole * static_cast<double>(b.sealedHoles)
+                 + w.overhang * static_cast<double>(b.overhangs)
+                 + w.heightSq * static_cast<double>(b.sumHeightSq)
+                 + w.height3Col * static_cast<double>(b.height3Cols)
+                 + w.ceilingCol * static_cast<double>(b.ceilingCols)
+                 + w.bumpiness * static_cast<double>(b.bumpiness)
+                 + w.wellDepthSq * static_cast<double>(b.wellDepthSq)
+                 + w.parityImbalance * static_cast<double>(b.parityImbalance)
+                 + w.safeFlatPairBonus * static_cast<double>(b.safeFlatPairs)
+                 + w.rowFillSq * static_cast<double>(b.rowFillSq);
   return b;
 }
 
@@ -128,22 +128,25 @@ namespace detail {
 // with rowFillSq and safeFlatPairs so positive rowFillSq/flatSpot bonuses cannot loosen the bound
 // by ignoring mandatory height penalties.
 constexpr double maxPossible1PlyScore(const EvalWeights &w) {
-  constexpr int MAX_POST_CLEAR_HOLES = (BOARD_ROWS - 1) * BOARD_WIDTH;               // 30
-  constexpr int MAX_BUMPINESS = (BOARD_WIDTH - 1) * BOARD_ROWS;                      // 36
-  constexpr int MAX_WELL_DEPTH_SQ = (BOARD_WIDTH / 2) * (BOARD_ROWS * BOARD_ROWS);   // 80
-  constexpr int MAX_PARITY_IMBALANCE = (BOARD_WIDTH / 2) * BOARD_ROWS;               // 20
-  constexpr int MAX_ROW_FILL_POST_CLEAR = BOARD_WIDTH - 1;                           // 9
+  constexpr int MAX_POST_CLEAR_HOLES = (BOARD_ROWS - 1) * BOARD_WIDTH;             // 30
+  constexpr int MAX_BUMPINESS = (BOARD_WIDTH - 1) * BOARD_ROWS;                    // 36
+  constexpr int MAX_WELL_DEPTH_SQ = (BOARD_WIDTH / 2) * (BOARD_ROWS * BOARD_ROWS); // 80
+  constexpr int MAX_PARITY_IMBALANCE = (BOARD_WIDTH / 2) * BOARD_ROWS;             // 20
+  constexpr int MAX_ROW_FILL_POST_CLEAR = BOARD_WIDTH - 1;                         // 9
 
   const auto pos = [](int maxCount, double weight) constexpr {
     return (weight > 0.0) ? static_cast<double>(maxCount) * weight : 0.0;
   };
 
   // Since sealedHoles >= 0, overhangs >= 0, and sealedHoles + overhangs <= MAX_POST_CLEAR_HOLES,
-  // their combined contribution is bounded above by MAX_POST_CLEAR_HOLES * max(0, sealedHole, overhang).
+  // their combined contribution is bounded above by MAX_POST_CLEAR_HOLES * max(0, sealedHole,
+  // overhang).
   const double maxHoleTerm = pos(MAX_POST_CLEAR_HOLES, std::max(w.sealedHole, w.overhang));
-  const double uncoupledMax = pos(BOARD_ROWS, w.lineClear) + maxHoleTerm + pos(MAX_BUMPINESS, w.bumpiness) +
-                              pos(MAX_WELL_DEPTH_SQ, w.wellDepthSq) +
-                              pos(MAX_PARITY_IMBALANCE, w.parityImbalance);
+  const double uncoupledMax = pos(BOARD_ROWS, w.lineClear)
+                              + maxHoleTerm
+                              + pos(MAX_BUMPINESS, w.bumpiness)
+                              + pos(MAX_WELL_DEPTH_SQ, w.wellDepthSq)
+                              + pos(MAX_PARITY_IMBALANCE, w.parityImbalance);
 
   // Maximize the coupled height + flat-pair + rowFillSq terms over all 1001 column-height multisets
   // (n0 + n1 + n2 + n3 + n4 == 10).
@@ -157,28 +160,29 @@ constexpr double maxPossible1PlyScore(const EvalWeights &w) {
 
           // At most max(0, n0 + n1 + n2 - 1) adjacent column pairs can share height <= 2.
           const int maxFlatPairs = std::max(0, n0 + n1 + n2 - 1);
-          const double flatTerm =
-              (w.safeFlatPairBonus > 0.0) ? static_cast<double>(maxFlatPairs) * w.safeFlatPairBonus
-                                          : 0.0;
+          const double flatTerm = (w.safeFlatPairBonus > 0.0)
+                                      ? static_cast<double>(maxFlatPairs) * w.safeFlatPairBonus
+                                      : 0.0;
 
           // In row r, a column can have a filled cell only if its height >= r + 1, and every column
-          // of exact height r + 1 has its top cell filled in row r (so n_{r+1} <= c_r <= min(9, sum_{k>r} n_k)).
+          // of exact height r + 1 has its top cell filled in row r (so n_{r+1} <= c_r <= min(9,
+          // sum_{k>r} n_k)).
           double rowFillTerm = 0.0;
           if (w.rowFillSq >= 0.0) {
             const int maxC3 = std::min(MAX_ROW_FILL_POST_CLEAR, n4);
             const int maxC2 = std::min(MAX_ROW_FILL_POST_CLEAR, n3 + n4);
             const int maxC1 = std::min(MAX_ROW_FILL_POST_CLEAR, n2 + n3 + n4);
             const int maxC0 = std::min(MAX_ROW_FILL_POST_CLEAR, n1 + n2 + n3 + n4);
-            const int maxRowFillSq =
-                maxC0 * maxC0 + maxC1 * maxC1 + maxC2 * maxC2 + maxC3 * maxC3;
+            const int maxRowFillSq = maxC0 * maxC0 + maxC1 * maxC1 + maxC2 * maxC2 + maxC3 * maxC3;
             rowFillTerm = static_cast<double>(maxRowFillSq) * w.rowFillSq;
           } else {
             const int minC3 = n4;
             const int minC2 = n3;
             const int minC1 = n2;
             const int minC0 = n1;
-            // On a post-clear board n4 <= 9, and if n_k == 10 (all cols equal height k in 1..3) that
-            // row would have cleared; clamping to 9 keeps the bound valid on all post-clear boards.
+            // On a post-clear board n4 <= 9, and if n_k == 10 (all cols equal height k in 1..3)
+            // that row would have cleared; clamping to 9 keeps the bound valid on all post-clear
+            // boards.
             const int c3 = std::min(MAX_ROW_FILL_POST_CLEAR, minC3);
             const int c2 = std::min(MAX_ROW_FILL_POST_CLEAR, minC2);
             const int c1 = std::min(MAX_ROW_FILL_POST_CLEAR, minC1);
@@ -187,9 +191,11 @@ constexpr double maxPossible1PlyScore(const EvalWeights &w) {
             rowFillTerm = static_cast<double>(minRowFillSq) * w.rowFillSq;
           }
 
-          const double coupled = w.heightSq * static_cast<double>(sumHSq) +
-                                 w.height3Col * static_cast<double>(n3) +
-                                 w.ceilingCol * static_cast<double>(n4) + flatTerm + rowFillTerm;
+          const double coupled = w.heightSq * static_cast<double>(sumHSq)
+                                 + w.height3Col * static_cast<double>(n3)
+                                 + w.ceilingCol * static_cast<double>(n4)
+                                 + flatTerm
+                                 + rowFillTerm;
           if (coupled > bestCoupled) {
             bestCoupled = coupled;
           }
@@ -224,7 +230,7 @@ inline double bestReplyScore1Ply(uint64_t board, int pieceIdx, const EvalWeights
   return best;
 }
 
-}  // namespace detail
+} // namespace detail
 
 // Evaluates a single 1st-ply transition (afterBoard, linesCleared) using full 2-ply NNB expectimax:
 //   w.lineClear * r1 + (1/7) * sum_{c2} max_{b'' in Moves(afterBoard, c2)} score1Ply(b'', r2).
@@ -288,7 +294,8 @@ inline ChosenTransition pickBestTransition2Ply(uint64_t board, int pieceIdx,
   }
   if (enablePruning && n1 > 1) {
     std::sort(cands, cands + n1, [](const RootCand &a, const RootCand &b) {
-      if (a.score1 != b.score1) return a.score1 > b.score1;
+      if (a.score1 != b.score1)
+        return a.score1 > b.score1;
       return a.origIdx < b.origIdx;
     });
   }
@@ -322,8 +329,9 @@ inline ChosenTransition pickBestTransition2Ply(uint64_t board, int pieceIdx,
 
     if (!pruned) {
       const double score = scaledSum * (1.0 / static_cast<double>(NUM_PIECES));
-      if (!best.found || score > best.score ||
-          (score == best.score && cands[i].origIdx < bestOrigIdx)) {
+      if (!best.found
+          || score > best.score
+          || (score == best.score && cands[i].origIdx < bestOrigIdx)) {
         bestScaledTotal = scaledSum;
         bestOrigIdx = cands[i].origIdx;
         best = {t1, score, true};
@@ -333,6 +341,6 @@ inline ChosenTransition pickBestTransition2Ply(uint64_t board, int pieceIdx,
   return best;
 }
 
-}  // namespace tb
+} // namespace tb
 
-#endif  // TABLEBASE_HEURISTIC_HPP
+#endif // TABLEBASE_HEURISTIC_HPP

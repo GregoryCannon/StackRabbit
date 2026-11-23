@@ -5,6 +5,7 @@
 #include "heuristic.hpp"
 #include "server_routes.hpp"
 #include "tablebase_io.hpp"
+#include "vi_solver.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -813,4 +814,138 @@ TEST_CASE("Heuristic breakdown features, lossless 2-ply branch-and-bound pruning
     }
   }
   CHECK(totalLines2 > totalLines1);
+}
+
+TEST_CASE(
+    "FlatBoardIndex, bounded-overhang enumeration, MPI Bellman solver, and chooseTablebaseMove") {
+  // 1a. Exhaustive 4-row x 4-active-column check (2^16 = 65,536 bitmasks): exercises all 4 rows,
+  // raised overhangs (rHole = 1, 2 with adjacent h = 1, 2), and floating-row rejection.
+  std::vector<uint64_t> brute4x4_0;
+  std::vector<uint64_t> brute4x4_1;
+  for (uint32_t mask16 = 0; mask16 < (1U << 16); ++mask16) {
+    uint64_t b = 0ULL;
+    for (int r = 0; r < 4; ++r) {
+      const uint64_t row4 = (mask16 >> (r * 4)) & 0xFULL;
+      b |= (row4 << (r * 10 + 6)); // cols 0..3 occupy bits 9..6 of each 10-bit row
+    }
+    if (!tb::isCanonicalBoard(b)) {
+      continue;
+    }
+    const uint64_t holes = tb::computeHoleMask(b);
+    const int nHoles = tb::popcount64(holes);
+    if (nHoles == 0) {
+      brute4x4_0.push_back(b);
+      brute4x4_1.push_back(b);
+    } else if (nHoles == 1 && tb::computeOverhangMask(b) == holes) {
+      brute4x4_1.push_back(b);
+    }
+  }
+  CHECK(tb::enumerateZeroSealedHoleBoards(0, 1, 4, 4) == brute4x4_0);
+  CHECK(tb::enumerateZeroSealedHoleBoards(1, 4, 4, 4) == brute4x4_1);
+
+  // 1b. Exhaustive 2-row x 10-column check (2^20 = 1,048,576 bitmasks): exercises all 10 columns
+  // and both walls, plus exact 4x10 pure-surface count (4,358,525).
+  std::vector<uint64_t> brute2x10_0;
+  std::vector<uint64_t> brute2x10_1;
+  constexpr uint64_t TWO_ROW_LIMIT = 1ULL << 20;
+  for (uint64_t b = 0; b < TWO_ROW_LIMIT; ++b) {
+    if (!tb::isCanonicalBoard(b)) {
+      continue;
+    }
+    const uint64_t holes = tb::computeHoleMask(b);
+    const int nHoles = tb::popcount64(holes);
+    if (nHoles == 0) {
+      brute2x10_0.push_back(b);
+      brute2x10_1.push_back(b);
+    } else if (nHoles == 1 && tb::computeOverhangMask(b) == holes) {
+      brute2x10_1.push_back(b);
+    }
+  }
+  CHECK(tb::enumerateZeroSealedHoleBoards(0, 4, 2, 10) == brute2x10_0);
+  CHECK(tb::enumerateZeroSealedHoleBoards(1, 4, 2, 10) == brute2x10_1);
+  CHECK(tb::enumerateZeroSealedHoleBoards(0, 4).size() == 4358525ULL);
+
+  // 2. FlatBoardIndex lookup accuracy (empty index, ~0ULL sentinel, 0ULL, and missing keys).
+  tb::FlatBoardIndex emptyIdx;
+  CHECK(emptyIdx.empty());
+  CHECK(emptyIdx.find(0ULL) == tb::INVALID_BOARD_ID);
+  CHECK(emptyIdx.find(~0ULL) == tb::INVALID_BOARD_ID);
+
+  const tb::FlatBoardIndex idx(brute4x4_1);
+  CHECK(idx.size() == brute4x4_1.size());
+  CHECK(idx.find(~0ULL) == tb::INVALID_BOARD_ID);
+  CHECK(idx.find(0x123456789ULL) == tb::INVALID_BOARD_ID);
+  for (size_t i = 0; i < brute4x4_1.size(); ++i) {
+    CHECK(idx.find(brute4x4_1[i]) == static_cast<uint32_t>(i));
+  }
+
+  // 3. Solve MPI on brute2x10_1 on 1 thread vs 4 threads: verify bit-for-bit determinism and
+  // exact Bellman residual <= 1e-10.
+  tb::ViSolveConfig cfg1{};
+  cfg1.tolerance = 1e-10;
+  cfg1.maxOuterIters = 100;
+  cfg1.innerEvalSweeps = 20;
+  cfg1.numThreads = 1;
+  const tb::ViSolveResult res1 = tb::solveValueIterationMPI(brute2x10_1, cfg1);
+
+  tb::ViSolveConfig cfg4 = cfg1;
+  cfg4.numThreads = 4;
+  const tb::ViSolveResult res4 = tb::solveValueIterationMPI(brute2x10_1, cfg4);
+
+  CHECK(res1.finalBellmanResidual <= 1e-10);
+  CHECK(res1.emptyBoardValue > 0.5);
+  CHECK(res1.emptyBoardValue == res4.emptyBoardValue);
+  CHECK(res1.values == res4.values);
+
+  // 4. Test chooseTablebaseMove: in-TB choice, lazy heuristic tie-breaking on equal Q, all-OUT
+  // fallback, and 0-move top-out.
+  const std::string tmpTbPath = "build/test_choose_move.tb.bin";
+  tb::TransitionList oMoves;
+  tb::generateTransitions(0ULL, tb::parsePieceChar('O'), oMoves);
+  REQUIRE(oMoves.size() == 9);
+  // Put two O placements in TB with equal value 10.0f so closedWorld=true picks index 0 while
+  // closedWorld=false breaks the tie via heuristic score.
+  std::vector<uint64_t> tbKeys = {oMoves[0].afterBoard, oMoves[4].afterBoard};
+  std::sort(tbKeys.begin(), tbKeys.end());
+  REQUIRE(tb::writeTablebaseFile(tmpTbPath, tbKeys, {10.0f, 10.0f}, 0.0));
+
+  tb::MappedTablebase mapped;
+  REQUIRE(mapped.open(tmpTbPath));
+
+  const auto cwMove = tb::chooseTablebaseMove(0ULL, tb::parsePieceChar('O'), mapped, true, 1);
+  REQUIRE(cwMove.found);
+  CHECK(cwMove.afterInTablebase);
+  CHECK_FALSE(cwMove.usedFallback);
+  CHECK(cwMove.tablebaseQ == doctest::Approx(10.0));
+
+  const auto liveMove = tb::chooseTablebaseMove(0ULL, tb::parsePieceChar('O'), mapped, false, 1);
+  REQUIRE(liveMove.found);
+  CHECK(liveMove.afterInTablebase);
+  CHECK_FALSE(liveMove.usedFallback);
+  const double s0 = tb::scoreTransition1Ply(oMoves[0].afterBoard, 0);
+  const double s4 = tb::scoreTransition1Ply(oMoves[4].afterBoard, 0);
+  if (s0 != s4) {
+    const uint64_t expectedWinner = (s4 > s0) ? oMoves[4].afterBoard : oMoves[0].afterBoard;
+    CHECK(liveMove.transition.afterBoard == expectedWinner);
+  }
+
+  // Piece 'I' has zero children in this 2-entry O-only TB -> closedWorld=false uses heuristic
+  // fallback!
+  const auto fbMove = tb::chooseTablebaseMove(0ULL, tb::parsePieceChar('I'), mapped, false, 2);
+  REQUIRE(fbMove.found);
+  CHECK(fbMove.usedFallback);
+  CHECK_FALSE(fbMove.afterInTablebase);
+  CHECK(fbMove.transition.afterBoard
+        == tb::pickBestTransition2Ply(0ULL, tb::parsePieceChar('I')).transition.afterBoard);
+
+  // Top-out board returns found == false.
+  const uint64_t tetrisReady = mustParse("XXXXXXXXX.\n"
+                                         "XXXXXXXXX.\n"
+                                         "XXXXXXXXX.\n"
+                                         "XXXXXXXXX.");
+  CHECK_FALSE(
+      tb::chooseTablebaseMove(tetrisReady, tb::parsePieceChar('O'), mapped, false, 2).found);
+
+  mapped.close();
+  std::remove(tmpTbPath.c_str());
 }

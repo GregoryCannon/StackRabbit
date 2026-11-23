@@ -127,15 +127,15 @@ Create a fast, clean 4-row lineout agent to seed Round 0 state generation and se
 
 ---
 
-### Phase 4: Exact 0-Hole Oracle Solver (Solver Sanity Check Before Sampling)
-Before mixing sampling errors with solver debugging, validate the Value Iteration engine on a closed, exact subset that fits in ~100 MB of RAM.
+### Phase 4: Exact Bounded-Overhang Oracle Solver (`vi_solver.hpp`, `solve_oracle.cpp`)
+Before mixing sampling errors with solver debugging, validate the Value Iteration / Modified Policy Iteration engine on an exact, closed-world bounded-overhang state space (`sealedHoles == 0 && overhangs <= 1`, so `S`/`Z` openings on the empty board and 1-input overhang tuck setups are legal in-set).
 
-- [ ] Enumerate all **4,358,525** valid 0-hole 4×10 boards ($h_i \in \{0..4\}$, $\min_i h_i = 0$, $\sum h_i$ even) directly in `< 0.5s`.
-- [ ] Run the Value Iteration / Modified Policy Iteration solver (from Phase 6) restricted to this exact 0-hole set (`b' ∉ S_0hole` treated as `0.0`, i.e., holes forbidden).
-- [ ] **Verification**:
-  - Verify Bellman residual drops monotonically to `< 1e-6` in `double` precision.
-  - Verify `V(emptyBoard)` matches empirical Monte Carlo rollout average of the resulting 0-hole optimal policy over 50,000 games within statistical standard error ($\pm 2\sigma$) — **end-to-end mathematical proof that move gen, line-clear rewards, and Bellman backups agree**.
-  - Load the resulting ~52 MB `zero_hole.tb.bin` into `server.cpp` + `index.html` and inspect optimal hole-free play.
+- [x] Enumerate all **31,197,715** canonical 4×10 boards with `sealedHoles == 0 && overhangs <= 1` (`0.70s`, `357.0 MB` on disk), plus `--pure-surface` mode (**4,358,525** pure-surface boards, `0.16s`, `49.9 MB`).
+- [x] Implement `FlatBoardIndex` (`uint64_t -> uint32_t` power-of-two open-addressing hash map) and parallel double-buffered Modified Policy Iteration (`solveValueIterationMPI` in `vi_solver.hpp`).
+- [x] **Verification**:
+  - Verified Bellman residual drops monotonically to `< 1e-6` in `double` precision (`0.17σ` agreement between `V(empty)` and 50,000-game closed-world Monte Carlo rollouts).
+  - Verified bit-for-bit determinism of `solveValueIterationMPI` across thread counts (`1` vs `4` threads) and exhaustive `2^20` brute-force parity on 2-row boards in `tablebase_test.cpp`.
+  - Saved `mmap`-ready `.tb.bin` tablebases (`oracle_0hole.tb.bin` and `oracle_1overhang.tb.bin`) loadable directly by `build/tablebase_server`.
 
 ---
 
