@@ -1,0 +1,1316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>StackRabbit — Very Low Lineout Tablebase Harness</title>
+  <style>
+    :root {
+      --bg: #f5f6f8;
+      --panel: #ffffff;
+      --surface-alt: #f8fafc;
+      --border: #d5dce6;
+      --border-hover: #94a3b8;
+      --text: #1e293b;
+      --muted: #64748b;
+      --accent: #2563eb;
+      --green: #15803d;
+      --green-bg: #dcfce7;
+      --amber: #b45309;
+      --amber-bg: #fef3c7;
+      --red: #dc2626;
+      --red-bg: #fee2e2;
+      --cell: 26px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 18px;
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 600;
+    }
+
+    .row-controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+    }
+
+    input, select, button {
+      font-family: inherit;
+      font-size: 12.5px;
+      color: var(--text);
+    }
+
+    input[type="text"], input[type="number"], select {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      padding: 4px 8px;
+      outline: none;
+    }
+
+    input:focus, select:focus { border-color: var(--accent); }
+
+    button {
+      background: var(--surface-alt);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      padding: 5px 10px;
+      cursor: pointer;
+    }
+
+    button:hover:not(:disabled) {
+      background: #eef2f6;
+      border-color: var(--border-hover);
+    }
+
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    button.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+      font-weight: 500;
+    }
+
+    button.primary:hover:not(:disabled) {
+      background: #1d4ed8;
+      border-color: #1d4ed8;
+    }
+
+    button.active-toggle {
+      background: #dbeafe;
+      border-color: var(--accent);
+      color: #1e40af;
+      font-weight: 600;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 7px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+      font-family: var(--mono);
+    }
+    .badge.ok { background: var(--green-bg); color: var(--green); }
+    .badge.warn { background: var(--amber-bg); color: var(--amber); }
+    .badge.err { background: var(--red-bg); color: var(--red); }
+    .badge.neutral { background: #e2e8f0; color: #334155; }
+    .badge.accent { background: #dbeafe; color: #1d4ed8; }
+
+    main {
+      display: grid;
+      grid-template-columns: 325px 1fr;
+      gap: 16px;
+      padding: 16px 18px;
+      max-width: 1460px;
+      margin: 0 auto;
+    }
+
+    @media (max-width: 960px) {
+      main { grid-template-columns: 1fr; }
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px;
+      margin-bottom: 12px;
+    }
+
+    .card h2 {
+      margin: 0 0 10px 0;
+      font-size: 13.5px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .board-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      user-select: none;
+    }
+
+    .board-grid {
+      display: grid;
+      grid-template-columns: repeat(10, var(--cell));
+      grid-template-rows: repeat(20, var(--cell));
+      border: 2px solid #334155;
+      background: #0f172a;
+      position: relative;
+    }
+
+    .cell {
+      width: var(--cell);
+      height: var(--cell);
+      border: 1px solid rgba(148, 163, 184, 0.14);
+      position: relative;
+    }
+
+    /* Rows 0..11: Forbidden upper ceiling */
+    .cell.forbidden-upper {
+      background: repeating-linear-gradient(
+        -45deg,
+        #1e293b,
+        #1e293b 4px,
+        #172033 4px,
+        #172033 8px
+      );
+      opacity: 0.72;
+    }
+
+    /* Rows 12..15: 4-row Entry Zone above the pre-clear ceiling */
+    .cell.entry-zone {
+      background: repeating-linear-gradient(
+        -45deg,
+        #1e293b,
+        #1e293b 5px,
+        #233047 5px,
+        #233047 10px
+      );
+    }
+
+    /* Red 4-row pre-clear ceiling line above playable rows 16..19 */
+    .cell.ceiling-border {
+      border-top: 2px solid #ef4444;
+    }
+
+    .cell.playable { background: #0f172a; }
+    .cell.editable { cursor: crosshair; }
+
+    .cell.filled {
+      background: #64748b;
+      box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.22);
+    }
+
+    .cell.active-piece {
+      box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.45);
+    }
+
+    .cell.ghost-valid {
+      background: rgba(59, 130, 246, 0.35);
+      box-shadow: inset 0 0 0 2px #60a5fa;
+    }
+
+    .cell.ghost-illegal {
+      background: rgba(239, 68, 68, 0.35);
+      box-shadow: inset 0 0 0 2px #f87171;
+    }
+
+    .cell.hover-preview {
+      background: rgba(34, 197, 94, 0.48) !important;
+      box-shadow: inset 0 0 0 2px #4ade80 !important;
+    }
+
+    .cell.clear-highlight::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: rgba(250, 204, 21, 0.28);
+      pointer-events: none;
+    }
+
+    .zone-legend {
+      margin-top: 6px;
+      font-size: 11px;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    .piece-pills {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+
+    .piece-pill {
+      min-width: 30px;
+      padding: 4px 7px;
+      font-family: var(--mono);
+      font-weight: 700;
+      text-align: center;
+    }
+
+    .piece-pill.selected {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 6px 12px;
+      font-size: 12.5px;
+    }
+
+    .stat-item {
+      display: flex;
+      justify-content: space-between;
+      border-bottom: 1px dashed #e2e8f0;
+      padding-bottom: 3px;
+    }
+
+    .stat-val {
+      font-family: var(--mono);
+      font-weight: 600;
+    }
+
+    .piece-ev-strip {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .piece-ev-box {
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 5px 4px;
+      text-align: center;
+      background: var(--surface-alt);
+      cursor: pointer;
+    }
+
+    .piece-ev-box.active {
+      border-color: var(--accent);
+      background: #eff6ff;
+    }
+
+    .piece-ev-box.disagree {
+      border-color: #f59e0b;
+      background: #fffbeb;
+    }
+
+    .table-scroll {
+      max-height: 520px;
+      overflow-y: auto;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+
+    th, td {
+      padding: 6px 8px;
+      text-align: left;
+      border-bottom: 1px solid #eef2f6;
+      font-family: var(--mono);
+    }
+
+    th {
+      position: sticky;
+      top: 0;
+      background: #f1f5f9;
+      font-family: var(--sans);
+      font-weight: 600;
+      color: #334155;
+      z-index: 1;
+    }
+
+    tbody tr { cursor: pointer; }
+    tbody tr:hover { background: #eff6ff; }
+    tbody tr.best-row { background: #f0fdf4; }
+    tbody tr.disagree-tb-row { background: #fffbeb; }
+    tbody tr.disagree-heur-row { background: #f0f9ff; }
+
+    .kbd {
+      display: inline-block;
+      padding: 1px 5px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--surface-alt);
+      font-family: var(--mono);
+      font-size: 11px;
+    }
+
+    .muted { color: var(--muted); }
+    .banner {
+      padding: 7px 10px;
+      border-radius: 6px;
+      margin-top: 8px;
+      font-size: 12px;
+    }
+    .banner.err { background: var(--red-bg); color: var(--red); }
+    .banner.warn { background: var(--amber-bg); color: var(--amber); }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="row-controls">
+      <h1>Very Low Lineout — Tablebase Harness</h1>
+      <span id="serverStatus" class="badge neutral" title="Click to ping server" style="cursor:pointer;">Connecting...</span>
+    </div>
+    <div class="row-controls">
+      <label class="muted">Server:</label>
+      <input id="serverUrlInput" type="text" value="http://127.0.0.1:3030" style="width:180px;font-family:var(--mono);" />
+      <button id="btnPing">Ping</button>
+      <button id="btnReloadTb" title="Re-mmap the CLI-configured tablebase file">Reload TB</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- Left column: Playfield + Human/Edit Controls -->
+    <div>
+      <div class="card">
+        <h2>
+          <span>Playfield (4-Row Cap)</span>
+          <span id="modeBadge" class="badge ok">PLAY MODE</span>
+        </h2>
+
+        <div class="board-wrap">
+          <div id="boardGrid" class="board-grid" tabindex="0"></div>
+          <div class="zone-legend">
+            Striped = Empty Ceiling / Entry Zone &middot; <span style="color:#dc2626;font-weight:600;">Red Line</span> = 4-Row Pre-Clear Cap &middot; Bottom 4 = Playfield
+          </div>
+        </div>
+
+        <div id="gameOverBanner" class="banner err" style="display:none;text-align:center;font-weight:600;">
+          TOP-OUT — Zero legal placements inside the bottom 4 rows!
+        </div>
+        <div id="canonicalBanner" class="banner warn" style="display:none;"></div>
+
+        <div style="margin-top:10px;">
+          <div class="row-controls" style="justify-content:space-between;">
+            <span class="muted" style="font-weight:600;">Current Piece (NNB):</span>
+            <span id="tuckStateBadge" class="badge neutral">Entry Zone (free x/rot)</span>
+          </div>
+          <div id="piecePills" class="piece-pills"></div>
+        </div>
+
+        <div class="row-controls" style="margin-top:10px;">
+          <button id="btnNewGame" class="primary">New Game</button>
+          <button id="btnUndo" disabled>Undo</button>
+          <button id="btnToggleEdit">Edit Board</button>
+          <button id="btnClearBoard">Clear</button>
+        </div>
+
+        <div class="row-controls" style="margin-top:8px;">
+          <label class="muted">Seed:</label>
+          <input id="seedInput" type="text" value="42" style="width:84px;font-family:var(--mono);" />
+          <label class="muted">Hex:</label>
+          <input id="hexInput" type="text" value="0000000000" maxlength="10" style="width:105px;font-family:var(--mono);" />
+          <button id="btnLoadHex">Set</button>
+        </div>
+
+        <div style="margin-top:10px;font-size:11.5px;" class="muted">
+          <div><span class="kbd">←</span><span class="kbd">→</span> Shift &nbsp; <span class="kbd">Z</span>/<span class="kbd">X</span> Spin &nbsp; <span class="kbd">Space</span> Drop</div>
+          <div style="margin-top:3px;"><span class="kbd">↓</span> Step down for 1-input tuck/spin (shift then spin at the same row performs combo <span class="kbd">E/I/F/G</span>; <span class="kbd">R</span> resets drop).</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right column: Stats, AI Scrubber, Per-Piece Breakdown, Move Inspector -->
+    <div>
+      <div class="card">
+        <h2>
+          <span>Game &amp; AI Controls</span>
+          <span id="disagreeIndicator" class="badge warn" style="display:none;">TB ≠ Heuristic on this turn!</span>
+        </h2>
+
+        <div class="row-controls" style="margin-bottom:10px;">
+          <label class="muted">AI Policy:</label>
+          <select id="aiPolicySelect">
+            <option value="tb">Tablebase (fallback Heuristic)</option>
+            <option value="heur">Heuristic Only (1-ply)</option>
+          </select>
+          <button id="btnStepAi" class="primary">Step AI (1)</button>
+          <button id="btnAutoPlay">Autoplay</button>
+          <button id="btnNextDisagree" disabled title="Requires a loaded tablebase: steps AI forward until Tablebase and Heuristic pick different afterBoards">Step to Disagreement</button>
+          <label class="muted">Speed:</label>
+          <input id="speedInput" type="range" min="1" max="60" value="12" style="width:90px;" />
+          <span id="speedLabel" class="muted" style="font-family:var(--mono);width:48px;">12/s</span>
+        </div>
+
+        <div class="stats-grid">
+          <div class="stat-item"><span>Lines Cleared</span><span id="statLines" class="stat-val">0</span></div>
+          <div class="stat-item"><span>Pieces Placed</span><span id="statPieces" class="stat-val">0</span></div>
+          <div class="stat-item"><span>Tablebase V(b)</span><span id="statBoardVal" class="stat-val">—</span></div>
+          <div class="stat-item"><span>Bellman 1/7 Σ max Q</span><span id="statBackupVal" class="stat-val">—</span></div>
+          <div class="stat-item"><span>Holes (Open Overhangs)</span><span id="statHoles" class="stat-val">0 (0)</span></div>
+          <div class="stat-item"><span>Heuristic Board Score</span><span id="statHeur" class="stat-val">0.00</span></div>
+        </div>
+
+        <div style="margin-top:10px;">
+          <div class="muted" style="font-size:12px;font-weight:600;">Per-Piece Best Q (click to switch current piece; amber = TB ≠ Heuristic):</div>
+          <div id="pieceEvStrip" class="piece-ev-strip"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>
+          <span>Legal Placements (<span id="moveCountLabel">0</span>)</span>
+          <div class="row-controls">
+            <label class="muted" style="font-weight:400;">Sort by:</label>
+            <select id="sortModeSelect">
+              <option value="auto">Best Policy (TB if in-set, else Heuristic)</option>
+              <option value="heur">Heuristic Score</option>
+              <option value="tb">Tablebase Q = r + V(b')</option>
+            </select>
+          </div>
+        </h2>
+
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Pick</th>
+                <th>Rot / X / Y</th>
+                <th>Tuck</th>
+                <th>Clears</th>
+                <th>Holes'</th>
+                <th>TB Status</th>
+                <th>TB Q (r + V')</th>
+                <th>Heuristic</th>
+                <th>After Hex</th>
+              </tr>
+            </thead>
+            <tbody id="movesTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    const PIECE_CHARS = ["I", "O", "L", "J", "T", "S", "Z"];
+    const PIECE_COLORS = {
+      I: "#38bdf8", O: "#facc15", L: "#fb923c", J: "#60a5fa",
+      T: "#c084fc", S: "#4ade80", Z: "#f87171"
+    };
+    const TUCK_DESCRIPTIONS = {
+      ".": "Straight drop (no tuck)",
+      "L": "Left shift tuck",
+      "R": "Right shift tuck",
+      "A": "CW spin (A)",
+      "B": "CCW spin (B)",
+      "E": "Left shift + CW spin (L+A)",
+      "I": "Right shift + CW spin (R+A)",
+      "F": "Left shift + CCW spin (L+B)",
+      "G": "Right shift + CCW spin (R+B)"
+    };
+    const COMBO_TUCK_CODE = {
+      "L:A": "E",
+      "R:A": "I",
+      "L:B": "F",
+      "R:B": "G"
+    };
+
+    // Exact 4x4 piece masks matching core.hpp (bits 9..6 = cols 0..3 at x = 0).
+    const PIECES = [
+      { id: "I", numRots: 2, rows: [[0, 0, 960, 0], [128, 128, 128, 128]] },
+      { id: "O", numRots: 1, rows: [[0, 384, 384, 0]] },
+      { id: "L", numRots: 4, rows: [[0, 448, 256, 0], [384, 128, 128, 0], [64, 448, 0, 0], [128, 128, 192, 0]] },
+      { id: "J", numRots: 4, rows: [[0, 448, 64, 0], [128, 128, 384, 0], [256, 448, 0, 0], [192, 128, 128, 0]] },
+      { id: "T", numRots: 4, rows: [[0, 448, 128, 0], [128, 384, 128, 0], [128, 448, 0, 0], [128, 192, 128, 0]] },
+      { id: "S", numRots: 2, rows: [[0, 192, 384, 0], [128, 192, 64, 0]] },
+      { id: "Z", numRots: 2, rows: [[0, 384, 192, 0], [64, 192, 128, 0]] }
+    ];
+
+    // Deterministic SplitMix64 + Xoshiro256** in BigInt matching tb::Rng in core.hpp.
+    class JsRng {
+      constructor(seedBigInt) {
+        const MASK64 = (1n << 64n) - 1n;
+        this.MASK64 = MASK64;
+        this.s = [0n, 0n, 0n, 0n];
+        let z = BigInt(seedBigInt) & MASK64;
+        for (let i = 0; i < 4; i++) {
+          z = (z + 0x9E3779B97F4A7C15n) & MASK64;
+          let x = z;
+          x = ((x ^ (x >> 30n)) * 0xBF58476D1CE4E5B9n) & MASK64;
+          x = ((x ^ (x >> 27n)) * 0x94D049BB133111EBn) & MASK64;
+          this.s[i] = (x ^ (x >> 31n)) & MASK64;
+        }
+      }
+      rotl(x, k) {
+        return ((x << k) | (x >> (64n - k))) & this.MASK64;
+      }
+      nextU64() {
+        const M = this.MASK64;
+        const result = (this.rotl((this.s[1] * 5n) & M, 7n) * 9n) & M;
+        const t = (this.s[1] << 17n) & M;
+        this.s[2] ^= this.s[0];
+        this.s[3] ^= this.s[1];
+        this.s[1] ^= this.s[2];
+        this.s[0] ^= this.s[3];
+        this.s[2] ^= t;
+        this.s[3] = this.rotl(this.s[3], 45n);
+        return result;
+      }
+      nextPiece() {
+        const limit = this.MASK64 - (this.MASK64 % 7n);
+        while (true) {
+          const r = this.nextU64();
+          if (r < limit) return Number(r % 7n);
+        }
+      }
+      cloneState() { return [...this.s]; }
+      restoreState(st) { this.s = [...st]; }
+    }
+
+    if (window.location.protocol === "http:" || window.location.protocol === "https:") {
+      document.getElementById("serverUrlInput").value = window.location.origin;
+    }
+
+    // Application state
+    let rng = new JsRng(42n);
+    let boardBig = 0n;
+    let currentPiece = 0;
+    let linesClearedTotal = 0;
+    let piecesPlacedTotal = 0;
+    let historyStack = [];
+    let editMode = false;
+    let isPainting = false;
+    let paintValue = true;
+
+    // Human drop cursor: tuckStage transitions "none" -> "shifted" (at tuckY) -> "done",
+    // allowing all 8 NES single-frame tuck inputs (L, R, A, B, and Shift->Rotate combos E, I, F, G).
+    let cursor = { rot: 0, x: 3, y: 0, tuckStage: "none", tuckY: -1, lastTuckChar: "." };
+    let hoveredMove = null;
+    let currentMoves = [];
+    let movesReady = false;
+    let refreshSeq = 0;
+    let tbLoaded = false;
+    let autoTimer = null;
+    let seekAbort = false;
+
+    const gridEl = document.getElementById("boardGrid");
+    const cellEls = [];
+
+    function initBoardDom() {
+      gridEl.innerHTML = "";
+      cellEls.length = 0;
+      for (let visRow = 0; visRow < 20; visRow++) {
+        for (let col = 0; col < 10; col++) {
+          const d = document.createElement("div");
+          let cls = "cell ";
+          if (visRow < 12) cls += "forbidden-upper";
+          else if (visRow < 16) cls += "entry-zone";
+          else cls += "playable";
+          if (visRow === 16) cls += " ceiling-border";
+          d.className = cls;
+
+          if (visRow >= 16) {
+            const rowFromBottom = 19 - visRow;
+            d.addEventListener("mousedown", (e) => {
+              if (!editMode) return;
+              e.preventDefault();
+              isPainting = true;
+              paintValue = !getBoardCell(boardBig, rowFromBottom, col);
+              setBoardCellEdit(rowFromBottom, col, paintValue);
+            });
+            d.addEventListener("mouseenter", () => {
+              if (editMode && isPainting) {
+                setBoardCellEdit(rowFromBottom, col, paintValue);
+              }
+            });
+          }
+          gridEl.appendChild(d);
+          cellEls.push(d);
+        }
+      }
+      window.addEventListener("mouseup", () => { isPainting = false; });
+    }
+
+    function cellBitBig(rowFromBottom, col) {
+      return 1n << BigInt(rowFromBottom * 10 + (9 - col));
+    }
+
+    function getBoardCell(b, rowFromBottom, col) {
+      return (b & cellBitBig(rowFromBottom, col)) !== 0n;
+    }
+
+    function formatHexBig(b) {
+      return (b & ((1n << 40n) - 1n)).toString(16).padStart(10, "0");
+    }
+
+    function parseHexBig(hex) {
+      if (!/^[0-9a-fA-F]{1,10}$/.test(hex)) return null;
+      return BigInt("0x" + hex);
+    }
+
+    function parseSeedBig(raw) {
+      const trimmed = raw.trim();
+      if (!/^\d+$/.test(trimmed)) return null;
+      return BigInt(trimmed);
+    }
+
+    function evalPieceCells(pieceIdx, rot, x, y, b) {
+      const p = PIECES[pieceIdx];
+      if (!p || rot < 0 || rot >= p.numRots) {
+        return { inBounds: false, collides: true, fitsCeiling: false, cells: [] };
+      }
+      const cells = [];
+      let fitsCeiling = true;
+      for (let r = 0; r < 4; r++) {
+        const rowBits = p.rows[rot][r];
+        if (!rowBits) continue;
+        for (let c = 0; c < 4; c++) {
+          if ((rowBits & (1 << (9 - c))) === 0) continue;
+          const col = x + c;
+          const gridY = y + r;
+          if (col < 0 || col >= 10 || gridY < 0 || gridY >= 8) {
+            return { inBounds: false, collides: true, fitsCeiling: false, cells: [] };
+          }
+          if (gridY < 4) {
+            fitsCeiling = false;
+          } else {
+            const rfb = 7 - gridY;
+            if (getBoardCell(b, rfb, col)) {
+              return { inBounds: true, collides: true, fitsCeiling: false, cells: [] };
+            }
+          }
+          cells.push({ visRow: 12 + gridY, col });
+        }
+      }
+      return { inBounds: true, collides: false, fitsCeiling, cells };
+    }
+
+    function resetCursor() {
+      cursor = { rot: 0, x: 3, y: 0, tuckStage: "none", tuckY: -1, lastTuckChar: "." };
+      if (evalPieceCells(currentPiece, cursor.rot, cursor.x, 0, boardBig).collides) {
+        cursor.x = 2;
+      }
+      updateTuckBadge();
+    }
+
+    function updateTuckBadge() {
+      const el = document.getElementById("tuckStateBadge");
+      if (editMode) {
+        el.textContent = "Click/drag cells to paint";
+        el.className = "badge warn";
+      } else if (cursor.y === 0) {
+        el.textContent = "Entry Zone (free x/rot)";
+        el.className = "badge neutral";
+      } else if (cursor.tuckStage === "none") {
+        el.textContent = `Mid-Drop y=${cursor.y} (1 tuck left)`;
+        el.className = "badge ok";
+      } else if (cursor.tuckStage === "shifted" && cursor.y === cursor.tuckY) {
+        el.textContent = `Shifted '${cursor.lastTuckChar}' (spin Z/X allowed)`;
+        el.className = "badge accent";
+      } else {
+        el.textContent = `Tuck '${cursor.lastTuckChar}' used`;
+        el.className = "badge warn";
+      }
+    }
+
+    function renderBoard() {
+      for (let visRow = 0; visRow < 20; visRow++) {
+        for (let col = 0; col < 10; col++) {
+          const el = cellEls[visRow * 10 + col];
+          el.classList.remove(
+            "filled", "active-piece", "ghost-valid", "ghost-illegal", "hover-preview", "clear-highlight"
+          );
+          el.style.backgroundColor = "";
+          if (editMode && visRow >= 16) el.classList.add("editable");
+          else el.classList.remove("editable");
+
+          if (visRow >= 16) {
+            const rfb = 19 - visRow;
+            if (getBoardCell(boardBig, rfb, col)) {
+              el.classList.add("filled");
+            }
+          }
+        }
+      }
+
+      if (hoveredMove) {
+        const mask = BigInt("0x" + hoveredMove.lockedMaskHex);
+        const combined = boardBig | mask;
+        for (let rfb = 0; rfb < 4; rfb++) {
+          const rowBits = Number((combined >> BigInt(rfb * 10)) & 0x3FFn);
+          const isFull = rowBits === 0x3FF;
+          for (let col = 0; col < 10; col++) {
+            const visRow = 19 - rfb;
+            const el = cellEls[visRow * 10 + col];
+            if (getBoardCell(mask, rfb, col)) {
+              el.classList.add("hover-preview");
+            }
+            if (isFull) {
+              el.classList.add("clear-highlight");
+            }
+          }
+        }
+        return;
+      }
+
+      if (!editMode && movesReady && currentMoves.length > 0) {
+        let dropY = cursor.y;
+        while (!evalPieceCells(currentPiece, cursor.rot, cursor.x, dropY + 1, boardBig).collides) {
+          dropY++;
+        }
+        const ghost = evalPieceCells(currentPiece, cursor.rot, cursor.x, dropY, boardBig);
+        for (const c of ghost.cells) {
+          cellEls[c.visRow * 10 + c.col].classList.add(
+            ghost.fitsCeiling ? "ghost-valid" : "ghost-illegal"
+          );
+        }
+
+        const cur = evalPieceCells(currentPiece, cursor.rot, cursor.x, cursor.y, boardBig);
+        const color = PIECE_COLORS[PIECE_CHARS[currentPiece]];
+        for (const c of cur.cells) {
+          const el = cellEls[c.visRow * 10 + c.col];
+          el.classList.add("active-piece");
+          el.style.backgroundColor = color;
+        }
+      }
+    }
+
+    function apiBase() {
+      return document.getElementById("serverUrlInput").value.replace(/\/+$/, "");
+    }
+
+    function updateTbDependentButtons() {
+      document.getElementById("btnNextDisagree").disabled = !tbLoaded;
+    }
+
+    async function pingServer() {
+      const badge = document.getElementById("serverStatus");
+      try {
+        const res = await fetch(`${apiBase()}/ping`);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        tbLoaded = !!data.tablebaseLoaded;
+        updateTbDependentButtons();
+        if (tbLoaded) {
+          const ev = data.emptyBoardValue !== null ? ` · V(0)=${data.emptyBoardValue.toFixed(2)}` : "";
+          badge.textContent = `Connected · TB: ${data.boardCount.toLocaleString()} boards${ev}`;
+          badge.className = "badge ok";
+        } else {
+          badge.textContent = "Connected · No TB loaded (Heuristic mode)";
+          badge.className = "badge warn";
+        }
+      } catch (err) {
+        tbLoaded = false;
+        updateTbDependentButtons();
+        badge.textContent = `Offline (${err.message})`;
+        badge.className = "badge err";
+      }
+    }
+
+    async function refreshPosition() {
+      const reqId = ++refreshSeq;
+      const hex = formatHexBig(boardBig);
+      document.getElementById("hexInput").value = hex;
+      movesReady = false;
+      currentMoves = [];
+      hoveredMove = null;
+      renderPiecePills();
+      renderBoard();
+
+      try {
+        const [movesRes, infoRes] = await Promise.all([
+          fetch(`${apiBase()}/moves?board=${hex}&piece=${currentPiece}`),
+          fetch(`${apiBase()}/state-info?board=${hex}`)
+        ]);
+        const movesData = await movesRes.json();
+        const infoData = await infoRes.json();
+        if (reqId !== refreshSeq) return;
+        if (!movesRes.ok) throw new Error(movesData.error || "Failed /moves");
+        if (!infoRes.ok) throw new Error(infoData.error || "Failed /state-info");
+
+        tbLoaded = !!movesData.tablebaseLoaded;
+        updateTbDependentButtons();
+        currentMoves = movesData.moves || [];
+        movesReady = true;
+
+        updateStatsAndBanners(infoData);
+        renderMovesTable();
+        renderBoard();
+      } catch (err) {
+        if (reqId !== refreshSeq) return;
+        document.getElementById("serverStatus").textContent = `Error: ${err.message}`;
+        document.getElementById("serverStatus").className = "badge err";
+        renderBoard();
+      }
+    }
+
+    function updateGameOverBanner() {
+      const goBanner = document.getElementById("gameOverBanner");
+      goBanner.style.display = (!editMode && movesReady && currentMoves.length === 0) ? "block" : "none";
+    }
+
+    function updateStatsAndBanners(info) {
+      document.getElementById("statLines").textContent = linesClearedTotal.toLocaleString();
+      document.getElementById("statPieces").textContent = piecesPlacedTotal.toLocaleString();
+      document.getElementById("statBoardVal").textContent =
+        info.boardValue !== null ? info.boardValue.toFixed(4) : (info.tablebaseLoaded ? "OUT (0.0)" : "—");
+      document.getElementById("statBackupVal").textContent =
+        info.bellmanBackupValue !== null ? info.bellmanBackupValue.toFixed(4) : "—";
+      document.getElementById("statHoles").textContent = `${info.holes} (${info.overhangs})`;
+      document.getElementById("statHeur").textContent = info.heuristicBoardScore.toFixed(2);
+
+      updateGameOverBanner();
+
+      const canBanner = document.getElementById("canonicalBanner");
+      if (!info.isCanonical) {
+        const reasons = [];
+        if (info.popcount % 2 !== 0) reasons.push(`odd cell count (${info.popcount})`);
+        else reasons.push("contains a full row or floating empty row");
+        canBanner.textContent = `Non-canonical edited board: ${reasons.join(", ")}.`;
+        canBanner.style.display = "block";
+      } else {
+        canBanner.style.display = "none";
+      }
+
+      const strip = document.getElementById("pieceEvStrip");
+      strip.innerHTML = "";
+      let curDisagrees = false;
+      for (const p of info.perPiece) {
+        if (p.piece === currentPiece && p.disagree) curDisagrees = true;
+        const box = document.createElement("div");
+        box.className = "piece-ev-box" +
+          (p.piece === currentPiece ? " active" : "") +
+          (p.disagree ? " disagree" : "");
+        const valText = p.numTransitions === 0
+          ? "DEAD"
+          : (p.bestTablebaseQ !== null ? p.bestTablebaseQ.toFixed(2) : p.bestHeuristicScore.toFixed(1));
+        box.innerHTML = `<div style="font-weight:700;font-family:var(--mono);">${p.pieceChar}</div>` +
+                        `<div style="font-size:11px;font-family:var(--mono);">${valText}</div>` +
+                        `<div class="muted" style="font-size:10px;">${p.numTransitions} mv</div>`;
+        box.addEventListener("click", () => {
+          currentPiece = p.piece;
+          resetCursor();
+          refreshPosition();
+        });
+        strip.appendChild(box);
+      }
+      document.getElementById("disagreeIndicator").style.display = curDisagrees ? "inline-block" : "none";
+    }
+
+    function chooseBestMoves(moves) {
+      if (moves.length === 0) return { bestHeur: null, bestTb: null, anyInTb: false };
+      let bestHeur = moves[0];
+      for (const m of moves) {
+        if (m.heuristicScore > bestHeur.heuristicScore) bestHeur = m;
+      }
+      if (!tbLoaded) return { bestHeur, bestTb: bestHeur, anyInTb: false };
+
+      const anyInTb = moves.some((m) => m.afterInTablebase);
+      if (!anyInTb) return { bestHeur, bestTb: bestHeur, anyInTb: false };
+
+      let bestTb = moves[0];
+      for (const m of moves) {
+        if (m.tablebaseQ > bestTb.tablebaseQ ||
+            (m.tablebaseQ === bestTb.tablebaseQ && m.heuristicScore > bestTb.heuristicScore)) {
+          bestTb = m;
+        }
+      }
+      return { bestHeur, bestTb, anyInTb: true };
+    }
+
+    function renderMovesTable() {
+      document.getElementById("moveCountLabel").textContent = currentMoves.length;
+      const tbody = document.getElementById("movesTableBody");
+      tbody.innerHTML = "";
+      hoveredMove = null;
+      if (currentMoves.length === 0) return;
+
+      const { bestHeur, bestTb, anyInTb } = chooseBestMoves(currentMoves);
+      const policiesDisagree = tbLoaded && bestTb && bestHeur &&
+        bestTb.afterBoardHex !== bestHeur.afterBoardHex;
+
+      const sortMode = document.getElementById("sortModeSelect").value;
+      const useTbSort = sortMode === "tb" || (sortMode === "auto" && tbLoaded && anyInTb);
+
+      const sorted = [...currentMoves].sort((a, b) => {
+        if (useTbSort && a.tablebaseQ !== null && b.tablebaseQ !== null && a.tablebaseQ !== b.tablebaseQ) {
+          return b.tablebaseQ - a.tablebaseQ;
+        }
+        return b.heuristicScore - a.heuristicScore;
+      });
+
+      sorted.forEach((m, rank) => {
+        const tr = document.createElement("tr");
+        const isBestTb = bestTb && m.afterBoardHex === bestTb.afterBoardHex;
+        const isBestHeur = bestHeur && m.afterBoardHex === bestHeur.afterBoardHex;
+
+        let pickPills = "";
+        if (tbLoaded) {
+          if (isBestTb && isBestHeur) {
+            tr.className = "best-row";
+            pickPills = `<span class="badge ok">TB+HEUR</span>`;
+          } else if (isBestTb) {
+            tr.className = policiesDisagree ? "disagree-tb-row" : "best-row";
+            pickPills = `<span class="badge warn">TB</span>`;
+          } else if (isBestHeur) {
+            if (policiesDisagree) tr.className = "disagree-heur-row";
+            pickPills = `<span class="badge accent">HEUR</span>`;
+          }
+        } else if (isBestHeur) {
+          tr.className = "best-row";
+          pickPills = `<span class="badge ok">HEUR</span>`;
+        }
+
+        const tuckDesc = TUCK_DESCRIPTIONS[m.tuckInput] || m.tuckInput;
+        const tuckBadge = m.tuckInput === "."
+          ? `<span class="muted" title="${tuckDesc}">.</span>`
+          : `<span class="badge warn" title="${tuckDesc}">${m.tuckInput}</span>`;
+        const tbStatus = !tbLoaded
+          ? `<span class="muted">—</span>`
+          : (m.afterInTablebase
+              ? `<span class="badge ok">IN</span>`
+              : `<span class="badge warn">OUT</span>`);
+        const tbQText = m.tablebaseQ !== null ? m.tablebaseQ.toFixed(4) : "—";
+
+        tr.innerHTML =
+          `<td>${rank + 1}</td>` +
+          `<td>${pickPills}</td>` +
+          `<td>r${m.rot} x=${m.x} y=${m.lockY}</td>` +
+          `<td>${tuckBadge}</td>` +
+          `<td>${m.linesCleared > 0 ? `<strong>+${m.linesCleared}</strong>` : "0"}</td>` +
+          `<td>${m.afterHoles}</td>` +
+          `<td>${tbStatus}</td>` +
+          `<td>${tbQText}</td>` +
+          `<td>${m.heuristicScore.toFixed(2)}</td>` +
+          `<td>${m.afterBoardHex}</td>`;
+
+        tr.addEventListener("mouseenter", () => {
+          hoveredMove = m;
+          renderBoard();
+        });
+        tr.addEventListener("mouseleave", () => {
+          hoveredMove = null;
+          renderBoard();
+        });
+        tr.addEventListener("click", () => commitMove(m));
+        tbody.appendChild(tr);
+      });
+    }
+
+    function renderPiecePills() {
+      const wrap = document.getElementById("piecePills");
+      wrap.innerHTML = "";
+      PIECE_CHARS.forEach((ch, idx) => {
+        const btn = document.createElement("button");
+        btn.className = "piece-pill" + (idx === currentPiece ? " selected" : "");
+        btn.textContent = ch;
+        btn.addEventListener("click", () => {
+          currentPiece = idx;
+          resetCursor();
+          refreshPosition();
+        });
+        wrap.appendChild(btn);
+      });
+    }
+
+    async function commitMove(move) {
+      if (!movesReady) return;
+      historyStack.push({
+        boardBig,
+        currentPiece,
+        linesClearedTotal,
+        piecesPlacedTotal,
+        rngState: rng.cloneState()
+      });
+      document.getElementById("btnUndo").disabled = false;
+
+      boardBig = BigInt("0x" + move.afterBoardHex);
+      linesClearedTotal += move.linesCleared;
+      piecesPlacedTotal += 1;
+      currentPiece = rng.nextPiece();
+      movesReady = false;
+      currentMoves = [];
+      hoveredMove = null;
+      resetCursor();
+      await refreshPosition();
+    }
+
+    function setBoardCellEdit(rowFromBottom, col, val) {
+      const bit = cellBitBig(rowFromBottom, col);
+      if (val) boardBig |= bit;
+      else boardBig &= ~bit;
+      renderBoard();
+      refreshPosition();
+    }
+
+    window.addEventListener("keydown", (e) => {
+      if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
+      if (editMode || !movesReady || currentMoves.length === 0) return;
+
+      const numRots = PIECES[currentPiece].numRots;
+
+      if (e.key === "r" || e.key === "R" || e.key === "Escape") {
+        e.preventDefault();
+        resetCursor();
+        renderBoard();
+        return;
+      }
+
+      if (e.key === " ") {
+        e.preventDefault();
+        let dropY = cursor.y;
+        while (!evalPieceCells(currentPiece, cursor.rot, cursor.x, dropY + 1, boardBig).collides) {
+          dropY++;
+        }
+        const match = currentMoves.find(
+          (m) => m.rot === cursor.rot && m.x === cursor.x && m.lockY === dropY
+        );
+        if (match) commitMove(match);
+        return;
+      }
+
+      if (e.key === "ArrowDown" || e.key === "s" || e.key === "S") {
+        e.preventDefault();
+        if (!evalPieceCells(currentPiece, cursor.rot, cursor.x, cursor.y + 1, boardBig).collides) {
+          if (cursor.tuckStage === "shifted") {
+            cursor.tuckStage = "done";
+          }
+          cursor.y += 1;
+          updateTuckBadge();
+          renderBoard();
+        } else {
+          const match = currentMoves.find(
+            (m) => m.rot === cursor.rot && m.x === cursor.x && m.lockY === cursor.y
+          );
+          if (match) commitMove(match);
+        }
+        return;
+      }
+
+      let dx = 0;
+      let dRot = 0;
+      let code = ".";
+      if (e.key === "ArrowLeft") { dx = -1; code = "L"; }
+      else if (e.key === "ArrowRight") { dx = 1; code = "R"; }
+      else if (e.key === "x" || e.key === "X" || e.key === "ArrowUp") { dRot = 1; code = "A"; }
+      else if (e.key === "z" || e.key === "Z") { dRot = -1; code = "B"; }
+      else return;
+
+      e.preventDefault();
+      const nextX = cursor.x + dx;
+      const nextRot = (cursor.rot + dRot + numRots) % numRots;
+
+      if (cursor.y === 0) {
+        if (!evalPieceCells(currentPiece, nextRot, nextX, 0, boardBig).collides) {
+          cursor.x = nextX;
+          cursor.rot = nextRot;
+          renderBoard();
+        }
+        return;
+      }
+
+      // Mid-drop 1-input tuck/spin following NES Shift -> Rotate frame order:
+      //   - From "none": L/R shifts and enters "shifted" at tuckY = y; A/B spins and enters "done".
+      //   - From "shifted" at the same tuckY: one A/B spin completes a combo tuck (E/I/F/G).
+      if (cursor.tuckStage === "none") {
+        if (dx !== 0) {
+          if (evalPieceCells(currentPiece, cursor.rot, nextX, cursor.y, boardBig).collides) return;
+          cursor.x = nextX;
+          cursor.tuckStage = "shifted";
+          cursor.tuckY = cursor.y;
+          cursor.lastTuckChar = code;
+        } else {
+          if (evalPieceCells(currentPiece, nextRot, cursor.x, cursor.y, boardBig).collides) return;
+          cursor.rot = nextRot;
+          cursor.tuckStage = "done";
+          cursor.lastTuckChar = code;
+        }
+        updateTuckBadge();
+        renderBoard();
+      } else if (cursor.tuckStage === "shifted" && cursor.y === cursor.tuckY && dRot !== 0) {
+        if (evalPieceCells(currentPiece, nextRot, cursor.x, cursor.y, boardBig).collides) return;
+        cursor.rot = nextRot;
+        cursor.tuckStage = "done";
+        cursor.lastTuckChar = COMBO_TUCK_CODE[`${cursor.lastTuckChar}:${code}`] || code;
+        updateTuckBadge();
+        renderBoard();
+      }
+    });
+
+    async function stepAiOnce() {
+      if (!movesReady || currentMoves.length === 0) return false;
+      const { bestHeur, bestTb } = chooseBestMoves(currentMoves);
+      const policy = document.getElementById("aiPolicySelect").value;
+      const chosen = (policy === "tb" && tbLoaded) ? bestTb : bestHeur;
+      if (!chosen) return false;
+      await commitMove(chosen);
+      return movesReady && currentMoves.length > 0;
+    }
+
+    function stopAutoplay() {
+      if (autoTimer) {
+        clearInterval(autoTimer);
+        autoTimer = null;
+      }
+      seekAbort = true;
+      const btn = document.getElementById("btnAutoPlay");
+      btn.textContent = "Autoplay";
+      btn.classList.remove("active-toggle");
+    }
+
+    document.getElementById("btnAutoPlay").addEventListener("click", () => {
+      if (autoTimer) {
+        stopAutoplay();
+        return;
+      }
+      const speed = Number(document.getElementById("speedInput").value) || 12;
+      const btn = document.getElementById("btnAutoPlay");
+      btn.textContent = "Pause";
+      btn.classList.add("active-toggle");
+      let busy = false;
+      autoTimer = setInterval(async () => {
+        if (busy) return;
+        busy = true;
+        const alive = await stepAiOnce();
+        busy = false;
+        if (!alive) stopAutoplay();
+      }, Math.max(16, Math.round(1000 / speed)));
+    });
+
+    document.getElementById("speedInput").addEventListener("input", (e) => {
+      document.getElementById("speedLabel").textContent = `${e.target.value}/s`;
+      if (autoTimer) {
+        stopAutoplay();
+        document.getElementById("btnAutoPlay").click();
+      }
+    });
+
+    document.getElementById("btnStepAi").addEventListener("click", () => {
+      stopAutoplay();
+      stepAiOnce();
+    });
+
+    document.getElementById("btnNextDisagree").addEventListener("click", async () => {
+      if (!tbLoaded) return;
+      stopAutoplay();
+      seekAbort = false;
+      for (let i = 0; i < 500; i++) {
+        if (seekAbort || !movesReady || currentMoves.length === 0) break;
+        await stepAiOnce();
+        if (!movesReady || currentMoves.length === 0) break;
+        const { bestHeur, bestTb } = chooseBestMoves(currentMoves);
+        if (tbLoaded && bestTb && bestHeur && bestTb.afterBoardHex !== bestHeur.afterBoardHex) {
+          break;
+        }
+      }
+    });
+
+    document.getElementById("btnNewGame").addEventListener("click", () => {
+      stopAutoplay();
+      const parsedSeed = parseSeedBig(document.getElementById("seedInput").value);
+      if (parsedSeed === null) {
+        alert("Seed must be a non-negative integer.");
+        return;
+      }
+      rng = new JsRng(parsedSeed);
+      boardBig = 0n;
+      linesClearedTotal = 0;
+      piecesPlacedTotal = 0;
+      historyStack = [];
+      document.getElementById("btnUndo").disabled = true;
+      currentPiece = rng.nextPiece();
+      resetCursor();
+      refreshPosition();
+    });
+
+    document.getElementById("btnUndo").addEventListener("click", () => {
+      stopAutoplay();
+      if (historyStack.length === 0) return;
+      const prev = historyStack.pop();
+      boardBig = prev.boardBig;
+      currentPiece = prev.currentPiece;
+      linesClearedTotal = prev.linesClearedTotal;
+      piecesPlacedTotal = prev.piecesPlacedTotal;
+      rng.restoreState(prev.rngState);
+      document.getElementById("btnUndo").disabled = historyStack.length === 0;
+      resetCursor();
+      refreshPosition();
+    });
+
+    document.getElementById("btnToggleEdit").addEventListener("click", (e) => {
+      stopAutoplay();
+      editMode = !editMode;
+      e.target.classList.toggle("active-toggle", editMode);
+      const mb = document.getElementById("modeBadge");
+      mb.textContent = editMode ? "EDIT MODE" : "PLAY MODE";
+      mb.className = editMode ? "badge warn" : "badge ok";
+      resetCursor();
+      updateGameOverBanner();
+      renderBoard();
+    });
+
+    document.getElementById("btnClearBoard").addEventListener("click", () => {
+      stopAutoplay();
+      boardBig = 0n;
+      resetCursor();
+      refreshPosition();
+    });
+
+    document.getElementById("btnLoadHex").addEventListener("click", () => {
+      const parsed = parseHexBig(document.getElementById("hexInput").value.trim());
+      if (parsed === null) {
+        alert("Expected 1..10 hexadecimal digits (0000000000 .. ffffffffff).");
+        return;
+      }
+      boardBig = parsed;
+      resetCursor();
+      refreshPosition();
+    });
+
+    document.getElementById("sortModeSelect").addEventListener("change", renderMovesTable);
+    document.getElementById("btnPing").addEventListener("click", async () => {
+      await pingServer();
+      await refreshPosition();
+    });
+    document.getElementById("serverStatus").addEventListener("click", () => {
+      document.getElementById("btnPing").click();
+    });
+    document.getElementById("btnReloadTb").addEventListener("click", async () => {
+      try {
+        const res = await fetch(`${apiBase()}/reload`);
+        const data = await res.json();
+        if (!res.ok) alert(data.error || "Reload failed");
+      } catch (err) {
+        alert(err.message);
+      }
+      await pingServer();
+      await refreshPosition();
+    });
+
+    initBoardDom();
+    currentPiece = rng.nextPiece();
+    resetCursor();
+    (async () => {
+      await pingServer();
+      await refreshPosition();
+    })();
+  </script>
+</body>
+</html>
