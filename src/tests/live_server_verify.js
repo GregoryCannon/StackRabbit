@@ -605,6 +605,49 @@ async function verifyDebugGroundTruthRoute(host, port, fixture) {
   }
 }
 
+async function verifyDebugTournamentRoute(host, port, fixture) {
+  const tmtFixture = { ...fixture, pruningBreadth: -1, playoutCount: 1500, playoutLength: 2 };
+  const pipe = buildPipeString(tmtFixture);
+  const ok = await get(host, port, `/debug-tournament?p=${pipe}&next=J`);
+  if (ok.status !== 200) {
+    fail(`/debug-tournament expected 200, got ${ok.status}: ${ok.body}`);
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(ok.body);
+  } catch (err) {
+    fail(`/debug-tournament returned invalid JSON: ${err.message}`);
+  }
+  if (
+    parsed.nextPiece !== "J" ||
+    !Array.isArray(parsed.candidates) ||
+    parsed.candidates.length === 0
+  ) {
+    fail(`/debug-tournament JSON missing nextPiece or candidates`);
+  }
+
+  const missingP = await get(host, port, "/debug-tournament?next=J");
+  if (missingP.status !== 400) {
+    fail(`/debug-tournament without p expected 400, got ${missingP.status}`);
+  }
+
+  const missingNext = await get(host, port, `/debug-tournament?p=${pipe}`);
+  if (missingNext.status !== 400) {
+    fail(`/debug-tournament without next expected 400, got ${missingNext.status}`);
+  }
+
+  const badNext = await get(host, port, `/debug-tournament?p=${pipe}&next=X`);
+  if (badNext.status !== 400) {
+    fail(`/debug-tournament with invalid next expected 400, got ${badNext.status}`);
+  }
+
+  const legacyPipe = buildPipeString({ ...fixture, pruningBreadth: 20 });
+  const legacyRes = await get(host, port, `/debug-tournament?p=${legacyPipe}&next=J`);
+  if (legacyRes.status !== 500) {
+    fail(`/debug-tournament with non-tournament pruningBreadth expected 500, got ${legacyRes.status}`);
+  }
+}
+
 async function run(host, port, fixtures) {
   const mismatches = [];
   const hardFailures = [];
@@ -649,6 +692,10 @@ async function run(host, port, fixtures) {
   console.log("Synchronous route check: /debug-ground-truth ...");
   await verifyDebugGroundTruthRoute(host, port, fixtures[0]);
   console.log("  200 valid JSON, 400 missing p / bad n, 500 junk & '|' delimiter.");
+
+  console.log("Synchronous route check: /debug-tournament ...");
+  await verifyDebugTournamentRoute(host, port, fixtures[0]);
+  console.log("  200 valid JSON, 400 missing p / bad next, 500 legacy pruningBreadth.");
 
   console.log("Percent-encoded comma check (fixture 0) ...");
   const encodedResult = await kickAndAwaitFull(

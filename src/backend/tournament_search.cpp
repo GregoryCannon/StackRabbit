@@ -317,8 +317,9 @@ enum TournamentRankMode {
 /** Eliminates surviving candidates ranked below `cap` by their best cont's rank-mode score
  * (ties: eval, then key). Cut 1 uses TMT_RANK_UPPER_BOUND (tolerate small-sample noise);
  * cut 2 uses TMT_RANK_RAW_MEAN (false positives get corrected by round 3 and the LCBs). */
-void cutTournamentCandidatesByRank(OUT std::vector<TournamentCandidate> &candidates, int cap,
-                                   TournamentRankMode rankMode) {
+void cutTournamentCandidatesByRank(
+    OUT std::vector<TournamentCandidate> &candidates, int cap, TournamentRankMode rankMode,
+    OUT std::vector<std::pair<int, float>> *outRankAndScore = nullptr) {
   struct CandidateRank {
     float score;
     float evalScore;
@@ -349,6 +350,12 @@ void cutTournamentCandidatesByRank(OUT std::vector<TournamentCandidate> &candida
     }
     return a.key < b.key;
   });
+  if (outRankAndScore != nullptr) {
+    outRankAndScore->assign(candidates.size(), {-1, 0.0f});
+    for (int i = 0; i < (int)rankings.size(); i++) {
+      (*outRankAndScore)[rankings[i].candidateIndex] = {i + 1, rankings[i].score};
+    }
+  }
   for (int i = 0; i < (int)rankings.size(); i++) {
     if (i >= cap) {
       candidates[rankings[i].candidateIndex].eliminated = true;
@@ -375,17 +382,26 @@ int playTournamentSamples(OUT TournamentCont &cont, int sampleCount, int batchOf
 unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
     const std::vector<Possibility> &possibilities, const Piece *secondPiece, int playoutLength,
     const SearchBudget &budget, const EvalContext *evalContext,
-    const PieceRangeContext pieceRangeContextLookup[3]) {
+    const PieceRangeContext pieceRangeContextLookup[3], TournamentTrace *outTrace) {
   unordered_map<string, float> lockValueMap;
+  if (outTrace != nullptr) {
+    *outTrace = TournamentTrace{};
+  }
 
   if (possibilities.empty()) {
     return lockValueMap; // Topped out: no legal first placement
   }
 
   const bool isTimed = (budget.mode == BUDGET_TIME_MS);
+  if (outTrace != nullptr) {
+    outTrace->isTimed = isTimed;
+  }
   const bool evalOnly =
       playoutLength == 0 || (isTimed ? budget.timeBudgetMs <= 0 : budget.playoutCount == 0);
   if (evalOnly || budget.isCancelled()) {
+    if (outTrace != nullptr) {
+      outTrace->usedEvalOnlyFallback = true;
+    }
     return buildEvalOnlyLookupMap(possibilities);
   }
 
@@ -398,6 +414,9 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
                      : SteadyClock::now() + std::chrono::milliseconds(budget.timeBudgetMs))
               : SteadyClock::time_point{};
   if (isTimed && msBetween(SteadyClock::now(), deadline) - clockSafetyMs <= 0.5) {
+    if (outTrace != nullptr) {
+      outTrace->usedEvalOnlyFallback = true;
+    }
     return buildEvalOnlyLookupMap(possibilities);
   }
 
@@ -507,6 +526,9 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
           >= TMT_MIN_PLAYOUTS) {
         n1 = TMT_MIN_PLAYOUTS;
       } else {
+        if (outTrace != nullptr) {
+          outTrace->usedEvalOnlyFallback = true;
+        }
         return buildEvalOnlyLookupMap(possibilities);
       }
     }
@@ -539,7 +561,8 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
           secondPieceIndex, evalContext->aggressionLevel, evalContext->aiMode, budget.cancelFlag);
     }
   }
-  double playoutMsAccum = isTimed ? msBetween(r1Start, SteadyClock::now()) : 0.0;
+  const double r1ElapsedMs = msBetween(r1Start, SteadyClock::now());
+  double playoutMsAccum = isTimed ? r1ElapsedMs : 0.0;
   samplesSoFar += n1;
   TMT_TRACE("TRACE: R1 done (n1=%d)\n", n1);
   if (TMT_LOGGING_ENABLED) {
@@ -583,8 +606,9 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
     }
   }
   int survivorsAfterVeto = countTournamentSurvivors(candidates);
+  std::vector<std::pair<int, float>> cut1Ranks;
   cutTournamentCandidatesByRank(candidates, std::min(TMT_FINALIST_COUNT, survivorsAfterVeto),
-                                TMT_RANK_UPPER_BOUND);
+                                TMT_RANK_UPPER_BOUND, outTrace != nullptr ? &cut1Ranks : nullptr);
   int survivorsAfterCut1 = countTournamentSurvivors(candidates);
   int spentSoFar = r1Entries * n1;
   if (TMT_LOGGING_ENABLED) {
@@ -634,6 +658,7 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
   } else {
     n2 = getRoundSampleCount(totalBudget * r2BudgetShare, actualR2Entries);
   }
+  double r2ElapsedMs = 0.0;
   if (n2 > 0) {
     SteadyClock::time_point r2Start = SteadyClock::now();
     long long r2MovesRun = 0;
@@ -650,8 +675,9 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
             evalContext->aggressionLevel, evalContext->aiMode, budget.cancelFlag);
       }
     }
+    r2ElapsedMs = msBetween(r2Start, SteadyClock::now());
     if (isTimed) {
-      playoutMsAccum += msBetween(r2Start, SteadyClock::now());
+      playoutMsAccum += r2ElapsedMs;
       totalPlayoutMovesRun += r2MovesRun;
     }
     samplesSoFar += n2;
@@ -680,8 +706,9 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
     printf("TMT cut2: leader=%s score=%.2f\n", candidates[leaderIdx].key.c_str(),
            getTournamentContScore(leaderCont2));
   }
+  std::vector<std::pair<int, float>> cut2Ranks;
   cutTournamentCandidatesByRank(candidates, std::min(TMT_R3_COUNT, survivorsAfterCut1),
-                                TMT_RANK_RAW_MEAN);
+                                TMT_RANK_RAW_MEAN, outTrace != nullptr ? &cut2Ranks : nullptr);
   int finalists = countTournamentSurvivors(candidates);
   if (TMT_LOGGING_ENABLED) {
     printf("TMT cut2 done: finalists(%d)=", finalists);
@@ -695,6 +722,7 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
 
   // ---- Round 3: the remaining budget goes to each finalist's best cont, deeply.
   int n3 = 0;
+  SteadyClock::time_point r3Start = SteadyClock::now();
   std::vector<int> finalistIndices;
   std::vector<int> finalistBestContIndices;
   for (int i = 0; i < candidateCount; i++) {
@@ -774,6 +802,7 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
       samplesSoFar += n3;
     }
   }
+  const double r3ElapsedMs = msBetween(r3Start, SteadyClock::now());
   TMT_TRACE("TRACE: R3 done (n3=%d)\n", n3);
   if (PLAYOUT_LOGGING_ENABLED || TMT_LOGGING_ENABLED) {
     printf("Tournament: candidates=%d r1Entries=%d n1=%d survivors1=%d n2=%d finalists=%d n3=%d "
@@ -892,6 +921,82 @@ unordered_map<string, float> getLockValueLookupTournamentFromPossibilities(
       }
     }
   }
+  if (outTrace != nullptr) {
+    outTrace->useTieredR1 = useTieredR1;
+    outTrace->candidateCount = candidateCount;
+    outTrace->r1Entries = r1Entries;
+    outTrace->r2Entries = actualR2Entries;
+    outTrace->n1 = n1;
+    outTrace->n2 = n2;
+    outTrace->n3 = n3;
+    outTrace->survivorsCut1 = survivorsAfterCut1;
+    outTrace->finalistsCut2 = finalists;
+    outTrace->samplesSoFar = samplesSoFar;
+    outTrace->r1Ms = r1ElapsedMs;
+    outTrace->r2Ms = r2ElapsedMs;
+    outTrace->r3Ms = r3ElapsedMs;
+    outTrace->observedMovesPerMs = getObservedMovesPerMs();
+
+    std::vector<int> r3ContForCandidate(candidateCount, -1);
+    for (size_t f = 0; f < finalistIndices.size(); f++) {
+      r3ContForCandidate[finalistIndices[f]] = finalistBestContIndices[f];
+    }
+
+    outTrace->candidates.reserve(candidateCount);
+    for (int i = 0; i < candidateCount; i++) {
+      const TournamentCandidate &cand = candidates[i];
+      TournamentCandidateTrace ct;
+      ct.key = cand.key;
+      ct.evalRank = i;
+      ct.r1Conts = getR1ContsForCandidate(i);
+      if (i < (int)cut1Ranks.size()) {
+        ct.cut1Rank = cut1Ranks[i].first;
+        ct.cut1Score = cut1Ranks[i].second;
+      }
+      if (i < (int)cut2Ranks.size()) {
+        ct.cut2Rank = cut2Ranks[i].first;
+        ct.cut2Score = cut2Ranks[i].second;
+      }
+      ct.survivedCut1 = ct.cut2Rank > 0;
+      ct.survivedCut2 = !cand.eliminated;
+      ct.publishedScore = lockValueMap[cand.key];
+      ct.bestContIdx = getTournamentCandidateBestContIndex(cand);
+
+      ct.conts.reserve(cand.conts.size());
+      for (int c = 0; c < (int)cand.conts.size(); c++) {
+        const TournamentCont &cont = cand.conts[c];
+        TournamentContTrace ctt;
+        ctt.evalRank = c;
+        ctt.contKey = cont.contKey;
+        ctt.evalScoreInclReward = cont.evalScoreInclReward;
+        ctt.immediateReward = cont.immediateReward;
+        ctt.samples = (int)cont.seqScores.size();
+        ctt.isR3Cont = (r3ContForCandidate[i] == c && n3 > 0);
+        if (ctt.samples > 0) {
+          ctt.rawMean = getTournamentContScore(cont);
+          ctt.se = getTournamentContStandardError(cont);
+          ctt.lcbScore = getTournamentContPublishScore(cont);
+          int deaths = 0;
+          for (float s : cont.seqScores) {
+            if (s <= evalContext->weights.deathCoef + 100.0f) {
+              deaths++;
+            }
+          }
+          ctt.deathPct = 100.0f * (float)deaths / (float)ctt.samples;
+          if (ctt.samples > ct.finalSamples) {
+            ct.finalSamples = ctt.samples;
+          }
+        }
+        if (c == ct.bestContIdx && ctt.samples > 0) {
+          ct.bestRawMean = ctt.rawMean;
+          ct.bestSe = ctt.se;
+        }
+        ct.conts.push_back(std::move(ctt));
+      }
+      outTrace->candidates.push_back(std::move(ct));
+    }
+  }
+
   return lockValueMap;
 }
 

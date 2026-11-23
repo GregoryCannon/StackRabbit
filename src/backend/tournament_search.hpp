@@ -2,6 +2,7 @@
 #define TOURNAMENT_SEARCH
 
 #include "types.hpp"
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -79,10 +80,64 @@ constexpr float TMT_PAIRED_TEST_Z = 1.96f;
 // cont alone; <= 0 disables the veto (the default).
 constexpr float TMT_CUT1_VETO_Z = 0;
 
+/** Diagnostic trace of one continuation inside a tournament candidate. */
+struct TournamentContTrace {
+  int evalRank = 0;
+  std::string contKey; // "rot|x|y"
+  float evalScoreInclReward = 0.0f;
+  float immediateReward = 0.0f;
+  int samples = 0;
+  float rawMean = 0.0f;
+  float se = 0.0f;
+  float lcbScore = 0.0f;
+  float deathPct = 0.0f;
+  bool isR3Cont = false;
+};
+
+/** Diagnostic trace of one first-piece candidate across Rounds 1-3. */
+struct TournamentCandidateTrace {
+  std::string key; // "rot|x|y"
+  int evalRank = 0;
+  int r1Conts = 0;
+  bool survivedCut1 = false;
+  int cut1Rank = -1;
+  float cut1Score = 0.0f;
+  bool survivedCut2 = false;
+  int cut2Rank = -1;
+  float cut2Score = 0.0f;
+  int finalSamples = 0;
+  float publishedScore = 0.0f;
+  float bestRawMean = 0.0f;
+  float bestSe = 0.0f;
+  int bestContIdx = -1;
+  std::vector<TournamentContTrace> conts;
+};
+
+/** Optional diagnostic trace populated when passed non-null to the tournament search. */
+struct TournamentTrace {
+  bool usedEvalOnlyFallback = false;
+  bool isTimed = false;
+  bool useTieredR1 = false;
+  int candidateCount = 0;
+  int r1Entries = 0;
+  int r2Entries = 0;
+  int n1 = 0;
+  int n2 = 0;
+  int n3 = 0;
+  int survivorsCut1 = 0;
+  int finalistsCut2 = 0;
+  int samplesSoFar = 0;
+  double r1Ms = 0.0;
+  double r2Ms = 0.0;
+  double r3Ms = 0.0;
+  double observedMovesPerMs = 0.0;
+  std::vector<TournamentCandidateTrace> candidates;
+};
+
 std::unordered_map<std::string, float> getLockValueLookupTournamentFromPossibilities(
     const std::vector<Possibility> &possibilities, const Piece *secondPiece, int playoutLength,
     const SearchBudget &budget, const EvalContext *evalContext,
-    const PieceRangeContext pieceRangeContextLookup[3]);
+    const PieceRangeContext pieceRangeContextLookup[3], TournamentTrace *outTrace = nullptr);
 
 std::unordered_map<std::string, float>
 getLockValueLookupTournament(GameState gameState, const Piece *firstPiece, const Piece *secondPiece,

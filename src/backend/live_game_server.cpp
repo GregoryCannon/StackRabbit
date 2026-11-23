@@ -44,6 +44,13 @@
 //                                      async precompute is running; 400 on
 //                                      missing p or invalid n/conts/keys; 500 on
 //                                      pipe validation error
+//   GET /debug-tournament?p=<pipe>&next=<0..6|I|O|L|J|T|S|Z>
+//                                   -> 200 + JSON round-by-round tournament
+//                                      funnel trace (R1/Cut1/R2/Cut2/R3, per-cont
+//                                      samples/mean/SE/LCB/death%) for one next
+//                                      piece; requires pruningBreadth -1 or -2;
+//                                      503 "Busy" if async precompute running;
+//                                      400 on missing p/next; 500 on pipe error
 //   GET /async-result               -> 200 + full result once computed, else
 //                                      200 + backup response, else 504 "Still
 //                                      calculating", else 404 "No previous
@@ -97,6 +104,7 @@
 #include "main.cpp"
 #include "debug_ground_truth.hpp"
 #include "debug_precompute.hpp"
+#include "debug_tournament.hpp"
 
 namespace {
 
@@ -742,6 +750,41 @@ RouteResult handleDebugGroundTruth(const std::string &query) {
   return {200, response, suffix};
 }
 
+RouteResult handleDebugTournament(const std::string &query, double calibratedMovesPerMs7T) {
+  auto received = std::chrono::steady_clock::now();
+  std::string enginePipe;
+  RouteResult parseError;
+  if (!parseEnginePipeQuery(query, enginePipe, parseError)) {
+    return parseError;
+  }
+  {
+    std::lock_guard<std::mutex> lock(g_slot.mutex);
+    if (g_slot.state == AsyncSlot::State::RUNNING) {
+      return {503, "Busy", ""};
+    }
+  }
+
+  std::string nextRaw;
+  if (!extractQueryParam(query, "next", nextRaw) || nextRaw.empty()) {
+    return {400, "Missing required query parameter: next (expected 0-6 or I/O/L/J/T/S/Z)", ""};
+  }
+  int nextIdx = debug_tmt::parseNextPieceArg(percentDecode(nextRaw));
+  if (nextIdx < 0) {
+    return {400, "Error: invalid next parameter (expected 0-6 or I/O/L/J/T/S/Z): " + nextRaw, ""};
+  }
+
+  EngineTimingContext timing;
+  timing.hasRequestReceived = true;
+  timing.requestReceived = received;
+  timing.calibratedMovesPerMs7T = calibratedMovesPerMs7T;
+  std::string response = debug_tmt::runDebugTournament(enginePipe, nextIdx, &timing);
+  std::string suffix = formatDurationSuffix(received);
+  if (isEngineRejection(response)) {
+    return {500, response, suffix};
+  }
+  return {200, response, suffix};
+}
+
 RouteResult routeRequest(const std::string &path, const std::string &query,
                          double calibratedMovesPerMs7T) {
   if (path == "/ping") {
@@ -761,6 +804,9 @@ RouteResult routeRequest(const std::string &path, const std::string &query,
   }
   if (path == "/debug-ground-truth") {
     return handleDebugGroundTruth(query);
+  }
+  if (path == "/debug-tournament") {
+    return handleDebugTournament(query, calibratedMovesPerMs7T);
   }
   if (path == "/async-result") {
     return handleAsyncResult();

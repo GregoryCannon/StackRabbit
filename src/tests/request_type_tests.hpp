@@ -1776,4 +1776,53 @@ TEST_CASE("runDebugPrecompute returns ranked phantom collapse breakdown matching
         != std::string::npos);
 }
 
+TEST_CASE("runDebugTournament traces R1/Cut1/R2/Cut2/R3 and validates inputs") {
+  std::string board = makeFlatBoard(4);
+  std::string tmtPipe = InputBuilder()
+                            .withBoard1(board)
+                            .withLevel(19)
+                            .withLines(0)
+                            .withCurPiece(IDX_L)
+                            .withNextPiece(-1)
+                            .withTimeline("X..")
+                            .withPlayoutCount(2500)
+                            .withPlayoutLength(4)
+                            .withPruningBreadth(-1)
+                            .withAggression("safe")
+                            .withDasCharge(16)
+                            .build()
+                        + "18|";
+  std::string legacyPipe = InputBuilder()
+                               .withBoard1(board)
+                               .withLevel(19)
+                               .withLines(0)
+                               .withCurPiece(IDX_L)
+                               .withNextPiece(-1)
+                               .withTimeline("X..")
+                               .withPlayoutCount(20)
+                               .withPlayoutLength(4)
+                               .withPruningBreadth(20)
+                               .withAggression("safe")
+                               .withDasCharge(16)
+                               .build()
+                           + "18|";
+
+  // Validation checks
+  CHECK(debug_tmt::runDebugTournament(tmtPipe, -1).rfind("Error:", 0) == 0);
+  CHECK(debug_tmt::runDebugTournament(tmtPipe, 7).rfind("Error:", 0) == 0);
+  CHECK(debug_tmt::runDebugTournament(legacyPipe, IDX_J).rfind("Error:", 0) == 0);
+  CHECK(debug_tmt::runDebugTournament("bad_pipe", IDX_J).rfind("Error:", 0) == 0);
+
+  // Valid tournament trace
+  std::string json = debug_tmt::runDebugTournament(tmtPipe, IDX_J);
+  REQUIRE(json.rfind("Error:", 0) != 0);
+  CHECK(json.find("\"nextPiece\":\"J\"") != std::string::npos);
+  CHECK(json.find("\"usedEvalOnlyFallback\":false") != std::string::npos);
+  CHECK(json.find("\"survivorsCut1\":") != std::string::npos);
+  CHECK(json.find("\"finalistsCut2\":") != std::string::npos);
+  CHECK(json.find("\"publishedScore\":") != std::string::npos);
+  CHECK(json.find("\"conts\":[") != std::string::npos);
+  CHECK(json.find("\"isR3Cont\":true") != std::string::npos);
+}
+
 #endif // SR_REQUEST_TYPE_TESTS

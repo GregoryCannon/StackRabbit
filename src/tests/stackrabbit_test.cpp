@@ -20,6 +20,7 @@
 #include "../backend/main.cpp"
 #include "../backend/debug_ground_truth.hpp"
 #include "../backend/debug_precompute.hpp"
+#include "../backend/debug_tournament.hpp"
 
 #include "helpers.hpp"
 #include "board_format_tests.hpp"

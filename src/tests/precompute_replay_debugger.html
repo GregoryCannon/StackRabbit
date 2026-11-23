@@ -778,6 +778,39 @@
       outline-offset: -2px;
       background: #dbeafe;
     }
+
+    /* Stage 4: Tournament Funnel Inspector */
+    .tmt-scroll {
+      max-height: 290px;
+      overflow-y: auto;
+    }
+
+    .tmt-table tr.tmt-r3 {
+      background: #f0fdf4;
+    }
+
+    .tmt-table tr.tmt-cut2 {
+      background: #fffbeb;
+    }
+
+    .tmt-table tr.tmt-selected {
+      background: #eff6ff;
+      box-shadow: inset 3px 0 0 var(--accent);
+    }
+
+    .tmt-cont-r3 {
+      background: #f0fdf4;
+      font-weight: 600;
+    }
+
+    .btn-link-xs {
+      padding: 1px 5px;
+      font-size: 10px;
+      margin-left: 4px;
+      color: var(--accent);
+      background: #eff6ff;
+      border-color: #bfdbfe;
+    }
   </style>
 </head>
 
@@ -983,6 +1016,7 @@
             <button id="tabSweepBtn" class="diag-tab active" type="button">1. Parameter Sweep</button>
             <button id="tabPhantomBtn" class="diag-tab" type="button">2. Phantom Collapse</button>
             <button id="tabGtBtn" class="diag-tab" type="button">3. Ground Truth (High-N)</button>
+            <button id="tabTmtBtn" class="diag-tab" type="button">4. Tournament Funnel</button>
           </div>
 
           <!-- Stage 1: Auto Parameter Sweep -->
@@ -1116,6 +1150,77 @@
               </table>
             </div>
             <div id="gtInspector" class="gt-inspector hidden"></div>
+          </div>
+
+          <!-- Stage 4: Tournament Funnel Inspector -->
+          <div id="paneTmt" class="diag-pane hidden">
+            <div class="gt-controls">
+              <div class="gt-field">
+                <label for="tmtNextPiece">Next Piece</label>
+                <select id="tmtNextPiece">
+                  <option value="I">I (0)</option>
+                  <option value="O">O (1)</option>
+                  <option value="L">L (2)</option>
+                  <option value="J">J (3)</option>
+                  <option value="T">T (4)</option>
+                  <option value="S">S (5)</option>
+                  <option value="Z">Z (6)</option>
+                </select>
+              </div>
+              <div class="gt-field">
+                <label for="tmtSortBy">Sort Candidates</label>
+                <select id="tmtSortBy">
+                  <option value="published" selected>Published LCB (desc)</option>
+                  <option value="eval">Fast-Eval Rank</option>
+                  <option value="cut2">Cut-2 Mean Rank</option>
+                  <option value="raw">Raw Mean (desc)</option>
+                </select>
+              </div>
+              <button id="runTmtBtn" class="primary" type="button">Run Tournament Trace</button>
+              <button id="tmtEnableModeBtn" class="hidden" type="button">Switch to Timed (-2, 300ms)</button>
+            </div>
+
+            <div id="tmtError" class="error-box hidden"></div>
+            <div id="tmtMeta" class="triage-banner hidden"></div>
+
+            <div id="tmtCandWrap" class="results-wrap tmt-scroll hidden">
+              <table class="tmt-table">
+                <thead>
+                  <tr>
+                    <th>Placement</th>
+                    <th>Eval#</th>
+                    <th>R1</th>
+                    <th>Cut 1 (UCB)</th>
+                    <th>Cut 2 (Mean)</th>
+                    <th>Final n</th>
+                    <th>Raw Mean ± SE</th>
+                    <th>Published LCB</th>
+                    <th>LCB Pen</th>
+                    <th>Stage</th>
+                  </tr>
+                </thead>
+                <tbody id="tmtCandBody"></tbody>
+              </table>
+            </div>
+
+            <div id="tmtContHeader" class="row-between hidden" style="margin-top:10px;"></div>
+            <div id="tmtContWrap" class="results-wrap hidden">
+              <table>
+                <thead>
+                  <tr>
+                    <th>cont#</th>
+                    <th>Next Placement</th>
+                    <th>Fast Eval</th>
+                    <th>Samples (n)</th>
+                    <th>Raw Mean ± SE</th>
+                    <th>Death %</th>
+                    <th>LCB</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="tmtContBody"></tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>
@@ -1514,6 +1619,7 @@
         sweeps: new Map(),    // index -> { running, cancelId, baseQuery, rows }
         phantomsByIndex: new Map(), // index -> { running, queryUsed, data, error, selectedA, selectedB }
         gtByIndex: new Map(), // index -> { running, reachableQuery, reachable, selectedA, selectedB, selectedC, data, selectedCell }
+        tmtByIndex: new Map(), // index -> { running, nextPiece, sortBy, data, error, selectedCandKey }
         activeDiagTab: "sweep",
         customPreview: null,  // { source, id, mode: "placement"|"ply2Placement"|"afterBoard", placement, beforeRows, afterRows, caption }
         inFlight: false,
@@ -1548,9 +1654,11 @@
       const elTabSweepBtn = $("tabSweepBtn");
       const elTabPhantomBtn = $("tabPhantomBtn");
       const elTabGtBtn = $("tabGtBtn");
+      const elTabTmtBtn = $("tabTmtBtn");
       const elPaneSweep = $("paneSweep");
       const elPanePhantom = $("panePhantom");
       const elPaneGt = $("paneGt");
+      const elPaneTmt = $("paneTmt");
       const elRunSweepBtn = $("runSweepBtn");
       const elStopSweepBtn = $("stopSweepBtn");
       const elSweepError = $("sweepError");
@@ -1583,6 +1691,17 @@
       const elGtHead = $("gtHead");
       const elGtBody = $("gtBody");
       const elGtInspector = $("gtInspector");
+      const elTmtNextPiece = $("tmtNextPiece");
+      const elTmtSortBy = $("tmtSortBy");
+      const elRunTmtBtn = $("runTmtBtn");
+      const elTmtEnableModeBtn = $("tmtEnableModeBtn");
+      const elTmtError = $("tmtError");
+      const elTmtMeta = $("tmtMeta");
+      const elTmtCandWrap = $("tmtCandWrap");
+      const elTmtCandBody = $("tmtCandBody");
+      const elTmtContHeader = $("tmtContHeader");
+      const elTmtContWrap = $("tmtContWrap");
+      const elTmtContBody = $("tmtContBody");
 
       const PARAM_INPUTS = {
         level: { el: $("pLevel"), type: "int" },
@@ -2532,6 +2651,85 @@
         }
       }
 
+      // ---- Stage 4: Tournament Funnel Inspector ----
+      function getOrInitTmtState(entry) {
+        let tmt = state.tmtByIndex.get(entry.index);
+        if (!tmt) {
+          const defaultNext = (entry.inferredNext && entry.inferredNext.contiguous && entry.inferredNext.nextPiece)
+            ? entry.inferredNext.nextPiece.id
+            : "I";
+          tmt = {
+            running: false,
+            nextPiece: defaultNext,
+            sortBy: "published",
+            data: null,
+            error: null,
+            selectedCandKey: null,
+          };
+          state.tmtByIndex.set(entry.index, tmt);
+        }
+        return tmt;
+      }
+
+      async function runTournamentTrace(overrideNextPiece = null) {
+        const entry = state.entries[state.currentIndex];
+        if (!entry || state.inFlight) return;
+        const params = getEffectiveParams(entry);
+        const tmt = getOrInitTmtState(entry);
+        if (overrideNextPiece) {
+          tmt.nextPiece = overrideNextPiece;
+        }
+        const query = buildCommaQuery(entry.board, params, entry.secondBoard);
+
+        tmt.error = null;
+        tmt.running = true;
+        state.inFlight = true;
+        elReplayBtn.disabled = true;
+        renderCurrent();
+
+        try {
+          const url = `${getServerBase()}/debug-tournament?p=${query}&next=${encodeURIComponent(tmt.nextPiece)}`;
+          const resp = await fetch(url);
+          const text = await resp.text();
+          if (!resp.ok) {
+            tmt.error = `HTTP ${resp.status}: ${text}`;
+            return;
+          }
+          if (text.startsWith("Unknown request type")) {
+            tmt.error =
+              "Running live_game_server does not support /debug-tournament yet. " +
+              "Restart it with `npm run live_server` and try again.";
+            return;
+          }
+          const json = JSON.parse(text);
+          tmt.data = json;
+          // Auto-select the top published candidate
+          const sorted = (json.candidates || []).slice().sort((a, b) => b.publishedScore - a.publishedScore);
+          tmt.selectedCandKey = sorted.length > 0 ? sorted[0].key : null;
+          elPingStatus.className = "ping ok";
+          elPingStatus.textContent = "Connected";
+        } catch (err) {
+          tmt.error = `Could not reach /debug-tournament.\n${err}`;
+        } finally {
+          tmt.running = false;
+          state.inFlight = false;
+          elReplayBtn.disabled = false;
+          renderCurrent();
+        }
+      }
+
+      function openFunnelForPiece(pieceId) {
+        const entry = state.entries[state.currentIndex];
+        if (!entry) return;
+        const tmt = getOrInitTmtState(entry);
+        tmt.nextPiece = pieceId;
+        state.activeDiagTab = "tmt";
+        renderCurrent();
+        if (!state.inFlight && getEffectiveParams(entry).pruningBreadth < 0) {
+          runTournamentTrace(pieceId);
+        }
+      }
+
       function populateGtSelect(selectEl, reachable, selectedVal, allowEmpty) {
         const opts = [];
         if (allowEmpty) {
@@ -2551,13 +2749,16 @@
         elTabSweepBtn.classList.toggle("active", state.activeDiagTab === "sweep");
         elTabPhantomBtn.classList.toggle("active", state.activeDiagTab === "phantom");
         elTabGtBtn.classList.toggle("active", state.activeDiagTab === "gt");
+        elTabTmtBtn.classList.toggle("active", state.activeDiagTab === "tmt");
         elPaneSweep.classList.toggle("hidden", state.activeDiagTab !== "sweep");
         elPanePhantom.classList.toggle("hidden", state.activeDiagTab !== "phantom");
         elPaneGt.classList.toggle("hidden", state.activeDiagTab !== "gt");
+        elPaneTmt.classList.toggle("hidden", state.activeDiagTab !== "tmt");
 
         const sweep = state.sweeps.get(entry.index) || null;
         const phState = state.phantomsByIndex.get(entry.index) || null;
         const gt = state.gtByIndex.get(entry.index) || null;
+        const tmt = getOrInitTmtState(entry);
 
         // ---- Sweep Pane ----
         const sweepRunning = Boolean(sweep && sweep.running);
@@ -2726,7 +2927,7 @@
               const cid = `ph:A:${selA}:${p}`;
               const isPrev = state.customPreview && state.customPreview.id === cid;
               return `<tr class="${isPrev ? "selected" : ""}" data-ph-piece-preview="A" data-ph-raw="${selA}" data-ph-piece="${p}">
-                <td><strong>${p}</strong></td>
+                <td style="white-space:nowrap;"><strong>${p}</strong><button class="btn-link-xs" type="button" data-open-funnel="${p}" title="Inspect ${p} tournament funnel">Funnel</button></td>
                 <td class="${pb.isContinue ? "" : "ph-adj-cell"}" style="white-space:nowrap;">${escapeHtml(moveTxt)}</td>
                 <td>${pb.rawLockValue.toFixed(2)}</td>
                 <td class="${penCls}" style="white-space:nowrap;">${escapeHtml(penTxt)}</td>
@@ -2767,7 +2968,7 @@
                 deltaTd = `<td class="${cls}">${d >= 0 ? "+" : ""}${d.toFixed(2)}</td>`;
               }
               return `<tr>
-                <td><strong>${p}</strong></td>
+                <td style="white-space:nowrap;"><strong>${p}</strong><button class="btn-link-xs" type="button" data-open-funnel="${p}" title="Inspect ${p} tournament funnel">Funnel</button></td>
                 ${renderSideCell(pbA, "A", selA, p)}
                 ${renderSideCell(pbB, "B", selB, p)}
                 ${deltaTd}
@@ -2881,7 +3082,7 @@
           elGtHead.innerHTML = `<tr>${headCols.join("")}</tr>`;
 
           elGtBody.innerHTML = PIECE_ORDER.map(p => {
-            const tds = [`<td><strong>${p}</strong></td>`];
+            const tds = [`<td style="white-space:nowrap;"><strong>${p}</strong><button class="btn-link-xs" type="button" data-open-funnel="${p}" title="Inspect ${p} tournament funnel">Funnel</button></td>`];
             cands.forEach((c, ci) => {
               const cell = c.byPiece ? c.byPiece[p] : null;
               const cid = `gt:ply2:${ci}:${p}`;
@@ -2940,6 +3141,119 @@
           }
         }
 
+        // ---- Stage 4: Tournament Funnel Pane ----
+        const isTmtMode = params.pruningBreadth < 0;
+        elTmtNextPiece.value = tmt.nextPiece;
+        elTmtSortBy.value = tmt.sortBy;
+        elRunTmtBtn.disabled = state.inFlight || !isTmtMode;
+        elRunTmtBtn.textContent = tmt.running ? "Tracing..." : "Run Tournament Trace";
+        elTmtEnableModeBtn.classList.toggle("hidden", isTmtMode);
+
+        if (!isTmtMode && !tmt.error) {
+          elTmtError.textContent =
+            `Current pruningBreadth is ${params.pruningBreadth} (legacy non-tournament mode). ` +
+            `Switch pruningBreadth to -1 (fixed budget) or -2 (timed ms) to inspect the tournament funnel.`;
+          elTmtError.classList.remove("hidden");
+        } else if (tmt.error) {
+          elTmtError.textContent = tmt.error;
+          elTmtError.classList.remove("hidden");
+        } else {
+          elTmtError.classList.add("hidden");
+        }
+
+        if (!tmt.data || !tmt.data.candidates || tmt.data.candidates.length === 0) {
+          elTmtMeta.classList.add("hidden");
+          elTmtCandWrap.classList.add("hidden");
+          elTmtContHeader.classList.add("hidden");
+          elTmtContWrap.classList.add("hidden");
+        } else {
+          const td = tmt.data;
+          const pills = [
+            `<span class="mono"><strong>Next ${escapeHtml(td.nextPiece)}</strong> · ${td.candidateCount} cands</span>`,
+            `<span class="tag ${td.useTieredR1 ? "green" : "amber"}">Tiered R1: ${td.useTieredR1 ? "ON" : "FALLBACK"} (${td.r1Entries} entries)</span>`,
+            `<span class="mono muted">R1: n1=${td.n1} (${td.r1Ms}ms) → Cut1=${td.survivorsCut1}</span>`,
+            `<span class="mono muted">R2: n2=${td.n2} (${td.r2Ms}ms) → Cut2=${td.finalistsCut2}</span>`,
+            `<span class="mono muted">R3: n3=${td.n3} (${td.r3Ms}ms)</span>`,
+          ];
+          if (td.isTimed) {
+            pills.push(`<span class="mono muted">rate=${td.observedMovesPerMs} mv/ms</span>`);
+          }
+          if (td.usedEvalOnlyFallback) {
+            pills.push(`<span class="tag red">EVAL-ONLY FALLBACK</span>`);
+          }
+          elTmtMeta.innerHTML = pills.join(" ");
+          elTmtMeta.classList.remove("hidden");
+
+          const sortedCands = td.candidates.slice().sort((a, b) => {
+            if (tmt.sortBy === "eval") return a.evalRank - b.evalRank;
+            if (tmt.sortBy === "cut2") {
+              const ra = a.cut2Rank > 0 ? a.cut2Rank : 9999;
+              const rb = b.cut2Rank > 0 ? b.cut2Rank : 9999;
+              return ra !== rb ? ra - rb : a.evalRank - b.evalRank;
+            }
+            if (tmt.sortBy === "raw") return b.bestRawMean - a.bestRawMean;
+            return b.publishedScore - a.publishedScore;
+          });
+
+          const selKey = tmt.selectedCandKey || (sortedCands[0] ? sortedCands[0].key : null);
+          elTmtCandBody.innerHTML = sortedCands.map(c => {
+            const isSel = c.key === selKey;
+            const stageTag = c.survivedCut2
+              ? `<span class="tag green">R3 Finalist</span>`
+              : (c.survivedCut1 ? `<span class="tag amber">Cut 2</span>` : `<span class="tag red">Cut 1</span>`);
+            const trCls = [
+              isSel ? "tmt-selected" : (c.survivedCut2 ? "tmt-r3" : (c.survivedCut1 ? "tmt-cut2" : "")),
+            ].filter(Boolean).join(" ");
+            const lcbPen = c.finalSamples >= 2 ? (c.publishedScore - c.bestRawMean) : 0;
+            const cut1Txt = c.cut1Rank > 0 ? `#${c.cut1Rank} (${c.cut1Score.toFixed(1)})` : "—";
+            const cut2Txt = c.cut2Rank > 0 ? `#${c.cut2Rank} (${c.cut2Score.toFixed(1)})` : "—";
+            return `<tr class="${trCls}" data-tmt-cand="${escapeHtml(c.key)}" title="Click to inspect continuations & preview ply 1">
+              <td style="white-space:nowrap;"><strong>${escapeHtml(formatRelCoords(c.relRot, c.relX, c.relY))}</strong> <span class="muted">${escapeHtml(c.key)}</span></td>
+              <td>#${c.evalRank}</td>
+              <td>${c.r1Conts}c</td>
+              <td style="white-space:nowrap;">${cut1Txt}</td>
+              <td style="white-space:nowrap;">${cut2Txt}</td>
+              <td><strong>${c.finalSamples}</strong></td>
+              <td style="white-space:nowrap;">${c.finalSamples > 0 ? `${c.bestRawMean.toFixed(1)} <span class="muted">±${c.bestSe.toFixed(1)}</span>` : "—"}</td>
+              <td><strong>${c.publishedScore.toFixed(2)}</strong></td>
+              <td class="${lcbPen < -30 ? "ph-pen-neg" : "muted"}">${lcbPen.toFixed(1)}</td>
+              <td>${stageTag}</td>
+            </tr>`;
+          }).join("");
+          elTmtCandWrap.classList.remove("hidden");
+
+          // Selected candidate's continuations sub-table
+          const selCand = td.candidates.find(c => c.key === selKey) || sortedCands[0];
+          if (selCand) {
+            const dasTxt = td.useDas
+              ? ` · dasAfter=${selCand.dasAfter} · pen(part/min)=${selCand.partialPenalty.toFixed(1)}/${selCand.minPenalty.toFixed(1)}`
+              : "";
+            elTmtContHeader.innerHTML =
+              `<div><strong>Continuations for ${escapeHtml(formatRelCoords(selCand.relRot, selCand.relX, selCand.relY))}</strong> <span class="mono muted">(eval#${selCand.evalRank}${dasTxt})</span></div>` +
+              `<span class="muted" style="font-size:11.5px;">Click any continuation row to preview next piece ${escapeHtml(td.nextPiece)} on board</span>`;
+            elTmtContBody.innerHTML = (selCand.conts || []).map((ct, idx) => {
+              const cid = `tmt:cont:${selCand.key}:${idx}`;
+              const isPrev = state.customPreview && state.customPreview.id === cid;
+              const statusBits = [];
+              if (ct.isR3Cont) statusBits.push(`<span class="tag green">★ R3</span>`);
+              if (idx === selCand.bestContIdx) statusBits.push(`<span class="tag amber">best</span>`);
+              if (ct.samples === 0) statusBits.push(`<span class="muted">unsampled</span>`);
+              return `<tr class="${isPrev ? "selected" : (ct.isR3Cont ? "tmt-cont-r3" : "")}" data-tmt-cont-cand="${escapeHtml(selCand.key)}" data-tmt-cont-idx="${idx}">
+                <td>cont#${ct.evalRank}</td>
+                <td style="white-space:nowrap;"><strong>${escapeHtml(formatRelCoords(ct.relRot, ct.relX, ct.relY))}</strong> <span class="muted">${escapeHtml(ct.contKey)}</span></td>
+                <td>${ct.evalScore.toFixed(1)}</td>
+                <td><strong>${ct.samples}</strong></td>
+                <td style="white-space:nowrap;">${ct.samples > 0 ? `${ct.rawMean.toFixed(1)} <span class="muted">±${ct.se.toFixed(1)}</span>` : "—"}</td>
+                <td class="${ct.deathPct >= 5 ? "ph-pen-neg" : "muted"}">${ct.samples > 0 ? ct.deathPct.toFixed(1) + "%" : "—"}</td>
+                <td><strong>${ct.samples > 0 ? ct.lcbScore.toFixed(2) : "—"}</strong></td>
+                <td>${statusBits.join(" ")}</td>
+              </tr>`;
+            }).join("");
+            elTmtContHeader.classList.remove("hidden");
+            elTmtContWrap.classList.remove("hidden");
+          }
+        }
+
         elDiagStatusNote.textContent = state.customPreview
           ? `Board preview: ${state.customPreview.caption}`
           : "";
@@ -2971,6 +3285,7 @@
         state.sweeps.clear();
         state.phantomsByIndex.clear();
         state.gtByIndex.clear();
+        state.tmtByIndex.clear();
         state.customPreview = null;
 
         if (entries.length === 0) {
@@ -3108,6 +3423,97 @@
             fetchReachableMovesForCurrent(true);
           }
         }
+      });
+      elTabTmtBtn.addEventListener("click", () => {
+        state.activeDiagTab = "tmt";
+        renderCurrent();
+      });
+
+      // Cross-tab Funnel shortcut buttons inside Phantom Collapse & Ground Truth tables
+      document.addEventListener("click", e => {
+        const btn = e.target.closest("button[data-open-funnel]");
+        if (!btn) return;
+        e.stopPropagation();
+        openFunnelForPiece(btn.dataset.openFunnel);
+      });
+
+      elTmtNextPiece.addEventListener("change", () => {
+        const entry = state.entries[state.currentIndex];
+        if (entry) getOrInitTmtState(entry).nextPiece = elTmtNextPiece.value;
+      });
+      elTmtSortBy.addEventListener("change", () => {
+        const entry = state.entries[state.currentIndex];
+        if (entry) {
+          getOrInitTmtState(entry).sortBy = elTmtSortBy.value;
+          renderCurrent();
+        }
+      });
+      elRunTmtBtn.addEventListener("click", () => runTournamentTrace());
+      elTmtEnableModeBtn.addEventListener("click", () => {
+        const entry = state.entries[state.currentIndex];
+        if (!entry) return;
+        const ov = state.overrides.get(entry.index) || {};
+        ov.pruningBreadth = -2;
+        ov.playoutCount = 300;
+        if (getEffectiveParams(entry).playoutLength === 0) ov.playoutLength = 8;
+        state.overrides.set(entry.index, ov);
+        getOrInitTmtState(entry).error = null;
+        renderCurrent();
+      });
+
+      elTmtCandBody.addEventListener("click", e => {
+        const tr = e.target.closest("tr[data-tmt-cand]");
+        if (!tr) return;
+        const entry = state.entries[state.currentIndex];
+        if (!entry) return;
+        const tmt = getOrInitTmtState(entry);
+        if (!tmt.data) return;
+        const key = tr.dataset.tmtCand;
+        tmt.selectedCandKey = key;
+        const cand = tmt.data.candidates.find(c => c.key === key);
+        if (cand) {
+          const pieceUsed = PIECES[getEffectiveParams(entry).currentPieceIdx] || entry.piece;
+          const sim = simulateLock(entry.rows, pieceUsed, cand.rot, cand.x, cand.y);
+          if (sim) {
+            state.customPreview = {
+              source: "tmt",
+              id: `tmt:cand:${key}`,
+              mode: "placement",
+              placement: sim,
+              afterRows: sim.afterRows,
+              caption: `Tournament ${formatRelCoords(cand.relRot, cand.relX, cand.relY)}`,
+            };
+          }
+        }
+        renderCurrent();
+      });
+
+      elTmtContBody.addEventListener("click", e => {
+        const tr = e.target.closest("tr[data-tmt-cont-cand]");
+        if (!tr) return;
+        const entry = state.entries[state.currentIndex];
+        if (!entry) return;
+        const tmt = getOrInitTmtState(entry);
+        if (!tmt.data) return;
+        const candKey = tr.dataset.tmtContCand;
+        const cIdx = Number(tr.dataset.tmtContIdx);
+        const cand = tmt.data.candidates.find(c => c.key === candKey);
+        const ct = cand && cand.conts ? cand.conts[cIdx] : null;
+        const nextPieceObj = PIECE_BY_ID[tmt.data.nextPiece];
+        if (!cand || !ct || !cand.boardAfter || !nextPieceObj) return;
+        const ply1Rows = boardStrToRows(cand.boardAfter);
+        const ply2Sim = simulateLock(ply1Rows, nextPieceObj, ct.rot, ct.x, ct.y);
+        if (!ply2Sim) return;
+        state.customPreview = {
+          source: "tmt",
+          id: `tmt:cont:${candKey}:${cIdx}`,
+          mode: "ply2Placement",
+          beforeRows: ply1Rows,
+          placement: ply2Sim,
+          afterRows: ply2Sim.afterRows,
+          caption: `Tmt ${formatRelCoords(cand.relRot, cand.relX, cand.relY)} → ${tmt.data.nextPiece} ${formatRelCoords(ct.relRot, ct.relX, ct.relY)}`,
+        };
+        renderCurrent();
       });
 
       elRunPhantomBtn.addEventListener("click", runPhantomBreakdown);

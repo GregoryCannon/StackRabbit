@@ -81,6 +81,13 @@ Routes:
   list of reachable placements (`503` `Busy` while an async `/precompute` job is
   running; `400` on missing `p` or invalid `n`/`conts`/`keys`; `500` on `|`
   delimiter or pipe validation error).
+- `GET /debug-tournament?p=<pipe>&next=<0..6|I|O|L|J|T|S|Z>` → `200` +
+  synchronous JSON round-by-round tournament funnel trace (`R1`/`Cut1`/`R2`/
+  `Cut2`/`R3` sample counts, timings, per-candidate ranks & published LCBs, and
+  per-continuation `samples`/`rawMean`/`se`/`lcbScore`/`deathPct`) for one next
+  piece; requires tournament mode (`pruningBreadth == -1` or `-2`); `503` `Busy`
+  while an async `/precompute` job is running; `400` on missing `p`/`next`;
+  `500` on `|` delimiter, pipe error, or non-tournament `pruningBreadth`.
 
 The comma-delimited URL contract: the `p` parameter is the request string
 delimited by `,` so queries are valid unencoded in browsers and match the
