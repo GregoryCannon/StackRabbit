@@ -590,6 +590,25 @@ async function verifyDebugGroundTruthRoute(host, port, fixture) {
     fail(`/debug-ground-truth with bad n expected 400, got ${badN.status}`);
   }
 
+  const okNnb = await get(host, port, `/debug-ground-truth?p=${pipe}&n=10&nnb=1`);
+  if (okNnb.status !== 200) {
+    fail(`/debug-ground-truth NNB expected 200, got ${okNnb.status}: ${okNnb.body}`);
+  }
+  let parsedNnb;
+  try {
+    parsedNnb = JSON.parse(okNnb.body);
+  } catch (err) {
+    fail(`/debug-ground-truth NNB returned invalid JSON: ${err.message}`);
+  }
+  if (parsedNnb.isNoNextBox !== true || !Array.isArray(parsedNnb.candidates) || parsedNnb.candidates.length === 0) {
+    fail(`/debug-ground-truth NNB JSON missing isNoNextBox or candidates`);
+  }
+
+  const badNnb = await get(host, port, `/debug-ground-truth?p=${pipe}&nnb=maybe`);
+  if (badNnb.status !== 400) {
+    fail(`/debug-ground-truth with bad nnb expected 400, got ${badNnb.status}`);
+  }
+
   const junk = await get(host, port, `/debug-ground-truth?p=${JUNK_PIPE}`);
   if (junk.status !== 500) {
     fail(`/debug-ground-truth with junk p expected 500, got ${junk.status}`);
@@ -620,10 +639,32 @@ async function verifyDebugTournamentRoute(host, port, fixture) {
   }
   if (
     parsed.nextPiece !== "J" ||
+    parsed.isNoNextBox !== false ||
     !Array.isArray(parsed.candidates) ||
     parsed.candidates.length === 0
   ) {
     fail(`/debug-tournament JSON missing nextPiece or candidates`);
+  }
+
+  const okNnb = await get(host, port, `/debug-tournament?p=${pipe}&next=NNB`);
+  if (okNnb.status !== 200) {
+    fail(`/debug-tournament NNB expected 200, got ${okNnb.status}: ${okNnb.body}`);
+  }
+  let parsedNnb;
+  try {
+    parsedNnb = JSON.parse(okNnb.body);
+  } catch (err) {
+    fail(`/debug-tournament NNB returned invalid JSON: ${err.message}`);
+  }
+  if (
+    parsedNnb.nextPiece !== "NNB" ||
+    parsedNnb.isNoNextBox !== true ||
+    parsedNnb.useTieredR1 !== false ||
+    !Array.isArray(parsedNnb.candidates) ||
+    parsedNnb.candidates.length === 0 ||
+    parsedNnb.candidates.some((c) => !Array.isArray(c.conts) || c.conts.length !== 1 || c.conts[0].contKey !== "none")
+  ) {
+    fail(`/debug-tournament NNB JSON failed 1-ply invariants`);
   }
 
   const missingP = await get(host, port, "/debug-tournament?next=J");

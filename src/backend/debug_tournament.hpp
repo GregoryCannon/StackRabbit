@@ -13,7 +13,13 @@
 
 namespace debug_tmt {
 
+constexpr int NEXT_PIECE_NNB = -1;
+constexpr int NEXT_PIECE_INVALID = -2;
+
 inline int parseNextPieceArg(const std::string &arg) {
+  if (arg == "-1" || arg == "NNB" || arg == "nnb" || arg == "none" || arg == "NONE") {
+    return NEXT_PIECE_NNB;
+  }
   if (arg.size() == 1) {
     char c = arg[0];
     if (c >= '0' && c <= '6') {
@@ -42,10 +48,10 @@ inline int parseNextPieceArg(const std::string &arg) {
     case 'z':
       return 6;
     default:
-      return -1;
+      return NEXT_PIECE_INVALID;
     }
   }
-  return -1;
+  return NEXT_PIECE_INVALID;
 }
 
 inline bool parseLockKey(const std::string &key, int &rot, int &x, int &y) {
@@ -69,14 +75,16 @@ inline bool parseLockKey(const std::string &key, int &rot, int &x, int &y) {
   return true;
 }
 
-// Runs the tournament search for one (board, curPiece, nextPiece) with full per-round
-// tracing and returns JSON. Requires tournament mode (pruningBreadth == -1 or -2).
+// Runs the tournament search for one (board, curPiece, nextPiece) — or 1-ply NNB mode when
+// nextPieceIdx == NEXT_PIECE_NNB (-1) — with full per-round tracing and returns JSON.
+// Requires tournament mode (pruningBreadth == -1 or -2).
 inline std::string runDebugTournament(const std::string &enginePipe, int nextPieceIdx,
                                       const EngineTimingContext *timing = nullptr) {
   const auto started = std::chrono::steady_clock::now();
 
-  if (nextPieceIdx < 0 || nextPieceIdx > 6) {
-    return "Error: invalid next piece (expected 0-6 or I/O/L/J/T/S/Z).";
+  const bool isNnb = (nextPieceIdx == NEXT_PIECE_NNB);
+  if (!isNnb && (nextPieceIdx < 0 || nextPieceIdx > 6)) {
+    return "Error: invalid next piece (expected 0-6, I/O/L/J/T/S/Z, or NNB/-1).";
   }
 
   debug_pre::ParsedPrecomputePipe req;
@@ -88,7 +96,8 @@ inline std::string runDebugTournament(const std::string &enginePipe, int nextPie
     return "Error: /debug-tournament requires tournament mode (pruningBreadth == -1 or -2).";
   }
 
-  const Piece *nextPiece = &PIECE_LIST[nextPieceIdx];
+  const Piece *nextPiece = isNnb ? nullptr : &PIECE_LIST[nextPieceIdx];
+  const Piece *lastSeenPiece = isNnb ? req.curPiece : nextPiece;
   const bool useDas = req.dasCharge >= 0;
   std::string eqTimelineStorage;
   char const *contextTimeline = req.inputFrameTimeline.c_str();
@@ -128,18 +137,86 @@ inline std::string runDebugTournament(const std::string &enginePipe, int nextPie
     }
   }
 
-  // Shallow DAS penalties when in DAS mode (eval-only, fast).
-  DasLockValueMaps dasPenalties;
+  // Shallow DAS penalties when in DAS mode (eval-only, fast). In NNB mode, compute all seven
+  // per-next-piece penalty maps in parallel and NES-weight-average them to match precompute.cpp.
+  std::unordered_map<std::string, double> partialPenMap;
+  std::unordered_map<std::string, double> minPenMap;
   if (useDas) {
-    dasPenalties = getLockValueLookupDasMapsWithFirstMoves(
-        firstMoves, nextPiece, /* pruningBreadth= */ 20, /* playoutCount= */ 0,
-        /* playoutLength= */ 0, req.inputFrameTimeline.c_str(), &evalContext, contexts, nullptr);
+    if (isNnb) {
+      DasPenaltyMaps perPiece[7];
+      std::exception_ptr errors[7] = {};
+      std::thread threads[7];
+      for (int i = 0; i < 7; i++) {
+        threads[i] = std::thread([&, i]() {
+          try {
+            perPiece[i] = getDasPenaltyMapsWithFirstMoves(
+                firstMoves, &PIECE_LIST[i], req.inputFrameTimeline.c_str(), &evalContext);
+          } catch (...) {
+            errors[i] = std::current_exception();
+          }
+        });
+      }
+      for (std::thread &t : threads) {
+        if (t.joinable()) {
+          t.join();
+        }
+      }
+      for (int i = 0; i < 7; i++) {
+        if (errors[i]) {
+          std::rethrow_exception(errors[i]);
+        }
+      }
+      for (const auto &entry : branchMeta) {
+        const std::string &k = entry.first;
+        double avgPartial = 0.0;
+        double avgMin = 0.0;
+        for (int i = 0; i < 7; i++) {
+          const double w = debug_gt::nesPieceProb(req.curPiece, &PIECE_LIST[i]);
+          if (perPiece[i].partialPenalty.count(k) && perPiece[i].minPenalty.count(k)) {
+            avgPartial += w * static_cast<double>(perPiece[i].partialPenalty.at(k));
+            avgMin += w * static_cast<double>(perPiece[i].minPenalty.at(k));
+          }
+        }
+        partialPenMap[k] = avgPartial;
+        minPenMap[k] = avgMin;
+      }
+    } else {
+      const DasPenaltyMaps dasPenalties = getDasPenaltyMapsWithFirstMoves(
+          firstMoves, nextPiece, req.inputFrameTimeline.c_str(), &evalContext);
+      for (const auto &p : dasPenalties.partialPenalty) {
+        partialPenMap[p.first] = static_cast<double>(p.second);
+      }
+      for (const auto &p : dasPenalties.minPenalty) {
+        minPenMap[p.first] = static_cast<double>(p.second);
+      }
+    }
   }
 
   std::vector<Possibility> possibilities;
-  searchDepth2FromFirstMoves(firstMoves, nextPiece, /* secondPieceDasCharge= */ useDas ? 15 : -1,
-                             useDas ? req.inputFrameTimeline.c_str() : contextTimeline,
-                             &evalContext, possibilities);
+  if (isNnb) {
+    possibilities.reserve(firstMoves.branches.size());
+    std::unordered_set<int> seenCells;
+    seenCells.reserve(firstMoves.branches.size());
+    for (const FirstMoveBranch &branch : firstMoves.branches) {
+      const int cellKey =
+          (branch.firstPlacement.rotationIndex * 100 + branch.firstPlacement.x) * 1000
+          + branch.firstPlacement.y;
+      if (!seenCells.insert(cellKey).second) {
+        continue;
+      }
+      possibilities.push_back(
+          {{branch.firstPlacement.x, branch.firstPlacement.y, branch.firstPlacement.rotationIndex},
+           NULL_LOCK_LOCATION,
+           branch.afterFirstMove,
+           branch.firstMoveEval,
+           branch.firstMoveReward,
+           ""});
+    }
+  } else {
+    searchDepth2FromFirstMoves(firstMoves, nextPiece, /* secondPieceDasCharge= */ useDas ? 15 : -1,
+                               useDas ? req.inputFrameTimeline.c_str() : contextTimeline,
+                               &evalContext, possibilities);
+  }
 
   // Configure SearchBudget matching precompute.cpp's timed/fixed behavior.
   SearchBudget budget = SearchBudget::fromWire(req.pruningBreadth, req.playoutCount);
@@ -149,13 +226,13 @@ inline std::string runDebugTournament(const std::string &enginePipe, int nextPie
     const double calRate = timing != nullptr ? timing->calibratedMovesPerMs7T : 0.0;
     budget = SearchBudget::fromDeadline(
         req.playoutCount, anchor + std::chrono::milliseconds(req.playoutCount), calRate);
-    int reserveMs = std::min(15, std::max(0, req.playoutCount / 3));
+    int reserveMs = std::min(PRECOMPUTE_COLLAPSE_RESERVE_MS, std::max(0, req.playoutCount / 3));
     budget.deadline -= std::chrono::milliseconds(reserveMs);
   }
 
   TournamentTrace trace;
-  getLockValueLookupTournamentFromPossibilities(possibilities, nextPiece, req.playoutLength, budget,
-                                                &evalContext, contexts, &trace);
+  getLockValueLookupTournamentFromPossibilities(possibilities, lastSeenPiece, req.playoutLength,
+                                                budget, &evalContext, contexts, &trace);
 
   const double elapsedMs =
       std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
@@ -164,7 +241,8 @@ inline std::string runDebugTournament(const std::string &enginePipe, int nextPie
   std::ostringstream out;
   out << "{";
   out << "\"aiMode\":\"" << debug_gt::aiModeName(evalContext.aiMode) << "\",";
-  out << "\"nextPiece\":\"" << PIECE_NAMES[nextPieceIdx] << "\",";
+  out << "\"isNoNextBox\":" << (isNnb ? "true" : "false") << ",";
+  out << "\"nextPiece\":\"" << (isNnb ? "NNB" : PIECE_NAMES[nextPieceIdx]) << "\",";
   out << "\"nextPieceIdx\":" << nextPieceIdx << ",";
   out << "\"useDas\":" << (useDas ? "true" : "false") << ",";
   out << "\"firstPieceDasCharge\":" << req.dasCharge << ",";
@@ -201,11 +279,9 @@ inline std::string runDebugTournament(const std::string &enginePipe, int nextPie
     const auto bmIt = branchMeta.find(c.key);
     const int dasAfter = bmIt != branchMeta.end() ? bmIt->second.dasAfter : -1;
     const std::string &boardAfter = bmIt != branchMeta.end() ? bmIt->second.boardAfter : "";
-    const double partialPen = (useDas && dasPenalties.partialPenalty.count(c.key))
-                                  ? dasPenalties.partialPenalty.at(c.key)
-                                  : 0.0;
-    const double minPen =
-        (useDas && dasPenalties.minPenalty.count(c.key)) ? dasPenalties.minPenalty.at(c.key) : 0.0;
+    const double partialPen =
+        (useDas && partialPenMap.count(c.key)) ? partialPenMap.at(c.key) : 0.0;
+    const double minPen = (useDas && minPenMap.count(c.key)) ? minPenMap.at(c.key) : 0.0;
 
     out
         << "{\"key\":\""
@@ -265,7 +341,7 @@ inline std::string runDebugTournament(const std::string &enginePipe, int nextPie
       }
       const TournamentContTrace &ct = c.conts[j];
       int cRot = 0, cX = 0, cY = 0;
-      parseLockKey(ct.contKey, cRot, cX, cY);
+      const bool hasContPlacement = !isNnb && parseLockKey(ct.contKey, cRot, cX, cY);
       out
           << "{\"evalRank\":"
           << ct.evalRank
@@ -273,17 +349,17 @@ inline std::string runDebugTournament(const std::string &enginePipe, int nextPie
           << debug_gt::jsonEscape(ct.contKey)
           << "\""
           << ",\"rot\":"
-          << cRot
+          << (hasContPlacement ? cRot : 0)
           << ",\"x\":"
-          << cX
+          << (hasContPlacement ? cX : 0)
           << ",\"y\":"
-          << cY
+          << (hasContPlacement ? cY : 0)
           << ",\"relRot\":"
-          << cRot
+          << (hasContPlacement ? cRot : 0)
           << ",\"relX\":"
-          << (cX - INITIAL_X)
+          << (hasContPlacement ? (cX - INITIAL_X) : 0)
           << ",\"relY\":"
-          << (cY - nextPiece->initialY)
+          << (hasContPlacement ? (cY - nextPiece->initialY) : 0)
           << ",\"evalScore\":"
           << debug_gt::fmtDouble(ct.evalScoreInclReward, 2)
           << ",\"immediateReward\":"

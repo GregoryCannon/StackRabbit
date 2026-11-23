@@ -319,15 +319,20 @@ struct CandidateGtResult {
   std::string boardAfter;
   double weightedAvg = 0.0;
   double weightedSe = 0.0;
+  double deathPct = 0.0;      // 1-ply NNB death percentage
+  double avgDasPenalty = 0.0; // 1-ply NNB: NES-weighted DAS penalty for this placement's dasAfter
+  double avgPartialPenalty = 0.0; // 1-ply NNB: NES-weighted partial DAS penalty
+  double avgMinPenalty = 0.0;     // 1-ply NNB: NES-weighted min DAS penalty
   PieceGtResult byPiece[7];
 };
 
-// Runs a high-N ground-truth canonical playout comparison across all 7 next pieces for the
+// Runs a high-N ground-truth canonical playout comparison across all 7 next pieces (2-ply,
+// default) or directly from post-ply-1 states (1-ply NNB when noNextBox == true) for the
 // requested first-piece lock keys (or top 4 by fastEval if requestedKeys is empty).
 // Returns a JSON string, or an "Error: ..." string on invalid inputs.
 inline std::string runDebugGroundTruth(const std::string &enginePipe,
                                        const std::vector<std::string> &requestedKeys,
-                                       int playoutCount, int maxConts) {
+                                       int playoutCount, int maxConts, bool noNextBox = false) {
   const auto started = std::chrono::steady_clock::now();
 
   if (playoutCount < 0 || playoutCount > CANONICAL_SEQUENCE_BATCH_SIZE) {
@@ -451,151 +456,279 @@ inline std::string runDebugGroundTruth(const std::string &enginePipe,
     filteredFirstMoves.branches.push_back(b);
   }
 
-  // Run all 7 next-piece evaluations in parallel (read-only shared filteredFirstMoves).
+  // Run ground-truth evaluations in parallel.
   if (!filteredFirstMoves.branches.empty()) {
-    auto evalOneNextPiece = [&](int pieceIdx) {
-      const Piece *nextPiece = &PIECE_LIST[pieceIdx];
+    if (noNextBox) {
+      // 1-ply NNB ground truth: evaluate each requested first-piece placement directly with
+      // curPiece as lastSeenPiece, plus compute the 7 shallow DAS penalty maps when in DAS mode.
+      std::vector<size_t> reachableResultIndices;
+      reachableResultIndices.reserve(filteredFirstMoves.branches.size());
+      for (size_t i = 0; i < results.size(); i++) {
+        if (results[i].reachable) {
+          reachableResultIndices.push_back(i);
+        }
+      }
 
-      // Compute shallow DAS penalties on the filtered branches when in DAS mode.
-      DasLockValueMaps dasPenalties;
+      const bool runPlayouts = playoutCount > 0 && req.playoutLength > 0;
+      const size_t numCands = reachableResultIndices.size();
+      std::vector<std::exception_ptr> candErrors(numCands);
+      std::vector<std::thread> candThreads(numCands);
+      for (size_t idx = 0; idx < numCands; idx++) {
+        candThreads[idx] = std::thread([&, idx]() {
+          try {
+            const FirstMoveBranch &b = filteredFirstMoves.branches[idx];
+            CandidateGtResult &cand = results[reachableResultIndices[idx]];
+            double total = b.firstMoveEval;
+            double se = 0.0;
+            double deathPct = 0.0;
+            if (runPlayouts) {
+              std::vector<float> scores;
+              float plMean = getPlayoutScore(
+                  b.afterFirstMove, playoutCount, req.playoutLength, contexts, req.curPiece->index,
+                  evalContext.aggressionLevel, evalContext.aiMode, /* playoutDataList= */ nullptr,
+                  &scores, /* sequenceOffset= */ 0);
+              total = static_cast<double>(b.firstMoveReward) + static_cast<double>(plMean);
+              if (scores.size() > 1) {
+                double sumSq = 0.0;
+                int deaths = 0;
+                for (float s : scores) {
+                  double d = static_cast<double>(s) - static_cast<double>(plMean);
+                  sumSq += d * d;
+                  if (s <= evalContext.weights.deathCoef + 100.0f) {
+                    deaths++;
+                  }
+                }
+                se = std::sqrt(sumSq
+                               / static_cast<double>(scores.size() - 1)
+                               / static_cast<double>(scores.size()));
+                deathPct = 100.0 * static_cast<double>(deaths) / static_cast<double>(scores.size());
+              } else if (scores.size() == 1) {
+                deathPct = scores[0] <= evalContext.weights.deathCoef + 100.0f ? 100.0 : 0.0;
+              }
+            }
+            cand.weightedAvg = total;
+            cand.weightedSe = se;
+            cand.deathPct = deathPct;
+            for (int p = 0; p < 7; p++) {
+              PieceGtResult &pr = cand.byPiece[p];
+              pr.valid = true;
+              pr.mean = total;
+              pr.se = se;
+              pr.deathPct = deathPct;
+              pr.bestCont = "none";
+              pr.contEval = b.firstMoveEval;
+              pr.linesCleared = cand.linesCleared;
+              pr.boardAfter = cand.boardAfter;
+            }
+          } catch (...) {
+            candErrors[idx] = std::current_exception();
+          }
+        });
+      }
+      for (std::thread &t : candThreads) {
+        if (t.joinable()) {
+          t.join();
+        }
+      }
+      for (size_t idx = 0; idx < numCands; idx++) {
+        if (candErrors[idx]) {
+          std::rethrow_exception(candErrors[idx]);
+        }
+      }
+
       if (useDas) {
-        dasPenalties = getLockValueLookupDasMapsWithFirstMoves(
-            filteredFirstMoves, nextPiece, /* pruningBreadth= */ 20, /* playoutCount= */ 0,
-            /* playoutLength= */ 0, req.inputFrameTimeline.c_str(), &evalContext, contexts,
-            nullptr);
+        DasPenaltyMaps perPiece[7];
+        std::exception_ptr penErrors[7] = {};
+        std::thread penThreads[7];
+        for (int p = 0; p < 7; p++) {
+          penThreads[p] = std::thread([&, p]() {
+            try {
+              perPiece[p] = getDasPenaltyMapsWithFirstMoves(
+                  filteredFirstMoves, &PIECE_LIST[p], req.inputFrameTimeline.c_str(), &evalContext);
+            } catch (...) {
+              penErrors[p] = std::current_exception();
+            }
+          });
+        }
+        for (std::thread &t : penThreads) {
+          if (t.joinable()) {
+            t.join();
+          }
+        }
+        for (int p = 0; p < 7; p++) {
+          if (penErrors[p]) {
+            std::rethrow_exception(penErrors[p]);
+          }
+        }
+        for (size_t rIdx : reachableResultIndices) {
+          CandidateGtResult &cand = results[rIdx];
+          double avgPartial = 0.0;
+          double avgMin = 0.0;
+          double avgActual = 0.0;
+          for (int p = 0; p < 7; p++) {
+            const double w = nesPieceProb(req.curPiece, &PIECE_LIST[p]);
+            const bool hasBoth = perPiece[p].partialPenalty.count(cand.key)
+                                 && perPiece[p].minPenalty.count(cand.key);
+            const double pp =
+                hasBoth ? static_cast<double>(perPiece[p].partialPenalty.at(cand.key)) : 0.0;
+            const double mp =
+                hasBoth ? static_cast<double>(perPiece[p].minPenalty.at(cand.key)) : 0.0;
+            cand.byPiece[p].partialPenalty = pp;
+            cand.byPiece[p].minPenalty = mp;
+            avgPartial += w * pp;
+            avgMin += w * mp;
+            const double applied = cand.dasAfter >= 15 ? 0.0 : (cand.dasAfter >= 10 ? pp : mp);
+            avgActual += w * applied;
+          }
+          cand.avgPartialPenalty = avgPartial;
+          cand.avgMinPenalty = avgMin;
+          cand.avgDasPenalty = avgActual;
+        }
+      }
+    } else {
+      // Standard 2-ply ground truth: run all 7 next-piece evaluations in parallel.
+      auto evalOneNextPiece = [&](int pieceIdx) {
+        const Piece *nextPiece = &PIECE_LIST[pieceIdx];
+
+        // Compute shallow DAS penalties on the filtered branches when in DAS mode.
+        DasPenaltyMaps dasPenalties;
+        if (useDas) {
+          dasPenalties = getDasPenaltyMapsWithFirstMoves(
+              filteredFirstMoves, nextPiece, req.inputFrameTimeline.c_str(), &evalContext);
+        }
+
+        std::vector<Possibility> poss;
+        searchDepth2FromFirstMoves(filteredFirstMoves, nextPiece,
+                                   /* secondPieceDasCharge= */ useDas ? 15 : -1,
+                                   useDas ? req.inputFrameTimeline.c_str() : contextTimeline,
+                                   &evalContext, poss, /* generateExplanation= */ true);
+
+        // Group possibilities by first placement key.
+        std::unordered_map<std::string, std::vector<const Possibility *>> byKey;
+        for (const Possibility &p : poss) {
+          byKey[encodeLockPosition(p.firstPlacement)].push_back(&p);
+        }
+
+        for (size_t rIdx = 0; rIdx < results.size(); rIdx++) {
+          CandidateGtResult &cand = results[rIdx];
+          if (!cand.reachable) {
+            continue;
+          }
+          auto it = byKey.find(cand.key);
+          if (it == byKey.end() || it->second.empty()) {
+            continue;
+          }
+          auto &vec = it->second;
+          std::sort(vec.begin(), vec.end(), [](const Possibility *a, const Possibility *b) {
+            return a->evalScoreInclReward > b->evalScoreInclReward;
+          });
+
+          PieceGtResult best;
+          best.mean = -1e18;
+          if (useDas) {
+            if (dasPenalties.partialPenalty.count(cand.key)) {
+              best.partialPenalty = dasPenalties.partialPenalty.at(cand.key);
+            }
+            if (dasPenalties.minPenalty.count(cand.key)) {
+              best.minPenalty = dasPenalties.minPenalty.at(cand.key);
+            }
+          }
+
+          const bool runPlayouts = playoutCount > 0 && req.playoutLength > 0;
+          const int lim = runPlayouts ? std::min(static_cast<int>(vec.size()), maxConts) : 1;
+          for (int c = 0; c < lim; c++) {
+            const Possibility *p = vec[c];
+            double total = 0.0;
+            double se = 0.0;
+            double deathPct = 0.0;
+            if (runPlayouts) {
+              std::vector<float> scores;
+              float plMean =
+                  getPlayoutScore(p->resultingState, playoutCount, req.playoutLength, contexts,
+                                  nextPiece->index, evalContext.aggressionLevel, evalContext.aiMode,
+                                  /* playoutDataList= */ nullptr, &scores, /* sequenceOffset= */ 0);
+              total = static_cast<double>(p->immediateReward) + static_cast<double>(plMean);
+              if (scores.size() > 1) {
+                double sumSq = 0.0;
+                int deaths = 0;
+                for (float s : scores) {
+                  double d = static_cast<double>(s) - static_cast<double>(plMean);
+                  sumSq += d * d;
+                  if (s <= evalContext.weights.deathCoef + 100.0f) {
+                    deaths++;
+                  }
+                }
+                se = std::sqrt(sumSq
+                               / static_cast<double>(scores.size() - 1)
+                               / static_cast<double>(scores.size()));
+                deathPct = 100.0 * static_cast<double>(deaths) / static_cast<double>(scores.size());
+              } else if (scores.size() == 1) {
+                deathPct = scores[0] <= evalContext.weights.deathCoef + 100.0f ? 100.0 : 0.0;
+              }
+            } else {
+              total = p->evalScoreInclReward;
+            }
+
+            if (!best.valid || total > best.mean) {
+              best.valid = true;
+              best.mean = total;
+              best.se = se;
+              best.deathPct = deathPct;
+              best.bestCont = encodeLockPosition(p->secondPlacement);
+              best.bestContRelRot = p->secondPlacement.rotationIndex;
+              best.bestContRelX = p->secondPlacement.x - INITIAL_X;
+              best.bestContRelY = p->secondPlacement.y - nextPiece->initialY;
+              best.bestContEvalRank = c;
+              best.contEval = p->evalScoreInclReward;
+              best.contEvalExpl = p->evalExplanation;
+              best.linesCleared = p->resultingState.lines - req.gameState.lines;
+              best.boardAfter = boardToBitString(p->resultingState.board);
+            }
+          }
+          cand.byPiece[pieceIdx] = std::move(best);
+        }
+      };
+
+      std::exception_ptr errors[7] = {};
+      std::thread threads[7];
+      for (int i = 0; i < 7; i++) {
+        threads[i] = std::thread([i, &evalOneNextPiece, &errors]() {
+          try {
+            evalOneNextPiece(i);
+          } catch (...) {
+            errors[i] = std::current_exception();
+          }
+        });
+      }
+      for (int i = 0; i < 7; i++) {
+        threads[i].join();
+      }
+      for (int i = 0; i < 7; i++) {
+        if (errors[i]) {
+          std::rethrow_exception(errors[i]);
+        }
       }
 
-      std::vector<Possibility> poss;
-      searchDepth2FromFirstMoves(filteredFirstMoves, nextPiece,
-                                 /* secondPieceDasCharge= */ useDas ? 15 : -1,
-                                 useDas ? req.inputFrameTimeline.c_str() : contextTimeline,
-                                 &evalContext, poss, /* generateExplanation= */ true);
-
-      // Group possibilities by first placement key.
-      std::unordered_map<std::string, std::vector<const Possibility *>> byKey;
-      for (const Possibility &p : poss) {
-        byKey[encodeLockPosition(p.firstPlacement)].push_back(&p);
-      }
-
-      for (size_t rIdx = 0; rIdx < results.size(); rIdx++) {
-        CandidateGtResult &cand = results[rIdx];
+      // Aggregate NES-weighted 7-piece averages and combined SE.
+      for (CandidateGtResult &cand : results) {
         if (!cand.reachable) {
           continue;
         }
-        auto it = byKey.find(cand.key);
-        if (it == byKey.end() || it->second.empty()) {
-          continue;
-        }
-        auto &vec = it->second;
-        std::sort(vec.begin(), vec.end(), [](const Possibility *a, const Possibility *b) {
-          return a->evalScoreInclReward > b->evalScoreInclReward;
-        });
-
-        PieceGtResult best;
-        best.mean = -1e18;
-        if (useDas) {
-          if (dasPenalties.partialPenalty.count(cand.key)) {
-            best.partialPenalty = dasPenalties.partialPenalty.at(cand.key);
+        double avg = 0.0;
+        double varSum = 0.0;
+        double weightSum = 0.0;
+        for (int i = 0; i < 7; i++) {
+          if (!cand.byPiece[i].valid) {
+            continue;
           }
-          if (dasPenalties.minPenalty.count(cand.key)) {
-            best.minPenalty = dasPenalties.minPenalty.at(cand.key);
-          }
+          double w = nesPieceProb(req.curPiece, &PIECE_LIST[i]);
+          avg += w * cand.byPiece[i].mean;
+          varSum += w * w * cand.byPiece[i].se * cand.byPiece[i].se;
+          weightSum += w;
         }
-
-        const bool runPlayouts = playoutCount > 0 && req.playoutLength > 0;
-        const int lim = runPlayouts ? std::min(static_cast<int>(vec.size()), maxConts) : 1;
-        for (int c = 0; c < lim; c++) {
-          const Possibility *p = vec[c];
-          double total = 0.0;
-          double se = 0.0;
-          double deathPct = 0.0;
-          if (runPlayouts) {
-            std::vector<float> scores;
-            float plMean =
-                getPlayoutScore(p->resultingState, playoutCount, req.playoutLength, contexts,
-                                nextPiece->index, evalContext.aggressionLevel, evalContext.aiMode,
-                                /* playoutDataList= */ nullptr, &scores, /* sequenceOffset= */ 0);
-            total = static_cast<double>(p->immediateReward) + static_cast<double>(plMean);
-            if (scores.size() > 1) {
-              double sumSq = 0.0;
-              int deaths = 0;
-              for (float s : scores) {
-                double d = static_cast<double>(s) - static_cast<double>(plMean);
-                sumSq += d * d;
-                if (s <= evalContext.weights.deathCoef + 100.0f) {
-                  deaths++;
-                }
-              }
-              se = std::sqrt(sumSq
-                             / static_cast<double>(scores.size() - 1)
-                             / static_cast<double>(scores.size()));
-              deathPct = 100.0 * static_cast<double>(deaths) / static_cast<double>(scores.size());
-            } else if (scores.size() == 1) {
-              deathPct = scores[0] <= evalContext.weights.deathCoef + 100.0f ? 100.0 : 0.0;
-            }
-          } else {
-            total = p->evalScoreInclReward;
-          }
-
-          if (!best.valid || total > best.mean) {
-            best.valid = true;
-            best.mean = total;
-            best.se = se;
-            best.deathPct = deathPct;
-            best.bestCont = encodeLockPosition(p->secondPlacement);
-            best.bestContRelRot = p->secondPlacement.rotationIndex;
-            best.bestContRelX = p->secondPlacement.x - INITIAL_X;
-            best.bestContRelY = p->secondPlacement.y - nextPiece->initialY;
-            best.bestContEvalRank = c;
-            best.contEval = p->evalScoreInclReward;
-            best.contEvalExpl = p->evalExplanation;
-            best.linesCleared = p->resultingState.lines - req.gameState.lines;
-            best.boardAfter = boardToBitString(p->resultingState.board);
-          }
-        }
-        cand.byPiece[pieceIdx] = std::move(best);
+        cand.weightedAvg = weightSum > 0.0 ? avg / weightSum : 0.0;
+        cand.weightedSe = weightSum > 0.0 ? std::sqrt(varSum) / weightSum : 0.0;
       }
-    };
-
-    std::exception_ptr errors[7] = {};
-    std::thread threads[7];
-    for (int i = 0; i < 7; i++) {
-      threads[i] = std::thread([i, &evalOneNextPiece, &errors]() {
-        try {
-          evalOneNextPiece(i);
-        } catch (...) {
-          errors[i] = std::current_exception();
-        }
-      });
-    }
-    for (int i = 0; i < 7; i++) {
-      threads[i].join();
-    }
-    for (int i = 0; i < 7; i++) {
-      if (errors[i]) {
-        std::rethrow_exception(errors[i]);
-      }
-    }
-
-    // Aggregate NES-weighted 7-piece averages and combined SE.
-    for (CandidateGtResult &cand : results) {
-      if (!cand.reachable) {
-        continue;
-      }
-      double avg = 0.0;
-      double varSum = 0.0;
-      double weightSum = 0.0;
-      for (int i = 0; i < 7; i++) {
-        if (!cand.byPiece[i].valid) {
-          continue;
-        }
-        double w = nesPieceProb(req.curPiece, &PIECE_LIST[i]);
-        avg += w * cand.byPiece[i].mean;
-        varSum += w * w * cand.byPiece[i].se * cand.byPiece[i].se;
-        weightSum += w;
-      }
-      cand.weightedAvg = weightSum > 0.0 ? avg / weightSum : 0.0;
-      cand.weightedSe = weightSum > 0.0 ? std::sqrt(varSum) / weightSum : 0.0;
     }
   }
 
@@ -606,6 +739,7 @@ inline std::string runDebugGroundTruth(const std::string &enginePipe,
   std::ostringstream out;
   out << "{";
   out << "\"aiMode\":\"" << aiModeName(evalContext.aiMode) << "\",";
+  out << "\"isNoNextBox\":" << (noNextBox ? "true" : "false") << ",";
   out << "\"playoutCount\":" << playoutCount << ",";
   out << "\"playoutLength\":" << req.playoutLength << ",";
   out << "\"contsEvaluated\":" << maxConts << ",";
@@ -700,6 +834,14 @@ inline std::string runDebugGroundTruth(const std::string &enginePipe,
           << fmtDouble(c.weightedAvg, 2)
           << ",\"weightedSe\":"
           << fmtDouble(c.weightedSe, 2)
+          << ",\"deathPct\":"
+          << fmtDouble(c.deathPct, 2)
+          << ",\"avgDasPenalty\":"
+          << fmtDouble(c.avgDasPenalty, 2)
+          << ",\"avgPartialPenalty\":"
+          << fmtDouble(c.avgPartialPenalty, 2)
+          << ",\"avgMinPenalty\":"
+          << fmtDouble(c.avgMinPenalty, 2)
           << ",\"byPiece\":{";
       for (int p = 0; p < 7; p++) {
         if (p > 0) {

@@ -36,21 +36,23 @@
 //                                      adjustments, plus exact precompute response);
 //                                      503 "Busy" if async precompute is running;
 //                                      400 if p absent; 500 on pipe error
-//   GET /debug-ground-truth?p=<pipe>[&keys=k1,k2][&n=2000][&conts=5]
+//   GET /debug-ground-truth?p=<pipe>[&keys=k1,k2][&n=2000][&conts=5][&nnb=0|1]
 //                                   -> 200 + JSON high-N ground-truth playout
-//                                      comparison across all 7 next pieces for
-//                                      selected first-piece lock keys (plus all
-//                                      reachable placements); 503 "Busy" if an
-//                                      async precompute is running; 400 on
-//                                      missing p or invalid n/conts/keys; 500 on
-//                                      pipe validation error
-//   GET /debug-tournament?p=<pipe>&next=<0..6|I|O|L|J|T|S|Z>
+//                                      comparison across all 7 next pieces (or
+//                                      1-ply NNB mode when nnb=1) for selected
+//                                      first-piece lock keys (plus all reachable
+//                                      placements); 503 "Busy" if an async
+//                                      precompute is running; 400 on missing p
+//                                      or invalid n/conts/keys/nnb; 500 on pipe
+//                                      validation error
+//   GET /debug-tournament?p=<pipe>&next=<0..6|I|O|L|J|T|S|Z|NNB|-1>
 //                                   -> 200 + JSON round-by-round tournament
 //                                      funnel trace (R1/Cut1/R2/Cut2/R3, per-cont
 //                                      samples/mean/SE/LCB/death%) for one next
-//                                      piece; requires pruningBreadth -1 or -2;
-//                                      503 "Busy" if async precompute running;
-//                                      400 on missing p/next; 500 on pipe error
+//                                      piece or 1-ply NNB mode; requires
+//                                      pruningBreadth -1 or -2; 503 "Busy" if
+//                                      async precompute running; 400 on missing
+//                                      p/next; 500 on pipe error
 //   GET /async-result               -> 200 + full result once computed, else
 //                                      200 + backup response, else 504 "Still
 //                                      calculating", else 404 "No previous
@@ -741,8 +743,21 @@ RouteResult handleDebugGroundTruth(const std::string &query) {
     }
   }
 
+  bool noNextBox = false;
+  std::string nnbRaw;
+  if (extractQueryParam(query, "nnb", nnbRaw) && !nnbRaw.empty()) {
+    std::string nnbDecoded = percentDecode(nnbRaw);
+    if (nnbDecoded == "1" || nnbDecoded == "true") {
+      noNextBox = true;
+    } else if (nnbDecoded == "0" || nnbDecoded == "false") {
+      noNextBox = false;
+    } else {
+      return {400, "Error: invalid nnb parameter (expected 0/1 or false/true): " + nnbDecoded, ""};
+    }
+  }
+
   std::string response =
-      debug_gt::runDebugGroundTruth(enginePipe, requestedKeys, playoutCount, maxConts);
+      debug_gt::runDebugGroundTruth(enginePipe, requestedKeys, playoutCount, maxConts, noNextBox);
   std::string suffix = formatDurationSuffix(started);
   if (isEngineRejection(response)) {
     return {500, response, suffix};
@@ -766,11 +781,14 @@ RouteResult handleDebugTournament(const std::string &query, double calibratedMov
 
   std::string nextRaw;
   if (!extractQueryParam(query, "next", nextRaw) || nextRaw.empty()) {
-    return {400, "Missing required query parameter: next (expected 0-6 or I/O/L/J/T/S/Z)", ""};
+    return {400, "Missing required query parameter: next (expected 0-6, I/O/L/J/T/S/Z, or NNB/-1)",
+            ""};
   }
   int nextIdx = debug_tmt::parseNextPieceArg(percentDecode(nextRaw));
-  if (nextIdx < 0) {
-    return {400, "Error: invalid next parameter (expected 0-6 or I/O/L/J/T/S/Z): " + nextRaw, ""};
+  if (nextIdx == debug_tmt::NEXT_PIECE_INVALID) {
+    return {400,
+            "Error: invalid next parameter (expected 0-6, I/O/L/J/T/S/Z, or NNB/-1): " + nextRaw,
+            ""};
   }
 
   EngineTimingContext timing;

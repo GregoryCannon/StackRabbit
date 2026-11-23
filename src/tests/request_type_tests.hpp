@@ -1742,6 +1742,14 @@ TEST_CASE("runDebugGroundTruth validates arguments and compares placements acros
   std::string unreachableJson =
       debug_gt::runDebugGroundTruth(pipe, {"9|9|9"}, /* playoutCount= */ 0, /* maxConts= */ 3);
   CHECK(unreachableJson.find("\"key\":\"9|9|9\",\"reachable\":false") != std::string::npos);
+
+  // 1-ply NNB ground truth mode.
+  std::string nnbJson = debug_gt::runDebugGroundTruth(pipe, {}, /* playoutCount= */ 20,
+                                                      /* maxConts= */ 3, /* noNextBox= */ true);
+  REQUIRE(nnbJson.rfind("Error:", 0) != 0);
+  CHECK(nnbJson.find("\"isNoNextBox\":true") != std::string::npos);
+  CHECK(nnbJson.find("\"avgDasPenalty\":") != std::string::npos);
+  CHECK(nnbJson.find("\"bestCont\":\"none\"") != std::string::npos);
 }
 
 TEST_CASE("runDebugPrecompute returns ranked phantom collapse breakdown matching winner") {
@@ -1812,15 +1820,20 @@ TEST_CASE("runDebugTournament traces R1/Cut1/R2/Cut2/R3 and validates inputs") {
                                .build()
                            + "18|";
 
-  // Validation checks
-  CHECK(debug_tmt::runDebugTournament(tmtPipe, -1).rfind("Error:", 0) == 0);
+  // Validation checks (-1 is NEXT_PIECE_NNB; -2 and 7 are out of range)
+  CHECK(debug_tmt::parseNextPieceArg("NNB") == debug_tmt::NEXT_PIECE_NNB);
+  CHECK(debug_tmt::parseNextPieceArg("-1") == debug_tmt::NEXT_PIECE_NNB);
+  CHECK(debug_tmt::parseNextPieceArg("X") == debug_tmt::NEXT_PIECE_INVALID);
+  CHECK(debug_tmt::runDebugTournament(tmtPipe, debug_tmt::NEXT_PIECE_INVALID).rfind("Error:", 0)
+        == 0);
   CHECK(debug_tmt::runDebugTournament(tmtPipe, 7).rfind("Error:", 0) == 0);
   CHECK(debug_tmt::runDebugTournament(legacyPipe, IDX_J).rfind("Error:", 0) == 0);
   CHECK(debug_tmt::runDebugTournament("bad_pipe", IDX_J).rfind("Error:", 0) == 0);
 
-  // Valid tournament trace
+  // Valid 2-ply tournament trace
   std::string json = debug_tmt::runDebugTournament(tmtPipe, IDX_J);
   REQUIRE(json.rfind("Error:", 0) != 0);
+  CHECK(json.find("\"isNoNextBox\":false") != std::string::npos);
   CHECK(json.find("\"nextPiece\":\"J\"") != std::string::npos);
   CHECK(json.find("\"usedEvalOnlyFallback\":false") != std::string::npos);
   CHECK(json.find("\"survivorsCut1\":") != std::string::npos);
@@ -1828,6 +1841,15 @@ TEST_CASE("runDebugTournament traces R1/Cut1/R2/Cut2/R3 and validates inputs") {
   CHECK(json.find("\"publishedScore\":") != std::string::npos);
   CHECK(json.find("\"conts\":[") != std::string::npos);
   CHECK(json.find("\"isR3Cont\":true") != std::string::npos);
+
+  // Valid 1-ply NNB tournament trace
+  std::string nnbJson = debug_tmt::runDebugTournament(tmtPipe, debug_tmt::NEXT_PIECE_NNB);
+  REQUIRE(nnbJson.rfind("Error:", 0) != 0);
+  CHECK(nnbJson.find("\"isNoNextBox\":true") != std::string::npos);
+  CHECK(nnbJson.find("\"nextPiece\":\"NNB\"") != std::string::npos);
+  CHECK(nnbJson.find("\"useTieredR1\":false") != std::string::npos);
+  CHECK(nnbJson.find("\"contKey\":\"none\"") != std::string::npos);
+  CHECK(nnbJson.find("\"isR3Cont\":true") != std::string::npos);
 }
 
 #endif // SR_REQUEST_TYPE_TESTS

@@ -1105,6 +1105,7 @@
                 </label>
               </div>
               <div style="display:flex; gap:6px; align-items:center;">
+                <button id="phOpenNnbFunnelBtn" class="hidden" type="button" title="Inspect the 1-ply NNB tournament funnel">Inspect NNB Funnel →</button>
                 <button id="phSendToGtBtn" class="hidden" type="button" title="Compare selected phantoms in Ground Truth tab">Compare in Ground Truth →</button>
                 <button id="runPhantomBtn" class="primary" type="button">Run Phantom Breakdown</button>
               </div>
@@ -1157,6 +1158,13 @@
                 <select id="gtMoveC"></select>
               </div>
               <div class="gt-field">
+                <label for="gtMode">Depth</label>
+                <select id="gtMode">
+                  <option value="2ply">2-ply (Next Box)</option>
+                  <option value="nnb">1-ply (NNB)</option>
+                </select>
+              </div>
+              <div class="gt-field">
                 <label for="gtN">Playouts (N)</label>
                 <select id="gtN">
                   <option value="500">500</option>
@@ -1195,6 +1203,7 @@
               <div class="gt-field">
                 <label for="tmtNextPiece">Next Piece</label>
                 <select id="tmtNextPiece">
+                  <option value="NNB">NNB (No Next Box, 1-ply)</option>
                   <option value="I">I (0)</option>
                   <option value="O">O (1)</option>
                   <option value="L">L (2)</option>
@@ -1783,6 +1792,7 @@
       const elSweepResultsWrap = $("sweepResultsWrap");
       const elSweepBody = $("sweepBody");
       const elPhGroupTiesChk = $("phGroupTiesChk");
+      const elPhOpenNnbFunnelBtn = $("phOpenNnbFunnelBtn");
       const elPhSendToGtBtn = $("phSendToGtBtn");
       const elRunPhantomBtn = $("runPhantomBtn");
       const elPhError = $("phError");
@@ -1797,6 +1807,7 @@
       const elGtMoveA = $("gtMoveA");
       const elGtMoveB = $("gtMoveB");
       const elGtMoveC = $("gtMoveC");
+      const elGtMode = $("gtMode");
       const elGtN = $("gtN");
       const elGtConts = $("gtConts");
       const elGtLoadMovesBtn = $("gtLoadMovesBtn");
@@ -2325,6 +2336,14 @@
             params: { ...baseParams, reactionTime: 0 },
           });
         }
+        if (baseParams.reactionTime < 60) {
+          variants.push({
+            id: "rt60_nnb",
+            label: "RT = 60 (NNB)",
+            axis: "rt",
+            params: { ...baseParams, reactionTime: 60 },
+          });
+        }
         if (baseParams.playoutLength !== 4) {
           variants.push({
             id: "depth4",
@@ -2593,6 +2612,19 @@
           const grouped = getDisplayedPhantoms(json.phantoms || [], true);
           phState.selectedB = grouped.length >= 2 ? grouped[1].rawIdx : null;
 
+          // If Stage 2 confirmed this position took the 1-ply NNB path, sync Stage 3/4 defaults
+          // when they have not been run yet for this entry.
+          if (json.usedNoNextBoxPath) {
+            const tmtExisting = state.tmtByIndex.get(entry.index);
+            if (tmtExisting && !tmtExisting.data) {
+              tmtExisting.nextPiece = "NNB";
+            }
+            const gtExisting = state.gtByIndex.get(entry.index);
+            if (gtExisting && !gtExisting.data) {
+              gtExisting.mode = "nnb";
+            }
+          }
+
           // Sync main Replay Result panel with the exact response from this run
           if (typeof json.response === "string") {
             const parsed = parsePrecomputeResponse(json.response, entry.rows, pieceUsed, params.lines);
@@ -2634,11 +2666,20 @@
         }
       }
 
+      function isEntryNnbDefault(entry) {
+        if (!entry) return false;
+        const ph = state.phantomsByIndex.get(entry.index);
+        if (ph && ph.data && ph.data.usedNoNextBoxPath) return true;
+        return getEffectiveParams(entry).reactionTime >= 60;
+      }
+
       function getOrInitGtState(idx) {
         let gt = state.gtByIndex.get(idx);
         if (!gt) {
+          const entry = state.entries.find(e => e.index === idx) || null;
           gt = {
             running: false,
+            mode: isEntryNnbDefault(entry) ? "nnb" : "2ply",
             reachableQuery: null,
             reachable: [],
             selectedA: "",
@@ -2762,6 +2803,7 @@
         const uniqueKeys = [...new Set(keys)];
         const nVal = parseInt(elGtN.value, 10) || 2000;
         const contsVal = parseInt(elGtConts.value, 10) || 5;
+        const nnbParam = gt.mode === "nnb" ? "&nnb=1" : "";
 
         gt.error = null;
         gt.running = true;
@@ -2771,7 +2813,7 @@
 
         try {
           const keysParam = uniqueKeys.length > 0 ? `&keys=${encodeURIComponent(uniqueKeys.join(","))}` : "";
-          const url = `${getServerBase()}/debug-ground-truth?p=${query}${keysParam}&n=${nVal}&conts=${contsVal}`;
+          const url = `${getServerBase()}/debug-ground-truth?p=${query}${keysParam}&n=${nVal}&conts=${contsVal}${nnbParam}`;
           const resp = await fetch(url);
           const text = await resp.text();
           if (!resp.ok) {
@@ -2799,9 +2841,11 @@
       function getOrInitTmtState(entry) {
         let tmt = state.tmtByIndex.get(entry.index);
         if (!tmt) {
-          const defaultNext = (entry.inferredNext && entry.inferredNext.contiguous && entry.inferredNext.nextPiece)
-            ? entry.inferredNext.nextPiece.id
-            : "I";
+          const defaultNext = isEntryNnbDefault(entry)
+            ? "NNB"
+            : ((entry.inferredNext && entry.inferredNext.contiguous && entry.inferredNext.nextPiece)
+              ? entry.inferredNext.nextPiece.id
+              : "I");
           tmt = {
             running: false,
             nextPiece: defaultNext,
@@ -2992,6 +3036,7 @@
           elPhDetailHeader.classList.add("hidden");
           elPhDetailWrap.classList.add("hidden");
           elPhAdjList.classList.add("hidden");
+          elPhOpenNnbFunnelBtn.classList.add("hidden");
           elPhSendToGtBtn.classList.add("hidden");
         } else {
           const pData = phState.data;
@@ -3007,6 +3052,9 @@
           const metaBits = [
             `<span class="mono muted">${pData.totalPhantoms} phantoms · rt=${pData.reactionTime} · mode=${escapeHtml(pData.aiMode)} · ${pData.elapsedMs}ms</span>`,
           ];
+          if (pData.usedNoNextBoxPath) {
+            metaBits.push(`<span class="tag green">1-ply NNB</span>`);
+          }
           if (displayed.length >= 2) {
             const gap12 = displayed[0].ph.weightedAvg - displayed[1].ph.weightedAvg;
             metaBits.push(`<span class="tag ${gap12 < 10 ? "amber" : "green"}">#1 vs #2 margin: +${gap12.toFixed(2)}</span>`);
@@ -3014,6 +3062,7 @@
           elPhMeta.innerHTML = metaBits.join(" ");
           elPhMeta.classList.remove("hidden");
 
+          elPhOpenNnbFunnelBtn.classList.toggle("hidden", !pData.usedNoNextBoxPath);
           const canSendGt = Boolean(phA && phA.hasInitialPlacement);
           elPhSendToGtBtn.classList.toggle("hidden", !canSendGt);
 
@@ -3133,6 +3182,9 @@
 
         // ---- Ground Truth Pane ----
         const gtRunning = Boolean(gt && gt.running);
+        const gtMode = gt ? gt.mode : (isEntryNnbDefault(entry) ? "nnb" : "2ply");
+        elGtMode.value = gtMode;
+        elGtConts.disabled = gtMode === "nnb";
         elGtLoadMovesBtn.disabled = state.inFlight;
         elGtRunBtn.disabled = state.inFlight;
         elGtRunBtn.textContent = gtRunning ? "Running GT..." : "Run Ground Truth";
@@ -3156,16 +3208,21 @@
           elGtInspector.classList.add("hidden");
         } else {
           const data = gt.data;
+          const isGtNnb = Boolean(data.isNoNextBox);
           const cands = data.candidates.filter(c => c.reachable);
-          const bestCand = cands.reduce((acc, c) => (!acc || c.weightedAvg > acc.weightedAvg ? c : acc), null);
+          const effScore = (c) => isGtNnb && data.useDas ? (c.weightedAvg + (c.avgDasPenalty || 0)) : c.weightedAvg;
+          const bestCand = cands.reduce((acc, c) => (!acc || effScore(c) > effScore(acc) ? c : acc), null);
 
           // Auto-verdict comparing Replay Default vs Ground Truth winner
           const verdictTags = [
             `<span class="mono muted">N=${data.playoutCount}, depth=${data.playoutLength}, mode=${escapeHtml(data.aiMode)}, ${data.elapsedMs}ms</span>`,
           ];
+          if (isGtNnb) {
+            verdictTags.push(`<span class="tag green">1-ply NNB</span>`);
+          }
           if (cands.length >= 2) {
             const cA = cands[0], cB = cands[1];
-            const gap = cA.weightedAvg - cB.weightedAvg;
+            const gap = effScore(cA) - effScore(cB);
             const combSe = Math.sqrt(cA.weightedSe * cA.weightedSe + cB.weightedSe * cB.weightedSe);
             const sign = gap >= 0 ? "+" : "";
             verdictTags.push(`<span class="tag ${gap >= 0 ? "green" : "amber"}">A − B = ${sign}${gap.toFixed(2)} ± ${combSe.toFixed(2)}</span>`);
@@ -3178,7 +3235,7 @@
                 verdictTags.push(`<span class="tag green">GT agrees with Replay Default</span>`);
               } else if (cands.some(c => c.key === repDefKey)) {
                 const repCand = cands.find(c => c.key === repDefKey);
-                const diff = bestCand.weightedAvg - repCand.weightedAvg;
+                const diff = effScore(bestCand) - effScore(repCand);
                 const dSe = Math.sqrt(bestCand.weightedSe ** 2 + repCand.weightedSe ** 2);
                 if (diff > 2 * dSe) {
                   verdictTags.push(`<span class="tag red">GT prefers ${formatRelCoords(bestCand.relRot, bestCand.relX, bestCand.relY)} (+${diff.toFixed(1)}) → search / tournament / RT effect</span>`);
@@ -3198,89 +3255,127 @@
             const cid = `gt:ply1:${ci}`;
             const isPrev = state.customPreview && state.customPreview.id === cid;
             const cls = ["gt-card", isWin ? "winner" : "", isPrev ? "previewing" : ""].filter(Boolean).join(" ");
+            const mainVal = effScore(c);
+            const nnbExtra = isGtNnb
+              ? ` · death=${(c.deathPct || 0).toFixed(1)}%` +
+                (data.useDas ? ` · raw=${c.weightedAvg.toFixed(1)} · dasPen=${(c.avgDasPenalty || 0).toFixed(1)}` : "")
+              : "";
             return `<div class="${cls}" data-gt-ply1="${ci}" title="Click to preview board after ply 1">
               <div class="row-between">
                 <strong>${lbl}: ${formatRelCoords(c.relRot, c.relX, c.relY)}</strong>
                 <span class="muted">${escapeHtml(c.key)}</span>
               </div>
-              <div class="gt-big">${c.weightedAvg.toFixed(2)} <span class="muted" style="font-size:11px; font-weight:400;">± ${c.weightedSe.toFixed(2)}</span></div>
+              <div class="gt-big">${mainVal.toFixed(2)} <span class="muted" style="font-size:11px; font-weight:400;">± ${c.weightedSe.toFixed(2)}</span></div>
               <div class="muted" style="font-size:11px;">
-                ply1 eval=${c.fastEval.toFixed(1)} · das=${c.dasAfter} · +${c.linesCleared}L
+                ply1 eval=${c.fastEval.toFixed(1)} · das=${c.dasAfter} · +${c.linesCleared}L${nnbExtra}
               </div>
             </div>`;
           }).join("");
           elGtSummaryGrid.classList.remove("hidden");
 
-          // 7-piece table
-          const headCols = [`<th>Next</th>`];
-          cands.forEach((c, ci) => {
-            const lbl = String.fromCharCode(65 + ci);
-            headCols.push(`<th>${lbl}: ${formatRelCoords(c.relRot, c.relX, c.relY)}</th>`);
-          });
-          if (cands.length >= 2) {
-            headCols.push(`<th>A − B</th>`);
-          }
-          if (data.useDas) {
-            headCols.push(`<th>DAS Pen (part / min)</th>`);
-          }
-          elGtHead.innerHTML = `<tr>${headCols.join("")}</tr>`;
-
-          elGtBody.innerHTML = PIECE_ORDER.map(p => {
-            const tds = [`<td style="white-space:nowrap;"><strong>${p}</strong><button class="btn-link-xs" type="button" data-open-funnel="${p}" title="Inspect ${p} tournament funnel">Funnel</button></td>`];
+          if (isGtNnb && !data.useDas) {
+            elGtResultsWrap.classList.add("hidden");
+          } else if (isGtNnb) {
+            // 1-ply NNB DAS mode: show per-next-piece DAS penalties (raw 1-ply playout score is shared).
+            const headCols = [`<th>Next</th>`];
             cands.forEach((c, ci) => {
-              const cell = c.byPiece ? c.byPiece[p] : null;
-              const cid = `gt:ply2:${ci}:${p}`;
-              const isPrev = state.customPreview && state.customPreview.id === cid;
-              if (!cell) {
-                tds.push(`<td class="muted">—</td>`);
-              } else {
-                const deathTxt = cell.deathPct > 0 ? ` · ${cell.deathPct.toFixed(1)}%☠` : "";
-                const rankTxt = cell.bestContEvalRank > 0 ? ` · #${cell.bestContEvalRank}` : "";
-                const contRel = cell.bestContRel
-                  ? formatRelCoords(cell.bestContRel[0], cell.bestContRel[1], cell.bestContRel[2])
-                  : cell.bestCont;
-                const ply2Clears = Math.max(0, (cell.linesCleared || 0) - (c.linesCleared || 0));
-                const clrTxt = ply2Clears > 0 ? ` +${ply2Clears}L` : "";
-                tds.push(
-                  `<td class="gt-cell${isPrev ? " previewing" : ""}" data-gt-cand="${ci}" data-gt-piece="${p}" title="Click to preview next-piece placement on board">` +
-                  `<div><strong>${cell.mean.toFixed(1)}</strong> <span class="muted">±${cell.se.toFixed(1)}${deathTxt}${rankTxt}</span></div>` +
-                  `<div class="gt-cont-line">${escapeHtml(contRel)}${clrTxt}</div>` +
-                  `</td>`
-                );
-              }
+              const lbl = String.fromCharCode(65 + ci);
+              headCols.push(`<th>${lbl}: ${formatRelCoords(c.relRot, c.relX, c.relY)} (d${c.dasAfter})</th>`);
+            });
+            elGtHead.innerHTML = `<tr>${headCols.join("")}</tr>`;
+            elGtBody.innerHTML = PIECE_ORDER.map(p => {
+              const tds = [`<td style="white-space:nowrap;"><strong>${p}</strong></td>`];
+              cands.forEach(c => {
+                const cell = c.byPiece ? c.byPiece[p] : null;
+                if (!cell) {
+                  tds.push(`<td class="muted">—</td>`);
+                } else {
+                  const applied = c.dasAfter >= 15 ? 0 : (c.dasAfter >= 10 ? cell.partialPenalty : cell.minPenalty);
+                  const cls = applied < -0.05 ? "ph-pen-neg" : "muted";
+                  tds.push(
+                    `<td class="${cls}" style="white-space:nowrap;">` +
+                    `<strong>${applied.toFixed(1)}</strong> <span class="muted">(part ${cell.partialPenalty.toFixed(1)} / min ${cell.minPenalty.toFixed(1)})</span>` +
+                    `</td>`
+                  );
+                }
+              });
+              return `<tr>${tds.join("")}</tr>`;
+            }).join("");
+            elGtResultsWrap.classList.remove("hidden");
+          } else {
+            // 7-piece 2-ply table
+            const headCols = [`<th>Next</th>`];
+            cands.forEach((c, ci) => {
+              const lbl = String.fromCharCode(65 + ci);
+              headCols.push(`<th>${lbl}: ${formatRelCoords(c.relRot, c.relX, c.relY)}</th>`);
             });
             if (cands.length >= 2) {
-              const pA = cands[0].byPiece ? cands[0].byPiece[p] : null;
-              const pB = cands[1].byPiece ? cands[1].byPiece[p] : null;
-              if (pA && pB) {
-                const d = pA.mean - pB.mean;
-                const cls = d > 0.5 ? "gt-delta-pos" : (d < -0.5 ? "gt-delta-neg" : "muted");
-                tds.push(`<td class="${cls}">${d >= 0 ? "+" : ""}${d.toFixed(1)}</td>`);
-              } else {
-                tds.push(`<td class="muted">—</td>`);
-              }
+              headCols.push(`<th>A − B</th>`);
             }
             if (data.useDas) {
-              const penParts = cands.map((c, ci) => {
-                const cell = c.byPiece ? c.byPiece[p] : null;
-                if (!cell) return "—";
-                const lbl = String.fromCharCode(65 + ci);
-                const pp = Math.round(cell.partialPenalty);
-                const mp = Math.round(cell.minPenalty);
-                return (pp === 0 && mp === 0) ? `${lbl}:0` : `${lbl}:${pp}/${mp}`;
-              });
-              tds.push(`<td class="muted" style="white-space:nowrap; font-size:11px;">${escapeHtml(penParts.join(" · "))}</td>`);
+              headCols.push(`<th>DAS Pen (part / min)</th>`);
             }
-            return `<tr>${tds.join("")}</tr>`;
-          }).join("");
-          elGtResultsWrap.classList.remove("hidden");
+            elGtHead.innerHTML = `<tr>${headCols.join("")}</tr>`;
+
+            elGtBody.innerHTML = PIECE_ORDER.map(p => {
+              const tds = [`<td style="white-space:nowrap;"><strong>${p}</strong><button class="btn-link-xs" type="button" data-open-funnel="${p}" title="Inspect ${p} tournament funnel">Funnel</button></td>`];
+              cands.forEach((c, ci) => {
+                const cell = c.byPiece ? c.byPiece[p] : null;
+                const cid = `gt:ply2:${ci}:${p}`;
+                const isPrev = state.customPreview && state.customPreview.id === cid;
+                if (!cell) {
+                  tds.push(`<td class="muted">—</td>`);
+                } else {
+                  const deathTxt = cell.deathPct > 0 ? ` · ${cell.deathPct.toFixed(1)}%☠` : "";
+                  const rankTxt = cell.bestContEvalRank > 0 ? ` · #${cell.bestContEvalRank}` : "";
+                  const contRel = cell.bestContRel
+                    ? formatRelCoords(cell.bestContRel[0], cell.bestContRel[1], cell.bestContRel[2])
+                    : cell.bestCont;
+                  const ply2Clears = Math.max(0, (cell.linesCleared || 0) - (c.linesCleared || 0));
+                  const clrTxt = ply2Clears > 0 ? ` +${ply2Clears}L` : "";
+                  tds.push(
+                    `<td class="gt-cell${isPrev ? " previewing" : ""}" data-gt-cand="${ci}" data-gt-piece="${p}" title="Click to preview next-piece placement on board">` +
+                    `<div><strong>${cell.mean.toFixed(1)}</strong> <span class="muted">±${cell.se.toFixed(1)}${deathTxt}${rankTxt}</span></div>` +
+                    `<div class="gt-cont-line">${escapeHtml(contRel)}${clrTxt}</div>` +
+                    `</td>`
+                  );
+                }
+              });
+              if (cands.length >= 2) {
+                const pA = cands[0].byPiece ? cands[0].byPiece[p] : null;
+                const pB = cands[1].byPiece ? cands[1].byPiece[p] : null;
+                if (pA && pB) {
+                  const d = pA.mean - pB.mean;
+                  const cls = d > 0.5 ? "gt-delta-pos" : (d < -0.5 ? "gt-delta-neg" : "muted");
+                  tds.push(`<td class="${cls}">${d >= 0 ? "+" : ""}${d.toFixed(1)}</td>`);
+                } else {
+                  tds.push(`<td class="muted">—</td>`);
+                }
+              }
+              if (data.useDas) {
+                const penParts = cands.map((c, ci) => {
+                  const cell = c.byPiece ? c.byPiece[p] : null;
+                  if (!cell) return "—";
+                  const lbl = String.fromCharCode(65 + ci);
+                  const pp = Math.round(cell.partialPenalty);
+                  const mp = Math.round(cell.minPenalty);
+                  return (pp === 0 && mp === 0) ? `${lbl}:0` : `${lbl}:${pp}/${mp}`;
+                });
+                tds.push(`<td class="muted" style="white-space:nowrap; font-size:11px;">${escapeHtml(penParts.join(" · "))}</td>`);
+              }
+              return `<tr>${tds.join("")}</tr>`;
+            }).join("");
+            elGtResultsWrap.classList.remove("hidden");
+          }
 
           // Selected cell inspector
           if (gt.selectedCell) {
             elGtInspector.innerHTML = gt.selectedCell;
             elGtInspector.classList.remove("hidden");
           } else {
-            elGtInspector.innerHTML = `<span class="muted">Click any candidate card (ply 1) or piece cell (ply 2) to preview its resulting board and <code>fastEval</code> breakdown.</span>`;
+            elGtInspector.innerHTML = isGtNnb
+              ? `<span class="muted">Click any candidate card above to preview its resulting ply-1 board and <code>fastEval</code> breakdown.</span>`
+              : `<span class="muted">Click any candidate card (ply 1) or piece cell (ply 2) to preview its resulting board and <code>fastEval</code> breakdown.</span>`;
             elGtInspector.classList.remove("hidden");
           }
         }
@@ -3312,9 +3407,12 @@
           elTmtContWrap.classList.add("hidden");
         } else {
           const td = tmt.data;
+          const isNnb = Boolean(td.isNoNextBox || td.nextPiece === "NNB");
           const pills = [
-            `<span class="mono"><strong>Next ${escapeHtml(td.nextPiece)}</strong> · ${td.candidateCount} cands</span>`,
-            `<span class="tag ${td.useTieredR1 ? "green" : "amber"}">Tiered R1: ${td.useTieredR1 ? "ON" : "FALLBACK"} (${td.r1Entries} entries)</span>`,
+            `<span class="mono"><strong>${isNnb ? "NNB (1-ply)" : `Next ${escapeHtml(td.nextPiece)}`}</strong> · ${td.candidateCount} cands</span>`,
+            isNnb
+              ? `<span class="tag green">1-ply NNB (${td.r1Entries} entries)</span>`
+              : `<span class="tag ${td.useTieredR1 ? "green" : "amber"}">Tiered R1: ${td.useTieredR1 ? "ON" : "FALLBACK"} (${td.r1Entries} entries)</span>`,
             `<span class="mono muted">R1: n1=${td.n1} (${td.r1Ms}ms) → Cut1=${td.survivorsCut1}</span>`,
             `<span class="mono muted">R2: n2=${td.n2} (${td.r2Ms}ms) → Cut2=${td.finalistsCut2}</span>`,
             `<span class="mono muted">R3: n3=${td.n3} (${td.r3Ms}ms)</span>`,
@@ -3370,11 +3468,11 @@
           const selCand = td.candidates.find(c => c.key === selKey) || sortedCands[0];
           if (selCand) {
             const dasTxt = td.useDas
-              ? ` · dasAfter=${selCand.dasAfter} · pen(part/min)=${selCand.partialPenalty.toFixed(1)}/${selCand.minPenalty.toFixed(1)}`
+              ? ` · dasAfter=${selCand.dasAfter} · ${isNnb ? "avg " : ""}pen(part/min)=${selCand.partialPenalty.toFixed(1)}/${selCand.minPenalty.toFixed(1)}`
               : "";
             elTmtContHeader.innerHTML =
-              `<div><strong>Continuations for ${escapeHtml(formatRelCoords(selCand.relRot, selCand.relX, selCand.relY))}</strong> <span class="mono muted">(eval#${selCand.evalRank}${dasTxt})</span></div>` +
-              `<span class="muted" style="font-size:11.5px;">Click any continuation row to preview next piece ${escapeHtml(td.nextPiece)} on board</span>`;
+              `<div><strong>${isNnb ? "1-ply Playout Summary" : "Continuations"} for ${escapeHtml(formatRelCoords(selCand.relRot, selCand.relX, selCand.relY))}</strong> <span class="mono muted">(eval#${selCand.evalRank}${dasTxt})</span></div>` +
+              `<span class="muted" style="font-size:11.5px;">${isNnb ? "NNB mode: 1 post-placement state per candidate (no next piece)" : `Click any continuation row to preview next piece ${escapeHtml(td.nextPiece)} on board`}</span>`;
             elTmtContBody.innerHTML = (selCand.conts || []).map((ct, idx) => {
               const cid = `tmt:cont:${selCand.key}:${idx}`;
               const isPrev = state.customPreview && state.customPreview.id === cid;
@@ -3382,9 +3480,12 @@
               if (ct.isR3Cont) statusBits.push(`<span class="tag green">★ R3</span>`);
               if (idx === selCand.bestContIdx) statusBits.push(`<span class="tag amber">best</span>`);
               if (ct.samples === 0) statusBits.push(`<span class="muted">unsampled</span>`);
+              const contLabelHtml = isNnb
+                ? `<span class="muted">1-ply (none)</span>`
+                : `<strong>${escapeHtml(formatRelCoords(ct.relRot, ct.relX, ct.relY))}</strong> <span class="muted">${escapeHtml(ct.contKey)}</span>`;
               return `<tr class="${isPrev ? "selected" : (ct.isR3Cont ? "tmt-cont-r3" : "")}" data-tmt-cont-cand="${escapeHtml(selCand.key)}" data-tmt-cont-idx="${idx}">
                 <td>cont#${ct.evalRank}</td>
-                <td style="white-space:nowrap;"><strong>${escapeHtml(formatRelCoords(ct.relRot, ct.relX, ct.relY))}</strong> <span class="muted">${escapeHtml(ct.contKey)}</span></td>
+                <td style="white-space:nowrap;">${contLabelHtml}</td>
                 <td>${ct.evalScore.toFixed(1)}</td>
                 <td><strong>${ct.samples}</strong></td>
                 <td style="white-space:nowrap;">${ct.samples > 0 ? `${ct.rawMean.toFixed(1)} <span class="muted">±${ct.se.toFixed(1)}</span>` : "—"}</td>
@@ -3860,6 +3961,8 @@
         renderCurrent();
       });
 
+      elPhOpenNnbFunnelBtn.addEventListener("click", () => openFunnelForPiece("NNB"));
+
       elPhSendToGtBtn.addEventListener("click", async () => {
         const entry = state.entries[state.currentIndex];
         const phState = entry ? state.phantomsByIndex.get(entry.index) : null;
@@ -3868,6 +3971,7 @@
         const phA = all[phState.selectedA || 0];
         const phB = phState.selectedB !== null ? all[phState.selectedB] : null;
         const gt = getOrInitGtState(entry.index);
+        if (phState.data.usedNoNextBoxPath) gt.mode = "nnb";
         if (phA && phA.hasInitialPlacement) gt.selectedA = phA.defaultKey;
         if (phB && phB.hasInitialPlacement) gt.selectedB = phB.defaultKey;
         state.activeDiagTab = "gt";
@@ -3931,6 +4035,13 @@
         renderCurrent();
       });
 
+      elGtMode.addEventListener("change", () => {
+        const entry = state.entries[state.currentIndex];
+        if (!entry) return;
+        const gt = getOrInitGtState(entry.index);
+        gt.mode = elGtMode.value;
+        renderCurrent();
+      });
       elGtMoveA.addEventListener("change", () => {
         const entry = state.entries[state.currentIndex];
         if (entry) getOrInitGtState(entry.index).selectedA = elGtMoveA.value;

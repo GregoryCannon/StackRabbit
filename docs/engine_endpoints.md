@@ -75,19 +75,21 @@ Routes:
   `inputCost` / `totalValue`, reachable adjustments, and exact `response`
   string; `503` `Busy` while an async `/precompute` job is running; `400` if
   `p` is absent; `500` on `|` delimiter or pipe validation error).
-- `GET /debug-ground-truth?p=<pipe>[&keys=k1,k2][&n=2000][&conts=5]` → `200` +
-  synchronous JSON ground-truth playout comparison across all 7 next pieces for
-  selected first-piece lock keys (default: top 4 by `fastEval`) plus the full
-  list of reachable placements (`503` `Busy` while an async `/precompute` job is
-  running; `400` on missing `p` or invalid `n`/`conts`/`keys`; `500` on `|`
-  delimiter or pipe validation error).
-- `GET /debug-tournament?p=<pipe>&next=<0..6|I|O|L|J|T|S|Z>` → `200` +
+- `GET /debug-ground-truth?p=<pipe>[&keys=k1,k2][&n=2000][&conts=5][&nnb=0|1]`
+  → `200` + synchronous JSON ground-truth playout comparison across all 7 next
+  pieces (or 1-ply NNB mode when `nnb=1`) for selected first-piece lock keys
+  (default: top 4 by `fastEval`) plus the full list of reachable placements
+  (`503` `Busy` while an async `/precompute` job is running; `400` on missing
+  `p` or invalid `n`/`conts`/`keys`/`nnb`; `500` on `|` delimiter or pipe
+  validation error).
+- `GET /debug-tournament?p=<pipe>&next=<0..6|I|O|L|J|T|S|Z|NNB|-1>` → `200` +
   synchronous JSON round-by-round tournament funnel trace (`R1`/`Cut1`/`R2`/
   `Cut2`/`R3` sample counts, timings, per-candidate ranks & published LCBs, and
   per-continuation `samples`/`rawMean`/`se`/`lcbScore`/`deathPct`) for one next
-  piece; requires tournament mode (`pruningBreadth == -1` or `-2`); `503` `Busy`
-  while an async `/precompute` job is running; `400` on missing `p`/`next`;
-  `500` on `|` delimiter, pipe error, or non-tournament `pruningBreadth`.
+  piece or 1-ply NNB mode (`next=NNB` or `-1`); requires tournament mode
+  (`pruningBreadth == -1` or `-2`); `503` `Busy` while an async `/precompute`
+  job is running; `400` on missing `p`/`next`; `500` on `|` delimiter, pipe
+  error, or non-tournament `pruningBreadth`.
 
 The comma-delimited URL contract: the `p` parameter is the request string
 delimited by `,` so queries are valid unencoded in browsers and match the
