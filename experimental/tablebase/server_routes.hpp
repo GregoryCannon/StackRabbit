@@ -4,6 +4,7 @@
 #include "core.hpp"
 #include "heuristic.hpp"
 #include "tablebase_io.hpp"
+#include "tiny_nn.hpp"
 
 #include <cmath>
 #include <cstdint>
@@ -24,7 +25,9 @@ struct HttpRouteResult {
 struct ServerContext {
   MappedTablebase tablebase;
   MappedNextBoxTablebase nextBoxTablebase;
+  TinyNextBoxNet nn;
   std::string configuredTbPath;
+  std::string configuredNnPath;
   EvalWeights weights{};
 
   TablebaseFormat activeFormat() const noexcept {
@@ -39,6 +42,8 @@ struct ServerContext {
 
   bool isAnyTablebaseLoaded() const noexcept { return activeFormat() != TablebaseFormat::Unknown; }
 
+  bool isNnLoaded() const noexcept { return nn.isLoaded(); }
+
   const char *activeRngModeName() const noexcept {
     const TablebaseFormat fmt = activeFormat();
     if (fmt == TablebaseFormat::NextBoxV2) {
@@ -48,6 +53,19 @@ struct ServerContext {
       return "uniform";
     }
     return nullptr;
+  }
+
+  const char *activeNnRngModeName() const noexcept {
+    return nn.isLoaded() ? rngModeName(nn.rngMode) : nullptr;
+  }
+
+  // RNG distribution used for NN 2-ply expectations and E[V_hat(b)]: matches the active Next-Box
+  // tablebase when one is loaded, otherwise falls back to the network's own trained RNG mode.
+  RngMode effectiveNnRngMode() const noexcept {
+    if (activeFormat() == TablebaseFormat::NextBoxV2) {
+      return nextBoxTablebase.rngMode();
+    }
+    return nn.isLoaded() ? nn.rngMode : RngMode::Uniform;
   }
 
   uint64_t activeBoardCount() const noexcept {
@@ -83,29 +101,30 @@ struct ServerContext {
     return 0.0;
   }
 
-  // Opens either an SRTBV001 (NNB) or SRTBV002 (Next-Box) tablebase file atomically so any open
-  // failure leaves the previously loaded tablebase intact.
-  bool openTablebase(const std::string &path, std::string *errOut = nullptr) {
+  struct StagedTablebase {
+    TablebaseFormat format = TablebaseFormat::Unknown;
+    MappedTablebase nnb;
+    MappedNextBoxTablebase nb;
+  };
+
+  static bool stageTablebase(const std::string &path, StagedTablebase &staged,
+                             std::string *errOut = nullptr) {
     TablebaseFormat fmt = TablebaseFormat::Unknown;
     if (!detectTablebaseFormat(path, fmt, errOut)) {
       return false;
     }
     if (fmt == TablebaseFormat::NnbV1) {
-      MappedTablebase nextNnb;
-      if (!nextNnb.open(path, errOut)) {
+      if (!staged.nnb.open(path, errOut)) {
         return false;
       }
-      nextBoxTablebase.close();
-      tablebase = std::move(nextNnb);
+      staged.format = fmt;
       return true;
     }
     if (fmt == TablebaseFormat::NextBoxV2) {
-      MappedNextBoxTablebase nextNb;
-      if (!nextNb.open(path, errOut)) {
+      if (!staged.nb.open(path, errOut)) {
         return false;
       }
-      tablebase.close();
-      nextBoxTablebase = std::move(nextNb);
+      staged.format = fmt;
       return true;
     }
     if (errOut != nullptr) {
@@ -114,9 +133,58 @@ struct ServerContext {
     return false;
   }
 
+  void commitTablebase(StagedTablebase &staged) noexcept {
+    if (staged.format == TablebaseFormat::NnbV1) {
+      nextBoxTablebase.close();
+      tablebase = std::move(staged.nnb);
+    } else if (staged.format == TablebaseFormat::NextBoxV2) {
+      tablebase.close();
+      nextBoxTablebase = std::move(staged.nb);
+    }
+  }
+
+  // Opens either an SRTBV001 (NNB) or SRTBV002 (Next-Box) tablebase file atomically so any open
+  // failure leaves the previously loaded tablebase intact.
+  bool openTablebase(const std::string &path, std::string *errOut = nullptr) {
+    StagedTablebase staged;
+    if (!stageTablebase(path, staged, errOut)) {
+      return false;
+    }
+    commitTablebase(staged);
+    return true;
+  }
+
+  // Loads an SRNNV001 neural evaluator atomically so any failure leaves the existing NN intact.
+  bool openNn(const std::string &path, std::string *errOut = nullptr) {
+    return nn.load(path, errOut);
+  }
+
+  // Reloads all configured assets (TB and/or NN) transactionally: if either fails, all previously
+  // loaded state remains untouched.
+  bool reloadConfigured(std::string *errOut = nullptr) {
+    StagedTablebase stagedTb;
+    if (!configuredTbPath.empty() && !stageTablebase(configuredTbPath, stagedTb, errOut)) {
+      return false;
+    }
+
+    TinyNextBoxNet stagedNn;
+    if (!configuredNnPath.empty() && !stagedNn.load(configuredNnPath, errOut)) {
+      return false;
+    }
+
+    if (!configuredTbPath.empty()) {
+      commitTablebase(stagedTb);
+    }
+    if (!configuredNnPath.empty()) {
+      nn = std::move(stagedNn);
+    }
+    return true;
+  }
+
   void closeAll() noexcept {
     tablebase.close();
     nextBoxTablebase.close();
+    nn = TinyNextBoxNet{};
   }
 };
 
@@ -344,9 +412,33 @@ inline void appendJsonNullableStr(std::string &json, const char *s) {
     json += "null";
   } else {
     json.push_back('"');
-    json += s;
+    json += jsonEscape(s);
     json.push_back('"');
   }
+}
+
+inline void appendJsonNullableFloatArray(std::string &json, const float *vals, int count,
+                                         bool present) {
+  if (!present) {
+    json += "null";
+    return;
+  }
+  json.push_back('[');
+  for (int i = 0; i < count; ++i) {
+    if (i > 0) {
+      json.push_back(',');
+    }
+    json += fmtDouble(vals[i]);
+  }
+  json.push_back(']');
+}
+
+inline double expectedOpeningValue(const float vals[NUM_PIECES], RngMode mode) noexcept {
+  double sum = 0.0;
+  for (int c = 0; c < NUM_PIECES; ++c) {
+    sum += openingPieceProb(mode, c) * static_cast<double>(vals[c]);
+  }
+  return sum;
 }
 
 inline void appendTablebaseStatusFields(std::string &json, const ServerContext &ctx,
@@ -360,6 +452,29 @@ inline void appendTablebaseStatusFields(std::string &json, const ServerContext &
   if (includeRngMode) {
     json += ",\"rngMode\":";
     appendJsonNullableStr(json, ctx.activeRngModeName());
+  }
+}
+
+inline void appendNnStatusFields(std::string &json, const ServerContext &ctx, bool includeRngMode,
+                                 bool includePingDetails = false) {
+  const bool loaded = ctx.isNnLoaded();
+  json += ",\"nnLoaded\":";
+  json += (loaded ? "true" : "false");
+  if (includePingDetails) {
+    json += ",\"configuredNnPath\":\"" + jsonEscape(ctx.configuredNnPath) + "\"";
+  }
+  if (includeRngMode) {
+    json += ",\"nnRngMode\":";
+    appendJsonNullableStr(json, ctx.activeNnRngModeName());
+  }
+  if (includePingDetails) {
+    json += ",\"nnHidden\":";
+    if (loaded) {
+      json += "[" + std::to_string(ctx.nn.h1) + "," + std::to_string(ctx.nn.h2) + "]";
+    } else {
+      json += "null";
+    }
+    json += ",\"nnParamCount\":" + std::to_string(loaded ? ctx.nn.params.size() : size_t{0});
   }
 }
 
@@ -379,9 +494,8 @@ struct ParsedBoardQuery {
   int ply = 1;
 };
 
-inline bool parseBoardQueryParams(const std::map<std::string, std::string> &params,
-                                  bool allowPiece, bool requireNext, ParsedBoardQuery &out,
-                                  std::string &errOut) {
+inline bool parseBoardQueryParams(const std::map<std::string, std::string> &params, bool allowPiece,
+                                  bool requireNext, ParsedBoardQuery &out, std::string &errOut) {
   for (const auto &kv : params) {
     const bool valid = kv.first == "board"
                        || kv.first == "ply"
@@ -467,6 +581,7 @@ inline HttpRouteResult handlePing(const std::map<std::string, std::string> &para
   const double ev = ctx.activeEmptyBoardValue();
   json += ",\"emptyBoardValue\":" + (tbLoaded && ev >= 0.0 ? fmtDouble(ev) : "null");
   json += ",\"bellmanResidual\":" + (tbLoaded ? fmtSci(ctx.activeBellmanResidual()) : "null");
+  appendNnStatusFields(json, ctx, /*includeRngMode=*/true, /*includePingDetails=*/true);
   json.push_back('}');
   return {200, "application/json; charset=utf-8", std::move(json)};
 }
@@ -476,11 +591,12 @@ inline HttpRouteResult handleReload(const std::map<std::string, std::string> &pa
   if (!params.empty()) {
     return jsonErrorResponse(400, "/reload does not accept query parameters");
   }
-  if (ctx.configuredTbPath.empty()) {
-    return jsonErrorResponse(400, "No tablebase path was configured on server startup");
+  if (ctx.configuredTbPath.empty() && ctx.configuredNnPath.empty()) {
+    return jsonErrorResponse(
+        400, "No tablebase or neural evaluator path was configured on server startup");
   }
   std::string err;
-  if (!ctx.openTablebase(ctx.configuredTbPath, &err)) {
+  if (!ctx.reloadConfigured(&err)) {
     return jsonErrorResponse(500, err);
   }
   return handlePing(params, ctx);
@@ -490,6 +606,8 @@ inline HttpRouteResult handleMoves(const std::map<std::string, std::string> &par
                                    const ServerContext &ctx) {
   const bool tbLoaded = ctx.isAnyTablebaseLoaded();
   const bool isNextBoxTb = (ctx.activeFormat() == TablebaseFormat::NextBoxV2);
+  const bool nnLoaded = ctx.isNnLoaded();
+  const RngMode nnRngMode = ctx.effectiveNnRngMode();
 
   ParsedBoardQuery q{};
   std::string err;
@@ -501,12 +619,14 @@ inline HttpRouteResult handleMoves(const std::map<std::string, std::string> &par
   const bool boardInTb = isNextBoxTb
                              ? ctx.nextBoxTablebase.lookupPiece(q.board, q.pieceIdx, boardTbVal)
                              : ctx.tablebase.lookup(q.board, boardTbVal);
+  const double nnBoardVal =
+      nnLoaded ? static_cast<double>(ctx.nn.evalPiece(q.board, q.pieceIdx)) : 0.0;
 
   PlacementList placements;
   generatePlacements(q.board, q.pieceIdx, placements);
 
   std::string json;
-  json.reserve(512 + static_cast<size_t>(placements.size()) * 240);
+  json.reserve(512 + static_cast<size_t>(placements.size()) * 320);
   json += "{\"boardHex\":\"" + formatBoardHex(q.board) + "\"";
   json += ",\"isCanonical\":";
   json += (isCanonicalBoard(q.board) ? "true" : "false");
@@ -521,9 +641,13 @@ inline HttpRouteResult handleMoves(const std::map<std::string, std::string> &par
   json += (boardInTb ? "true" : "false");
   json += ",\"boardValue\":";
   json += (boardInTb ? fmtDouble(boardTbVal) : "null");
+  appendNnStatusFields(json, ctx, /*includeRngMode=*/false);
+  json += ",\"nnBoardValue\":";
+  json += (nnLoaded ? fmtDouble(nnBoardVal) : "null");
   json += ",\"moves\":[";
 
   TransitionList tl2;
+  const bool scoreNnMoves = nnLoaded && q.nextPieceIdx >= 0;
   for (int i = 0; i < placements.size(); ++i) {
     if (i > 0)
       json.push_back(',');
@@ -536,8 +660,7 @@ inline HttpRouteResult handleMoves(const std::map<std::string, std::string> &par
 
     if (isNextBoxTb) {
       afterInTb = ctx.nextBoxTablebase.lookupPiece(m.afterBoard, q.nextPieceIdx, afterVal);
-      tbQ =
-          static_cast<double>(m.linesCleared) + (afterInTb ? static_cast<double>(afterVal) : 0.0);
+      tbQ = static_cast<double>(m.linesCleared) + (afterInTb ? static_cast<double>(afterVal) : 0.0);
     } else if (q.nextPieceIdx >= 0) {
       bool anyLeafInTb = false;
       evalHybridNnbMove(m.afterBoard, m.linesCleared, q.nextPieceIdx, ctx.tablebase, tl2, tbQ,
@@ -546,9 +669,15 @@ inline HttpRouteResult handleMoves(const std::map<std::string, std::string> &par
       afterInTb = afterInTb || anyLeafInTb;
     } else {
       afterInTb = ctx.tablebase.lookup(m.afterBoard, afterVal);
-      tbQ =
-          static_cast<double>(m.linesCleared) + (afterInTb ? static_cast<double>(afterVal) : 0.0);
+      tbQ = static_cast<double>(m.linesCleared) + (afterInTb ? static_cast<double>(afterVal) : 0.0);
     }
+
+    const double nnQ1 =
+        scoreNnMoves ? scoreNextBoxNn1Ply(m.afterBoard, m.linesCleared, q.nextPieceIdx, ctx.nn)
+                     : 0.0;
+    const double nnQ2 = scoreNnMoves ? scoreNextBoxNn2Ply(m.afterBoard, m.linesCleared,
+                                                          q.nextPieceIdx, ctx.nn, nnRngMode)
+                                     : 0.0;
 
     json += "{\"index\":" + std::to_string(i);
     json += ",\"rot\":" + std::to_string(m.rot);
@@ -568,6 +697,10 @@ inline HttpRouteResult handleMoves(const std::map<std::string, std::string> &par
     json += (afterInTb ? fmtDouble(afterVal) : "null");
     json += ",\"tablebaseQ\":";
     json += (tbLoaded ? fmtDouble(tbQ) : "null");
+    json += ",\"nnQ1\":";
+    json += (scoreNnMoves ? fmtDouble(nnQ1) : "null");
+    json += ",\"nnQ2\":";
+    json += (scoreNnMoves ? fmtDouble(nnQ2) : "null");
     json.push_back('}');
   }
   json += "]}";
@@ -576,11 +709,15 @@ inline HttpRouteResult handleMoves(const std::map<std::string, std::string> &par
 
 inline void appendStateInfoPieceEntry(std::string &json, uint64_t board, int pieceIdx,
                                       int nextPieceIdx, int ply, bool boardInTb,
-                                      const float boardVals[NUM_PIECES], const ServerContext &ctx,
+                                      const float boardVals[NUM_PIECES],
+                                      const float nnBoardVals[NUM_PIECES], const ServerContext &ctx,
                                       TransitionList &tl, TransitionList &tl2,
                                       double &expectedBackup) {
   const bool tbLoaded = ctx.isAnyTablebaseLoaded();
   const bool isNextBoxTb = (ctx.activeFormat() == TablebaseFormat::NextBoxV2);
+  const bool nnLoaded = ctx.isNnLoaded();
+  const bool scoreNnMoves = nnLoaded && nextPieceIdx >= 0;
+  const RngMode nnRngMode = ctx.effectiveNnRngMode();
 
   generateTransitions(board, pieceIdx, tl);
 
@@ -589,23 +726,45 @@ inline void appendStateInfoPieceEntry(std::string &json, uint64_t board, int pie
   double bestTbQ = 0.0;
   double bestTbTieHeur = 0.0;
   uint64_t bestTbAfter = 0;
+  double bestNnQ1 = 0.0;
+  double bestNnQ2 = 0.0;
+  uint64_t bestNn2After = 0;
   bool anyInTb = false;
   bool allInTb = !tl.empty();
   double pieceBackup = 0.0;
 
-  if (isNextBoxTb) {
-    const RngMode mode = ctx.nextBoxTablebase.rngMode();
-    double maxQPerNext[NUM_PIECES] = {};
-    float childRow[NUM_PIECES] = {};
+  double maxQPerNext[NUM_PIECES] = {};
+  float childRow[NUM_PIECES] = {};
+  double nnbBestQ = 0.0;
 
-    for (int i = 0; i < tl.size(); ++i) {
-      const Transition &t = tl[i];
-      const double hScore =
-          scoreMoveHeuristic(t.afterBoard, t.linesCleared, nextPieceIdx, ply, ctx.weights);
-      if (i == 0 || hScore > bestHeur) {
-        bestHeur = hScore;
-        bestHeurAfter = t.afterBoard;
+  for (int i = 0; i < tl.size(); ++i) {
+    const Transition &t = tl[i];
+    const double hScore =
+        scoreMoveHeuristic(t.afterBoard, t.linesCleared, nextPieceIdx, ply, ctx.weights);
+    if (i == 0 || hScore > bestHeur) {
+      bestHeur = hScore;
+      bestHeurAfter = t.afterBoard;
+    }
+    if (scoreNnMoves) {
+      const double q1 = scoreNextBoxNn1Ply(t.afterBoard, t.linesCleared, nextPieceIdx, ctx.nn);
+      const double q2 =
+          scoreNextBoxNn2Ply(t.afterBoard, t.linesCleared, nextPieceIdx, ctx.nn, nnRngMode);
+      if (i == 0 || q1 > bestNnQ1) {
+        bestNnQ1 = q1;
       }
+      if (i == 0 || q2 > bestNnQ2) {
+        bestNnQ2 = q2;
+        bestNn2After = t.afterBoard;
+      }
+    }
+
+    if (!tbLoaded) {
+      continue;
+    }
+
+    bool updateBestTb = false;
+    double q = 0.0;
+    if (isNextBoxTb) {
       const bool inTb = ctx.nextBoxTablebase.lookup(t.afterBoard, childRow);
       anyInTb = anyInTb || inTb;
       allInTb = allInTb && inTb;
@@ -617,14 +776,43 @@ inline void appendStateInfoPieceEntry(std::string &json, uint64_t board, int pie
         }
       }
       if (nextPieceIdx >= 0) {
-        const double q = rew + (inTb ? static_cast<double>(childRow[nextPieceIdx]) : 0.0);
-        if (i == 0 || q > bestTbQ || (q == bestTbQ && hScore > bestTbTieHeur)) {
-          bestTbQ = q;
-          bestTbTieHeur = hScore;
-          bestTbAfter = t.afterBoard;
-        }
+        q = rew + (inTb ? static_cast<double>(childRow[nextPieceIdx]) : 0.0);
+        updateBestTb = true;
       }
+    } else {
+      bool inTb = false;
+      float childVal = 0.0f;
+      if (nextPieceIdx >= 0) {
+        bool anyLeafInTb = false;
+        evalHybridNnbMove(t.afterBoard, t.linesCleared, nextPieceIdx, ctx.tablebase, tl2, q, inTb,
+                          anyLeafInTb, childVal);
+        anyInTb = anyInTb || anyLeafInTb;
+        allInTb = allInTb && inTb;
+        float nnbVal = 0.0f;
+        const bool nnbIn = ctx.tablebase.lookup(t.afterBoard, nnbVal);
+        const double nnbQ =
+            static_cast<double>(t.linesCleared) + (nnbIn ? static_cast<double>(nnbVal) : 0.0);
+        if (i == 0 || nnbQ > nnbBestQ) {
+          nnbBestQ = nnbQ;
+        }
+      } else {
+        inTb = ctx.tablebase.lookup(t.afterBoard, childVal);
+        q = static_cast<double>(t.linesCleared) + (inTb ? static_cast<double>(childVal) : 0.0);
+        anyInTb = anyInTb || inTb;
+        allInTb = allInTb && inTb;
+      }
+      updateBestTb = true;
     }
+
+    if (updateBestTb && (i == 0 || q > bestTbQ || (q == bestTbQ && hScore > bestTbTieHeur))) {
+      bestTbQ = q;
+      bestTbTieHeur = hScore;
+      bestTbAfter = t.afterBoard;
+    }
+  }
+
+  if (isNextBoxTb) {
+    const RngMode mode = ctx.nextBoxTablebase.rngMode();
     if (!tl.empty()) {
       for (int n = 0; n < NUM_PIECES; ++n) {
         pieceBackup += pieceTransitionProb(mode, pieceIdx, n) * maxQPerNext[n];
@@ -635,53 +823,16 @@ inline void appendStateInfoPieceEntry(std::string &json, uint64_t board, int pie
       bestTbQ = pieceBackup;
     }
   } else {
-    double nnbBestQ = 0.0;
-    for (int i = 0; i < tl.size(); ++i) {
-      const Transition &t = tl[i];
-      const double hScore =
-          scoreMoveHeuristic(t.afterBoard, t.linesCleared, nextPieceIdx, ply, ctx.weights);
-      if (i == 0 || hScore > bestHeur) {
-        bestHeur = hScore;
-        bestHeurAfter = t.afterBoard;
-      }
-      if (tbLoaded) {
-        double q = 0.0;
-        bool inTb = false;
-        float childVal = 0.0f;
-        if (nextPieceIdx >= 0) {
-          bool anyLeafInTb = false;
-          evalHybridNnbMove(t.afterBoard, t.linesCleared, nextPieceIdx, ctx.tablebase, tl2, q, inTb,
-                            anyLeafInTb, childVal);
-          anyInTb = anyInTb || anyLeafInTb;
-          allInTb = allInTb && inTb;
-          float nnbVal = 0.0f;
-          const bool nnbIn = ctx.tablebase.lookup(t.afterBoard, nnbVal);
-          const double nnbQ =
-              static_cast<double>(t.linesCleared) + (nnbIn ? static_cast<double>(nnbVal) : 0.0);
-          if (i == 0 || nnbQ > nnbBestQ) {
-            nnbBestQ = nnbQ;
-          }
-        } else {
-          inTb = ctx.tablebase.lookup(t.afterBoard, childVal);
-          q = static_cast<double>(t.linesCleared) + (inTb ? static_cast<double>(childVal) : 0.0);
-          anyInTb = anyInTb || inTb;
-          allInTb = allInTb && inTb;
-        }
-        if (i == 0 || q > bestTbQ || (q == bestTbQ && hScore > bestTbTieHeur)) {
-          bestTbQ = q;
-          bestTbTieHeur = hScore;
-          bestTbAfter = t.afterBoard;
-        }
-      }
-    }
     expectedBackup +=
         ((tbLoaded && nextPieceIdx >= 0) ? nnbBestQ : bestTbQ) / static_cast<double>(NUM_PIECES);
   }
 
-  // Mirror play-time policy: if no child lands in TB, TB policy falls back to heuristic.
-  const uint64_t effectiveTbAfter = anyInTb ? bestTbAfter : bestHeurAfter;
-  const bool canComparePolicy = tbLoaded && (!isNextBoxTb || nextPieceIdx >= 0);
-  const bool disagree = canComparePolicy && !tl.empty() && (effectiveTbAfter != bestHeurAfter);
+  // Only flag TB disagreements when at least one legal move lands in TB; on all-OUT boards
+  // the TB policy has no entry and delegates completely to its fallback.
+  const bool canComparePolicy = tbLoaded && anyInTb && (!isNextBoxTb || nextPieceIdx >= 0);
+  const bool disagree = canComparePolicy && !tl.empty() && (bestTbAfter != bestHeurAfter);
+  const bool nnDisagree =
+      canComparePolicy && scoreNnMoves && !tl.empty() && (bestTbAfter != bestNn2After);
 
   json += "{\"piece\":" + std::to_string(pieceIdx);
   json += ",\"pieceChar\":\"";
@@ -697,12 +848,25 @@ inline void appendStateInfoPieceEntry(std::string &json, uint64_t board, int pie
     json += (boardInTb ? fmtDouble(boardVals[pieceIdx]) : "null");
     json += ",\"bellmanBackupValue\":" + fmtDouble(pieceBackup);
   }
+  json += ",\"nnValue\":";
+  json += (nnLoaded ? fmtDouble(nnBoardVals[pieceIdx]) : "null");
+  json += ",\"nnError\":";
+  json +=
+      (nnLoaded && isNextBoxTb && boardInTb ? fmtDouble(static_cast<double>(nnBoardVals[pieceIdx])
+                                                        - static_cast<double>(boardVals[pieceIdx]))
+                                            : "null");
+  json += ",\"bestNnQ1\":";
+  json += ((scoreNnMoves && !tl.empty()) ? fmtDouble(bestNnQ1) : "null");
+  json += ",\"bestNnQ2\":";
+  json += ((scoreNnMoves && !tl.empty()) ? fmtDouble(bestNnQ2) : "null");
   json += ",\"anyInTablebase\":";
   json += (anyInTb ? "true" : "false");
   json += ",\"allInTablebase\":";
   json += ((tbLoaded && allInTb) ? "true" : "false");
   json += ",\"disagree\":";
   json += (disagree ? "true" : "false");
+  json += ",\"nnDisagree\":";
+  json += (nnDisagree ? "true" : "false");
   json.push_back('}');
 }
 
@@ -716,6 +880,7 @@ inline HttpRouteResult handleStateInfo(const std::map<std::string, std::string> 
 
   const bool tbLoaded = ctx.isAnyTablebaseLoaded();
   const bool isNextBoxTb = (ctx.activeFormat() == TablebaseFormat::NextBoxV2);
+  const bool nnLoaded = ctx.isNnLoaded();
 
   int heights[BOARD_WIDTH];
   getColumnHeights(q.board, heights);
@@ -727,10 +892,7 @@ inline HttpRouteResult handleStateInfo(const std::map<std::string, std::string> 
   if (isNextBoxTb) {
     boardInTb = ctx.nextBoxTablebase.lookup(q.board, boardVals);
     if (boardInTb) {
-      const RngMode mode = ctx.nextBoxTablebase.rngMode();
-      for (int c = 0; c < NUM_PIECES; ++c) {
-        boardTbVal += openingPieceProb(mode, c) * static_cast<double>(boardVals[c]);
-      }
+      boardTbVal = expectedOpeningValue(boardVals, ctx.nextBoxTablebase.rngMode());
     }
   } else if (tbLoaded) {
     float scalarVal = 0.0f;
@@ -738,8 +900,15 @@ inline HttpRouteResult handleStateInfo(const std::map<std::string, std::string> 
     boardTbVal = static_cast<double>(scalarVal);
   }
 
+  float nnBoardVals[NUM_PIECES] = {};
+  double nnBoardVal = 0.0;
+  if (nnLoaded) {
+    ctx.nn.evalAll(q.board, nnBoardVals);
+    nnBoardVal = expectedOpeningValue(nnBoardVals, ctx.effectiveNnRngMode());
+  }
+
   std::string json;
-  json.reserve(1536);
+  json.reserve(3072);
   json += "{\"boardHex\":\"" + formatBoardHex(q.board) + "\"";
   json += ",\"isCanonical\":";
   json += (isCanonicalBoard(q.board) ? "true" : "false");
@@ -766,18 +935,13 @@ inline HttpRouteResult handleStateInfo(const std::map<std::string, std::string> 
   json += (boardInTb ? fmtDouble(boardTbVal) : "null");
   if (isNextBoxTb) {
     json += ",\"boardValues\":";
-    if (boardInTb) {
-      json.push_back('[');
-      for (int c = 0; c < NUM_PIECES; ++c) {
-        if (c > 0)
-          json.push_back(',');
-        json += fmtDouble(boardVals[c]);
-      }
-      json.push_back(']');
-    } else {
-      json += "null";
-    }
+    appendJsonNullableFloatArray(json, boardVals, NUM_PIECES, boardInTb);
   }
+  appendNnStatusFields(json, ctx, /*includeRngMode=*/true);
+  json += ",\"nnBoardValue\":";
+  json += (nnLoaded ? fmtDouble(nnBoardVal) : "null");
+  json += ",\"nnBoardValues\":";
+  appendJsonNullableFloatArray(json, nnBoardVals, NUM_PIECES, nnLoaded);
   json += ",\"perPiece\":[";
 
   double expectedBackup = 0.0;
@@ -786,8 +950,8 @@ inline HttpRouteResult handleStateInfo(const std::map<std::string, std::string> 
   for (int p = 0; p < NUM_PIECES; ++p) {
     if (p > 0)
       json.push_back(',');
-    appendStateInfoPieceEntry(json, q.board, p, q.nextPieceIdx, q.ply, boardInTb, boardVals, ctx,
-                              tl, tl2, expectedBackup);
+    appendStateInfoPieceEntry(json, q.board, p, q.nextPieceIdx, q.ply, boardInTb, boardVals,
+                              nnBoardVals, ctx, tl, tl2, expectedBackup);
   }
 
   json += "]";

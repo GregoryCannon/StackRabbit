@@ -5,7 +5,7 @@
 //   build/tablebase_server
 //
 // Run:
-//   ./build/tablebase_server [port] [path/to/file.tb.bin]
+//   ./build/tablebase_server [port] [path/to/file.tb.bin] [--nn=path/to/model.nn.bin]
 //   Default port: 3030 (overridable via argv[1] or PORT env var).
 
 #ifdef _WIN32
@@ -36,6 +36,7 @@
 #include <sstream>
 #include <string>
 #include <thread>
+#include <vector>
 
 namespace {
 
@@ -264,6 +265,10 @@ void handleConnection(SocketFd fd, tb::ServerContext &ctx, const std::string &ht
   sendHttpResponse(fd, res.status, res.contentType, res.body);
 }
 
+void printUsage(FILE *stream, const char *prog) {
+  std::fprintf(stream, "Usage: %s [port] [path/to/file.tb.bin] [--nn=path/to/model.nn.bin]\n", prog);
+}
+
 } // namespace
 
 int main(int argc, char **argv) {
@@ -273,19 +278,44 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  if (argc >= 2 && (std::string(argv[1]) == "-h" || std::string(argv[1]) == "--help")) {
-    std::printf("Usage: %s [port] [path/to/file.tb.bin]\n", argv[0]);
-    return 0;
+  std::vector<const char *> positional;
+  std::string nnPath;
+  bool seenNnFlag = false;
+  for (int i = 1; i < argc; ++i) {
+    const std::string arg = argv[i];
+    if (arg == "-h" || arg == "--help") {
+      printUsage(stdout, argv[0]);
+      return 0;
+    }
+    if (arg.rfind("--nn=", 0) == 0) {
+      if (seenNnFlag) {
+        std::fprintf(stderr, "tablebase_server: duplicate --nn flag\n");
+        return 1;
+      }
+      nnPath = arg.substr(5);
+      if (nnPath.empty()) {
+        std::fprintf(stderr, "tablebase_server: empty --nn path\n");
+        return 1;
+      }
+      seenNnFlag = true;
+    } else if (!arg.empty() && arg[0] == '-') {
+      std::fprintf(stderr, "tablebase_server: unknown option '%s'\n", arg.c_str());
+      printUsage(stderr, argv[0]);
+      return 1;
+    } else {
+      positional.push_back(argv[i]);
+    }
   }
-  if (argc > 3) {
-    std::fprintf(stderr, "Usage: %s [port] [path/to/file.tb.bin]\n", argv[0]);
+  if (positional.size() > 2) {
+    printUsage(stderr, argv[0]);
     return 1;
   }
 
   int port = DEFAULT_PORT;
-  if (argc >= 2) {
-    if (!parsePortStrict(argv[1], port)) {
-      std::fprintf(stderr, "tablebase_server: invalid port '%s' (expected 1-65535)\n", argv[1]);
+  if (!positional.empty()) {
+    if (!parsePortStrict(positional[0], port)) {
+      std::fprintf(stderr, "tablebase_server: invalid port '%s' (expected 1-65535)\n",
+                   positional[0]);
       return 1;
     }
   } else {
@@ -297,8 +327,8 @@ int main(int argc, char **argv) {
   }
 
   tb::ServerContext ctx;
-  if (argc >= 3) {
-    ctx.configuredTbPath = argv[2];
+  if (positional.size() >= 2) {
+    ctx.configuredTbPath = positional[1];
     std::string err;
     if (!ctx.openTablebase(ctx.configuredTbPath, &err)) {
       std::fprintf(stderr, "tablebase_server: %s\n", err.c_str());
@@ -323,6 +353,19 @@ int main(int argc, char **argv) {
                   static_cast<unsigned long long>(ctx.tablebase.size()),
                   ctx.configuredTbPath.c_str(), evBuf, ctx.tablebase.bellmanResidual());
     }
+  }
+  if (!nnPath.empty()) {
+    ctx.configuredNnPath = nnPath;
+    std::string err;
+    if (!ctx.openNn(ctx.configuredNnPath, &err)) {
+      std::fprintf(stderr, "tablebase_server: %s\n", err.c_str());
+      return 1;
+    }
+    const double kb = static_cast<double>(ctx.nn.params.size() * sizeof(float)) / 1024.0;
+    std::printf("tablebase_server: loaded TinyNextBoxNet (%dx%d, %zu params, %.1f KB, rng=%s) "
+                "from %s\n",
+                ctx.nn.h1, ctx.nn.h2, ctx.nn.params.size(), kb, tb::rngModeName(ctx.nn.rngMode),
+                ctx.configuredNnPath.c_str());
   }
 
   const SocketFd listenFd = ::socket(AF_INET, SOCK_STREAM, 0);

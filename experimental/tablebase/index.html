@@ -156,6 +156,11 @@
       color: #1d4ed8;
     }
 
+    .badge.nn {
+      background: #f3e8ff;
+      color: #7e22ce;
+    }
+
     main {
       display: grid;
       grid-template-columns: 325px 1fr;
@@ -389,6 +394,32 @@
       background: #fffbeb;
     }
 
+    .ev-char {
+      font-weight: 700;
+      font-family: var(--mono);
+    }
+
+    .ev-val {
+      font-size: 11px;
+      font-family: var(--mono);
+    }
+
+    .ev-nn {
+      font-size: 10px;
+      font-family: var(--mono);
+      color: #7e22ce;
+    }
+
+    .ev-q {
+      font-size: 10.5px;
+      font-family: var(--mono);
+      color: var(--accent);
+    }
+
+    .ev-mv {
+      font-size: 10px;
+    }
+
     .table-scroll {
       max-height: 520px;
       overflow-y: auto;
@@ -440,6 +471,10 @@
       background: #f0f9ff;
     }
 
+    tbody tr.disagree-nn-row {
+      background: #faf5ff;
+    }
+
     .kbd {
       display: inline-block;
       padding: 1px 5px;
@@ -485,7 +520,7 @@
       <input id="serverUrlInput" type="text" value="http://127.0.0.1:3030"
         style="width:180px;font-family:var(--mono);" />
       <button id="btnPing">Ping</button>
-      <button id="btnReloadTb" title="Re-mmap the CLI-configured tablebase file">Reload TB</button>
+      <button id="btnReloadTb" title="Reload the CLI-configured tablebase and/or neural evaluator">Reload</button>
     </div>
   </header>
 
@@ -577,6 +612,9 @@
           <label class="muted">AI Policy:</label>
           <select id="aiPolicySelect">
             <option value="nbTb">Next-Box Tablebase (V(b,c))</option>
+            <option value="tbNn">TB + NN Partial-OUT (m=2.0)</option>
+            <option value="nn2">Tiny NN (2-ply)</option>
+            <option value="nn1">Tiny NN (1-ply Fast)</option>
             <option value="hybrid">Hybrid Next-Box (NNB TB + 2-ply)</option>
             <option value="nbHeur">Next-Box Heuristic (2-ply)</option>
             <option value="tb">NNB Tablebase (fallback 2-ply)</option>
@@ -585,8 +623,12 @@
           </select>
           <button id="btnStepAi" class="primary">Step AI (1)</button>
           <button id="btnAutoPlay">Autoplay</button>
+          <select id="disagreeTargetSelect" title="Comparison target for disagreement highlight &amp; stepping">
+            <option value="heur">TB ≠ Heur</option>
+            <option value="nn2">TB ≠ NN (2p)</option>
+          </select>
           <button id="btnNextDisagree" disabled
-            title="Requires a loaded tablebase: steps AI forward until Tablebase and Heuristic pick different afterBoards">Step
+            title="Requires a loaded tablebase: steps AI forward until Tablebase and the selected baseline pick different afterBoards">Step
             to Disagreement</button>
           <label class="muted">Speed:</label>
           <input id="speedInput" type="range" min="1" max="60" value="12" style="width:90px;" />
@@ -603,6 +645,10 @@
           <div class="stat-item"><span id="statBackupValLabel">Bellman 1/7 Σ max Q</span><span id="statBackupVal"
               class="stat-val">—</span>
           </div>
+          <div class="stat-item"><span id="statNnValLabel">NN V̂(b, c) / E[V̂]</span><span id="statNnVal"
+              class="stat-val">—</span></div>
+          <div class="stat-item"><span id="statNnErrLabel">NN Error (V̂ − V*)</span><span id="statNnErr"
+              class="stat-val">—</span></div>
           <div class="stat-item"><span>Holes (Open Overhangs)</span><span id="statHoles" class="stat-val">0 (0)</span>
           </div>
           <div class="stat-item"><span>Heuristic Board Score</span><span id="statHeur" class="stat-val">0.00</span>
@@ -622,9 +668,11 @@
           <div class="row-controls">
             <label class="muted" style="font-weight:400;">Sort by:</label>
             <select id="sortModeSelect">
-              <option value="auto">Best Policy (TB if in-set, else Heuristic)</option>
-              <option value="heur">Heuristic Score</option>
+              <option value="auto">Active Policy Score</option>
               <option value="tb">Tablebase Q = r + V(b')</option>
+              <option value="nn2">NN Q (2-ply)</option>
+              <option value="nn1">NN Q (1-ply)</option>
+              <option value="heur">Heuristic Score</option>
             </select>
           </div>
         </h2>
@@ -641,6 +689,7 @@
                 <th>Holes'</th>
                 <th>TB Status</th>
                 <th id="tbQColHeader">TB Q (r + V')</th>
+                <th id="nnQColHeader">NN Q (2p / 1p)</th>
                 <th id="heurColHeader">Heuristic (2-ply)</th>
                 <th>After Hex</th>
               </tr>
@@ -788,9 +837,18 @@
     let tbLoaded = false;
     let tbFormat = "none";
     let tbRngMode = null;
+    let nnLoaded = false;
+    let nnRngMode = null;
+    let nnHidden = null;
+    let lastStateInfo = null;
     let hasSyncedServerDefaults = false;
     let autoTimer = null;
     let seekSeq = 0;
+
+    const PARTIAL_OUT_MARGIN = 2.0;
+    const PARTIAL_OUT_TIE_EPS = 1e-12;
+    const NN_ERR_GOOD = 2.0;
+    const NN_ERR_WARN = 5.0;
 
     const gridEl = document.getElementById("boardGrid");
     const cellEls = [];
@@ -979,17 +1037,33 @@
     }
 
     const AI_POLICIES = {
-      nbTb: { nextBox: true, useTb: true, ply: 2, allowedFormats: ["nextbox"] },
-      hybrid: { nextBox: true, useTb: true, ply: 2, allowedFormats: ["nnb"] },
-      nbHeur: { nextBox: true, useTb: false, ply: 2, allowedFormats: ["nextbox", "nnb", "none"] },
-      tb: { nextBox: false, useTb: true, ply: 2, allowedFormats: ["nnb"] },
-      heur2: { nextBox: false, useTb: false, ply: 2, allowedFormats: ["nnb", "none"] },
-      heur1: { nextBox: false, useTb: false, ply: 1, allowedFormats: ["nnb", "none"] }
+      nbTb: { nextBox: true, useTb: true, mode: "tb", ply: 2, allowedFormats: ["nextbox"], requiresNn: false },
+      tbNn: { nextBox: true, useTb: true, mode: "tbNn", ply: 2, allowedFormats: ["nextbox"], requiresNn: true },
+      nn2: { nextBox: true, useTb: false, mode: "nn2", ply: 2, allowedFormats: ["nextbox", "nnb", "none"], requiresNn: true },
+      nn1: { nextBox: true, useTb: false, mode: "nn1", ply: 2, allowedFormats: ["nextbox", "nnb", "none"], requiresNn: true },
+      hybrid: { nextBox: true, useTb: true, mode: "tb", ply: 2, allowedFormats: ["nnb"], requiresNn: false },
+      nbHeur: { nextBox: true, useTb: false, mode: "heur", ply: 2, allowedFormats: ["nextbox", "nnb", "none"], requiresNn: false },
+      tb: { nextBox: false, useTb: true, mode: "tb", ply: 2, allowedFormats: ["nnb"], requiresNn: false },
+      heur2: { nextBox: false, useTb: false, mode: "heur", ply: 2, allowedFormats: ["nnb", "none"], requiresNn: false },
+      heur1: { nextBox: false, useTb: false, mode: "heur", ply: 1, allowedFormats: ["nnb", "none"], requiresNn: false }
     };
 
     function currentPolicySpec() {
       const val = document.getElementById("aiPolicySelect").value;
       return AI_POLICIES[val] || AI_POLICIES.nbHeur;
+    }
+
+    function isNextBoxView() {
+      return isNextBoxPolicy() || tbFormat === "nextbox";
+    }
+
+    function formatSigned(v, digits) {
+      return `${v >= 0 ? "+" : ""}${v.toFixed(digits)}`;
+    }
+
+    function activeDisagreeTarget() {
+      const sel = document.getElementById("disagreeTargetSelect");
+      return (sel && sel.value === "nn2" && nnLoaded && isNextBoxView()) ? "nn2" : "heur";
     }
 
     function updateTbDependentButtons() {
@@ -1000,66 +1074,132 @@
       const sel = document.getElementById("aiPolicySelect");
       for (const [key, spec] of Object.entries(AI_POLICIES)) {
         const opt = sel.querySelector(`option[value="${key}"]`);
-        if (opt) opt.disabled = !spec.allowedFormats.includes(tbFormat);
+        if (opt) {
+          opt.disabled = !spec.allowedFormats.includes(tbFormat) || (spec.requiresNn && !nnLoaded);
+        }
       }
       const curOpt = sel.querySelector(`option[value="${sel.value}"]`);
       if (!curOpt || curOpt.disabled) {
         if (tbFormat === "nextbox") sel.value = "nbTb";
         else if (tbFormat === "nnb") sel.value = "hybrid";
+        else if (nnLoaded) sel.value = "nn2";
         else sel.value = "nbHeur";
       }
+
+      const nbView = isNextBoxView();
+      const cmpSel = document.getElementById("disagreeTargetSelect");
+      const canCompareNn = tbLoaded && nnLoaded && nbView;
+      const nnCmpOpt = cmpSel.querySelector('option[value="nn2"]');
+      if (nnCmpOpt) nnCmpOpt.disabled = !canCompareNn;
+      if (cmpSel.value === "nn2" && !canCompareNn) {
+        cmpSel.value = "heur";
+      }
+      cmpSel.disabled = !tbLoaded || editMode;
+
+      const sortSel = document.getElementById("sortModeSelect");
+      const tbSortOpt = sortSel.querySelector('option[value="tb"]');
+      const nn2SortOpt = sortSel.querySelector('option[value="nn2"]');
+      const nn1SortOpt = sortSel.querySelector('option[value="nn1"]');
+      if (tbSortOpt) tbSortOpt.disabled = !tbLoaded;
+      if (nn2SortOpt) nn2SortOpt.disabled = !(nnLoaded && nbView);
+      if (nn1SortOpt) nn1SortOpt.disabled = !(nnLoaded && nbView);
+      const curSortOpt = sortSel.querySelector(`option[value="${sortSel.value}"]`);
+      if (!curSortOpt || curSortOpt.disabled) {
+        sortSel.value = "auto";
+      }
+
       updateRngMismatchBanner();
     }
 
     function updateRngMismatchBanner() {
       const banner = document.getElementById("rngMismatchBanner");
-      if (tbFormat === "nextbox" && tbRngMode) {
-        const uiRng = useNesRng() ? "nes" : "uniform";
-        if (uiRng !== tbRngMode) {
-          banner.textContent =
-            `Note: Loaded Next-Box tablebase was solved for ${tbRngMode.toUpperCase()} RNG, while UI is using ${uiRng.toUpperCase()} RNG.`;
-          banner.style.display = "block";
-          return;
-        }
+      const uiRng = useNesRng() ? "nes" : "uniform";
+      const warnings = [];
+      if (tbFormat === "nextbox" && tbRngMode && uiRng !== tbRngMode) {
+        warnings.push(
+          `Loaded Next-Box tablebase was solved for ${tbRngMode.toUpperCase()} RNG, while UI is using ${uiRng.toUpperCase()} RNG.`
+        );
+      }
+      if (nnLoaded && nnRngMode && uiRng !== nnRngMode) {
+        warnings.push(
+          `Loaded Tiny NN was trained for ${nnRngMode.toUpperCase()} RNG, while UI is using ${uiRng.toUpperCase()} RNG.`
+        );
+      }
+      if (tbFormat === "nextbox" && nnLoaded && tbRngMode && nnRngMode && tbRngMode !== nnRngMode) {
+        warnings.push(
+          `NN 2-ply expectations follow the active Next-Box tablebase's ${tbRngMode.toUpperCase()} RNG.`
+        );
+      }
+      if (warnings.length > 0) {
+        banner.textContent = "Note: " + warnings.join(" ");
+        banner.style.display = "block";
+        return;
       }
       banner.style.display = "none";
+    }
+
+    function formatServerStatusBadge(data) {
+      const nnDimsText = nnHidden ? `${nnHidden[0]}×${nnHidden[1]}` : "";
+      if (tbLoaded) {
+        const nnTag = nnLoaded ? ` · NN ${nnDimsText}` : "";
+        if (tbFormat === "nextbox") {
+          const ev = data.emptyBoardValue !== null ? ` · E[V(0)]=${data.emptyBoardValue.toFixed(2)}` : "";
+          const rngTag = tbRngMode ? ` (${tbRngMode.toUpperCase()})` : "";
+          return {
+            text: `Connected · NB TB${rngTag}: ${data.boardCount.toLocaleString()} boards${ev}${nnTag}`,
+            cls: "badge ok"
+          };
+        }
+        const ev = data.emptyBoardValue !== null ? ` · V(0)=${data.emptyBoardValue.toFixed(2)}` : "";
+        return {
+          text: `Connected · NNB TB: ${data.boardCount.toLocaleString()} boards${ev}${nnTag}`,
+          cls: "badge ok"
+        };
+      }
+      if (nnLoaded) {
+        const rngTag = nnRngMode ? ` (${nnRngMode.toUpperCase()})` : "";
+        return { text: `Connected · NN ${nnDimsText}${rngTag} · No TB`, cls: "badge ok" };
+      }
+      return { text: "Connected · No TB/NN loaded (Heuristic mode)", cls: "badge warn" };
     }
 
     function applyPingPayload(data, syncDefaults = false) {
       const badge = document.getElementById("serverStatus");
       const prevFmt = tbFormat;
       const prevRng = tbRngMode;
+      const prevNnLoaded = nnLoaded;
+      const prevNnRng = nnRngMode;
       tbLoaded = !!data.tablebaseLoaded;
       tbFormat = data.tablebaseFormat || (tbLoaded ? "nnb" : "none");
       tbRngMode = data.rngMode || null;
+      nnLoaded = !!data.nnLoaded;
+      nnRngMode = data.nnRngMode || null;
+      nnHidden = Array.isArray(data.nnHidden) && data.nnHidden.length === 2 ? data.nnHidden : null;
 
-      const shouldAutoSelect = syncDefaults || !hasSyncedServerDefaults || tbFormat !== prevFmt || tbRngMode !== prevRng;
-      if (shouldAutoSelect && tbLoaded) {
+      const assetsChanged = tbFormat !== prevFmt || tbRngMode !== prevRng ||
+        nnLoaded !== prevNnLoaded || nnRngMode !== prevNnRng;
+      const shouldAutoSelect = syncDefaults || !hasSyncedServerDefaults || assetsChanged;
+      if (shouldAutoSelect && (tbLoaded || nnLoaded)) {
         hasSyncedServerDefaults = true;
         const sel = document.getElementById("aiPolicySelect");
+        const preferredRng = (tbFormat === "nextbox") ? tbRngMode : (!tbLoaded ? nnRngMode : null);
+        if (preferredRng === "nes" || preferredRng === "uniform") {
+          document.getElementById("nesRngCheckbox").checked = (preferredRng === "nes");
+        }
         if (tbFormat === "nextbox") {
           sel.value = "nbTb";
-          if (tbRngMode === "nes" || tbRngMode === "uniform") {
-            document.getElementById("nesRngCheckbox").checked = (tbRngMode === "nes");
+          if (nnLoaded) {
+            document.getElementById("disagreeTargetSelect").value = "nn2";
           }
+        } else if (!tbLoaded && nnLoaded) {
+          sel.value = "nn2";
         }
       }
       updateTbDependentButtons();
 
-      if (tbLoaded) {
-        if (tbFormat === "nextbox") {
-          const ev = data.emptyBoardValue !== null ? ` · E[V(0)]=${data.emptyBoardValue.toFixed(2)}` : "";
-          const rngTag = tbRngMode ? ` (${tbRngMode.toUpperCase()})` : "";
-          badge.textContent = `Connected · NB TB${rngTag}: ${data.boardCount.toLocaleString()} boards${ev}`;
-        } else {
-          const ev = data.emptyBoardValue !== null ? ` · V(0)=${data.emptyBoardValue.toFixed(2)}` : "";
-          badge.textContent = `Connected · NNB TB: ${data.boardCount.toLocaleString()} boards${ev}`;
-        }
-        badge.className = "badge ok";
-      } else {
-        badge.textContent = "Connected · No TB loaded (Heuristic mode)";
-        badge.className = "badge warn";
-      }
+      const status = formatServerStatusBadge(data);
+      badge.textContent = status.text;
+      badge.className = status.cls;
     }
 
     async function pingServer(syncDefaults = false) {
@@ -1073,6 +1213,9 @@
         tbLoaded = false;
         tbFormat = "none";
         tbRngMode = null;
+        nnLoaded = false;
+        nnRngMode = null;
+        nnHidden = null;
         updateTbDependentButtons();
         badge.textContent = `Offline (${err.message})`;
         badge.className = "badge err";
@@ -1130,7 +1273,7 @@
       movesReady = false;
       currentMoves = [];
       hoveredMove = null;
-      const nbMode = isNextBoxPolicy() || tbFormat === "nextbox";
+      const nbMode = isNextBoxView();
       document.getElementById("nextPieceSection").style.display = nbMode ? "flex" : "none";
       document.getElementById("nextPieceBadge").textContent = `Next: ${PIECE_CHARS[nextPiece]}`;
       renderPiecePills();
@@ -1154,9 +1297,12 @@
         tbLoaded = !!movesData.tablebaseLoaded;
         if (movesData.tablebaseFormat) tbFormat = movesData.tablebaseFormat;
         if (infoData.rngMode !== undefined) tbRngMode = infoData.rngMode;
+        nnLoaded = !!movesData.nnLoaded;
+        if (infoData.nnRngMode !== undefined) nnRngMode = infoData.nnRngMode;
         updateTbDependentButtons();
-        updateTableHeaders(isNextBoxPolicy() || tbFormat === "nextbox", selectedHeuristicPly());
+        updateTableHeaders(isNextBoxView(), selectedHeuristicPly());
         currentMoves = movesData.moves || [];
+        lastStateInfo = infoData;
         movesReady = true;
 
         updateStatsAndBanners(infoData);
@@ -1181,8 +1327,11 @@
 
       const isNbTb = info.tablebaseFormat === "nextbox";
       const curPieceInfo = info.perPiece.find((p) => p.piece === currentPiece);
+      const curChar = PIECE_CHARS[currentPiece];
+      const cmpTarget = activeDisagreeTarget();
+      const cmpLabel = cmpTarget === "nn2" ? "TB ≠ NN (2p)" : "TB ≠ Heuristic";
+
       if (isNbTb) {
-        const curChar = PIECE_CHARS[currentPiece];
         document.getElementById("statBoardValLabel").textContent = `V(b, ${curChar}) / E[V(b)]`;
         if (curPieceInfo && curPieceInfo.tablebaseValue !== null && info.boardValue !== null) {
           document.getElementById("statBoardVal").textContent =
@@ -1196,7 +1345,7 @@
             ? curPieceInfo.bellmanBackupValue.toFixed(4)
             : "—";
         document.getElementById("pieceStripHeader").textContent =
-          `Per-Piece V(b, c) & Best Q for Next=${PIECE_CHARS[nextPiece]} (click to switch current; amber = TB ≠ Heuristic):`;
+          `Per-Piece V(b, c) & Best Q for Next=${PIECE_CHARS[nextPiece]} (click to switch current; amber = ${cmpLabel}):`;
       } else {
         document.getElementById("statBoardValLabel").textContent = "Tablebase V(b)";
         document.getElementById("statBoardVal").textContent =
@@ -1206,8 +1355,28 @@
           info.bellmanBackupValue !== null ? info.bellmanBackupValue.toFixed(4) : "—";
         document.getElementById("pieceStripHeader").textContent =
           isNextBoxPolicy()
-            ? `Per-Piece Best Q for Next=${PIECE_CHARS[nextPiece]} (click to switch current; amber = TB ≠ Heuristic):`
-            : "Per-Piece Best Q (click to switch current piece; amber = TB ≠ Heuristic):";
+            ? `Per-Piece Best Q for Next=${PIECE_CHARS[nextPiece]} (click to switch current; amber = ${cmpLabel}):`
+            : `Per-Piece Best Q (click to switch current piece; amber = ${cmpLabel}):`;
+      }
+
+      document.getElementById("statNnValLabel").textContent = `NN V̂(b, ${curChar}) / E[V̂]`;
+      const statNnValEl = document.getElementById("statNnVal");
+      const statNnErrEl = document.getElementById("statNnErr");
+      statNnErrEl.style.color = "";
+      if (info.nnLoaded && curPieceInfo && typeof curPieceInfo.nnValue === "number" &&
+          typeof info.nnBoardValue === "number") {
+        statNnValEl.textContent = `${curPieceInfo.nnValue.toFixed(3)} / ${info.nnBoardValue.toFixed(3)}`;
+        if (typeof curPieceInfo.nnError === "number") {
+          statNnErrEl.textContent = formatSigned(curPieceInfo.nnError, 3);
+          const absErr = Math.abs(curPieceInfo.nnError);
+          statNnErrEl.style.color =
+            absErr <= NN_ERR_GOOD ? "var(--green)" : (absErr <= NN_ERR_WARN ? "var(--amber)" : "var(--red)");
+        } else {
+          statNnErrEl.textContent = isNbTb ? "OUT" : "—";
+        }
+      } else {
+        statNnValEl.textContent = "—";
+        statNnErrEl.textContent = "—";
       }
 
       document.getElementById("statHoles").textContent = `${info.holes} (${info.overhangs})`;
@@ -1226,29 +1395,41 @@
         canBanner.style.display = "none";
       }
 
+      const curDisagrees = renderPieceEvStrip(info, isNbTb, cmpTarget);
+      const ind = document.getElementById("disagreeIndicator");
+      ind.textContent = `${cmpLabel} on this turn!`;
+      ind.style.display = curDisagrees ? "inline-block" : "none";
+    }
+
+    function renderPieceEvStrip(info, isNbTb, cmpTarget) {
       const strip = document.getElementById("pieceEvStrip");
       strip.innerHTML = "";
       let curDisagrees = false;
       for (const p of info.perPiece) {
-        if (p.piece === currentPiece && p.disagree) curDisagrees = true;
+        const pieceDisagrees = cmpTarget === "nn2" ? !!p.nnDisagree : !!p.disagree;
+        if (p.piece === currentPiece && pieceDisagrees) curDisagrees = true;
         const box = document.createElement("div");
         box.className = "piece-ev-box" +
           (p.piece === currentPiece ? " active" : "") +
-          (p.disagree ? " disagree" : "");
+          (pieceDisagrees ? " disagree" : "");
         const qText = p.numTransitions === 0
           ? "DEAD"
-          : (p.bestTablebaseQ !== null ? p.bestTablebaseQ.toFixed(2) : p.bestHeuristicScore.toFixed(1));
-        if (isNbTb) {
-          const vText = p.tablebaseValue !== null ? p.tablebaseValue.toFixed(2) : "OUT";
-          box.innerHTML = `<div style="font-weight:700;font-family:var(--mono);">${p.pieceChar}</div>` +
-            `<div style="font-size:11px;font-family:var(--mono);" title="Stored V(b, ${p.pieceChar})">V=${vText}</div>` +
-            `<div style="font-size:10.5px;font-family:var(--mono);color:var(--accent);" title="Best Q = r + V(b', ${PIECE_CHARS[nextPiece]})">Q=${qText}</div>` +
-            `<div class="muted" style="font-size:10px;">${p.numTransitions} mv</div>`;
-        } else {
-          box.innerHTML = `<div style="font-weight:700;font-family:var(--mono);">${p.pieceChar}</div>` +
-            `<div style="font-size:11px;font-family:var(--mono);">${qText}</div>` +
-            `<div class="muted" style="font-size:10px;">${p.numTransitions} mv</div>`;
-        }
+          : (p.bestTablebaseQ !== null
+            ? p.bestTablebaseQ.toFixed(2)
+            : (typeof p.bestNnQ2 === "number" ? p.bestNnQ2.toFixed(2) : p.bestHeuristicScore.toFixed(1)));
+        const errTitle = typeof p.nnError === "number" ? ` (err ${formatSigned(p.nnError, 2)})` : "";
+        const nnLine = info.nnLoaded && typeof p.nnValue === "number"
+          ? `<div class="ev-nn" title="NN V̂(b, ${p.pieceChar})${errTitle}">V̂=${p.nnValue.toFixed(2)}</div>`
+          : "";
+        const bodyLines = isNbTb
+          ? `<div class="ev-val" title="Stored V(b, ${p.pieceChar})">V=${p.tablebaseValue !== null ? p.tablebaseValue.toFixed(2) : "OUT"}</div>` +
+            nnLine +
+            `<div class="ev-q" title="Best Q = r + V(b', ${PIECE_CHARS[nextPiece]})">Q=${qText}</div>`
+          : nnLine + `<div class="ev-val">${qText}</div>`;
+        box.innerHTML =
+          `<div class="ev-char">${p.pieceChar}</div>` +
+          bodyLines +
+          `<div class="muted ev-mv">${p.numTransitions} mv</div>`;
         box.addEventListener("click", () => {
           stopAutoplay();
           currentPiece = p.piece;
@@ -1257,19 +1438,36 @@
         });
         strip.appendChild(box);
       }
-      document.getElementById("disagreeIndicator").style.display = curDisagrees ? "inline-block" : "none";
+      return curDisagrees;
+    }
+
+    function partialOutScore(m) {
+      if (m.afterInTablebase) return m.tablebaseQ;
+      if (typeof m.nnQ2 !== "number") return m.linesCleared;
+      const estCont = Math.max(0, m.nnQ2 - m.linesCleared);
+      return m.linesCleared + Math.max(0, estCont - PARTIAL_OUT_MARGIN);
     }
 
     function chooseBestMoves(moves) {
-      if (moves.length === 0) return { bestHeur: null, bestTb: null, anyInTb: false };
+      if (moves.length === 0) {
+        return { bestHeur: null, bestTb: null, bestTbNn: null, bestNn2: null, bestNn1: null, anyInTb: false };
+      }
       let bestHeur = moves[0];
+      let bestNn1 = null;
+      let bestNn2 = null;
       for (const m of moves) {
         if (m.heuristicScore > bestHeur.heuristicScore) bestHeur = m;
+        if (typeof m.nnQ1 === "number" && (!bestNn1 || m.nnQ1 > bestNn1.nnQ1)) bestNn1 = m;
+        if (typeof m.nnQ2 === "number" && (!bestNn2 || m.nnQ2 > bestNn2.nnQ2)) bestNn2 = m;
       }
-      if (!tbLoaded) return { bestHeur, bestTb: bestHeur, anyInTb: false };
+      if (!tbLoaded) {
+        return { bestHeur, bestTb: bestHeur, bestTbNn: bestNn2 || bestHeur, bestNn2, bestNn1, anyInTb: false };
+      }
 
       const anyInTb = moves.some((m) => m.afterInTablebase);
-      if (!anyInTb) return { bestHeur, bestTb: bestHeur, anyInTb: false };
+      if (!anyInTb) {
+        return { bestHeur, bestTb: bestHeur, bestTbNn: bestNn2 || bestHeur, bestNn2, bestNn1, anyInTb: false };
+      }
 
       let bestTb = moves[0];
       for (const m of moves) {
@@ -1278,7 +1476,107 @@
           bestTb = m;
         }
       }
-      return { bestHeur, bestTb, anyInTb: true };
+
+      // Mirror chooseNextBoxHybridFallbackMove (partial-OUT with PARTIAL_OUT_MARGIN).
+      let bestTbNn = bestTb;
+      if (nnLoaded && bestNn2) {
+        let refQ = -Infinity;
+        bestTbNn = moves[0];
+        for (let i = 0; i < moves.length; i++) {
+          const m = moves[i];
+          const q = partialOutScore(m);
+          if (i === 0 || q > refQ + PARTIAL_OUT_TIE_EPS) {
+            bestTbNn = m;
+            refQ = q;
+          } else if (Math.abs(q - refQ) <= PARTIAL_OUT_TIE_EPS) {
+            refQ = Math.max(refQ, q);
+            if (m.afterInTablebase && !bestTbNn.afterInTablebase) {
+              bestTbNn = m;
+            } else if (m.afterInTablebase === bestTbNn.afterInTablebase &&
+              m.heuristicScore > bestTbNn.heuristicScore) {
+              bestTbNn = m;
+            }
+          }
+        }
+      }
+      return { bestHeur, bestTb, bestTbNn, bestNn2, bestNn1, anyInTb: true };
+    }
+
+    function getComparisonBest(picks) {
+      return (activeDisagreeTarget() === "nn2" && picks.bestNn2) ? picks.bestNn2 : picks.bestHeur;
+    }
+
+    function hasCurrentDisagreement(picks) {
+      if (!tbLoaded || !picks.anyInTb || !picks.bestTb) return false;
+      const target = getComparisonBest(picks);
+      return !!target && picks.bestTb.afterBoardHex !== target.afterBoardHex;
+    }
+
+    function pickMoveForActivePolicy(moves) {
+      const picks = chooseBestMoves(moves);
+      const mode = currentPolicySpec().mode;
+      if (mode === "tb" && tbLoaded) return picks.bestTb;
+      if (mode === "tbNn" && tbLoaded) return picks.bestTbNn;
+      if (mode === "nn2" && picks.bestNn2) return picks.bestNn2;
+      if (mode === "nn1" && picks.bestNn1) return picks.bestNn1;
+      return picks.bestHeur;
+    }
+
+    function resolveSortMode(sortMode, policyMode, anyInTb) {
+      if (sortMode !== "auto") return sortMode;
+      if (policyMode === "tbNn") return anyInTb ? "tbNn" : "nn2";
+      if (policyMode === "nn2") return "nn2";
+      if (policyMode === "nn1") return "nn1";
+      if (policyMode === "heur") return "heur";
+      return (tbLoaded && anyInTb) ? "tb" : "heur";
+    }
+
+    function classifyMoveRow(m, picks, policyMode, cmpTarget, cmpBest, policiesDisagree) {
+      const hex = m.afterBoardHex;
+      const isBestTb = tbLoaded && picks.anyInTb && picks.bestTb && hex === picks.bestTb.afterBoardHex;
+      const isBestTbNn = tbLoaded && policyMode === "tbNn" && picks.bestTbNn &&
+        hex === picks.bestTbNn.afterBoardHex && (!picks.bestTb || !picks.anyInTb || hex !== picks.bestTb.afterBoardHex);
+      const isBestNn = nnLoaded && picks.bestNn2 && hex === picks.bestNn2.afterBoardHex;
+      const isBestNn1 = nnLoaded && policyMode === "nn1" && picks.bestNn1 &&
+        hex === picks.bestNn1.afterBoardHex && (!picks.bestNn2 || hex !== picks.bestNn2.afterBoardHex);
+      const isBestHeur = picks.bestHeur && hex === picks.bestHeur.afterBoardHex;
+
+      const tags = [];
+      if (isBestTb) tags.push("TB");
+      if (isBestTbNn) tags.push("TB+NN");
+      if (isBestNn) tags.push("NN");
+      if (isBestNn1) tags.push("NN1");
+      if (isBestHeur) tags.push("HEUR");
+      if (tags.length === 0) return { rowClass: "", pickPills: "" };
+
+      const label = tags.join("+");
+      const isBestCmp = cmpBest && hex === cmpBest.afterBoardHex;
+      let rowClass = "";
+      let badgeCls = "accent";
+
+      if (tbLoaded && picks.anyInTb) {
+        if (isBestTb && isBestCmp) {
+          rowClass = "best-row";
+          badgeCls = "ok";
+        } else if (isBestTb) {
+          rowClass = policiesDisagree ? "disagree-tb-row" : "best-row";
+          badgeCls = "warn";
+        } else {
+          if (policiesDisagree && isBestCmp) {
+            rowClass = cmpTarget === "nn2" ? "disagree-nn-row" : "disagree-heur-row";
+          } else if (isBestTbNn) {
+            rowClass = "best-row";
+          }
+          badgeCls = (isBestTbNn || isBestNn || isBestNn1) ? "nn" : "accent";
+        }
+      } else if (isBestTbNn || isBestNn || isBestNn1) {
+        rowClass = "best-row";
+        badgeCls = "nn";
+      } else if (isBestHeur) {
+        rowClass = nnLoaded ? "" : "best-row";
+        badgeCls = nnLoaded ? "accent" : "ok";
+      }
+      return { rowClass, pickPills: `<span class="badge ${badgeCls}">${label}</span>` };
     }
 
     function renderMovesTable() {
@@ -1288,41 +1586,37 @@
       hoveredMove = null;
       if (currentMoves.length === 0) return;
 
-      const { bestHeur, bestTb, anyInTb } = chooseBestMoves(currentMoves);
-      const policiesDisagree = tbLoaded && bestTb && bestHeur &&
-        bestTb.afterBoardHex !== bestHeur.afterBoardHex;
+      const picks = chooseBestMoves(currentMoves);
+      const cmpTarget = activeDisagreeTarget();
+      const cmpBest = getComparisonBest(picks);
+      const policiesDisagree = hasCurrentDisagreement(picks);
 
       const sortMode = document.getElementById("sortModeSelect").value;
-      const useTbSort = sortMode === "tb" || (sortMode === "auto" && tbLoaded && anyInTb);
+      const policyMode = currentPolicySpec().mode;
+      const effSort = resolveSortMode(sortMode, policyMode, picks.anyInTb);
 
       const sorted = [...currentMoves].sort((a, b) => {
-        if (useTbSort && a.tablebaseQ !== null && b.tablebaseQ !== null && a.tablebaseQ !== b.tablebaseQ) {
+        if (effSort === "tbNn" && tbLoaded && picks.anyInTb) {
+          const pa = partialOutScore(a);
+          const pb = partialOutScore(b);
+          if (Math.abs(pa - pb) > PARTIAL_OUT_TIE_EPS) return pb - pa;
+          if (a.afterInTablebase !== b.afterInTablebase) return a.afterInTablebase ? -1 : 1;
+        } else if (effSort === "tb" && a.tablebaseQ !== null && b.tablebaseQ !== null && a.tablebaseQ !== b.tablebaseQ) {
           return b.tablebaseQ - a.tablebaseQ;
+        } else if (effSort === "nn2" && typeof a.nnQ2 === "number" && typeof b.nnQ2 === "number" && a.nnQ2 !== b.nnQ2) {
+          return b.nnQ2 - a.nnQ2;
+        } else if (effSort === "nn1" && typeof a.nnQ1 === "number" && typeof b.nnQ1 === "number" && a.nnQ1 !== b.nnQ1) {
+          return b.nnQ1 - a.nnQ1;
         }
         return b.heuristicScore - a.heuristicScore;
       });
 
       sorted.forEach((m, rank) => {
         const tr = document.createElement("tr");
-        const isBestTb = bestTb && m.afterBoardHex === bestTb.afterBoardHex;
-        const isBestHeur = bestHeur && m.afterBoardHex === bestHeur.afterBoardHex;
-
-        let pickPills = "";
-        if (tbLoaded) {
-          if (isBestTb && isBestHeur) {
-            tr.className = "best-row";
-            pickPills = `<span class="badge ok">TB+HEUR</span>`;
-          } else if (isBestTb) {
-            tr.className = policiesDisagree ? "disagree-tb-row" : "best-row";
-            pickPills = `<span class="badge warn">TB</span>`;
-          } else if (isBestHeur) {
-            if (policiesDisagree) tr.className = "disagree-heur-row";
-            pickPills = `<span class="badge accent">HEUR</span>`;
-          }
-        } else if (isBestHeur) {
-          tr.className = "best-row";
-          pickPills = `<span class="badge ok">HEUR</span>`;
-        }
+        const { rowClass, pickPills } = classifyMoveRow(
+          m, picks, policyMode, cmpTarget, cmpBest, policiesDisagree
+        );
+        if (rowClass) tr.className = rowClass;
 
         const tuckDesc = TUCK_DESCRIPTIONS[m.tuckInput] || m.tuckInput;
         const tuckBadge = m.tuckInput === "."
@@ -1334,6 +1628,9 @@
             ? `<span class="badge ok">IN</span>`
             : `<span class="badge warn">OUT</span>`);
         const tbQText = m.tablebaseQ !== null ? m.tablebaseQ.toFixed(4) : "—";
+        const nnQText = (typeof m.nnQ2 === "number" && typeof m.nnQ1 === "number")
+          ? `${m.nnQ2.toFixed(2)} <span class="muted">/ ${m.nnQ1.toFixed(2)}</span>`
+          : "—";
 
         tr.innerHTML =
           `<td>${rank + 1}</td>` +
@@ -1344,6 +1641,7 @@
           `<td>${m.afterHoles}</td>` +
           `<td>${tbStatus}</td>` +
           `<td>${tbQText}</td>` +
+          `<td>${nnQText}</td>` +
           `<td>${m.heuristicScore.toFixed(2)}</td>` +
           `<td>${m.afterBoardHex}</td>`;
 
@@ -1518,9 +1816,7 @@
 
     async function stepAiOnce() {
       if (editMode || !movesReady || currentMoves.length === 0) return false;
-      const { bestHeur, bestTb } = chooseBestMoves(currentMoves);
-      const useTb = currentPolicySpec().useTb && tbLoaded;
-      const chosen = useTb ? bestTb : bestHeur;
+      const chosen = pickMoveForActivePolicy(currentMoves);
       if (!chosen) return false;
       await commitMove(chosen);
       return movesReady && currentMoves.length > 0;
@@ -1579,8 +1875,7 @@
         if (mySeek !== seekSeq || !movesReady || currentMoves.length === 0) break;
         await stepAiOnce();
         if (mySeek !== seekSeq || !movesReady || currentMoves.length === 0) break;
-        const { bestHeur, bestTb } = chooseBestMoves(currentMoves);
-        if (tbLoaded && bestTb && bestHeur && bestTb.afterBoardHex !== bestHeur.afterBoardHex) {
+        if (hasCurrentDisagreement(chooseBestMoves(currentMoves))) {
           break;
         }
       }
@@ -1677,6 +1972,10 @@
     });
 
     document.getElementById("sortModeSelect").addEventListener("change", renderMovesTable);
+    document.getElementById("disagreeTargetSelect").addEventListener("change", () => {
+      if (lastStateInfo) updateStatsAndBanners(lastStateInfo);
+      renderMovesTable();
+    });
     document.getElementById("nesRngCheckbox").addEventListener("change", updateRngMismatchBanner);
     document.getElementById("aiPolicySelect").addEventListener("change", () => {
       stopAutoplay();
@@ -1699,7 +1998,7 @@
           alert(data.error || "Reload failed");
           await pingServer();
         } else {
-          applyPingPayload(data, true);
+          applyPingPayload(data, false);
         }
       } catch (err) {
         alert(err.message);

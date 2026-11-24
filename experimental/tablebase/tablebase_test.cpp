@@ -3580,3 +3580,239 @@ TEST_CASE("Calibrated partial-OUT fallback: +inf parity, margin clamping, and ed
   mappedTb.close();
   std::remove(tmpPartialTb.c_str());
 }
+
+TEST_CASE(
+    "Server routes TinyNextBoxNet (--nn) inspection, disagreement, and transactional reload") {
+  const std::string tmpTbPath = "build/test_srv_nn_nb.tb.bin";
+  const std::string tmpNnbPath = "build/test_srv_nn_nnb.tb.bin";
+  const std::string tmpNnPath = "build/test_srv_nn_model.nn.bin";
+  const std::string tmpBadPath = "build/test_srv_nn_bad.bin";
+
+  auto extractJsonNumberAfter = [](const std::string &json, const std::string &needle,
+                                   size_t startPos = 0) -> double {
+    const size_t pos = json.find(needle, startPos);
+    REQUIRE(pos != std::string::npos);
+    const char *numStart = json.c_str() + pos + needle.size();
+    char *endPtr = nullptr;
+    const double val = std::strtod(numStart, &endPtr);
+    REQUIRE(endPtr != numStart);
+    return val;
+  };
+
+  // Build a non-trivial random TinyNextBoxNet and save it.
+  tb::TinyNextBoxNet net1;
+  REQUIRE(net1.initRandom(8, 6, tb::RngMode::Nes, 12345ULL, 10.0f));
+  REQUIRE(net1.save(tmpNnPath));
+
+  // Write a corrupted file for rollback tests.
+  {
+    std::ofstream badOut(tmpBadPath, std::ios::binary | std::ios::trunc);
+    REQUIRE(badOut.is_open());
+    badOut.write("CORRUPT!", 8);
+    REQUIRE(badOut.good());
+  }
+
+  // 1. Default unloaded context reports nnLoaded:false and nulls.
+  tb::ServerContext ctx;
+  const auto pingEmpty = tb::handleApiRequest("/ping", "", ctx);
+  CHECK(pingEmpty.status == 200);
+  CHECK(pingEmpty.body.find("\"nnLoaded\":false") != std::string::npos);
+  CHECK(pingEmpty.body.find("\"nnRngMode\":null") != std::string::npos);
+  CHECK(pingEmpty.body.find("\"nnHidden\":null") != std::string::npos);
+  CHECK(pingEmpty.body.find("\"nnParamCount\":0") != std::string::npos);
+  CHECK(tb::handleApiRequest("/reload", "", ctx).status == 400);
+
+  // 2. NN-only mode (no TB): /ping, /moves (with & without next), /state-info, and NN-only reload.
+  ctx.configuredNnPath = tmpNnPath;
+  std::string err;
+  REQUIRE(ctx.openNn(ctx.configuredNnPath, &err));
+  const auto pingNnOnly = tb::handleApiRequest("/ping", "", ctx);
+  CHECK(pingNnOnly.status == 200);
+  CHECK(pingNnOnly.body.find("\"tablebaseLoaded\":false") != std::string::npos);
+  CHECK(pingNnOnly.body.find("\"nnLoaded\":true") != std::string::npos);
+  CHECK(pingNnOnly.body.find("\"nnRngMode\":\"nes\"") != std::string::npos);
+  CHECK(pingNnOnly.body.find("\"nnHidden\":[8,6]") != std::string::npos);
+  CHECK(pingNnOnly.body.find("\"nnParamCount\":" + std::to_string(net1.params.size()))
+        != std::string::npos);
+
+  // NN-only /reload rollback and success.
+  ctx.configuredNnPath = tmpBadPath;
+  CHECK(tb::handleApiRequest("/reload", "", ctx).status == 500);
+  CHECK(ctx.isNnLoaded());
+  CHECK(ctx.nn.h1 == 8);
+  ctx.configuredNnPath = tmpNnPath;
+  CHECK(tb::handleApiRequest("/reload", "", ctx).status == 200);
+
+  const int iIdx = tb::parsePieceChar('I');
+  const int oIdx = tb::parsePieceChar('O');
+  const auto movesNoNext = tb::handleApiRequest("/moves", "board=0&piece=I", ctx);
+  CHECK(movesNoNext.status == 200);
+  CHECK(movesNoNext.body.find("\"nnLoaded\":true") != std::string::npos);
+  CHECK(extractJsonNumberAfter(movesNoNext.body, "\"nnBoardValue\":")
+        == doctest::Approx(static_cast<double>(net1.evalPiece(0ULL, iIdx))).epsilon(1e-5));
+  CHECK(movesNoNext.body.find("\"nnQ1\":null,\"nnQ2\":null") != std::string::npos);
+
+  const auto movesWithNext = tb::handleApiRequest("/moves", "board=0&piece=I&next=O", ctx);
+  CHECK(movesWithNext.status == 200);
+  tb::PlacementList iPlacements;
+  tb::generatePlacements(0ULL, iIdx, iPlacements);
+  REQUIRE(iPlacements.size() > 0);
+  const double expQ1 =
+      tb::scoreNextBoxNn1Ply(iPlacements[0].afterBoard, iPlacements[0].linesCleared, oIdx, net1);
+  const double expQ2 = tb::scoreNextBoxNn2Ply(
+      iPlacements[0].afterBoard, iPlacements[0].linesCleared, oIdx, net1, tb::RngMode::Nes);
+  CHECK(extractJsonNumberAfter(movesWithNext.body, "\"nnQ1\":")
+        == doctest::Approx(expQ1).epsilon(1e-5));
+  CHECK(extractJsonNumberAfter(movesWithNext.body, "\"nnQ2\":")
+        == doctest::Approx(expQ2).epsilon(1e-5));
+
+  const auto infoNnOnly = tb::handleApiRequest("/state-info", "board=0&next=O", ctx);
+  CHECK(infoNnOnly.status == 200);
+  CHECK(infoNnOnly.body.find("\"nnLoaded\":true") != std::string::npos);
+  CHECK(infoNnOnly.body.find("\"nnError\":null") != std::string::npos);
+  CHECK(infoNnOnly.body.find("\"nnDisagree\":false") != std::string::npos);
+
+  // 3. Combined Next-Box TB + NN: exact nnError = V_hat - V*, forced TB vs NN disagreement,
+  //    all-OUT no-disagreement guard, OUT-of-TB parent, no-next, and top-out piece edge cases.
+  const tb::ChosenTransition nnBestI =
+      tb::chooseNextBoxNnMove2Ply(0ULL, iIdx, oIdx, net1, tb::RngMode::Nes);
+  REQUIRE(nnBestI.found);
+  tb::TransitionList iTrans;
+  tb::generateTransitions(0ULL, iIdx, iTrans);
+  uint64_t altIBoard = 0ULL;
+  for (int m = 0; m < iTrans.size(); ++m) {
+    if (iTrans[m].afterBoard != nnBestI.transition.afterBoard) {
+      altIBoard = iTrans[m].afterBoard;
+      break;
+    }
+  }
+  REQUIRE(altIBoard != 0ULL);
+
+  std::vector<uint64_t> tbKeys = {0ULL, altIBoard};
+  std::sort(tbKeys.begin(), tbKeys.end());
+  std::vector<float> tbVals(tbKeys.size() * tb::NUM_PIECES, 1.0f);
+  for (size_t k = 0; k < tbKeys.size(); ++k) {
+    if (tbKeys[k] == 0ULL) {
+      for (int p = 0; p < tb::NUM_PIECES; ++p) {
+        tbVals[k * tb::NUM_PIECES + static_cast<size_t>(p)] = 20.0f + static_cast<float>(p);
+      }
+    } else if (tbKeys[k] == altIBoard) {
+      tbVals[k * tb::NUM_PIECES + static_cast<size_t>(oIdx)] = 250.0f;
+    }
+  }
+  REQUIRE(tb::writeNextBoxTablebaseFile(tmpTbPath, tbKeys, tbVals, tb::RngMode::Nes, 0.0));
+  ctx.configuredTbPath = tmpTbPath;
+  REQUIRE(ctx.openTablebase(ctx.configuredTbPath, &err));
+
+  const auto infoBoth = tb::handleApiRequest("/state-info", "board=0&next=O", ctx);
+  CHECK(infoBoth.status == 200);
+  const size_t iPos = infoBoth.body.find("\"piece\":" + std::to_string(iIdx) + ",");
+  REQUIRE(iPos != std::string::npos);
+  const double expNnI = static_cast<double>(net1.evalPiece(0ULL, iIdx));
+  CHECK(extractJsonNumberAfter(infoBoth.body, "\"nnValue\":", iPos)
+        == doctest::Approx(expNnI).epsilon(1e-5));
+  CHECK(extractJsonNumberAfter(infoBoth.body, "\"nnError\":", iPos)
+        == doctest::Approx(expNnI - 20.0).epsilon(1e-5));
+  const size_t nextPiecePos =
+      infoBoth.body.find("\"piece\":" + std::to_string(iIdx + 1) + ",", iPos);
+  REQUIRE(nextPiecePos != std::string::npos);
+  const std::string iSlice = infoBoth.body.substr(iPos, nextPiecePos - iPos);
+  CHECK(iSlice.find("\"nnDisagree\":true") != std::string::npos);
+
+  // Piece 'O' has all children OUT of this 2-board TB -> anyInTablebase:false -> nnDisagree:false.
+  const size_t oPos = infoBoth.body.find("\"piece\":" + std::to_string(oIdx) + ",");
+  const size_t lPos = infoBoth.body.find("\"piece\":" + std::to_string(oIdx + 1) + ",", oPos);
+  REQUIRE(oPos != std::string::npos);
+  REQUIRE(lPos != std::string::npos);
+  const std::string oSlice = infoBoth.body.substr(oPos, lPos - oPos);
+  CHECK(oSlice.find("\"anyInTablebase\":false") != std::string::npos);
+  CHECK(oSlice.find("\"nnDisagree\":false") != std::string::npos);
+
+  // Next-Box /state-info without 'next': nnValue & nnError populated, bestNnQ1/Q2 null.
+  const auto infoNoNext = tb::handleApiRequest("/state-info", "board=0", ctx);
+  CHECK(infoNoNext.status == 200);
+  CHECK(infoNoNext.body.find("\"bestNnQ1\":null,\"bestNnQ2\":null") != std::string::npos);
+  CHECK(infoNoNext.body.find("\"nnDisagree\":false") != std::string::npos);
+
+  // OUT-of-TB parent board with top-out piece 'O': nnError is null, bestNnQ1/Q2 null, nnValue set.
+  const uint64_t tetrisReady = mustParse("XXXXXXXXX.\n"
+                                         "XXXXXXXXX.\n"
+                                         "XXXXXXXXX.\n"
+                                         "XXXXXXXXX.");
+  const auto infoTopOut = tb::handleApiRequest(
+      "/state-info", "board=" + tb::formatBoardHex(tetrisReady) + "&next=I", ctx);
+  CHECK(infoTopOut.status == 200);
+  const size_t toOPos = infoTopOut.body.find("\"piece\":" + std::to_string(oIdx) + ",");
+  const size_t toLPos = infoTopOut.body.find("\"piece\":" + std::to_string(oIdx + 1) + ",", toOPos);
+  REQUIRE(toOPos != std::string::npos);
+  REQUIRE(toLPos != std::string::npos);
+  const std::string toOSlice = infoTopOut.body.substr(toOPos, toLPos - toOPos);
+  CHECK(toOSlice.find("\"numTransitions\":0") != std::string::npos);
+  CHECK(toOSlice.find("\"nnError\":null") != std::string::npos);
+  CHECK(toOSlice.find("\"bestNnQ1\":null,\"bestNnQ2\":null") != std::string::npos);
+  CHECK(toOSlice.find("\"nnDisagree\":false") != std::string::npos);
+  CHECK(extractJsonNumberAfter(toOSlice, "\"nnValue\":")
+        == doctest::Approx(static_cast<double>(net1.evalPiece(tetrisReady, oIdx))).epsilon(1e-5));
+
+  // 4. Transactional /reload (both failure halves) + effectiveNnRngMode() override check.
+  // 4a. Valid TB + corrupt NN leaves BOTH intact.
+  ctx.configuredNnPath = tmpBadPath;
+  CHECK(tb::handleApiRequest("/reload", "", ctx).status == 500);
+  CHECK(ctx.isAnyTablebaseLoaded());
+  CHECK(ctx.isNnLoaded());
+  CHECK(ctx.nn.h1 == 8);
+  CHECK(ctx.nn.h2 == 6);
+
+  // 4b. Corrupt TB + valid new NN leaves BOTH previously loaded TB and NN intact (new NN not
+  //     committed).
+  tb::TinyNextBoxNet net2;
+  REQUIRE(net2.initRandom(12, 8, tb::RngMode::Uniform, 999ULL, 3.0f));
+  REQUIRE(net2.save(tmpNnPath));
+  ctx.configuredTbPath = tmpBadPath;
+  ctx.configuredNnPath = tmpNnPath;
+  CHECK(tb::handleApiRequest("/reload", "", ctx).status == 500);
+  CHECK(ctx.isAnyTablebaseLoaded());
+  CHECK(ctx.nn.h1 == 8);
+  CHECK(ctx.nn.h2 == 6);
+
+  // 4c. Valid TB (NES) + valid NN (Uniform) reload: nnRngMode reports "uniform", while /moves nnQ2
+  //     and /state-info nnBoardValue evaluate under the active Next-Box TB's NES RNG mode.
+  ctx.configuredTbPath = tmpTbPath;
+  const auto goodReload = tb::handleApiRequest("/reload", "", ctx);
+  CHECK(goodReload.status == 200);
+  CHECK(goodReload.body.find("\"nnHidden\":[12,8]") != std::string::npos);
+  CHECK(goodReload.body.find("\"nnRngMode\":\"uniform\"") != std::string::npos);
+  const auto movesOverride = tb::handleApiRequest("/moves", "board=0&piece=I&next=O", ctx);
+  CHECK(movesOverride.status == 200);
+  const double expOverrideQ2 = tb::scoreNextBoxNn2Ply(
+      iPlacements[0].afterBoard, iPlacements[0].linesCleared, oIdx, net2, tb::RngMode::Nes);
+  CHECK(extractJsonNumberAfter(movesOverride.body, "\"nnQ2\":")
+        == doctest::Approx(expOverrideQ2).epsilon(1e-5));
+  const auto infoOverride = tb::handleApiRequest("/state-info", "board=0&next=O", ctx);
+  CHECK(infoOverride.status == 200);
+  float net2Vals[tb::NUM_PIECES] = {};
+  net2.evalAll(0ULL, net2Vals);
+  const double expOverrideBoardVal = tb::detail::expectedOpeningValue(net2Vals, tb::RngMode::Nes);
+  CHECK(extractJsonNumberAfter(infoOverride.body, "\"nnBoardValue\":")
+        == doctest::Approx(expOverrideBoardVal).epsilon(1e-5));
+
+  // 5. Combined SRTBV001 (NNB) TB + NN mode: nnError is null, nnValue & nnQ1/Q2 populated.
+  REQUIRE(tb::writeTablebaseFile(tmpNnbPath, {altIBoard}, {77.0f}, 0.0));
+  ctx.configuredTbPath = tmpNnbPath;
+  REQUIRE(ctx.openTablebase(ctx.configuredTbPath, &err));
+  const auto infoNnbNn = tb::handleApiRequest("/state-info", "board=0&next=O", ctx);
+  CHECK(infoNnbNn.status == 200);
+  CHECK(infoNnbNn.body.find("\"tablebaseFormat\":\"nnb\"") != std::string::npos);
+  CHECK(infoNnbNn.body.find("\"nnLoaded\":true") != std::string::npos);
+  CHECK(infoNnbNn.body.find("\"nnError\":null") != std::string::npos);
+  const auto movesNnbNoNext = tb::handleApiRequest("/moves", "board=0&piece=I", ctx);
+  CHECK(movesNnbNoNext.status == 200);
+  CHECK(movesNnbNoNext.body.find("\"nnQ1\":null,\"nnQ2\":null") != std::string::npos);
+
+  ctx.closeAll();
+  CHECK_FALSE(ctx.isNnLoaded());
+  std::remove(tmpTbPath.c_str());
+  std::remove(tmpNnbPath.c_str());
+  std::remove(tmpNnPath.c_str());
+  std::remove(tmpBadPath.c_str());
+}
