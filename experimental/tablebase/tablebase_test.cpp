@@ -4,6 +4,7 @@
 #include "core.hpp"
 #include "heuristic.hpp"
 #include "server_routes.hpp"
+#include "state_generator.hpp"
 #include "tablebase_io.hpp"
 #include "vi_solver.hpp"
 
@@ -948,4 +949,379 @@ TEST_CASE(
 
   mapped.close();
   std::remove(tmpTbPath.c_str());
+}
+
+TEST_CASE("State-space generator: FlatVisitMap, ShardedVisitCounter, thread determinism, sibling "
+          "expansion, TB-guided sampling, merge, and coverage") {
+  // 1. FlatVisitMap insertion, clear, accumulation, saturation, rehash, and sentinel safety.
+  tb::FlatVisitMap vm(16);
+  CHECK(vm.get(0ULL) == 0);
+  CHECK(vm.get(~0ULL) == 0);
+  for (uint64_t i = 0; i < 200; ++i) {
+    vm.add(i * 3ULL, 2);
+  }
+  CHECK(vm.size() == 200);
+  vm.add(3ULL, 5);
+  CHECK(vm.get(3ULL) == 7);
+  vm.add(0ULL, UINT32_MAX - 1);
+  CHECK(vm.get(0ULL) == UINT32_MAX);
+  vm.clear();
+  CHECK(vm.size() == 0);
+  CHECK(vm.get(3ULL) == 0);
+
+  // 2. ShardedVisitCounter multi-threaded flush with 20,000 keys (verifies decorrelated sharding
+  // stays fast and cross-flush saturating accumulation is exact).
+  {
+    tb::ShardedVisitCounter svc;
+    std::vector<std::thread> workers;
+    for (int t = 0; t < 4; ++t) {
+      workers.emplace_back([&, t]() {
+        tb::FlatVisitMap local(4096);
+        for (uint64_t k = 0; k < 5000; ++k) {
+          local.add(k * 4ULL, 1);
+          local.add((static_cast<uint64_t>(t) * 5000ULL + k + 5000ULL) * 4ULL, 2);
+        }
+        svc.flushLocal(local);
+      });
+    }
+    for (auto &th : workers)
+      th.join();
+    auto extracted = svc.extractAll();
+    CHECK(extracted.size() == 25000);
+    std::sort(extracted.begin(), extracted.end());
+    CHECK(extracted[0].first == 0ULL);
+    CHECK(extracted[0].second == 4U); // 4 threads x 1 visit
+    CHECK(extracted[5000].second == 2U);
+  }
+
+  // 3. selectRolloutTransition edge cases: top-out, single-move, epsilon=0 vs epsilon=1, TB-guided.
+  {
+    const uint64_t tetrisReady = mustParse("XXXXXXXXX.\n"
+                                           "XXXXXXXXX.\n"
+                                           "XXXXXXXXX.\n"
+                                           "XXXXXXXXX.");
+    tb::Rng rng(123ULL);
+    // Top-out for O on tetrisReady:
+    CHECK_FALSE(tb::selectRolloutTransition(tetrisReady, tb::parsePieceChar('O'), rng, nullptr, 1,
+                                            1.0, 4, tb::EvalWeights{})
+                    .found);
+    // Single legal move (vertical I in col 9) on tetrisReady even at epsilon = 1.0:
+    const auto singleMove = tb::selectRolloutTransition(tetrisReady, tb::parsePieceChar('I'), rng,
+                                                        nullptr, 1, 1.0, 4, tb::EvalWeights{});
+    REQUIRE(singleMove.found);
+    CHECK(singleMove.transition.afterBoard == 0ULL);
+    CHECK(singleMove.transition.linesCleared == 4);
+
+    // At epsilon = 1.0 on empty board, runner-up choice must never equal the greedy move.
+    const auto greedyO = tb::pickBestTransition1Ply(0ULL, tb::parsePieceChar('O'));
+    for (int i = 0; i < 20; ++i) {
+      const auto expO = tb::selectRolloutTransition(0ULL, tb::parsePieceChar('O'), rng, nullptr, 1,
+                                                    1.0, 4, tb::EvalWeights{});
+      REQUIRE(expO.found);
+      CHECK(expO.transition.afterBoard != greedyO.transition.afterBoard);
+    }
+  }
+
+  // 4. Multi-threaded generateStateSpace determinism (1 thread vs 4 threads) + sibling expansion
+  // actually rescues boards compared to siblingMinVisits = 0.
+  tb::StateGenConfig cfg1{};
+  cfg1.numGames = 150;
+  cfg1.baseSeed = 424242ULL;
+  cfg1.heurPly = 1;
+  cfg1.epsilon = 0.10;
+  cfg1.exploreTopK = 4;
+  cfg1.minVisits = 2;
+  cfg1.maxBoards = 0;
+  cfg1.siblingMinVisits = 3;
+  cfg1.siblingPly = 1;
+  cfg1.numThreads = 1;
+
+  tb::StateGenConfig cfg4 = cfg1;
+  cfg4.numThreads = 4;
+
+  const tb::StateGenResult r1 = tb::generateStateSpace(cfg1);
+  const tb::StateGenResult r4 = tb::generateStateSpace(cfg4);
+  CHECK(r1.sortedBoards == r4.sortedBoards);
+  CHECK(r1.rawUniqueDiscovered == r4.rawUniqueDiscovered);
+  CHECK(r1.siblingBoardsAdded == r4.siblingBoardsAdded);
+  CHECK(r1.siblingBoardsAdded > 0);
+  CHECK(r1.totalMovesSimulated == r4.totalMovesSimulated);
+  REQUIRE_FALSE(r1.sortedBoards.empty());
+  CHECK(r1.sortedBoards.front() == 0ULL);
+  for (size_t i = 0; i < r1.sortedBoards.size(); ++i) {
+    CHECK(tb::isCanonicalBoard(r1.sortedBoards[i]));
+    if (i > 0) {
+      CHECK(r1.sortedBoards[i] > r1.sortedBoards[i - 1]);
+    }
+  }
+
+  tb::StateGenConfig noSibCfg = cfg1;
+  noSibCfg.siblingMinVisits = 0;
+  const tb::StateGenResult rNoSib = tb::generateStateSpace(noSibCfg);
+  CHECK(r1.sortedBoards.size() > rNoSib.sortedBoards.size());
+
+  // 5. Verify maxBoards cap preserves 0ULL even when priorBoards (with duplicates) exceeds cap,
+  // and post-cap counters stay consistent.
+  const std::vector<uint64_t> prior = {0x000000000FULL, 0x0000000003ULL, 0x0000000003ULL, 0ULL};
+  tb::StateGenConfig cappedCfg = cfg1;
+  cappedCfg.maxBoards = 2;
+  const tb::StateGenResult capped = tb::generateStateSpace(cappedCfg, nullptr, &prior);
+  CHECK(capped.sortedBoards.size() == 2);
+  CHECK(capped.sortedBoards[0] == 0ULL);
+  CHECK(capped.priorBoardsMerged == 2);
+  CHECK(capped.siblingBoardsAdded == 0);
+
+  // 6. Verify TB-guided generateStateSpace (with heurPly = 2 fallback) and measureCoverage.
+  const std::string tmpTbPath = "build/test_gen_tb.tb.bin";
+  REQUIRE(tb::writeTablebaseFile(tmpTbPath, r1.sortedBoards,
+                                 std::vector<float>(r1.sortedBoards.size(), 5.0f), 0.0));
+  tb::MappedTablebase mappedTb;
+  REQUIRE(mappedTb.open(tmpTbPath));
+
+  tb::StateGenConfig tbGenCfg{};
+  tbGenCfg.numGames = 30;
+  tbGenCfg.baseSeed = 55555ULL;
+  tbGenCfg.heurPly = 2;
+  tbGenCfg.epsilon = 0.10;
+  tbGenCfg.exploreTopK = 3;
+  tbGenCfg.minVisits = 1;
+  tbGenCfg.maxBoards = 0;
+  tbGenCfg.siblingMinVisits = 2;
+  tbGenCfg.siblingPly = 1;
+  tbGenCfg.numThreads = 2;
+  const tb::StateGenResult tbGen = tb::generateStateSpace(tbGenCfg, &mappedTb, nullptr);
+  CHECK_FALSE(tbGen.sortedBoards.empty());
+  CHECK(tbGen.sortedBoards.front() == 0ULL);
+
+  // 7. Verify measureCoverage: exact 100% hit-rate, partial coverage, numGames = 0/1, empty set.
+  tb::StateGenConfig exactCfg{};
+  exactCfg.numGames = 40;
+  exactCfg.baseSeed = 88888ULL;
+  exactCfg.heurPly = 1;
+  exactCfg.epsilon = 0.0;
+  exactCfg.minVisits = 1;
+  exactCfg.maxBoards = 0;
+  exactCfg.siblingMinVisits = 0;
+  exactCfg.numThreads = 2;
+  const tb::StateGenResult exactGen = tb::generateStateSpace(exactCfg);
+  const tb::CoverageReport exactCov =
+      tb::measureCoverage(exactGen.sortedBoards, 40, 88888ULL, nullptr, 1, 2);
+  CHECK(exactCov.overallHitPct == doctest::Approx(100.0));
+  CHECK(exactCov.fullyCoveredGamePct == doctest::Approx(100.0));
+  CHECK(exactCov.byHoles.allTotal() == exactGen.totalMovesSimulated);
+
+  const tb::CoverageReport partialCov =
+      tb::measureCoverage(exactGen.sortedBoards, 30, 999999ULL, &mappedTb, 1, 2);
+  CHECK(partialCov.overallHitPct < 100.0);
+  CHECK(partialCov.byHoles.allTotal() > 0);
+
+  const tb::CoverageReport zeroGamesCov =
+      tb::measureCoverage(exactGen.sortedBoards, 0, 88888ULL, nullptr, 1, 1);
+  CHECK(zeroGamesCov.games == 0);
+  CHECK(zeroGamesCov.overallHitPct == 0.0);
+
+  const tb::CoverageReport singleGameEmptySet = tb::measureCoverage({}, 1, 88888ULL, nullptr, 1, 1);
+  CHECK(singleGameEmptySet.stdErrLines == 0.0);
+  CHECK(singleGameEmptySet.overallHitPct == 0.0);
+
+  mappedTb.close();
+  std::remove(tmpTbPath.c_str());
+}
+
+TEST_CASE("Solver evaluation, TB frontier exploration, and iterative expansion monotonicity") {
+  // 1. Test evaluateTablebasePolicy: closed-world MC agreement, live fallback, determinism (1T vs
+  // 4T), and numGames=0/1 edge cases on a small exact 2-row board set.
+  const std::vector<uint64_t> boards2x10 = tb::enumerateZeroSealedHoleBoards(1, 4, 2, 10);
+  tb::ViSolveConfig viCfg{};
+  viCfg.tolerance = 1e-9;
+  viCfg.maxOuterIters = 100;
+  viCfg.innerEvalSweeps = 20;
+  viCfg.numThreads = 4;
+  const tb::ViSolveResult solved2x10 = tb::solveValueIterationMPI(boards2x10, viCfg);
+  REQUIRE(solved2x10.finalBellmanResidual <= 1e-9);
+
+  const std::string tmpTb2x10 = "build/test_eval_2x10.tb.bin";
+  REQUIRE(tb::writeTablebaseFile(tmpTb2x10, boards2x10, solved2x10.values,
+                                 solved2x10.finalBellmanResidual));
+  tb::MappedTablebase mapped2x10;
+  REQUIRE(mapped2x10.open(tmpTb2x10));
+
+  const tb::TablebaseEvalStats cw1 =
+      tb::evaluateTablebasePolicy(mapped2x10, /*closedWorld=*/true, 2000, 12345ULL, 1, 1);
+  const tb::TablebaseEvalStats cw4 =
+      tb::evaluateTablebasePolicy(mapped2x10, /*closedWorld=*/true, 2000, 12345ULL, 4, 1);
+  CHECK(cw1.meanLines == cw4.meanLines);
+  CHECK(cw1.stdErrLines == cw4.stdErrLines);
+  CHECK(cw1.medianLines == cw4.medianLines);
+  CHECK(cw1.p90Lines == cw4.p90Lines);
+  CHECK(cw1.maxLines == cw4.maxLines);
+  CHECK(cw1.inTbMovePct == cw4.inTbMovePct);
+  CHECK(cw1.fullyCoveredGamePct == cw4.fullyCoveredGamePct);
+  CHECK(cw1.stepCapHits == 0);
+  CHECK(std::abs(cw1.meanLines - solved2x10.emptyBoardValue) <= 4.0 * cw1.stdErrLines);
+
+  const tb::TablebaseEvalStats live =
+      tb::evaluateTablebasePolicy(mapped2x10, /*closedWorld=*/false, 400, 12345ULL, 4, 1);
+  CHECK(live.games == 400);
+  CHECK(live.stepCapHits == 0);
+  CHECK(live.byHoles.allTotal() > 0);
+  CHECK(live.inTbMovePct > 0.0);
+  CHECK(live.meanLines > cw1.meanLines);
+
+  // Verify stepCapHits triggers when maxSteps == 1 and fallbackMovePct == 100% on an empty TB.
+  const tb::TablebaseEvalStats capEval = tb::evaluateTablebasePolicy(
+      mapped2x10, /*closedWorld=*/false, 20, 12345ULL, 2, 1, tb::EvalWeights{}, /*maxSteps=*/1);
+  CHECK(capEval.stepCapHits == 20);
+
+  const tb::MappedTablebase unloadedTb;
+  const tb::TablebaseEvalStats emptyTbEval =
+      tb::evaluateTablebasePolicy(unloadedTb, /*closedWorld=*/false, 20, 12345ULL, 2, 1);
+  CHECK(emptyTbEval.inTbMovePct == 0.0);
+  CHECK(emptyTbEval.fallbackMovePct == doctest::Approx(100.0));
+
+  const tb::TablebaseEvalStats zeroEval =
+      tb::evaluateTablebasePolicy(mapped2x10, /*closedWorld=*/false, 0, 1ULL, 1, 1);
+  CHECK(zeroEval.games == 0);
+  CHECK(zeroEval.meanLines == 0.0);
+  const tb::TablebaseEvalStats oneEval =
+      tb::evaluateTablebasePolicy(mapped2x10, /*closedWorld=*/false, 1, 1ULL, 1, 1);
+  CHECK(oneEval.games == 1);
+  CHECK(oneEval.stdErrLines == 0.0);
+
+  mapped2x10.close();
+  std::remove(tmpTb2x10.c_str());
+
+  // 2. Test TB frontier exploration: put 4 distinct suboptimal O moves in TB (excluding
+  // heurBestO) with values 5.0, 4.0, 3.0, 2.0 so TB runner-up exploration can ONLY pick in-TB
+  // moves while heuristic frontier probing discovers out-of-TB heurBestO.
+  tb::TransitionList oMoves;
+  tb::generateTransitions(0ULL, tb::parsePieceChar('O'), oMoves);
+  REQUIRE(oMoves.size() == 9);
+  const auto heurBestO = tb::pickBestTransition1Ply(0ULL, tb::parsePieceChar('O'));
+  REQUIRE(heurBestO.found);
+  std::vector<uint64_t> suboptOs;
+  for (int i = 0; i < oMoves.size() && suboptOs.size() < 4; ++i) {
+    if (oMoves[i].afterBoard != heurBestO.transition.afterBoard) {
+      suboptOs.push_back(oMoves[i].afterBoard);
+    }
+  }
+  REQUIRE(suboptOs.size() == 4);
+  const uint64_t tbGreedySubopt = suboptOs[0];
+  std::vector<std::pair<uint64_t, float>> tinyEntries = {
+      {0ULL, 1.0f},        {suboptOs[0], 5.0f}, {suboptOs[1], 4.0f},
+      {suboptOs[2], 3.0f}, {suboptOs[3], 2.0f},
+  };
+  std::sort(tinyEntries.begin(), tinyEntries.end(),
+            [](const auto &a, const auto &b) { return a.first < b.first; });
+  std::vector<uint64_t> tinyKeys;
+  std::vector<float> tinyVals;
+  for (const auto &kv : tinyEntries) {
+    tinyKeys.push_back(kv.first);
+    tinyVals.push_back(kv.second);
+  }
+  const std::string tmpTinyTb = "build/test_frontier_tiny.tb.bin";
+  REQUIRE(tb::writeTablebaseFile(tmpTinyTb, tinyKeys, tinyVals, 0.0));
+  tb::MappedTablebase tinyTb;
+  REQUIRE(tinyTb.open(tmpTinyTb));
+
+  tb::Rng probeRng(777ULL);
+  bool sawHeurBest = false;
+  bool sawInTbRunnerUp = false;
+  for (int i = 0; i < 80; ++i) {
+    const auto mv = tb::selectRolloutTransition(0ULL, tb::parsePieceChar('O'), probeRng, &tinyTb,
+                                                /*heurPly=*/1, /*epsilon=*/1.0, /*exploreTopK=*/4,
+                                                tb::EvalWeights{});
+    REQUIRE(mv.found);
+    CHECK(mv.transition.afterBoard != tbGreedySubopt);
+    if (mv.transition.afterBoard == heurBestO.transition.afterBoard) {
+      sawHeurBest = true;
+    }
+    if (mv.transition.afterBoard == suboptOs[1]
+        || mv.transition.afterBoard == suboptOs[2]
+        || mv.transition.afterBoard == suboptOs[3]) {
+      sawInTbRunnerUp = true;
+    }
+  }
+  CHECK(sawHeurBest);
+  CHECK(sawInTbRunnerUp);
+
+  // Also pin excludeBoard when tbGreedyBoard == heurBestO: epsilon=1.0 must never repeat heurBestO.
+  const std::string tmpAgreeTb = "build/test_frontier_agree.tb.bin";
+  REQUIRE(heurBestO.transition.afterBoard > 0ULL);
+  REQUIRE(tb::writeTablebaseFile(tmpAgreeTb, {0ULL, heurBestO.transition.afterBoard}, {1.0f, 9.0f},
+                                 0.0));
+  tb::MappedTablebase agreeTb;
+  REQUIRE(agreeTb.open(tmpAgreeTb));
+  for (int i = 0; i < 60; ++i) {
+    const auto mv = tb::selectRolloutTransition(0ULL, tb::parsePieceChar('O'), probeRng, &agreeTb,
+                                                /*heurPly=*/1, /*epsilon=*/1.0, /*exploreTopK=*/4,
+                                                tb::EvalWeights{});
+    REQUIRE(mv.found);
+    CHECK(mv.transition.afterBoard != heurBestO.transition.afterBoard);
+  }
+  agreeTb.close();
+  std::remove(tmpAgreeTb.c_str());
+
+  // Verify expandCoreSiblings with a loaded TB includes the out-of-TB heuristic reply on 0ULL.
+  tb::StateGenConfig sibCfg{};
+  sibCfg.numGames = 10;
+  sibCfg.baseSeed = 99ULL;
+  sibCfg.heurPly = 1;
+  sibCfg.epsilon = 0.0;
+  sibCfg.minVisits = 100; // Only 0ULL and sibling replies survive
+  sibCfg.maxBoards = 0;
+  sibCfg.siblingMinVisits = 1;
+  sibCfg.siblingPly = 1;
+  sibCfg.numThreads = 2;
+  const tb::StateGenResult sibRes = tb::generateStateSpace(sibCfg, &tinyTb, nullptr);
+  CHECK(std::binary_search(sibRes.sortedBoards.begin(), sibRes.sortedBoards.end(),
+                           heurBestO.transition.afterBoard));
+  CHECK(std::binary_search(sibRes.sortedBoards.begin(), sibRes.sortedBoards.end(), tbGreedySubopt));
+
+  tinyTb.close();
+  std::remove(tmpTinyTb.c_str());
+
+  // 3. Mini iterative expansion monotonicity: Round 0 (pure heuristic) -> Solve TB_0 -> Round 1
+  // (TB_0 rollouts + merge S_0) -> Solve TB_1 must satisfy |S_1| >= |S_0| and V_1(0) >= V_0(0).
+  tb::StateGenConfig r0Cfg{};
+  r0Cfg.numGames = 200;
+  r0Cfg.baseSeed = 202600ULL;
+  r0Cfg.heurPly = 1;
+  r0Cfg.epsilon = 0.08;
+  r0Cfg.exploreTopK = 4;
+  r0Cfg.minVisits = 2;
+  r0Cfg.maxBoards = 0;
+  r0Cfg.siblingMinVisits = 4;
+  r0Cfg.siblingPly = 1;
+  r0Cfg.numThreads = 4;
+  const tb::StateGenResult r0 = tb::generateStateSpace(r0Cfg);
+  REQUIRE_FALSE(r0.sortedBoards.empty());
+
+  tb::ViSolveConfig miniVi{};
+  miniVi.tolerance = 1e-8;
+  miniVi.maxOuterIters = 150;
+  miniVi.innerEvalSweeps = 25;
+  miniVi.numThreads = 4;
+  const tb::ViSolveResult v0 = tb::solveValueIterationMPI(r0.sortedBoards, miniVi);
+  REQUIRE(v0.finalBellmanResidual <= 1e-8);
+  CHECK(v0.emptyBoardValue > 0.0);
+
+  const std::string tmpR0Tb = "build/test_iter_r0.tb.bin";
+  REQUIRE(tb::writeTablebaseFile(tmpR0Tb, r0.sortedBoards, v0.values, v0.finalBellmanResidual));
+  tb::MappedTablebase mappedR0;
+  REQUIRE(mappedR0.open(tmpR0Tb));
+
+  tb::StateGenConfig r1Cfg = r0Cfg;
+  r1Cfg.baseSeed = 202601ULL;
+  r1Cfg.numGames = 400;
+  const tb::StateGenResult r1 = tb::generateStateSpace(r1Cfg, &mappedR0, &r0.sortedBoards);
+  CHECK(r1.sortedBoards.size() >= r0.sortedBoards.size());
+  CHECK(r1.priorBoardsMerged == r0.sortedBoards.size());
+
+  const tb::ViSolveResult v1 = tb::solveValueIterationMPI(r1.sortedBoards, miniVi);
+  REQUIRE(v1.finalBellmanResidual <= 1e-8);
+  CHECK(v1.emptyBoardValue >= v0.emptyBoardValue - 1e-6);
+
+  mappedR0.close();
+  std::remove(tmpR0Tb.c_str());
 }

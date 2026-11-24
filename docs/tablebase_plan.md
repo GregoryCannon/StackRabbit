@@ -139,36 +139,44 @@ Before mixing sampling errors with solver debugging, validate the Value Iteratio
 
 ---
 
-### Phase 5: Parallel Trajectory State-Space Generator (`generate_states.cpp`)
+### Phase 5: Parallel Trajectory State-Space Generator (`state_generator.hpp`, `generate_states.cpp`)
 Generate plausible state spaces (including holes, overhangs, and tuck setups) via self-play rollouts.
 
-- [ ] Implement multi-threaded self-play worker pool accumulating `(uint64_t board -> uint32_t visitCount)` via partitioned flat hash maps (zero lock contention across threads).
-- [ ] Support **exploration policy**:
-  - With probability `1 - ε`: play greedy move (using loaded `*.tb.bin` when available, falling back to Phase 3 heuristic if all moves exit the tablebase).
-  - With probability `ε` (e.g. `ε = 0.05–0.15`): sample among top-`K` moves or Boltzmann softmax so off-policy sibling states and recovery scrambles get populated.
-  - Optional **1-ply sibling expansion** for frequently visited boards (`visits >= M`): automatically insert all 1-step greedy responses across all 7 pieces so interior states never suffer artificial `0.0` frontier holes on unlucky piece draws.
-- [ ] Support merging into an existing `*.states.bin` file and filtering by `minVisits` (e.g., `minVisits >= 2` to prune the long tail of one-off pre-death garbage states) up to a configurable `maxBoards` cap (v0 target: **5M–20M boards**; medium scale: **50M boards**).
-- [ ] Log held-out coverage metrics every `K` games: unique boards, % of greedy rollout moves landing inside $\mathcal{S}$ (overall and stratified by hole count `0, 1, 2, 3+`).
-- [ ] Write sorted `uint64_t` array to `*.states.bin`.
+- [x] Implement multi-threaded self-play worker pool accumulating `(uint64_t board -> uint32_t visitCount)` via thread-local `FlatVisitMap` + decorrelated 64-shard `ShardedVisitCounter` (zero hot-loop contention, bit-for-bit thread-count deterministic).
+- [x] Support **exploration policy** (`selectRolloutTransition`):
+  - With probability `1 - ε`: play greedy move (using loaded `*.tb.bin` when available, falling back to Phase 3 1-ply/2-ply heuristic if all moves exit the tablebase).
+  - With probability `ε` (e.g. `ε = 0.08`): sample uniformly among runner-up top-`K` moves (`ranks 2..K`) so off-policy sibling states and recovery scrambles get populated.
+  - Optional **1-ply sibling expansion** (`--sibling-min=M`) for frequently visited boards (`visits >= M`): inserts greedy responses across all 7 pieces to plug interior `0.0` frontier holes.
+- [x] Support merging into an existing `*.states.bin` file (`--merge=PATH`) and filtering by `minVisits` up to a deterministic `maxBoards` cap (preserving `0ULL` and protected prior boards).
+- [x] Log held-out greedy coverage metrics (overall move hit-rate, 100%-covered game %, and stratified by hole count `0, 1, 2, 3+`).
+- [x] Write sorted `uint64_t` array to `*.states.bin` (tested on 250k pure 2-ply games: `673,453` boards / `5.1 MB` achieving `82.60%` overall and `93.44%` 0-hole held-out hit rate in `47s`).
 
 ---
 
 ### Phase 6: Value Iteration / Modified Policy Iteration Solver & Iterative Loop (`solve_vi.cpp`)
 Solve `V(b)` over arbitrary sampled state sets $\mathcal{S}$ and run iterative state-space expansion.
 
-- [ ] **Indexing & Memory Layout**:
-  - Load sorted `uint64_t boards[N]` from `*.states.bin`.
-  - Build a read-only flat open-addressing lookup table (`uint64_t key -> uint32_t id`, ~70% load factor) for fast `O(1)` child lookups without storing the `~175 × N` edge graph in RAM.
-  - Maintain working values in `double V[N]` to prevent `float32` precision drift when expected line counts are large.
-- [ ] **Modified Policy Iteration (MPI) Engine**:
-  - **Policy Improvement Sweep (parallel over `N` boards)**: For each board `i` and piece `c = 0..6`, generate `Moves(boards[i], c)`, look up `id = find(b')` (`V = 0.0` if `b' ∉ S`), and record `bestChild[i][c]` + `bestReward[i][c]`.
-  - **Policy Evaluation Inner Loop (20–30 fast sweeps)**: Update `V[i] = (1.0 / 7.0) * sum_c (bestReward[i][c] + V[bestChild[i][c]])` in-place (Gauss-Seidel / parallel blocked sweeps) with zero move generation or hash lookups (~20× faster per sweep).
-  - Repeat outer + inner loops until exact Bellman residual across all `N` boards is `< 1e-5`.
-- [ ] **Binary Tablebase Output (`*.tb.bin`)**:
-  - Header (`magic`, `version`, `numBoards`, `flags`, `emptyBoardValue`, `bellmanResidual`) followed by `N` sorted records (`uint64_t board` + `float value` = `12 bytes/board`, `mmap`-able with binary search or flat hash).
-- [ ] **Iterative Expansion Experiment (3–5 Rounds)**:
-  - Run `Round 0 (Heuristic seed -> Solve TB_0) -> Round 1 (TB_0 rollouts -> Merge S_1 -> Solve TB_1) -> ... -> Round K`.
-  - Track progression across rounds: `|S_k|`, `V_k(emptyBoard)`, empirical mean lines over 10,000 test games, and `% in-tablebase moves` vs. the Phase 3 heuristic and Phase 4 0-hole oracle.
+- [x] **Indexing & Memory Layout**:
+  - Load sorted `uint64_t boards[N]` from `*.states.bin` via `tb::readStatesFile`.
+  - Build read-only `tb::FlatBoardIndex` (`uint64_t key -> uint32_t id`, `<= 50%` load factor) for `O(1)` child lookups without storing the edge graph in RAM.
+  - Maintain working values in `double V[N]` to prevent `float32` precision drift.
+- [x] **Modified Policy Iteration (MPI) Engine (`solve_vi.cpp`, `vi_solver.hpp`)**:
+  - Parallel double-buffered Policy Improvement + 25 fixed-policy inner evaluation sweeps until exact Bellman residual `< 1e-7` (100% deterministic across thread counts).
+  - Shared multi-threaded `evaluateTablebasePolicy` verifying closed-world MC mean against `V(0ULL)` (`<= 3.5σ`, zero step-cap hits) and reporting live TB + heuristic fallback metrics (mean/SE/median/p90/max, `% in-TB`, `% all-OUT fallback`, `100%`-covered games, and hole-stratified coverage).
+- [x] **Binary Tablebase Output (`*.tb.bin`)**:
+  - Header (`magic`, `numBoards`, `emptyBoardValue`, `bellmanResidual`) + `N` sorted 12-byte records (`uint64_t board` + `float value`), directly `mmap`-able by `build/tablebase_server`.
+- [x] **Iterative Expansion Experiment (5 Rounds, Pure 2-Ply Seed — Zero Oracle Input)**:
+  - Upgraded `selectRolloutTransition` (50/50 TB runner-up + heuristic frontier probe) and `expandCoreSiblings` (heuristic + TB replies) so iterative expansion actively discovers high-value states outside $S_k$.
+  - Measured progression over 10,000 fixed-seed held-out games (`seed=700000`, vs. Phase 3 1-ply `8.08`, 2-ply `10.55`, and Phase 4 31.2M-board `oracle_1overhang` `V(empty)=8.385` / live `10.79`):
+    - **Round 0**: `673,453` boards (`7.7 MB`, solve `6.0s`) — `V(empty)=6.687` | live `10.78 ± 0.10` | `87.01%` in-TB (`9.54%` full games)
+    - **Round 1**: `1,960,573` boards (`22.4 MB`, solve `24.5s`) — `V(empty)=9.589` | live `11.84 ± 0.11` | `94.38%` in-TB (`33.59%` full games)
+    - **Round 2**: `2,487,192` boards (`28.5 MB`, solve `32.0s`) — `V(empty)=10.369` | live `12.23 ± 0.11` | `95.72%` in-TB (`41.58%` full games)
+    - **Round 3**: `5,065,535` boards (`58.0 MB`, solve `70.0s`) — `V(empty)=11.458` | live `12.69 ± 0.12` | `97.16%` in-TB (`53.55%` full games)
+    - **Round 4**: `7,864,532` boards (`90.0 MB`, solve `110.7s`) — `V(empty)=12.295` | live `13.29 ± 0.12` | `98.05%` in-TB (`62.98%` full games; `0h: 99.89%`, `1h: 97.72%`, `2h: 87.80%`, `3+h: 57.17%`)
+    - **Round 5** (`2.0M` games, `ε=0.02`): `10,365,511` boards (`118.6 MB`, gen `180.6s`, solve `116.8s`) — `V(empty)=12.835` | live `13.66 ± 0.13` | `98.53%` in-TB (`69.83%` full games)
+    - **Round 6** (`2.5M` games, `ε=0.01`): `12,560,879` boards (`143.7 MB`, gen `235.5s`, solve `150.8s`) — `V(empty)=13.172` | live `14.09 ± 0.13` | `98.87%` in-TB (`75.11%` full games)
+    - **Round 7** (`3.0M` games, `ε=0.005`): `14,526,005` boards (`166.2 MB`, gen `292.4s`, solve `192.9s`) — `V(empty)=13.395` | live `14.22 ± 0.13` | `99.08%` in-TB (`78.94%` full games)
+    - **Round 8** (`3.0M` games, `ε=0.000`): `15,946,868` boards (`182.5 MB`, gen `310.2s`, solve `239.2s`) — `V(empty)=13.523` | live `14.34 ± 0.13` | `99.19%` in-TB (`81.27%` full games; `0h: 99.98%`, `1h: 99.45%`, `2h: 95.91%`, `3+h: 78.13%`)
 
 ---
 

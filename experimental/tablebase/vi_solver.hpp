@@ -6,6 +6,7 @@
 #include "tablebase_io.hpp"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cassert>
 #include <chrono>
@@ -22,6 +23,115 @@ namespace tb {
 
 inline constexpr uint32_t INVALID_BOARD_ID = UINT32_MAX;
 inline constexpr double MISSING_BOARD_VALUE = -1.0;
+inline constexpr int NUM_HOLE_BUCKETS = 4; // Buckets: 0, 1, 2, 3+ holes
+inline constexpr int DEFAULT_MAX_PIECES_PER_GAME = 50000;
+inline constexpr int DEFAULT_EVAL_MAX_STEPS = 200000;
+
+struct HoleStratifiedCounts {
+  std::array<uint64_t, NUM_HOLE_BUCKETS> total{};
+  std::array<uint64_t, NUM_HOLE_BUCKETS> inSet{};
+
+  static int bucket(int holes) noexcept {
+    assert(holes >= 0);
+    return (holes >= NUM_HOLE_BUCKETS - 1) ? (NUM_HOLE_BUCKETS - 1) : holes;
+  }
+
+  void accumulate(const HoleStratifiedCounts &other) noexcept {
+    for (int b = 0; b < NUM_HOLE_BUCKETS; ++b) {
+      total[static_cast<size_t>(b)] += other.total[static_cast<size_t>(b)];
+      inSet[static_cast<size_t>(b)] += other.inSet[static_cast<size_t>(b)];
+    }
+  }
+
+  uint64_t allTotal() const noexcept {
+    uint64_t s = 0;
+    for (uint64_t c : total)
+      s += c;
+    return s;
+  }
+
+  uint64_t allInSet() const noexcept {
+    uint64_t s = 0;
+    for (uint64_t c : inSet)
+      s += c;
+    return s;
+  }
+};
+
+inline void printHoleStratifiedCoverage(const HoleStratifiedCounts &counts, FILE *out = stdout) {
+  static_assert(NUM_HOLE_BUCKETS == 4, "Hole coverage labels assume 4 buckets (0, 1, 2, 3+)");
+  constexpr const char *labels[NUM_HOLE_BUCKETS] = {"0 holes ", "1 hole  ", "2 holes ", "3+ holes"};
+  for (int b = 0; b < NUM_HOLE_BUCKETS; ++b) {
+    const uint64_t tot = counts.total[static_cast<size_t>(b)];
+    const uint64_t hit = counts.inSet[static_cast<size_t>(b)];
+    const double pct =
+        (tot > 0) ? (100.0 * static_cast<double>(hit) / static_cast<double>(tot)) : 0.0;
+    std::fprintf(out, "    %s: %6.2f%% (%llu / %llu moves)\n", labels[b], pct,
+                 static_cast<unsigned long long>(hit), static_cast<unsigned long long>(tot));
+  }
+}
+
+inline double computeClosedWorldZScore(double empiricalMean, double stdErr,
+                                       double expectedValue) noexcept {
+  const double absDiff = std::abs(empiricalMean - expectedValue);
+  if (stdErr > 0.0) {
+    return absDiff / stdErr;
+  }
+  return (absDiff > 1e-9) ? std::numeric_limits<double>::infinity() : 0.0;
+}
+
+namespace detail {
+
+inline constexpr uint64_t GAME_SEED_STRIDE = 0x9E3779B97F4A7C15ULL;
+
+constexpr uint64_t deriveGameSeed(uint64_t baseSeed, int gameIdx) noexcept {
+  return baseSeed + static_cast<uint64_t>(gameIdx) * GAME_SEED_STRIDE;
+}
+
+inline std::pair<double, double> computeMeanAndStdErr(const std::vector<int> &samples) noexcept {
+  if (samples.empty()) {
+    return {0.0, 0.0};
+  }
+  double sum = 0.0;
+  for (int x : samples) {
+    sum += static_cast<double>(x);
+  }
+  const double n = static_cast<double>(samples.size());
+  const double mean = sum / n;
+  if (samples.size() <= 1) {
+    return {mean, 0.0};
+  }
+  double varSum = 0.0;
+  for (int x : samples) {
+    const double d = static_cast<double>(x) - mean;
+    varSum += d * d;
+  }
+  return {mean, std::sqrt(varSum / (n * (n - 1.0)))};
+}
+
+template <typename WorkerFn>
+inline void runWorkerPool(int numThreads, size_t workCount, size_t minParallelWork,
+                          WorkerFn &&worker) {
+  if (workCount == 0) {
+    return;
+  }
+  const int threads =
+      static_cast<int>(std::min<size_t>(static_cast<size_t>(std::max(1, numThreads)), workCount));
+  if (threads == 1 || workCount < minParallelWork) {
+    worker(0);
+    return;
+  }
+  std::vector<std::thread> pool;
+  pool.reserve(static_cast<size_t>(threads));
+  for (int t = 0; t < threads; ++t) {
+    pool.emplace_back([&, t]() { worker(t); });
+  }
+  for (auto &th : pool) {
+    th.join();
+  }
+}
+
+} // namespace detail
 
 // Read-only power-of-two open-addressing hash index mapping strictly sorted 40-bit board keys
 // to dense uint32_t indices [0 .. N-1]. Uses ~0ULL as the empty-slot sentinel since valid boards
@@ -193,18 +303,8 @@ inline std::vector<uint64_t> enumerateZeroSealedHoleBoards(int maxOverhangs, int
     }
   };
 
-  if (threads == 1) {
-    worker();
-  } else {
-    std::vector<std::thread> pool;
-    pool.reserve(static_cast<size_t>(threads));
-    for (int t = 0; t < threads; ++t) {
-      pool.emplace_back(worker);
-    }
-    for (auto &th : pool) {
-      th.join();
-    }
-  }
+  detail::runWorkerPool(threads, static_cast<size_t>(numPrefixes), /*minParallelWork=*/2,
+                        [&](int /*tid*/) { worker(); });
 
   size_t total = 0;
   for (const auto &b : buckets) {
@@ -516,6 +616,142 @@ inline TablebaseMoveChoice chooseTablebaseMove(uint64_t board, int pieceIdx,
     return {};
   }
   return {fb.transition, static_cast<double>(fb.transition.linesCleared), false, true, true};
+}
+
+struct TablebaseEvalStats {
+  int games = 0;
+  double meanLines = 0.0;
+  double stdErrLines = 0.0;
+  double medianLines = 0.0;
+  int p90Lines = 0;
+  int maxLines = 0;
+  double inTbMovePct = 0.0;
+  double fallbackMovePct = 0.0;
+  double fullyCoveredGamePct = 0.0;
+  int stepCapHits = 0;
+  HoleStratifiedCounts byHoles{};
+};
+
+// Runs multi-threaded deterministic Monte Carlo evaluation of a loaded MappedTablebase.
+// In closedWorld mode, exiting the tablebase ends the episode with 0 continuation reward (verifying
+// empirical mean lines directly against V(0ULL)). In live mode (closedWorld == false), all-OUT
+// states fall back to fallbackPly heuristic play.
+inline TablebaseEvalStats evaluateTablebasePolicy(const MappedTablebase &mappedTb, bool closedWorld,
+                                                  int numGames, uint64_t baseSeed, int numThreads,
+                                                  int fallbackPly = 2,
+                                                  const EvalWeights &w = EvalWeights{},
+                                                  int maxSteps = DEFAULT_EVAL_MAX_STEPS) {
+  assert(fallbackPly == 1 || fallbackPly == 2);
+  assert(numGames >= 0);
+  assert(maxSteps > 0);
+  TablebaseEvalStats stats{};
+  if (numGames <= 0) {
+    return stats;
+  }
+  stats.games = numGames;
+
+  const int threads = std::max(1, numThreads);
+  std::vector<int> gameLines(static_cast<size_t>(numGames), 0);
+  std::vector<HoleStratifiedCounts> threadHoles(static_cast<size_t>(threads));
+  std::vector<uint64_t> threadFallbacks(static_cast<size_t>(threads), 0);
+  std::atomic<int> fullyCoveredGames{0};
+  std::atomic<int> stepCapHits{0};
+  std::atomic<int> nextGame{0};
+
+  detail::runWorkerPool(
+      threads, static_cast<size_t>(numGames), /*minParallelWork=*/32, [&](int tid) {
+        HoleStratifiedCounts localHoles{};
+        uint64_t localFallback = 0;
+        int localFull = 0;
+        int localCapHits = 0;
+
+        while (true) {
+          const int g = nextGame.fetch_add(1, std::memory_order_relaxed);
+          if (g >= numGames) {
+            break;
+          }
+
+          Rng rng(detail::deriveGameSeed(baseSeed, g));
+          uint64_t board = 0ULL;
+          int lines = 0;
+          bool terminated = false;
+          bool allIn = true;
+
+          for (int step = 0; step < maxSteps; ++step) {
+            const int piece = rng.nextPiece();
+            const TablebaseMoveChoice mv =
+                chooseTablebaseMove(board, piece, mappedTb, closedWorld, fallbackPly, w);
+            if (!mv.found) {
+              terminated = true;
+              break;
+            }
+            lines += mv.transition.linesCleared;
+            const uint64_t nextBoard = mv.transition.afterBoard;
+            const int hb = HoleStratifiedCounts::bucket(countHoles(nextBoard));
+            ++localHoles.total[static_cast<size_t>(hb)];
+            if (mv.usedFallback) {
+              ++localFallback;
+            }
+            if (mv.afterInTablebase) {
+              ++localHoles.inSet[static_cast<size_t>(hb)];
+              board = nextBoard;
+            } else {
+              allIn = false;
+              if (closedWorld) {
+                // Exiting S in the closed-world MDP yields 0.0 continuation.
+                terminated = true;
+                break;
+              }
+              board = nextBoard;
+            }
+          }
+          if (!terminated) {
+            ++localCapHits;
+          }
+          if (allIn) {
+            ++localFull;
+          }
+          gameLines[static_cast<size_t>(g)] = lines;
+        }
+
+        threadHoles[static_cast<size_t>(tid)] = localHoles;
+        threadFallbacks[static_cast<size_t>(tid)] = localFallback;
+        fullyCoveredGames.fetch_add(localFull, std::memory_order_relaxed);
+        stepCapHits.fetch_add(localCapHits, std::memory_order_relaxed);
+      });
+
+  uint64_t totalFallbacks = 0;
+  for (int t = 0; t < threads; ++t) {
+    totalFallbacks += threadFallbacks[static_cast<size_t>(t)];
+    stats.byHoles.accumulate(threadHoles[static_cast<size_t>(t)]);
+  }
+
+  const auto meanSe = detail::computeMeanAndStdErr(gameLines);
+  stats.meanLines = meanSe.first;
+  stats.stdErrLines = meanSe.second;
+
+  std::sort(gameLines.begin(), gameLines.end());
+  const size_t n = gameLines.size();
+  stats.medianLines = (n % 2 == 1) ? static_cast<double>(gameLines[n / 2])
+                                   : 0.5
+                                         * (static_cast<double>(gameLines[n / 2 - 1])
+                                            + static_cast<double>(gameLines[n / 2]));
+  stats.p90Lines = gameLines[(n - 1) * 9 / 10];
+  stats.maxLines = gameLines.back();
+
+  const uint64_t totMoves = stats.byHoles.allTotal();
+  if (totMoves > 0) {
+    stats.inTbMovePct =
+        100.0 * static_cast<double>(stats.byHoles.allInSet()) / static_cast<double>(totMoves);
+    stats.fallbackMovePct =
+        100.0 * static_cast<double>(totalFallbacks) / static_cast<double>(totMoves);
+  }
+  stats.fullyCoveredGamePct =
+      100.0
+      * static_cast<double>(fullyCoveredGames.load(std::memory_order_relaxed))
+      / static_cast<double>(numGames);
+  stats.stepCapHits = stepCapHits.load(std::memory_order_relaxed);
+  return stats;
 }
 
 } // namespace tb

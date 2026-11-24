@@ -15,120 +15,22 @@
 #include "vi_solver.hpp"
 
 #include <algorithm>
-#include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
-#include <cstdlib>
 #include <filesystem>
+#include <set>
 #include <string>
+#include <system_error>
 #include <thread>
 #include <vector>
 
 namespace {
 
-constexpr int MAX_ROLLOUT_STEPS = 200000;
 constexpr uint64_t MC_BASE_SEED = 700000ULL;
 constexpr int MAX_LIVE_FALLBACK_GAMES = 5000;
 constexpr double MAX_PASSING_Z_SCORE = 3.5;
-
-struct RolloutStats {
-  double meanLines = 0.0;
-  double stdErr = 0.0;
-  double inTbMovePct = 0.0;
-  int maxLines = 0;
-  int stepCapHits = 0;
-};
-
-RolloutStats runMonteCarloVerification(const tb::MappedTablebase &mappedTb, bool closedWorld,
-                                       int numGames, uint64_t baseSeed, int numThreads) {
-  std::vector<int> gameLines(static_cast<size_t>(numGames), 0);
-  std::vector<uint64_t> threadInTb(static_cast<size_t>(numThreads), 0);
-  std::vector<uint64_t> threadTotalMoves(static_cast<size_t>(numThreads), 0);
-  std::atomic<int> stepCapHits{0};
-  std::atomic<int> nextGame{0};
-
-  auto worker = [&](int tid) {
-    uint64_t localInTb = 0;
-    uint64_t localMoves = 0;
-    while (true) {
-      const int g = nextGame.fetch_add(1, std::memory_order_relaxed);
-      if (g >= numGames)
-        break;
-
-      tb::Rng rng(baseSeed + static_cast<uint64_t>(g) * 0x9E3779B97F4A7C15ULL);
-      uint64_t board = 0ULL;
-      int lines = 0;
-      bool terminated = false;
-
-      for (int step = 0; step < MAX_ROLLOUT_STEPS; ++step) {
-        const int piece = rng.nextPiece();
-        const tb::TablebaseMoveChoice mv =
-            tb::chooseTablebaseMove(board, piece, mappedTb, closedWorld, /*fallbackPly=*/2);
-        if (!mv.found) {
-          terminated = true;
-          break;
-        }
-        ++localMoves;
-        lines += mv.transition.linesCleared;
-        if (mv.afterInTablebase) {
-          ++localInTb;
-          board = mv.transition.afterBoard;
-        } else if (closedWorld) {
-          // In the closed-world MDP, exiting S yields continuation value 0.0 (episode ends).
-          terminated = true;
-          break;
-        } else {
-          board = mv.transition.afterBoard;
-        }
-      }
-      if (!terminated) {
-        stepCapHits.fetch_add(1, std::memory_order_relaxed);
-      }
-      gameLines[static_cast<size_t>(g)] = lines;
-    }
-    threadInTb[static_cast<size_t>(tid)] = localInTb;
-    threadTotalMoves[static_cast<size_t>(tid)] = localMoves;
-  };
-
-  std::vector<std::thread> pool;
-  pool.reserve(static_cast<size_t>(numThreads));
-  for (int t = 0; t < numThreads; ++t) {
-    pool.emplace_back(worker, t);
-  }
-  for (auto &th : pool) {
-    th.join();
-  }
-
-  RolloutStats s{};
-  s.stepCapHits = stepCapHits.load(std::memory_order_relaxed);
-  double sum = 0.0;
-  for (int x : gameLines) {
-    sum += static_cast<double>(x);
-    if (x > s.maxLines)
-      s.maxLines = x;
-  }
-  s.meanLines = sum / static_cast<double>(numGames);
-  double varSum = 0.0;
-  for (int x : gameLines) {
-    const double d = static_cast<double>(x) - s.meanLines;
-    varSum += d * d;
-  }
-  s.stdErr =
-      (numGames > 1)
-          ? std::sqrt(varSum / (static_cast<double>(numGames) * static_cast<double>(numGames - 1)))
-          : 0.0;
-
-  uint64_t totIn = 0;
-  uint64_t totMv = 0;
-  for (int t = 0; t < numThreads; ++t) {
-    totIn += threadInTb[static_cast<size_t>(t)];
-    totMv += threadTotalMoves[static_cast<size_t>(t)];
-  }
-  s.inTbMovePct =
-      (totMv > 0) ? (100.0 * static_cast<double>(totIn) / static_cast<double>(totMv)) : 0.0;
-  return s;
-}
 
 bool parseFlagIntRange(const std::string &arg, const std::string &prefix, int minVal, int &out) {
   if (arg.rfind(prefix, 0) != 0)
@@ -161,15 +63,28 @@ int main(int argc, char **argv) {
   bool pureSurface = false;
   int mcGames = 50000;
 
+  std::set<std::string> seenFlags;
+  auto claimFlag = [&](const std::string &name) -> bool {
+    if (!seenFlags.insert(name).second) {
+      std::fprintf(stderr, "Duplicate option: %s\n", name.c_str());
+      return false;
+    }
+    return true;
+  };
+
   for (int i = 1; i < argc; ++i) {
     const std::string arg = argv[i];
     if (arg == "-h" || arg == "--help") {
       printUsage(argv[0], stdout);
       return 0;
     } else if (arg == "--pure-surface") {
+      if (!claimFlag("--pure-surface")) {
+        printUsage(argv[0], stderr);
+        return 1;
+      }
       pureSurface = true;
     } else if (arg.rfind("--mc-games=", 0) == 0) {
-      if (!parseFlagIntRange(arg, "--mc-games=", 100, mcGames)) {
+      if (!claimFlag("--mc-games=") || !parseFlagIntRange(arg, "--mc-games=", 100, mcGames)) {
         std::fprintf(stderr, "Invalid --mc-games value (expected >= 100): %s\n", arg.c_str());
         printUsage(argv[0], stderr);
         return 1;
@@ -225,7 +140,13 @@ int main(int argc, char **argv) {
 
   const std::filesystem::path p(outPath);
   if (p.has_parent_path()) {
-    std::filesystem::create_directories(p.parent_path());
+    std::error_code ec;
+    std::filesystem::create_directories(p.parent_path(), ec);
+    if (ec) {
+      std::fprintf(stderr, "Error creating parent directory '%s': %s\n",
+                   p.parent_path().string().c_str(), ec.message().c_str());
+      return 1;
+    }
   }
   std::string err;
   if (!tb::writeTablebaseFile(outPath, boards, solved.values, solved.finalBellmanResidual, &err)) {
@@ -241,25 +162,28 @@ int main(int argc, char **argv) {
   }
 
   std::printf("\nRunning Monte Carlo verification (%d games, %d threads)...\n", mcGames, hwThreads);
-  const RolloutStats cw =
-      runMonteCarloVerification(mapped, /*closedWorld=*/true, mcGames, MC_BASE_SEED, hwThreads);
+  const tb::TablebaseEvalStats cw =
+      tb::evaluateTablebasePolicy(mapped, /*closedWorld=*/true, mcGames, MC_BASE_SEED, hwThreads,
+                                  /*fallbackPly=*/2, tb::EvalWeights{}, tb::DEFAULT_EVAL_MAX_STEPS);
   const double absDiff = std::abs(cw.meanLines - solved.emptyBoardValue);
-  const double zScore = (cw.stdErr > 0.0) ? (absDiff / cw.stdErr) : (absDiff > 1e-5 ? 999.0 : 0.0);
+  const double zScore =
+      tb::computeClosedWorldZScore(cw.meanLines, cw.stdErrLines, solved.emptyBoardValue);
   std::printf(
       "  Closed-world MC rollout : mean = %.4f +- %.4f (max=%d, capHits=%d, in-TB=%.2f%%) vs "
       "V(empty)=%.4f [|diff|=%.4f, %.2f sigma]\n",
-      cw.meanLines, cw.stdErr, cw.maxLines, cw.stepCapHits, cw.inTbMovePct, solved.emptyBoardValue,
-      absDiff, zScore);
+      cw.meanLines, cw.stdErrLines, cw.maxLines, cw.stepCapHits, cw.inTbMovePct,
+      solved.emptyBoardValue, absDiff, zScore);
 
   const int liveGames = std::min(mcGames, MAX_LIVE_FALLBACK_GAMES);
-  const RolloutStats live =
-      runMonteCarloVerification(mapped, /*closedWorld=*/false, liveGames, MC_BASE_SEED, hwThreads);
+  const tb::TablebaseEvalStats live =
+      tb::evaluateTablebasePolicy(mapped, /*closedWorld=*/false, liveGames, MC_BASE_SEED, hwThreads,
+                                  /*fallbackPly=*/2, tb::EvalWeights{}, tb::DEFAULT_EVAL_MAX_STEPS);
   std::printf("  Live TB + 2-ply fallback: mean = %.4f +- %.4f (games=%d, max=%d, in-TB=%.2f%%)\n",
-              live.meanLines, live.stdErr, liveGames, live.maxLines, live.inTbMovePct);
+              live.meanLines, live.stdErrLines, liveGames, live.maxLines, live.inTbMovePct);
 
   if (cw.stepCapHits > 0) {
-    std::fprintf(stderr, "ERROR: %d closed-world MC rollouts hit MAX_ROLLOUT_STEPS (%d)\n",
-                 cw.stepCapHits, MAX_ROLLOUT_STEPS);
+    std::fprintf(stderr, "ERROR: %d closed-world MC rollouts hit DEFAULT_EVAL_MAX_STEPS (%d)\n",
+                 cw.stepCapHits, tb::DEFAULT_EVAL_MAX_STEPS);
     return 1;
   }
   if (zScore > MAX_PASSING_Z_SCORE) {
