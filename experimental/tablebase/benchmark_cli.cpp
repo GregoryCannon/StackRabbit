@@ -25,9 +25,11 @@
 #include <atomic>
 #include <cassert>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <iterator>
+#include <limits>
 #include <set>
 #include <string>
 #include <thread>
@@ -75,15 +77,15 @@ void printUsage(const char *prog, FILE *out) {
   std::fprintf(
       out,
       "  %s --mode=nextbox-heur|nextbox-heur-v2|nextbox-nn1|nextbox-nn2|nextbox-hybrid|nextbox-tb\n"
-      "     [--tb=PATH] [--nn=PATH] [--rng=uniform|nes]\n"
-      "     [--games=10000] [--seed=700000] [--max-pieces=50000] [--threads=T]\n",
+      "     [--tb=PATH] [--nn=PATH] [--out-margin=F|inf (default: inf)] [--out-ply=1|2 (default: 2)]\n"
+      "     [--rng=uniform|nes] [--games=10000] [--seed=700000] [--max-pieces=50000] [--threads=T]\n",
       prog);
 }
 
 GameResult runSingleGame(uint64_t seed, BenchMode mode, tb::RngMode rngMode,
                          const tb::EvalWeights &w, const tb::IndexedTablebase *nnbTb,
                          const tb::IndexedNextBoxTablebase *nbTb, const tb::TinyNextBoxNet *nnPtr,
-                         int maxPieces) {
+                         double outMargin, bool outUse2Ply, int maxPieces) {
   assert(mode != BenchMode::NextBoxHybrid || nnbTb != nullptr);
   assert(mode != BenchMode::NextBoxTb || nbTb != nullptr);
   assert((mode != BenchMode::NextBoxNn1 && mode != BenchMode::NextBoxNn2) || nnPtr != nullptr);
@@ -116,8 +118,8 @@ GameResult runSingleGame(uint64_t seed, BenchMode mode, tb::RngMode rngMode,
     if (mode == BenchMode::NextBoxHybrid || mode == BenchMode::NextBoxTb) {
       const tb::TablebaseMoveChoice ch =
           (mode == BenchMode::NextBoxTb)
-              ? tb::chooseNextBoxTablebaseMove(board, curPiece, nextPiece, *nbTb,
-                                               /*closedWorld=*/false, w)
+              ? tb::chooseNextBoxHybridFallbackMove(board, curPiece, nextPiece, *nbTb, nnPtr,
+                                                    outMargin, rngMode, outUse2Ply, w)
               : tb::chooseNextBoxHybridMove(board, curPiece, nextPiece, *nnbTb, w);
       if (!ch.found) {
         return res;
@@ -158,22 +160,24 @@ GameResult runSingleGame(uint64_t seed, BenchMode mode, tb::RngMode rngMode,
 BenchmarkSummary evaluateGames(int numGames, uint64_t baseSeed, BenchMode mode, tb::RngMode rngMode,
                                const tb::EvalWeights &w, const tb::IndexedTablebase *nnbTb,
                                const tb::IndexedNextBoxTablebase *nbTb,
-                               const tb::TinyNextBoxNet *nnPtr, int maxPieces, int numThreads) {
+                               const tb::TinyNextBoxNet *nnPtr, int maxPieces, int numThreads,
+                               double outMargin = std::numeric_limits<double>::infinity(),
+                               bool outUse2Ply = true) {
   std::vector<GameResult> results(static_cast<size_t>(numGames));
   std::atomic<int> nextIdx{0};
 
   const auto t0 = std::chrono::steady_clock::now();
-  tb::detail::runWorkerPool(numThreads, static_cast<size_t>(numGames), /*minParallelWork=*/16,
-                            [&](int /*tid*/) {
-                              while (true) {
-                                const int i = nextIdx.fetch_add(1, std::memory_order_relaxed);
-                                if (i >= numGames)
-                                  break;
-                                results[static_cast<size_t>(i)] =
-                                    runSingleGame(tb::detail::deriveGameSeed(baseSeed, i), mode,
-                                                  rngMode, w, nnbTb, nbTb, nnPtr, maxPieces);
-                              }
-                            });
+  tb::detail::runWorkerPool(
+      numThreads, static_cast<size_t>(numGames), /*minParallelWork=*/16, [&](int /*tid*/) {
+        while (true) {
+          const int i = nextIdx.fetch_add(1, std::memory_order_relaxed);
+          if (i >= numGames)
+            break;
+          results[static_cast<size_t>(i)] =
+              runSingleGame(tb::detail::deriveGameSeed(baseSeed, i), mode, rngMode, w, nnbTb, nbTb,
+                            nnPtr, outMargin, outUse2Ply, maxPieces);
+        }
+      });
   const auto t1 = std::chrono::steady_clock::now();
 
   BenchmarkSummary s{};
@@ -337,6 +341,10 @@ int runFlaggedBenchmark(int argc, char **argv) {
   tb::RngMode rngMode = tb::RngMode::Uniform;
   std::string tbPath;
   std::string nnPath;
+  double outMargin = std::numeric_limits<double>::infinity();
+  bool outMarginSet = false;
+  bool outUse2Ply = true;
+  bool outPlySet = false;
   int games = 10000;
   int maxPieces = tb::DEFAULT_MAX_PIECES_PER_GAME;
   uint64_t seed = 700000ULL;
@@ -403,6 +411,29 @@ int runFlaggedBenchmark(int argc, char **argv) {
         return 1;
       }
       nnPath = val;
+    } else if (flag == "--out-margin") {
+      if (val == "inf") {
+        outMargin = std::numeric_limits<double>::infinity();
+      } else {
+        double dVal = 0.0;
+        if (!tb::cli::parseStrictPositiveDouble(val, 0.0, 1000.0, dVal)) {
+          std::fprintf(stderr, "Invalid --out-margin '%s' (expected 0..1000 or inf)\n",
+                       val.c_str());
+          return 1;
+        }
+        outMargin = dVal;
+      }
+      outMarginSet = true;
+    } else if (flag == "--out-ply") {
+      if (val == "1") {
+        outUse2Ply = false;
+      } else if (val == "2") {
+        outUse2Ply = true;
+      } else {
+        std::fprintf(stderr, "Invalid --out-ply '%s' (expected 1 or 2)\n", val.c_str());
+        return 1;
+      }
+      outPlySet = true;
     } else if (flag == "--games") {
       if (!tb::cli::parseStrictU64(val, 1, 1000000ULL, uVal)) {
         std::fprintf(stderr, "Invalid --games '%s' (expected 1..1000000)\n", val.c_str());
@@ -442,6 +473,7 @@ int runFlaggedBenchmark(int argc, char **argv) {
   }
   const bool needsTb = (mode == BenchMode::NextBoxHybrid || mode == BenchMode::NextBoxTb);
   const bool needsNn = (mode == BenchMode::NextBoxNn1 || mode == BenchMode::NextBoxNn2);
+  const bool allowsNn = needsNn || (mode == BenchMode::NextBoxTb);
   if (needsTb && tbPath.empty()) {
     std::fprintf(stderr, "--mode=%s requires --tb=<path.tb.bin>.\n",
                  mode == BenchMode::NextBoxTb ? "nextbox-tb" : "nextbox-hybrid");
@@ -456,8 +488,12 @@ int runFlaggedBenchmark(int argc, char **argv) {
                  mode == BenchMode::NextBoxNn1 ? "nextbox-nn1" : "nextbox-nn2");
     return 1;
   }
-  if (!needsNn && !nnPath.empty()) {
-    std::fprintf(stderr, "--nn= is only valid with --mode=nextbox-nn1 or nextbox-nn2.\n");
+  if (!allowsNn && !nnPath.empty()) {
+    std::fprintf(stderr, "--nn= is only valid with nextbox-nn1, nextbox-nn2, or nextbox-tb.\n");
+    return 1;
+  }
+  if ((outMarginSet || outPlySet) && (mode != BenchMode::NextBoxTb || nnPath.empty())) {
+    std::fprintf(stderr, "--out-margin= and --out-ply= require --mode=nextbox-tb with --nn=.\n");
     return 1;
   }
 
@@ -489,13 +525,14 @@ int runFlaggedBenchmark(int argc, char **argv) {
     }
     indexedNbTb.buildFromMapped(mappedNbTb);
     nbTbPtr = &indexedNbTb;
-  } else if (needsNn) {
+  }
+  if (!nnPath.empty()) {
     std::string err;
     if (!loadedNn.load(nnPath, &err)) {
       std::fprintf(stderr, "Error loading NN '%s': %s\n", nnPath.c_str(), err.c_str());
       return 1;
     }
-    if (!rngSet) {
+    if (needsNn && !rngSet) {
       rngMode = loadedNn.rngMode;
     }
     nnPtr = &loadedNn;
@@ -506,7 +543,22 @@ int runFlaggedBenchmark(int argc, char **argv) {
   const char *tbHitLabel = nullptr;
   if (mode == BenchMode::NextBoxTb) {
     tbHitLabel = "in-TB";
-    if (nbTbPtr->rngMode() != rngMode) {
+    if (nnPtr != nullptr) {
+      char mBuf[64];
+      if (std::isfinite(outMargin)) {
+        std::snprintf(mBuf, sizeof(mBuf), "m=%.1f,p%d,%s", outMargin, outUse2Ply ? 2 : 1,
+                      tb::rngModeName(rngMode));
+      } else {
+        std::snprintf(mBuf, sizeof(mBuf), "allOUT,p%d,%s", outUse2Ply ? 2 : 1,
+                      tb::rngModeName(rngMode));
+      }
+      label = std::string("Next-Box TB+NN [") + mBuf;
+      if (nbTbPtr->rngMode() != rngMode || nnPtr->rngMode != rngMode) {
+        label += std::string(",tb=") + tb::rngModeName(nbTbPtr->rngMode()) + ",nn="
+                 + tb::rngModeName(nnPtr->rngMode);
+      }
+      label += "]";
+    } else if (nbTbPtr->rngMode() != rngMode) {
       label = std::string("Next-Box TB [tb=")
               + tb::rngModeName(nbTbPtr->rngMode())
               + ", eval="
@@ -536,8 +588,8 @@ int runFlaggedBenchmark(int argc, char **argv) {
   } else {
     label = std::string("Next-Box Heur 2-ply (") + tb::rngModeName(rngMode) + ")";
   }
-  const BenchmarkSummary s =
-      evaluateGames(games, seed, mode, rngMode, w, nnbTbPtr, nbTbPtr, nnPtr, maxPieces, numThreads);
+  const BenchmarkSummary s = evaluateGames(games, seed, mode, rngMode, w, nnbTbPtr, nbTbPtr, nnPtr,
+                                           maxPieces, numThreads, outMargin, outUse2Ply);
   printSummary(label.c_str(), s, games, tbHitLabel);
   return 0;
 }

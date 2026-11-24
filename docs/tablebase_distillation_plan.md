@@ -98,28 +98,23 @@ Test how much of a `670 MB` tablebase can be compressed into a **`~30–80 KB`**
 
 ---
 
-### Phase D-3: Calibrated Partial-OUT Fallback & Partial-TB Hybrid Bridge (`nextbox_solver.hpp`, `benchmark_cli.cpp`)
+### Phase D-3: Calibrated Partial-OUT Fallback & Partial-TB Hybrid Bridge (`tiny_nn.hpp`, `nextbox_gen.hpp`, `generate_nextbox.cpp`, `benchmark_cli.cpp`)
 Directly test the **incomplete-tablebase regime** that real 20-row DAS 18/19 Tetris will operate in.
 
-- [ ] **Build 3 Controlled Partial-Coverage Test Regimes** (all evaluated on the exact same 10,000 NES games, `seed=700000`):
-  1. **Small TB (`nb_small_nes.tb.bin`, `round0` `673k` boards, solved for NES)**: `~80–85%` in-TB coverage (`E[V(0)] = 19.56`, baseline live `34.55`) — directly mimics a compact DAS 18/19 core tablebase!
-  2. **Medium TB (`nb_mid_nes.tb.bin`, e.g. `round2` `2.49M` NNB boards solved for NES, or `0h+1h` core subset)**: `~92–95%` in-TB coverage.
-  3. **Full TB (`nb_final_nes.tb.bin`, `19.54M` boards)**: `99.79%` in-TB coverage (`89.90` baseline).
-  *(Note: to avoid data leakage when testing `nb_small_nes` / `nb_mid_nes`, also test a neural evaluator distilled **only** from `nb_small_nes` / `nb_mid_nes` — proving whether self-distillation from a partial TB already improves that same partial TB!)*
-- [ ] **Implement Calibrated Partial-OUT Move Selection (`chooseNextBoxHybridFallbackMove`)**:
-  - For each legal move `m` on `(b, c, n)`:
-    - If `b'_m ∈ TB`: `Q(m) = r_m + V_tb(b'_m, n)`.
-    - If `b'_m ∉ TB`: `Q(m) = r_m + max(0.0, V_hat(b'_m, n) - safetyMargin)`.
-  - Sweep `safetyMargin ∈ {0.0, 1.0, 2.0, 5.0, 10.0, +inf (all-OUT only)}` on validation seeds (`30,000,000+`) to find the optimal conservatism margin that prevents optimistic "exit traps", then evaluate once on the held-out `10,000` NES games (`seed=700000`).
-- [ ] **Head-to-Head Partial-TB Table**:
-  - For each coverage regime (`673k`, `2.5M`, `19.54M`), compare:
-    1. Closed-world TB (`V = 0` outside),
-    2. Live TB + original hand-tuned 2-ply all-OUT fallback,
-    3. Live TB + distilled NN all-OUT fallback,
-    4. Live TB + calibrated distilled NN **partial-OUT** scoring (`optimal margin`).
-  - Also test **1-round bootstrap**: does generating `nb_round1` using the distilled NN as the frontier probe beat generating with the hand-tuned 2-ply heuristic?
-- [ ] **Verification**:
-  - Unit tests in `tablebase_test.cpp` verifying `safetyMargin = +inf` reproduces exact existing `chooseNextBoxTablebaseMove`, verifying `safetyMargin` clamping at `>= 0.0`, and verifying zero crashes / NaN safety on top-out and unloaded-NN edge cases.
+- [x] **Built 3 Controlled Partial-Coverage Test Regimes** (all evaluated on the exact same 10,000 held-out NES games, `seed=700000`, with **zero-leakage self-distilled NNs** trained *only* on each partial TB):
+  1. **Small TB (`nb_small_nes.tb.bin`, `round0` `673,453` boards = 3.4% of full TB, solved in `18.8s`)**: `E[V(0)] = 19.56`, baseline live `33.92 ± 0.32` (`93.94%` in-TB, `5.61%` 100%-covered games). Self-distilled `nb_small_self_64x32.nn.bin` (`31.3 KB`, trained in `18.6s`) plays standalone at **`45.95 ± 0.44`** (+12.03 lines *above* its own teacher TB!).
+  2. **Medium TB (`nb_mid_nes.tb.bin`, `round2` `2,487,192` boards = 12.7% of full TB, solved in `120.3s`)**: `E[V(0)] = 43.07`, baseline live `50.97 ± 0.48` (`98.51%` in-TB, `27.97%` 100%-covered games). Self-distilled `nb_mid_self_64x32.nn.bin` (`31.3 KB`, trained in `29.6s`) plays standalone at **`56.09 ± 0.54`** (+5.12 lines *above* its own teacher TB!).
+  3. **Full TB (`nb_final_nes.tb.bin`, `19,540,639` boards)**: `E[V(0)] = 86.85`, baseline live `89.90 ± 0.88` (`99.79%` in-TB, `72.86%` 100%-covered games).
+- [x] **Implemented Calibrated Partial-OUT Move Selection (`chooseNextBoxHybridFallbackMove`)**:
+  - Pass 1 looks up all legal children in the TB; if `all-OUT`, ranks directly with the NN once (zero margin clamping, zero duplicate work). If `anyInTb`, scores out-of-TB moves with `r_m + max(0.0, estCont(b'_m, n) - safetyMargin)` (preferring in-TB on ties), reproducing `chooseNextBoxTablebaseMove` bit-for-bit when `safetyMargin = +inf`.
+  - Validation margin sweep (`seed=30000000`, `2,000` NES games) across `margin ∈ {0, 1, 2, 5, 10, inf}` identified the sweet spot at **`margin = 1.0–2.0` lines** across all 3 regimes.
+- [x] **Head-to-Head Partial-TB Table (`10,000` held-out NES games, `seed=700000`)**:
+  - **Small (`673k`)**: Closed-world `19.56` | Live TB+Heur `33.92 ± 0.32` | Live TB+NN all-OUT `33.35 ± 0.32` | Standalone Self-NN `45.95 ± 0.44` | **Live TB+Self-NN Partial-OUT (`m=2.0`) `45.14 ± 0.43`** (**`+11.22` lines / `+33.1%`**).
+  - **Mid (`2.49M`)**: Closed-world `43.07` | Live TB+Heur `50.97 ± 0.48` | Live TB+NN all-OUT `51.01 ± 0.49` | Standalone Self-NN `56.09 ± 0.54` | **Live TB+Self-NN Partial-OUT (`m=1.0`) `67.59 ± 0.65`** (**`+16.62` lines / `+32.6%`**, beating *both* the TB and standalone NN by `+11.50` lines!).
+  - **Full (`19.54M`)**: Closed-world `86.85` | Live TB+Heur `89.90 ± 0.88` | Live TB+NN all-OUT `90.02 ± 0.88` | 1-ply Partial-OUT (`m=2.0`) `92.00 ± 0.91` | **2-ply Partial-OUT (`m=2.0`) `104.02 ± 1.02`** (`med=74.0`, `p90=235`, `in-TB=99.06%`, **`+14.12` lines / `+15.7%`**, breaking 100 expected lines by escaping `V=0` boundary cliffs on just `0.73%` of moves!).
+  - **1-Round Frontier Bootstrap A/B** (`nb_small_nes` `673k`, 50k games, `eps=0.08`, warm-start solved): Heuristic probe (`+49.3k` boards) gave `E[V(0)] = 19.56 → 20.49` (`+0.93`) and live `33.92 → 34.78` (`+0.86`); self-distilled NN probe (`+60.6k` boards) gave `E[V(0)] = 19.56 → 21.90` (**`+2.34` = 2.51× faster Bellman progress**) and live `33.92 → 36.76` (**`+2.84` = 3.30× faster live progress**).
+- [x] **Verification**:
+  - `tablebase_test.cpp` (23/23): `+inf`/`NaN`/`-inf`/`nullptr` parity with `chooseNextBoxTablebaseMove` (including out-of-TB higher-line-clear moves), `1-ply` & `2-ply` partial-OUT margin clamping, non-constant NN all-OUT ordering, out-of-range piece guards, `generateNextBoxStateSpaceWithPolicy` `1T == 4T` determinism, plus Logic & Simplicity reviews passed.
 
 ---
 

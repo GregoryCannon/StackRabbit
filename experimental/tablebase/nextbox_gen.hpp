@@ -119,6 +119,28 @@ expandNextBoxCoreSiblings(const std::vector<std::pair<uint64_t, uint32_t>> &rawE
 
 } // namespace detail
 
+// Picks a Next-Box rollout move using caller-supplied greedy and exploration-score callbacks.
+template <typename NextBoxTablebase, typename GreedyFn, typename ExploreScoreFn>
+inline ChosenTransition
+selectNextBoxRolloutWithPolicy(uint64_t board, int curPiece, int nextPiece, Rng &rng,
+                               const NextBoxTablebase *tb, double epsilon, int exploreTopK,
+                               GreedyFn &&pickGreedy, ExploreScoreFn &&scoreExplore) {
+  assert(nextPiece >= 0 && nextPiece < NUM_PIECES);
+  const bool tbActive = (tb != nullptr && tb->isLoaded());
+  const bool doExplore = (epsilon > 0.0 && exploreTopK >= 2 && rng.nextDouble() < epsilon);
+
+  if (!doExplore) {
+    return pickGreedy(board, curPiece, nextPiece, tb);
+  }
+
+  TransitionList tl;
+  generateTransitions(board, curPiece, tl);
+  return detail::selectExploreTransition(
+      tl, rng, exploreTopK, tbActive,
+      [&](uint64_t b, float &outVal) { return tb->lookupPiece(b, nextPiece, outVal); },
+      scoreExplore);
+}
+
 // Picks a Next-Box rollout move under the mixed (1 - epsilon) greedy + epsilon top-K exploration
 // policy, splitting exploration 50/50 between TB runner-up moves and 2-ply Next-Box heuristic
 // frontier probes.
@@ -127,19 +149,11 @@ inline ChosenTransition selectNextBoxRolloutTransition(uint64_t board, int curPi
                                                        Rng &rng, const NextBoxTablebase *tb,
                                                        double epsilon, int exploreTopK,
                                                        const EvalWeights &w) {
-  assert(nextPiece >= 0 && nextPiece < NUM_PIECES);
-  const bool tbActive = (tb != nullptr && tb->isLoaded());
-  const bool doExplore = (epsilon > 0.0 && exploreTopK >= 2 && rng.nextDouble() < epsilon);
-
-  if (!doExplore) {
-    return detail::chooseNextBoxGreedyPolicyMove(board, curPiece, nextPiece, tb, w);
-  }
-
-  TransitionList tl;
-  generateTransitions(board, curPiece, tl);
-  return detail::selectExploreTransition(
-      tl, rng, exploreTopK, tbActive,
-      [&](uint64_t b, float &outVal) { return tb->lookupPiece(b, nextPiece, outVal); },
+  return selectNextBoxRolloutWithPolicy(
+      board, curPiece, nextPiece, rng, tb, epsilon, exploreTopK,
+      [&](uint64_t b, int c, int n, const NextBoxTablebase *t) {
+        return detail::chooseNextBoxGreedyPolicyMove(b, c, n, t, w);
+      },
       [&](const Transition &t) {
         return scoreNextBoxHeuristicTransition(t.afterBoard, t.linesCleared, nextPiece, w);
       });
@@ -152,12 +166,15 @@ inline ChosenTransition selectNextBoxRolloutTransition(uint64_t board, int curPi
                                                                 nullptr, epsilon, exploreTopK, w);
 }
 
-// Runs parallel Next-Box trajectory sampling under cfg.rngMode, merges optional priorBoards,
-// applies optional core sibling expansion, filters by minVisits and maxBoards, and returns
-// strictly sorted 40-bit boards. Produces identical sortedBoards across thread counts.
-inline StateGenResult
-generateNextBoxStateSpace(const NextBoxGenConfig &cfg, const MappedNextBoxTablebase *tb = nullptr,
-                          const std::vector<uint64_t> *priorBoards = nullptr) {
+// Runs parallel Next-Box trajectory sampling using a thread-safe rollout callback
+// rolloutMoveFn(board, curPiece, nextPiece, rng, fastTb), merges optional priorBoards, applies
+// optional core sibling expansion, filters by minVisits and maxBoards, and returns strictly sorted
+// 40-bit boards. Produces identical sortedBoards across thread counts.
+template <typename RolloutMoveFn>
+inline StateGenResult generateNextBoxStateSpaceWithPolicy(const NextBoxGenConfig &cfg,
+                                                          const MappedNextBoxTablebase *tb,
+                                                          const std::vector<uint64_t> *priorBoards,
+                                                          RolloutMoveFn &&rolloutMoveFn) {
   assert(cfg.numGames >= 0);
   const auto t0 = std::chrono::steady_clock::now();
 
@@ -179,8 +196,7 @@ generateNextBoxStateSpace(const NextBoxGenConfig &cfg, const MappedNextBoxTableb
         localMap.add(board, 1);
 
         for (int step = 0; step < cfg.maxPiecesPerGame; ++step) {
-          const ChosenTransition ch = selectNextBoxRolloutTransition(
-              board, curPiece, nextPiece, rng, fastTb, cfg.epsilon, cfg.exploreTopK, cfg.weights);
+          const ChosenTransition ch = rolloutMoveFn(board, curPiece, nextPiece, rng, fastTb);
           if (!ch.found) {
             break;
           }
@@ -204,13 +220,27 @@ generateNextBoxStateSpace(const NextBoxGenConfig &cfg, const MappedNextBoxTableb
   return result;
 }
 
-// Measures held-out greedy Next-Box rollout coverage against sortedBoards (overall and stratified
-// by afterBoard hole count 0, 1, 2, 3+).
-inline CoverageReport measureNextBoxCoverage(const std::vector<uint64_t> &sortedBoards,
-                                             int numGames, uint64_t baseSeed, RngMode rngMode,
-                                             const MappedNextBoxTablebase *tb, int numThreads,
-                                             const EvalWeights &w = EvalWeights{},
-                                             int maxPiecesPerGame = DEFAULT_MAX_PIECES_PER_GAME) {
+inline StateGenResult
+generateNextBoxStateSpace(const NextBoxGenConfig &cfg, const MappedNextBoxTablebase *tb = nullptr,
+                          const std::vector<uint64_t> *priorBoards = nullptr) {
+  return generateNextBoxStateSpaceWithPolicy(cfg, tb, priorBoards,
+                                             [&](uint64_t board, int curPiece, int nextPiece,
+                                                 Rng &rng, const IndexedNextBoxTablebase *fastTb) {
+                                               return selectNextBoxRolloutTransition(
+                                                   board, curPiece, nextPiece, rng, fastTb,
+                                                   cfg.epsilon, cfg.exploreTopK, cfg.weights);
+                                             });
+}
+
+// Measures held-out greedy Next-Box rollout coverage against sortedBoards using a thread-safe
+// policy callback greedyMoveFn(board, curPiece, nextPiece, fastTb), stratified by hole count.
+template <typename GreedyMoveFn>
+inline CoverageReport
+measureNextBoxCoverageWithPolicy(const std::vector<uint64_t> &sortedBoards, int numGames,
+                                 uint64_t baseSeed, RngMode rngMode,
+                                 const MappedNextBoxTablebase *tb, int numThreads,
+                                 GreedyMoveFn &&greedyMoveFn,
+                                 int maxPiecesPerGame = DEFAULT_MAX_PIECES_PER_GAME) {
   IndexedNextBoxTablebase indexedTb;
   const IndexedNextBoxTablebase *fastTb = nullptr;
   if (tb != nullptr && tb->isLoaded()) {
@@ -227,8 +257,7 @@ inline CoverageReport measureNextBoxCoverage(const std::vector<uint64_t> &sorted
         int lines = 0;
 
         for (int step = 0; step < maxPiecesPerGame; ++step) {
-          const ChosenTransition ch =
-              detail::chooseNextBoxGreedyPolicyMove(board, curPiece, nextPiece, fastTb, w);
+          const ChosenTransition ch = greedyMoveFn(board, curPiece, nextPiece, fastTb);
           if (!ch.found) {
             break;
           }
@@ -248,6 +277,21 @@ inline CoverageReport measureNextBoxCoverage(const std::vector<uint64_t> &sorted
         }
         return lines;
       });
+}
+
+// Measures held-out greedy Next-Box rollout coverage against sortedBoards (overall and stratified
+// by afterBoard hole count 0, 1, 2, 3+).
+inline CoverageReport measureNextBoxCoverage(const std::vector<uint64_t> &sortedBoards,
+                                             int numGames, uint64_t baseSeed, RngMode rngMode,
+                                             const MappedNextBoxTablebase *tb, int numThreads,
+                                             const EvalWeights &w = EvalWeights{},
+                                             int maxPiecesPerGame = DEFAULT_MAX_PIECES_PER_GAME) {
+  return measureNextBoxCoverageWithPolicy(
+      sortedBoards, numGames, baseSeed, rngMode, tb, numThreads,
+      [&](uint64_t board, int curPiece, int nextPiece, const IndexedNextBoxTablebase *fastTb) {
+        return detail::chooseNextBoxGreedyPolicyMove(board, curPiece, nextPiece, fastTb, w);
+      },
+      maxPiecesPerGame);
 }
 
 } // namespace tb

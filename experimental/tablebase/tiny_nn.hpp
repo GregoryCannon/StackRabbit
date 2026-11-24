@@ -831,6 +831,157 @@ inline ChosenTransition chooseNextBoxNnMove2Ply(uint64_t board, int curPiece, in
   return best;
 }
 
+// Calibrated Next-Box tablebase move selector with optional TinyNextBoxNet fallback and partial-OUT
+// scoring:
+//   - When any legal move lands in TB:
+//       * in-TB move m  : Q(m) = r_m + V_tb(b'_m, nextPiece)
+//       * out-of-TB m   : if nnPtr is loaded and safetyMargin is finite (negative values clamp to
+//                         0.0; non-finite values NaN / +-inf disable partial-OUT),
+//                         Q(m) = r_m + max(0.0, estCont(b'_m, nextPiece) - safetyMargin), where
+//                         estCont is 2-ply NN (or 1-ply NN with ply-2 survival check when
+//                         outUse2Ply == false). On exact Q ties, in-TB moves are preferred.
+//                         When partial-OUT is disabled, out-of-TB moves receive 0 continuation
+//                         (bit-exact parity with chooseNextBoxTablebaseMove).
+//   - When ALL legal moves land out-of-TB (all-OUT):
+//       * sets usedFallback = true and scores all legal moves once with TinyNextBoxNet (if loaded)
+//         or pickBestNextBoxHeuristic (if nnPtr == nullptr), preserving full relative move ordering
+//         without margin clamping.
+template <typename NextBoxTbType>
+inline TablebaseMoveChoice
+chooseNextBoxHybridFallbackMove(uint64_t board, int curPiece, int nextPiece,
+                                const NextBoxTbType &tb, const TinyNextBoxNet *nnPtr,
+                                double safetyMargin, RngMode evalRngMode, bool outUse2Ply = true,
+                                const EvalWeights &w = {}) {
+  if (curPiece < 0 || curPiece >= NUM_PIECES || nextPiece < 0 || nextPiece >= NUM_PIECES) {
+    return {};
+  }
+  const bool hasNn = (nnPtr != nullptr && nnPtr->isLoaded());
+  auto wrapFallback = [](const ChosenTransition &fb) -> TablebaseMoveChoice {
+    if (!fb.found) {
+      return {};
+    }
+    return {fb.transition, static_cast<double>(fb.transition.linesCleared), false, true, true};
+  };
+
+  if (!tb.isLoaded()) {
+    const ChosenTransition fb =
+        hasNn
+            ? (outUse2Ply ? chooseNextBoxNnMove2Ply(board, curPiece, nextPiece, *nnPtr, evalRngMode)
+                          : chooseNextBoxNnMove1Ply(board, curPiece, nextPiece, *nnPtr))
+            : pickBestNextBoxHeuristic(board, curPiece, nextPiece, w);
+    return wrapFallback(fb);
+  }
+
+  // When no NN is loaded, delegate directly to exact chooseNextBoxTablebaseMove.
+  if (!hasNn) {
+    return chooseNextBoxTablebaseMove(board, curPiece, nextPiece, tb, /*closedWorld=*/false, w);
+  }
+
+  // Non-finite safetyMargin (NaN, +inf, -inf) disables partial-OUT; finite negative clamps to 0.
+  const bool allowPartialOut = std::isfinite(safetyMargin);
+  const double clampedMargin = allowPartialOut ? std::max(0.0, safetyMargin) : 0.0;
+
+  TransitionList tl;
+  generateTransitions(board, curPiece, tl);
+  if (tl.empty()) {
+    return {};
+  }
+
+  // Pass 1: cheap TB lookup across all legal moves so all-OUT boards skip partial-OUT NN scoring.
+  bool inTbArr[MAX_TRANSITIONS];
+  float tbValArr[MAX_TRANSITIONS];
+  bool anyInTb = false;
+  for (int i = 0; i < tl.size(); ++i) {
+    float v = 0.0f;
+    const bool hit = tb.lookupPiece(tl[i].afterBoard, nextPiece, v);
+    inTbArr[i] = hit;
+    tbValArr[i] = hit ? v : 0.0f;
+    anyInTb = anyInTb || hit;
+  }
+
+  if (!anyInTb) {
+    // All legal moves exit the TB (all-OUT): rank directly with TinyNextBoxNet once without
+    // margin clamping so relative ordering among low-value recovery moves is preserved.
+    int bestFbIdx = 0;
+    double bestFbScore = -std::numeric_limits<double>::infinity();
+    for (int i = 0; i < tl.size(); ++i) {
+      const double sc =
+          outUse2Ply ? scoreNextBoxNn2Ply(tl[i].afterBoard, tl[i].linesCleared, nextPiece, *nnPtr,
+                                          evalRngMode)
+                     : scoreNextBoxNn1Ply(tl[i].afterBoard, tl[i].linesCleared, nextPiece, *nnPtr);
+      if (i == 0 || sc > bestFbScore) {
+        bestFbScore = sc;
+        bestFbIdx = i;
+      }
+    }
+    return {tl[bestFbIdx], static_cast<double>(tl[bestFbIdx].linesCleared), false, true, true};
+  }
+
+  const auto evalOutContinuation = [&](uint64_t afterBoard) -> double {
+    if (outUse2Ply) {
+      return scoreNextBoxNn2Ply(afterBoard, 0, nextPiece, *nnPtr, evalRngMode);
+    }
+    if (!hasAnyLegalTransition(afterBoard, nextPiece)) {
+      return 0.0;
+    }
+    return std::max(0.0, static_cast<double>(nnPtr->evalPiece(afterBoard, nextPiece)));
+  };
+
+  // Gate tieEps and in-TB tie preference on allowPartialOut to preserve exact tie-break parity
+  // with chooseNextBoxTablebaseMove when partial-OUT is disabled.
+  const double tieEps = allowPartialOut ? 1e-12 : 0.0;
+  int bestIdx = 0;
+  double bestQ = 0.0;
+  double bestRefQ = 0.0;
+  bool bestInTb = false;
+  bool hasBestTie = false;
+  double bestTieScore = 0.0;
+
+  for (int i = 0; i < tl.size(); ++i) {
+    const bool inTb = inTbArr[i];
+    const double rew = static_cast<double>(tl[i].linesCleared);
+    double q = rew;
+    if (inTb) {
+      q += static_cast<double>(tbValArr[i]);
+    } else if (allowPartialOut) {
+      const double estCont = evalOutContinuation(tl[i].afterBoard);
+      q += std::max(0.0, estCont - clampedMargin);
+    }
+
+    if (i == 0 || q > bestRefQ + tieEps) {
+      bestIdx = i;
+      bestQ = q;
+      bestRefQ = q;
+      bestInTb = inTb;
+      hasBestTie = false;
+    } else if (std::abs(q - bestRefQ) <= tieEps) {
+      bestRefQ = std::max(bestRefQ, q);
+      if (allowPartialOut && inTb && !bestInTb) {
+        bestIdx = i;
+        bestQ = q;
+        bestInTb = true;
+        hasBestTie = false;
+      } else if (!allowPartialOut || inTb == bestInTb) {
+        if (!hasBestTie) {
+          bestTieScore = scoreNextBoxHeuristicTransition(tl[bestIdx].afterBoard,
+                                                         tl[bestIdx].linesCleared, nextPiece, w);
+          hasBestTie = true;
+        }
+        const double candTie =
+            scoreNextBoxHeuristicTransition(tl[i].afterBoard, tl[i].linesCleared, nextPiece, w);
+        if (candTie > bestTieScore) {
+          bestIdx = i;
+          bestQ = q;
+          bestInTb = inTb;
+          bestTieScore = candTie;
+        }
+      }
+    }
+  }
+
+  return {tl[bestIdx], bestQ, bestInTb, false, true};
+}
+
 struct NnLossConfig {
   double huberDelta = 2.0;  // Huber threshold in lines for V_hat regression
   double valueWeight = 1.0; // Weight on parent 7-output Huber value loss

@@ -9,10 +9,12 @@
 
 #include "cli_utils.hpp"
 #include "nextbox_gen.hpp"
+#include "tiny_nn.hpp"
 
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
+#include <limits>
 #include <set>
 #include <string>
 #include <thread>
@@ -25,6 +27,9 @@ constexpr uint64_t COVERAGE_SEED_XOR = 0x5A5A5A5AA5A5A5A5ULL;
 struct CliOptions {
   std::string outPath;
   std::string tbPath;
+  std::string nnPath;
+  double outMargin = 2.0;
+  bool outMarginSet = false;
   std::string mergePath;
   tb::NextBoxGenConfig cfg{};
   int coverageGames = 5000;
@@ -43,6 +48,10 @@ void printUsage(const char *prog, FILE *out) {
   std::fprintf(out,
                "  --sibling-min=S        Core sibling expansion threshold, 0=off (default: 5)\n");
   std::fprintf(out, "  --tb=PATH              Optional SRTBV002 Next-Box *.tb.bin policy\n");
+  std::fprintf(out, "  --nn=PATH              Optional SRNNV001 TinyNextBoxNet frontier probe\n");
+  std::fprintf(
+      out,
+      "  --out-margin=F|inf     Partial-OUT margin when both --tb= & --nn= are set (default: 2.0)\n");
   std::fprintf(out, "  --merge=PATH           Optional existing *.states.bin to merge\n");
   std::fprintf(out, "  --seed=N               Base RNG seed (default: 1000000)\n");
   std::fprintf(out, "  --coverage-games=N     Held-out greedy coverage games (default: 5000)\n");
@@ -130,6 +139,21 @@ bool parseArgs(int argc, char **argv, CliOptions &opts) {
           return false;
         }
         opts.tbPath = val;
+      } else if (flag == "--nn") {
+        if (val.empty()) {
+          std::fprintf(stderr, "Empty path for --nn=\n");
+          return false;
+        }
+        opts.nnPath = val;
+      } else if (flag == "--out-margin") {
+        if (val == "inf") {
+          opts.outMargin = std::numeric_limits<double>::infinity();
+        } else if (!tb::cli::parseStrictPositiveDouble(val, 0.0, 1000.0, opts.outMargin)) {
+          std::fprintf(stderr, "Invalid --out-margin value '%s' (expected 0..1000 or inf)\n",
+                       val.c_str());
+          return false;
+        }
+        opts.outMarginSet = true;
       } else if (flag == "--merge") {
         if (val.empty()) {
           std::fprintf(stderr, "Empty path for --merge=\n");
@@ -171,6 +195,10 @@ bool parseArgs(int argc, char **argv, CliOptions &opts) {
     std::fprintf(stderr, "Missing required <output.states.bin> path.\n");
     return false;
   }
+  if (opts.outMarginSet && (opts.nnPath.empty() || opts.tbPath.empty())) {
+    std::fprintf(stderr, "--out-margin= requires both --tb=<path.tb.bin> and --nn=<model.nn.bin>.\n");
+    return false;
+  }
   opts.cfg.progressInterval = std::max(1, opts.cfg.numGames / 8);
   return true;
 }
@@ -206,6 +234,22 @@ int main(int argc, char **argv) {
     tbPtr = &mappedTb;
   }
 
+  tb::TinyNextBoxNet loadedNn;
+  const tb::TinyNextBoxNet *nnPtr = nullptr;
+  if (!opts.nnPath.empty()) {
+    if (!loadedNn.load(opts.nnPath, &err)) {
+      std::fprintf(stderr, "Error loading NN '%s': %s\n", opts.nnPath.c_str(), err.c_str());
+      return 1;
+    }
+    if (loadedNn.rngMode != opts.cfg.rngMode) {
+      std::fprintf(stderr, "Error: --nn '%s' has rng=%s, which does not match --rng=%s\n",
+                   opts.nnPath.c_str(), tb::rngModeName(loadedNn.rngMode),
+                   tb::rngModeName(opts.cfg.rngMode));
+      return 1;
+    }
+    nnPtr = &loadedNn;
+  }
+
   std::vector<uint64_t> priorBoards;
   const std::vector<uint64_t> *priorPtr = nullptr;
   if (!opts.mergePath.empty()) {
@@ -232,9 +276,14 @@ int main(int argc, char **argv) {
       tb::rngModeName(opts.cfg.rngMode), opts.cfg.numGames, opts.cfg.numThreads,
       static_cast<unsigned long long>(opts.cfg.baseSeed), opts.cfg.epsilon, opts.cfg.exploreTopK,
       opts.cfg.minVisits, opts.cfg.maxBoards, opts.cfg.siblingMinVisits);
-  if (tbPtr) {
+  if (tbPtr && nnPtr) {
+    std::printf("  Rollout policy: Next-Box TB (%zu boards) + TinyNextBoxNet (%s, margin=%.1f)\n",
+                static_cast<size_t>(mappedTb.size()), opts.nnPath.c_str(), opts.outMargin);
+  } else if (tbPtr) {
     std::printf("  Rollout policy: Next-Box TB (%zu boards from %s) + 2-ply heuristic fallback\n",
                 static_cast<size_t>(mappedTb.size()), opts.tbPath.c_str());
+  } else if (nnPtr) {
+    std::printf("  Rollout policy: Pure 2-ply TinyNextBoxNet (%s)\n", opts.nnPath.c_str());
   } else {
     std::printf("  Rollout policy: Pure 2-ply Next-Box heuristic\n");
   }
@@ -244,7 +293,31 @@ int main(int argc, char **argv) {
   }
   std::fflush(stdout);
 
-  const tb::StateGenResult gen = tb::generateNextBoxStateSpace(opts.cfg, tbPtr, priorPtr);
+  auto pickNnGreedy = [&](uint64_t board, int curPiece, int nextPiece,
+                          const tb::IndexedNextBoxTablebase *fastTb) -> tb::ChosenTransition {
+    if (fastTb != nullptr && fastTb->isLoaded()) {
+      const tb::TablebaseMoveChoice ch = tb::chooseNextBoxHybridFallbackMove(
+          board, curPiece, nextPiece, *fastTb, nnPtr, opts.outMargin, opts.cfg.rngMode,
+          /*outUse2Ply=*/true, opts.cfg.weights);
+      return {ch.transition, ch.tablebaseQ, ch.found};
+    }
+    return tb::chooseNextBoxNnMove2Ply(board, curPiece, nextPiece, *nnPtr, opts.cfg.rngMode);
+  };
+
+  const tb::StateGenResult gen =
+      (nnPtr != nullptr)
+          ? tb::generateNextBoxStateSpaceWithPolicy(
+                opts.cfg, tbPtr, priorPtr,
+                [&](uint64_t board, int curPiece, int nextPiece, tb::Rng &rng,
+                    const tb::IndexedNextBoxTablebase *fastTb) -> tb::ChosenTransition {
+                  return tb::selectNextBoxRolloutWithPolicy(
+                      board, curPiece, nextPiece, rng, fastTb, opts.cfg.epsilon,
+                      opts.cfg.exploreTopK, pickNnGreedy, [&](const tb::Transition &t) {
+                        return tb::scoreNextBoxNn2Ply(t.afterBoard, t.linesCleared, nextPiece,
+                                                      *nnPtr, opts.cfg.rngMode);
+                      });
+                })
+          : tb::generateNextBoxStateSpace(opts.cfg, tbPtr, priorPtr);
   std::vector<uint64_t>().swap(priorBoards);
 
   const double mvPerSec = (gen.elapsedSec > 0.0)
@@ -282,8 +355,13 @@ int main(int argc, char **argv) {
                 opts.coverageGames, tb::rngModeName(opts.cfg.rngMode),
                 static_cast<unsigned long long>(covSeed));
     const tb::CoverageReport cov =
-        tb::measureNextBoxCoverage(gen.sortedBoards, opts.coverageGames, covSeed, opts.cfg.rngMode,
-                                   tbPtr, opts.cfg.numThreads, opts.cfg.weights);
+        (nnPtr != nullptr)
+            ? tb::measureNextBoxCoverageWithPolicy(gen.sortedBoards, opts.coverageGames, covSeed,
+                                                   opts.cfg.rngMode, tbPtr, opts.cfg.numThreads,
+                                                   pickNnGreedy)
+            : tb::measureNextBoxCoverage(gen.sortedBoards, opts.coverageGames, covSeed,
+                                         opts.cfg.rngMode, tbPtr, opts.cfg.numThreads,
+                                         opts.cfg.weights);
     std::printf(
         "  Held-out greedy mean : %.2f +- %.2f lines | Move hit-rate: %.2f%% | 100%%-covered "
         "games: %.2f%%\n",
