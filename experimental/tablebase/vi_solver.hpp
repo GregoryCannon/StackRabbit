@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <limits>
 #include <thread>
 #include <utility>
@@ -22,7 +23,6 @@
 namespace tb {
 
 inline constexpr uint32_t INVALID_BOARD_ID = UINT32_MAX;
-inline constexpr double MISSING_BOARD_VALUE = -1.0;
 inline constexpr int NUM_HOLE_BUCKETS = 4; // Buckets: 0, 1, 2, 3+ holes
 inline constexpr int DEFAULT_MAX_PIECES_PER_GAME = 50000;
 inline constexpr int DEFAULT_EVAL_MAX_STEPS = 200000;
@@ -169,8 +169,14 @@ public:
   explicit FlatBoardIndex(const std::vector<uint64_t> &sortedBoards) { build(sortedBoards); }
 
   void build(const std::vector<uint64_t> &sortedBoards) {
-    assert(sortedBoards.size() < static_cast<size_t>(INVALID_BOARD_ID));
-    size_ = sortedBoards.size();
+    buildFromAccessor(sortedBoards.size(), [&](size_t i) { return sortedBoards[i]; });
+  }
+
+  template <typename KeyFn> void buildFromAccessor(size_t count, KeyFn &&keyAt) {
+    if (count >= static_cast<size_t>(INVALID_BOARD_ID)) {
+      std::abort();
+    }
+    size_ = count;
     if (size_ == 0) {
       keys_.clear();
       ids_.clear();
@@ -192,10 +198,16 @@ public:
     keys_.assign(static_cast<size_t>(cap), EMPTY_KEY);
     ids_.assign(static_cast<size_t>(cap), 0U);
 
+#ifndef NDEBUG
+    uint64_t prevKey = 0;
+#endif
     for (size_t i = 0; i < size_; ++i) {
-      const uint64_t b = sortedBoards[i];
+      const uint64_t b = keyAt(i);
       assert((b & ~VALID_BOARD_MASK) == 0);
-      assert(i == 0 || b > sortedBoards[i - 1]);
+#ifndef NDEBUG
+      assert(i == 0 || b > prevKey);
+      prevKey = b;
+#endif
       uint64_t slot = hashKey(b);
       while (keys_[static_cast<size_t>(slot)] != EMPTY_KEY) {
         slot = (slot + 1ULL) & mask_;
@@ -239,6 +251,131 @@ private:
   uint64_t hashKey(uint64_t b) const noexcept {
     const uint64_t x = b ^ (b >> 17);
     return (x * FIBONACCI_HASH_MULT) >> shift_;
+  }
+};
+
+// In-memory O(1) hash-indexed view of a No-Next-Box tablebase (SRTBV001) for fast offline rollouts
+// and Monte Carlo evaluation (1-2 memory accesses per lookup instead of O(log N) binary search).
+class IndexedTablebase {
+public:
+  IndexedTablebase() = default;
+  explicit IndexedTablebase(const MappedTablebase &mapped) { buildFromMapped(mapped); }
+
+  void buildFromMapped(const MappedTablebase &mapped) {
+    if (!mapped.isLoaded()) {
+      clear();
+      return;
+    }
+    const size_t n = static_cast<size_t>(mapped.size());
+    if (n >= static_cast<size_t>(INVALID_BOARD_ID)) {
+      std::abort();
+    }
+    index_.buildFromAccessor(n, [&](size_t i) { return mapped.boardAt(static_cast<uint64_t>(i)); });
+    values_.resize(n);
+    for (size_t i = 0; i < n; ++i) {
+      values_[i] = mapped.valueAt(static_cast<uint64_t>(i));
+    }
+    loaded_ = true;
+  }
+
+  void clear() {
+    index_ = FlatBoardIndex{};
+    std::vector<float>().swap(values_);
+    loaded_ = false;
+  }
+
+  bool isLoaded() const noexcept { return loaded_; }
+  uint64_t size() const noexcept { return loaded_ ? static_cast<uint64_t>(index_.size()) : 0; }
+
+  bool lookup(uint64_t board, float &outValue) const noexcept {
+    if (!loaded_) {
+      return false;
+    }
+    const uint32_t id = index_.find(board);
+    if (id == INVALID_BOARD_ID) {
+      return false;
+    }
+    outValue = values_[id];
+    return true;
+  }
+
+private:
+  FlatBoardIndex index_;
+  std::vector<float> values_;
+  bool loaded_ = false;
+};
+
+// In-memory O(1) hash-indexed view of a 1-piece Next-Box tablebase (SRTBV002).
+class IndexedNextBoxTablebase {
+public:
+  IndexedNextBoxTablebase() = default;
+  explicit IndexedNextBoxTablebase(const MappedNextBoxTablebase &mapped) {
+    buildFromMapped(mapped);
+  }
+
+  void buildFromMapped(const MappedNextBoxTablebase &mapped) {
+    if (!mapped.isLoaded()) {
+      clear();
+      return;
+    }
+    const size_t n = static_cast<size_t>(mapped.size());
+    if (n >= static_cast<size_t>(INVALID_BOARD_ID)) {
+      std::abort();
+    }
+    index_.buildFromAccessor(n, [&](size_t i) { return mapped.boardAt(static_cast<uint64_t>(i)); });
+    values_.resize(n * static_cast<size_t>(NUM_PIECES));
+    for (size_t i = 0; i < n; ++i) {
+      mapped.copyValuesAt(static_cast<uint64_t>(i), &values_[i * static_cast<size_t>(NUM_PIECES)]);
+    }
+    rngMode_ = mapped.rngMode();
+    loaded_ = true;
+  }
+
+  void clear() {
+    index_ = FlatBoardIndex{};
+    std::vector<float>().swap(values_);
+    rngMode_ = RngMode::Uniform;
+    loaded_ = false;
+  }
+
+  bool isLoaded() const noexcept { return loaded_; }
+  uint64_t size() const noexcept { return loaded_ ? static_cast<uint64_t>(index_.size()) : 0; }
+  RngMode rngMode() const noexcept { return rngMode_; }
+
+  bool lookup(uint64_t board, float outValues[NUM_PIECES]) const noexcept {
+    const float *row = findRow(board);
+    if (row == nullptr) {
+      return false;
+    }
+    std::memcpy(outValues, row, static_cast<size_t>(NUM_PIECES) * sizeof(float));
+    return true;
+  }
+
+  bool lookupPiece(uint64_t board, int pieceIdx, float &outValue) const noexcept {
+    assert(pieceIdx >= 0 && pieceIdx < NUM_PIECES);
+    const float *row = findRow(board);
+    if (row == nullptr) {
+      return false;
+    }
+    outValue = row[pieceIdx];
+    return true;
+  }
+
+private:
+  FlatBoardIndex index_;
+  std::vector<float> values_;
+  RngMode rngMode_ = RngMode::Uniform;
+  bool loaded_ = false;
+
+  const float *findRow(uint64_t board) const noexcept {
+    if (!loaded_) {
+      return nullptr;
+    }
+    const uint32_t id = index_.find(board);
+    if (id == INVALID_BOARD_ID) {
+      return nullptr;
+    }
+    return &values_[static_cast<size_t>(id) * static_cast<size_t>(NUM_PIECES)];
   }
 };
 
@@ -579,15 +716,15 @@ struct TablebaseMoveChoice {
   bool found = false;
 };
 
-// Selects a move using a loaded MappedTablebase:
+// Selects a move using a loaded No-Next-Box tablebase (MappedTablebase or IndexedTablebase):
 //   - If closedWorld == true: strictly maximizes r + V_tb(b') with V_tb(b') = 0 for b' outside TB,
 //     breaking ties in move-generation order (exact optimal policy of the closed-world MDP).
 //   - If closedWorld == false: maximizes r + V_tb(b') when at least one child lands in TB, breaking
 //     exact tablebaseQ ties lazily via the fallbackPly heuristic (matching /state-info and
 //     index.html), and falls back to the heuristic when all legal moves exit the tablebase.
-inline TablebaseMoveChoice chooseTablebaseMove(uint64_t board, int pieceIdx,
-                                               const MappedTablebase &tb, bool closedWorld,
-                                               int fallbackPly = 2,
+template <typename NnbTablebase>
+inline TablebaseMoveChoice chooseTablebaseMove(uint64_t board, int pieceIdx, const NnbTablebase &tb,
+                                               bool closedWorld, int fallbackPly = 2,
                                                const EvalWeights &w = EvalWeights{}) {
   assert(fallbackPly == 1 || fallbackPly == 2);
   TransitionList tl;
@@ -652,8 +789,9 @@ inline TablebaseMoveChoice chooseTablebaseMove(uint64_t board, int pieceIdx,
 // nnbTb (not the 1-ply transition.afterBoard). If no 2-ply leaf lands in the tablebase (or nnbTb
 // is unloaded), falls back to pickBestNextBoxHeuristic with tablebaseQ = r1 + max_r2. Exact Q ties
 // break lazily via the Next-Box heuristic.
+template <typename NnbTablebase>
 inline TablebaseMoveChoice chooseNextBoxHybridMove(uint64_t board, int curPiece, int nextPiece,
-                                                   const MappedTablebase &nnbTb,
+                                                   const NnbTablebase &nnbTb,
                                                    const EvalWeights &w = EvalWeights{}) {
   TransitionList tl1;
   generateTransitions(board, curPiece, tl1);
@@ -664,6 +802,9 @@ inline TablebaseMoveChoice chooseNextBoxHybridMove(uint64_t board, int curPiece,
   TransitionList tl2;
   const auto makeFallbackChoice = [&]() -> TablebaseMoveChoice {
     const ChosenTransition fb = pickBestNextBoxHeuristic(board, curPiece, nextPiece, w);
+    if (!fb.found) {
+      return {};
+    }
     generateTransitions(fb.transition.afterBoard, nextPiece, tl2);
     int maxR2 = 0;
     for (int j = 0; j < tl2.size(); ++j) {

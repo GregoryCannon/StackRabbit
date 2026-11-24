@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdio>
 #include <set>
 #include <vector>
@@ -1540,4 +1541,303 @@ TEST_CASE("NES RNG transition matrix, stationary distribution, and Next-Box heur
   const auto okNext = tb::handleApiRequest("/moves", "board=0&piece=O&next=I", nbCtx);
   CHECK(okNext.status == 200);
   CHECK(okNext.body.find("\"nextPieceChar\":\"I\"") != std::string::npos);
+}
+
+TEST_CASE("SRTBV002 Next-Box binary I/O, format detection, and O(1) IndexedTablebase parity") {
+  // 1. Round-trip SRTBV002 write/read (Nes & Uniform), empty-board expectation, and format detect.
+  const std::string tmpV1 = "build/test_fmt_v1.tb.bin";
+  const std::string tmpV2 = "build/test_fmt_v2.tb.bin";
+  const std::string tmpV2NoEmpty = "build/test_fmt_v2_noempty.tb.bin";
+  const std::string tmpCorrupt = "build/test_fmt_v2_corrupt.tb.bin";
+
+  const std::vector<uint64_t> boards = {0ULL, 0x0000000003ULL, 0x000000000FULL, 0x000000003FULL};
+  std::vector<float> valsV1 = {10.5f, 9.25f, 8.75f, 7.125f};
+  std::vector<float> valsV2(boards.size() * tb::NUM_PIECES, 0.0f);
+  for (size_t i = 0; i < boards.size(); ++i) {
+    for (int c = 0; c < tb::NUM_PIECES; ++c) {
+      valsV2[i * tb::NUM_PIECES + static_cast<size_t>(c)] =
+          static_cast<float>(50.0 - static_cast<double>(i) * 3.5 + static_cast<double>(c) * 0.75);
+    }
+  }
+
+  REQUIRE(tb::writeTablebaseFile(tmpV1, boards, valsV1, 1.25e-8));
+  REQUIRE(tb::writeNextBoxTablebaseFile(tmpV2, boards, valsV2, tb::RngMode::Nes, 2.5e-8));
+
+  tb::TablebaseFormat fmt = tb::TablebaseFormat::Unknown;
+  REQUIRE(tb::detectTablebaseFormat(tmpV1, fmt));
+  CHECK(fmt == tb::TablebaseFormat::NnbV1);
+  REQUIRE(tb::detectTablebaseFormat(tmpV2, fmt));
+  CHECK(fmt == tb::TablebaseFormat::NextBoxV2);
+  CHECK_FALSE(tb::detectTablebaseFormat("build/nonexistent_tb_file.bin", fmt));
+  CHECK(fmt == tb::TablebaseFormat::Unknown);
+
+  tb::MappedNextBoxTablebase mappedV2;
+  REQUIRE(mappedV2.open(tmpV2, nullptr, /*verifySorted=*/true));
+  CHECK(mappedV2.isLoaded());
+  CHECK(mappedV2.size() == boards.size());
+  CHECK(mappedV2.rngMode() == tb::RngMode::Nes);
+  CHECK(mappedV2.bellmanResidual() == doctest::Approx(2.5e-8));
+
+  double expectedEmptyV2 = 0.0;
+  for (int c = 0; c < tb::NUM_PIECES; ++c) {
+    expectedEmptyV2 += tb::openingPieceProb(tb::RngMode::Nes, c) * static_cast<double>(valsV2[c]);
+  }
+  CHECK(mappedV2.emptyBoardValue() == doctest::Approx(expectedEmptyV2));
+
+  // Verify 0ULL absent writes emptyBoardValue == -1.0 sentinel.
+  const std::vector<uint64_t> noEmptyBoards = {0x0000000003ULL, 0x000000000FULL};
+  const std::vector<float> noEmptyVals(noEmptyBoards.size() * tb::NUM_PIECES, 12.0f);
+  REQUIRE(tb::writeNextBoxTablebaseFile(tmpV2NoEmpty, noEmptyBoards, noEmptyVals,
+                                        tb::RngMode::Uniform, 0.0));
+  tb::MappedNextBoxTablebase mappedNoEmpty;
+  REQUIRE(mappedNoEmpty.open(tmpV2NoEmpty));
+  CHECK(mappedNoEmpty.rngMode() == tb::RngMode::Uniform);
+  CHECK(mappedNoEmpty.emptyBoardValue() == doctest::Approx(-1.0));
+  mappedNoEmpty.close();
+
+  // 2. IndexedTablebase & IndexedNextBoxTablebase exact lookup parity vs Mapped versions.
+  tb::MappedTablebase mappedV1;
+  REQUIRE(mappedV1.open(tmpV1));
+  tb::IndexedTablebase idxV1(mappedV1);
+  CHECK(idxV1.isLoaded());
+  CHECK(idxV1.size() == mappedV1.size());
+  for (size_t i = 0; i < boards.size(); ++i) {
+    float mv = -1.0f;
+    float iv = -2.0f;
+    CHECK(mappedV1.lookup(boards[i], mv));
+    CHECK(idxV1.lookup(boards[i], iv));
+    CHECK(mv == iv);
+    CHECK(iv == valsV1[i]);
+  }
+  float dummy = 0.0f;
+  CHECK_FALSE(idxV1.lookup(0x123456ULL, dummy));
+  CHECK_FALSE(idxV1.lookup(~0ULL, dummy));
+
+  tb::IndexedNextBoxTablebase idxV2(mappedV2);
+  CHECK(idxV2.isLoaded());
+  CHECK(idxV2.size() == mappedV2.size());
+  CHECK(idxV2.rngMode() == tb::RngMode::Nes);
+  for (size_t i = 0; i < boards.size(); ++i) {
+    float mArr[tb::NUM_PIECES] = {};
+    float iArr[tb::NUM_PIECES] = {};
+    CHECK(mappedV2.lookup(boards[i], mArr));
+    CHECK(idxV2.lookup(boards[i], iArr));
+    for (int c = 0; c < tb::NUM_PIECES; ++c) {
+      CHECK(mArr[c] == iArr[c]);
+      float mSingle = -1.0f;
+      float iSingle = -2.0f;
+      CHECK(mappedV2.lookupPiece(boards[i], c, mSingle));
+      CHECK(idxV2.lookupPiece(boards[i], c, iSingle));
+      CHECK(mSingle == iSingle);
+      CHECK(iSingle == valsV2[i * tb::NUM_PIECES + static_cast<size_t>(c)]);
+    }
+  }
+  float missingArr[tb::NUM_PIECES] = {};
+  CHECK_FALSE(idxV2.lookup(0x123456ULL, missingArr));
+  CHECK_FALSE(idxV2.lookup(~0ULL, missingArr));
+  CHECK_FALSE(idxV2.lookupPiece(0x123456ULL, 0, dummy));
+
+  // Unloaded Indexed wrappers return false safely.
+  tb::IndexedTablebase emptyIdxV1;
+  CHECK_FALSE(emptyIdxV1.isLoaded());
+  CHECK(emptyIdxV1.size() == 0);
+  CHECK_FALSE(emptyIdxV1.lookup(0ULL, dummy));
+  tb::IndexedNextBoxTablebase emptyIdxV2;
+  CHECK_FALSE(emptyIdxV2.isLoaded());
+  CHECK(emptyIdxV2.size() == 0);
+  CHECK_FALSE(emptyIdxV2.lookup(0ULL, missingArr));
+
+  // Verify chooseTablebaseMove, chooseNextBoxHybridMove, and selectRolloutTransition produce
+  // bit-identical choices on Mapped vs Indexed tablebases when actually hitting in-TB boards.
+  {
+    std::vector<uint64_t> reachBoards = {0ULL};
+    for (int c = 0; c < tb::NUM_PIECES; ++c) {
+      tb::TransitionList tl1;
+      tb::generateTransitions(0ULL, c, tl1);
+      REQUIRE_FALSE(tl1.empty());
+      reachBoards.push_back(tl1[0].afterBoard);
+      tb::TransitionList tl2;
+      tb::generateTransitions(tl1[0].afterBoard, (c + 1) % tb::NUM_PIECES, tl2);
+      REQUIRE_FALSE(tl2.empty());
+      reachBoards.push_back(tl2[0].afterBoard);
+    }
+    std::sort(reachBoards.begin(), reachBoards.end());
+    reachBoards.erase(std::unique(reachBoards.begin(), reachBoards.end()), reachBoards.end());
+    std::vector<float> reachVals(reachBoards.size());
+    for (size_t i = 0; i < reachBoards.size(); ++i) {
+      reachVals[i] = 10.0f + static_cast<float>(i) * 0.5f;
+    }
+
+    const std::string tmpReachV1 = "build/test_fmt_reach_v1.tb.bin";
+    REQUIRE(tb::writeTablebaseFile(tmpReachV1, reachBoards, reachVals, 0.0));
+    tb::MappedTablebase mReach;
+    REQUIRE(mReach.open(tmpReachV1));
+    tb::IndexedTablebase iReach(mReach);
+
+    for (int c = 0; c < tb::NUM_PIECES; ++c) {
+      const auto mChoice = tb::chooseTablebaseMove(0ULL, c, mReach, false, 1);
+      const auto iChoice = tb::chooseTablebaseMove(0ULL, c, iReach, false, 1);
+      CHECK(mChoice.afterInTablebase);
+      CHECK_FALSE(mChoice.usedFallback);
+      CHECK(mChoice.transition.afterBoard == iChoice.transition.afterBoard);
+      CHECK(mChoice.tablebaseQ == iChoice.tablebaseQ);
+      CHECK(mChoice.afterInTablebase == iChoice.afterInTablebase);
+
+      const auto mHyb = tb::chooseNextBoxHybridMove(0ULL, c, (c + 1) % tb::NUM_PIECES, mReach);
+      const auto iHyb = tb::chooseNextBoxHybridMove(0ULL, c, (c + 1) % tb::NUM_PIECES, iReach);
+      CHECK(mHyb.afterInTablebase);
+      CHECK_FALSE(mHyb.usedFallback);
+      CHECK(mHyb.transition.afterBoard == iHyb.transition.afterBoard);
+      CHECK(mHyb.tablebaseQ == iHyb.tablebaseQ);
+
+      // Direct selectRolloutTransition parity under both greedy (eps=0) and explore (eps=1).
+      tb::Rng rMap(500ULL + static_cast<uint64_t>(c));
+      tb::Rng rIdx(500ULL + static_cast<uint64_t>(c));
+      for (double eps : {0.0, 1.0}) {
+        const auto mRoll =
+            tb::selectRolloutTransition(0ULL, c, rMap, &mReach, 1, eps, 4, tb::EvalWeights{});
+        const auto iRoll =
+            tb::selectRolloutTransition(0ULL, c, rIdx, &iReach, 1, eps, 4, tb::EvalWeights{});
+        CHECK(mRoll.transition.afterBoard == iRoll.transition.afterBoard);
+        CHECK(mRoll.score == iRoll.score);
+      }
+    }
+
+    // Verify rebuilding an already-populated IndexedTablebase and rebuilding from unloaded mapped.
+    iReach.buildFromMapped(mappedV1);
+    CHECK(iReach.size() == mappedV1.size());
+    tb::MappedTablebase unloadedV1;
+    iReach.buildFromMapped(unloadedV1);
+    CHECK_FALSE(iReach.isLoaded());
+    CHECK(iReach.size() == 0);
+
+    mReach.close();
+    std::remove(tmpReachV1.c_str());
+  }
+
+  // Verify 0-board SRTBV002 round-trip, move semantics, and IndexedNextBoxTablebase rebuild.
+  {
+    const std::string tmpZeroV2 = "build/test_fmt_v2_zero.tb.bin";
+    REQUIRE(tb::writeNextBoxTablebaseFile(tmpZeroV2, {}, {}, tb::RngMode::Uniform, 0.0));
+    tb::MappedNextBoxTablebase mZero;
+    REQUIRE(mZero.open(tmpZeroV2));
+    CHECK(mZero.isLoaded());
+    CHECK(mZero.size() == 0);
+    CHECK(mZero.emptyBoardValue() == doctest::Approx(tb::MISSING_BOARD_VALUE));
+    CHECK_FALSE(mZero.lookup(0ULL, missingArr));
+    CHECK_FALSE(mZero.lookupPiece(0ULL, 0, dummy));
+
+    // Move constructor & move assignment
+    tb::MappedNextBoxTablebase mMoved(std::move(mZero));
+    CHECK(mMoved.isLoaded());
+    CHECK_FALSE(mZero.isLoaded());
+    CHECK(mZero.path().empty());
+
+    tb::IndexedNextBoxTablebase iZero(mMoved);
+    CHECK(iZero.isLoaded());
+    CHECK(iZero.size() == 0);
+    CHECK_FALSE(iZero.lookup(0ULL, missingArr));
+    iZero.buildFromMapped(mZero); // Unloaded -> clears cleanly
+    CHECK_FALSE(iZero.isLoaded());
+
+    mMoved.close();
+    std::remove(tmpZeroV2.c_str());
+  }
+
+  // 3. Corruption & validation rejection tests on writeNextBoxTablebaseFile &
+  // MappedNextBoxTablebase.
+  std::string err;
+  CHECK_FALSE(
+      tb::writeNextBoxTablebaseFile(tmpCorrupt, boards, {1.0f}, tb::RngMode::Uniform, 0.0, &err));
+  std::vector<float> nanVals = valsV2;
+  nanVals[3] = std::numeric_limits<float>::quiet_NaN();
+  CHECK_FALSE(
+      tb::writeNextBoxTablebaseFile(tmpCorrupt, boards, nanVals, tb::RngMode::Uniform, 0.0, &err));
+  std::vector<float> negVals = valsV2;
+  negVals[2] = -0.5f;
+  CHECK_FALSE(
+      tb::writeNextBoxTablebaseFile(tmpCorrupt, boards, negVals, tb::RngMode::Uniform, 0.0, &err));
+  CHECK_FALSE(tb::writeNextBoxTablebaseFile(tmpCorrupt, {0x03ULL, 0x03ULL},
+                                            std::vector<float>(14, 1.0f), tb::RngMode::Uniform, 0.0,
+                                            &err));
+
+  // Wrong magic (trying to open SRTBV001 as SRTBV002).
+  tb::MappedNextBoxTablebase badOpen;
+  CHECK_FALSE(badOpen.open(tmpV1, &err));
+
+  // Corrupt header & record fields using exact struct offsets.
+  {
+    std::ifstream src(tmpV2, std::ios::binary);
+    std::vector<char> bytes((std::istreambuf_iterator<char>(src)),
+                            std::istreambuf_iterator<char>());
+    REQUIRE(bytes.size()
+            == sizeof(tb::NextBoxTablebaseHeader)
+                   + boards.size() * sizeof(tb::PackedNextBoxRecord));
+
+    const auto writeBytes = [&](const std::vector<char> &buf) {
+      std::ofstream(tmpCorrupt, std::ios::binary | std::ios::trunc)
+          .write(buf.data(), static_cast<std::streamsize>(buf.size()));
+    };
+
+    // Invalid rngMode = 2
+    std::vector<char> badRng = bytes;
+    const uint32_t badMode = 2U;
+    std::memcpy(badRng.data() + offsetof(tb::NextBoxTablebaseHeader, rngMode), &badMode,
+                sizeof(badMode));
+    writeBytes(badRng);
+    CHECK_FALSE(badOpen.open(tmpCorrupt, &err));
+
+    // Non-zero flags = 1
+    std::vector<char> badFlags = bytes;
+    const uint32_t nonZeroFlag = 1U;
+    std::memcpy(badFlags.data() + offsetof(tb::NextBoxTablebaseHeader, flags), &nonZeroFlag,
+                sizeof(nonZeroFlag));
+    writeBytes(badFlags);
+    CHECK_FALSE(badOpen.open(tmpCorrupt, &err));
+
+    // Negative emptyBoardValue != -1.0 sentinel
+    std::vector<char> badEmpty = bytes;
+    const double negEmpty = -2.5;
+    std::memcpy(badEmpty.data() + offsetof(tb::NextBoxTablebaseHeader, emptyBoardValue), &negEmpty,
+                sizeof(negEmpty));
+    writeBytes(badEmpty);
+    CHECK_FALSE(badOpen.open(tmpCorrupt, &err));
+
+    // Truncated header (< 40B) and truncated payload
+    writeBytes(std::vector<char>(bytes.begin(), bytes.begin() + 20));
+    CHECK_FALSE(badOpen.open(tmpCorrupt, &err));
+    writeBytes(std::vector<char>(bytes.begin(), bytes.end() - 4));
+    CHECK_FALSE(badOpen.open(tmpCorrupt, &err));
+
+    // Exact 64-bit multiplication wrap-around trap: (2^62 + N) * 36 === N * 36 (mod 2^64).
+    std::vector<char> badOverflow = bytes;
+    const uint64_t hugeCount = 0x4000000000000000ULL + static_cast<uint64_t>(boards.size());
+    std::memcpy(badOverflow.data() + offsetof(tb::NextBoxTablebaseHeader, numBoards), &hugeCount,
+                sizeof(hugeCount));
+    writeBytes(badOverflow);
+    CHECK_FALSE(badOpen.open(tmpCorrupt, &err));
+
+    // Unsorted records & corrupt >40-bit board & negative record value caught by verifySorted=true.
+    std::vector<char> badSort = bytes;
+    const size_t rec0Off = sizeof(tb::NextBoxTablebaseHeader);
+    const size_t rec1Off = rec0Off + sizeof(tb::PackedNextBoxRecord);
+    std::swap_ranges(badSort.begin() + static_cast<std::ptrdiff_t>(rec0Off),
+                     badSort.begin() + static_cast<std::ptrdiff_t>(rec1Off),
+                     badSort.begin() + static_cast<std::ptrdiff_t>(rec1Off));
+    writeBytes(badSort);
+    CHECK_FALSE(badOpen.open(tmpCorrupt, &err, /*verifySorted=*/true));
+
+    std::vector<char> badRecNeg = bytes;
+    const float negV = -1.0f;
+    std::memcpy(badRecNeg.data() + rec0Off + 8, &negV, sizeof(negV));
+    writeBytes(badRecNeg);
+    CHECK_FALSE(badOpen.open(tmpCorrupt, &err, /*verifySorted=*/true));
+  }
+
+  mappedV1.close();
+  mappedV2.close();
+  std::remove(tmpV1.c_str());
+  std::remove(tmpV2.c_str());
+  std::remove(tmpV2NoEmpty.c_str());
+  std::remove(tmpCorrupt.c_str());
 }

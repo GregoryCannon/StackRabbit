@@ -11,13 +11,11 @@
 #include <atomic>
 #include <cassert>
 #include <chrono>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <limits>
 #include <mutex>
-#include <thread>
 #include <utility>
 #include <vector>
 
@@ -25,8 +23,9 @@ namespace tb {
 
 namespace detail {
 
+template <typename NnbTablebase>
 inline ChosenTransition chooseGreedyPolicyMove(uint64_t board, int pieceIdx,
-                                               const MappedTablebase *tb, int heurPly,
+                                               const NnbTablebase *tb, int heurPly,
                                                const EvalWeights &w) {
   assert(heurPly == 1 || heurPly == 2);
   if (tb != nullptr && tb->isLoaded()) {
@@ -36,6 +35,11 @@ inline ChosenTransition chooseGreedyPolicyMove(uint64_t board, int pieceIdx,
   }
   return (heurPly == 2) ? pickBestTransition2Ply(board, pieceIdx, w)
                         : pickBestTransition1Ply(board, pieceIdx, w);
+}
+
+inline ChosenTransition chooseGreedyPolicyMove(uint64_t board, int pieceIdx, std::nullptr_t,
+                                               int heurPly, const EvalWeights &w) {
+  return chooseGreedyPolicyMove<MappedTablebase>(board, pieceIdx, nullptr, heurPly, w);
 }
 
 } // namespace detail
@@ -257,10 +261,10 @@ struct StateGenResult {
 // Picks a rollout move under the mixed (1 - epsilon) greedy + epsilon top-K exploration policy.
 // When epsilon triggers and >= 2 legal moves exist, selects uniformly among ranks [1 .. min(K,
 // N)-1] (strictly non-greedy runner-up moves) so epsilon equals the exact deviation rate.
+template <typename NnbTablebase>
 inline ChosenTransition selectRolloutTransition(uint64_t board, int pieceIdx, Rng &rng,
-                                                const MappedTablebase *tb, int heurPly,
-                                                double epsilon, int exploreTopK,
-                                                const EvalWeights &w) {
+                                                const NnbTablebase *tb, int heurPly, double epsilon,
+                                                int exploreTopK, const EvalWeights &w) {
   assert(heurPly == 1 || heurPly == 2);
   const bool tbActive = (tb != nullptr && tb->isLoaded());
   const bool doExplore = (epsilon > 0.0 && exploreTopK >= 2 && rng.nextDouble() < epsilon);
@@ -371,11 +375,19 @@ inline ChosenTransition selectRolloutTransition(uint64_t board, int pieceIdx, Rn
   return {scored[pickRank].t, scored[pickRank].primary, true};
 }
 
+inline ChosenTransition selectRolloutTransition(uint64_t board, int pieceIdx, Rng &rng,
+                                                std::nullptr_t, int heurPly, double epsilon,
+                                                int exploreTopK, const EvalWeights &w) {
+  return selectRolloutTransition<MappedTablebase>(board, pieceIdx, rng, nullptr, heurPly, epsilon,
+                                                  exploreTopK, w);
+}
+
 namespace detail {
 
+template <typename NnbTablebase>
 inline std::vector<uint64_t>
 expandCoreSiblings(const std::vector<std::pair<uint64_t, uint32_t>> &rawEntries,
-                   const StateGenConfig &cfg, const MappedTablebase *tb) {
+                   const StateGenConfig &cfg, const NnbTablebase *tb) {
   std::vector<uint64_t> siblingCandidates;
   if (cfg.siblingMinVisits == 0 || rawEntries.empty()) {
     return siblingCandidates;
@@ -452,9 +464,11 @@ inline void mergeFilterAndCapBoards(std::vector<std::pair<uint64_t, uint32_t>> &
   std::vector<uint64_t> priorSorted;
   if (priorBoards != nullptr && !priorBoards->empty()) {
     priorSorted = *priorBoards;
+#ifndef NDEBUG
     for (uint64_t b : priorSorted) {
       assert((b & ~VALID_BOARD_MASK) == 0);
     }
+#endif
     std::sort(priorSorted.begin(), priorSorted.end());
     priorSorted.erase(std::unique(priorSorted.begin(), priorSorted.end()), priorSorted.end());
   }
@@ -570,6 +584,15 @@ inline StateGenResult generateStateSpace(const StateGenConfig &cfg,
 
   constexpr size_t LOCAL_FLUSH_THRESHOLD = 100000;
 
+  // Build an in-memory O(1) hash index once before launching workers so high-volume rollouts avoid
+  // repeated O(log N) binary-search cache misses over mmap.
+  IndexedTablebase indexedTb;
+  const IndexedTablebase *fastTb = nullptr;
+  if (tb != nullptr && tb->isLoaded()) {
+    indexedTb.buildFromMapped(*tb);
+    fastTb = &indexedTb;
+  }
+
   detail::runWorkerPool(
       threads, static_cast<size_t>(cfg.numGames), /*minParallelWork=*/64, [&](int /*tid*/) {
         FlatVisitMap localMap(65536);
@@ -588,7 +611,7 @@ inline StateGenResult generateStateSpace(const StateGenConfig &cfg,
           for (int step = 0; step < cfg.maxPiecesPerGame; ++step) {
             const int piece = rng.nextPiece();
             const ChosenTransition ch = selectRolloutTransition(
-                board, piece, rng, tb, cfg.heurPly, cfg.epsilon, cfg.exploreTopK, cfg.weights);
+                board, piece, rng, fastTb, cfg.heurPly, cfg.epsilon, cfg.exploreTopK, cfg.weights);
             if (!ch.found) {
               break;
             }
@@ -631,7 +654,8 @@ inline StateGenResult generateStateSpace(const StateGenConfig &cfg,
   std::vector<std::pair<uint64_t, uint32_t>> rawEntries = counter.extractAll();
   result.rawUniqueDiscovered = rawEntries.size();
 
-  const std::vector<uint64_t> siblingCandidates = detail::expandCoreSiblings(rawEntries, cfg, tb);
+  const std::vector<uint64_t> siblingCandidates =
+      detail::expandCoreSiblings(rawEntries, cfg, fastTb);
   detail::mergeFilterAndCapBoards(rawEntries, siblingCandidates, priorBoards, cfg, result);
 
   result.elapsedSec = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
@@ -653,6 +677,12 @@ inline CoverageReport measureCoverage(const std::vector<uint64_t> &sortedBoards,
   report.games = numGames;
 
   const FlatBoardIndex index(sortedBoards);
+  IndexedTablebase indexedTb;
+  const IndexedTablebase *fastTb = nullptr;
+  if (tb != nullptr && tb->isLoaded()) {
+    indexedTb.buildFromMapped(*tb);
+    fastTb = &indexedTb;
+  }
   const int threads = std::max(1, numThreads);
 
   std::vector<int> gameLines(static_cast<size_t>(numGames), 0);
@@ -677,7 +707,7 @@ inline CoverageReport measureCoverage(const std::vector<uint64_t> &sortedBoards,
                             for (int step = 0; step < maxPiecesPerGame; ++step) {
                               const int piece = rng.nextPiece();
                               const ChosenTransition ch =
-                                  detail::chooseGreedyPolicyMove(board, piece, tb, heurPly, w);
+                                  detail::chooseGreedyPolicyMove(board, piece, fastTb, heurPly, w);
                               if (!ch.found) {
                                 break;
                               }

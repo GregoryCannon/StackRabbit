@@ -107,11 +107,11 @@ Measure the exact scores to beat *before* training any `V(b, c)` tablebase.
 ### Phase NB-2: `SRTBV002` File Format & Fast Hash-Table Rollout Lookups (`tablebase_io.hpp`, `vi_solver.hpp`)
 Build the 36-byte Next-Box file format and fix the binary-search bottleneck in game generation.
 
-- [ ] Implement `writeNextBoxTablebaseFile` and memory-mapped reader `MappedNextBoxTablebase` (`SRTBV002`, strict header/size/overflow validation, `lookup(board, float out[7])`, `lookupPiece(board, piece, float &out)`), plus `detectTablebaseFormat(path)` (`SRTBV001` vs `SRTBV002`).
-- [ ] Add `IndexedTablebase` (No-Next-Box) and `IndexedNextBoxTablebase` (`V(b, c)`) wrapping `FlatBoardIndex` + a flat `std::vector<float>` of values (~1 memory read per move instead of ~24 binary-search jumps).
-- [ ] Upgrade `state_generator.hpp` to use `IndexedTablebase` when rolling out with a tablebase, confirm outputs are bit-for-bit identical to binary search, and measure the `moves/sec` speedup.
-- [ ] **Verification**:
-  - Round-trip save/load, corrupted/truncated file rejection, `MappedNextBoxTablebase` vs `IndexedNextBoxTablebase` lookup equality, and generator determinism tests in `tablebase_test.cpp`.
+- [x] Implement `writeNextBoxTablebaseFile`, memory-mapped reader `MappedNextBoxTablebase` (sharing `detail::MappedRecordFile` with `MappedTablebase`), and `detectTablebaseFormat(path)` (`SRTBV001` vs `SRTBV002`).
+- [x] Add `IndexedTablebase` (No-Next-Box) and `IndexedNextBoxTablebase` (`V(b, c)`) backed by `FlatBoardIndex` + flat `std::vector<float>` (`O(1)` lookups).
+- [x] Upgrade `state_generator.hpp` to use `IndexedTablebase` during rollouts and coverage evaluation, lifting 15.95M-board `round8.tb.bin` rollout speed from **`404.7k` → `573.3k mv/s` (+42% including index build)**.
+- [x] **Verification**:
+  - Round-trip save/load (including 0-board, move semantics, exact mod-2^64 overflow wrap-around, and negative/NaN/unsorted corruption rejection), `Mapped` vs `Indexed` lookup & policy parity tests in `tablebase_test.cpp`.
 
 ---
 
