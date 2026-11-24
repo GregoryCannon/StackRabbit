@@ -9,11 +9,12 @@
 // Usage:
 //   ./build/tablebase_bench [games=500] [maxPiecesPerGame=50000]
 //   ./build/tablebase_bench tune [trainGames=400] [evalGames=1000] [iters=80]
-//   ./build/tablebase_bench --mode=nextbox-heur [--rng=uniform|nes] [--games=10000] [--seed=700000]
+//   ./build/tablebase_bench --mode=nextbox-heur|nextbox-heur-v2 [--rng=uniform|nes] [--games=10000]
 //   ./build/tablebase_bench --mode=nextbox-hybrid --tb=PATH [--rng=uniform|nes] [--games=10000]
 //   ./build/tablebase_bench --mode=nextbox-tb --tb=PATH [--rng=uniform|nes] [--games=10000]
 
 #include "cli_utils.hpp"
+#include "distill_linear.hpp"
 #include "heuristic.hpp"
 #include "nextbox_solver.hpp"
 #include "vi_solver.hpp"
@@ -36,6 +37,7 @@ enum class BenchMode {
   Nnb1Ply,
   Nnb2Ply,
   NextBoxHeur,
+  NextBoxHeurV2,
   NextBoxHybrid,
   NextBoxTb,
 };
@@ -66,11 +68,11 @@ void printUsage(const char *prog, FILE *out) {
   std::fprintf(out, "Usage:\n");
   std::fprintf(out, "  %s [games=500] [maxPiecesPerGame=50000]\n", prog);
   std::fprintf(out, "  %s tune [trainGames=400] [evalGames=1000] [iters=80]\n", prog);
-  std::fprintf(
-      out,
-      "  %s --mode=nextbox-heur|nextbox-hybrid|nextbox-tb [--tb=PATH] [--rng=uniform|nes]\n"
-      "     [--games=10000] [--seed=700000] [--max-pieces=50000] [--threads=T]\n",
-      prog);
+  std::fprintf(out,
+               "  %s --mode=nextbox-heur|nextbox-heur-v2|nextbox-hybrid|nextbox-tb [--tb=PATH] "
+               "[--rng=uniform|nes]\n"
+               "     [--games=10000] [--seed=700000] [--max-pieces=50000] [--threads=T]\n",
+               prog);
 }
 
 GameResult runSingleGame(uint64_t seed, BenchMode mode, tb::RngMode rngMode,
@@ -100,6 +102,7 @@ GameResult runSingleGame(uint64_t seed, BenchMode mode, tb::RngMode rngMode,
     return res;
   }
 
+  constexpr tb::LinearBoardEvalV2 v2Eval = tb::defaultV2LinearEval();
   int curPiece = rng.nextOpeningPiece(rngMode);
   int nextPiece = rng.nextPiece(rngMode, curPiece);
   for (int step = 0; step < maxPieces; ++step) {
@@ -121,7 +124,10 @@ GameResult runSingleGame(uint64_t seed, BenchMode mode, tb::RngMode rngMode,
       board = ch.transition.afterBoard;
       res.linesCleared += ch.transition.linesCleared;
     } else {
-      const tb::ChosenTransition ch = tb::pickBestNextBoxHeuristic(board, curPiece, nextPiece, w);
+      const tb::ChosenTransition ch =
+          (mode == BenchMode::NextBoxHeurV2)
+              ? v2Eval.pickBestNextBox2Ply(board, curPiece, nextPiece)
+              : tb::pickBestNextBoxHeuristic(board, curPiece, nextPiece, w);
       if (!ch.found) {
         return res;
       }
@@ -346,14 +352,18 @@ int runFlaggedBenchmark(int argc, char **argv) {
     if (flag == "--mode") {
       if (val == "nextbox-heur") {
         mode = BenchMode::NextBoxHeur;
+      } else if (val == "nextbox-heur-v2") {
+        mode = BenchMode::NextBoxHeurV2;
       } else if (val == "nextbox-hybrid") {
         mode = BenchMode::NextBoxHybrid;
       } else if (val == "nextbox-tb") {
         mode = BenchMode::NextBoxTb;
       } else {
-        std::fprintf(stderr,
-                     "Invalid --mode '%s' (expected nextbox-heur, nextbox-hybrid, or nextbox-tb)\n",
-                     val.c_str());
+        std::fprintf(
+            stderr,
+            "Invalid --mode '%s' (expected nextbox-heur, nextbox-heur-v2, nextbox-hybrid, or "
+            "nextbox-tb)\n",
+            val.c_str());
         return 1;
       }
       modeSet = true;
@@ -401,7 +411,9 @@ int runFlaggedBenchmark(int argc, char **argv) {
   }
 
   if (!modeSet) {
-    std::fprintf(stderr, "Missing required --mode=nextbox-heur|nextbox-hybrid|nextbox-tb.\n");
+    std::fprintf(
+        stderr,
+        "Missing required --mode=nextbox-heur|nextbox-heur-v2|nextbox-hybrid|nextbox-tb.\n");
     printUsage(argv[0], stderr);
     return 1;
   }
@@ -461,6 +473,8 @@ int runFlaggedBenchmark(int argc, char **argv) {
   } else if (mode == BenchMode::NextBoxHybrid) {
     tbHitLabel = "in-TB-leaf";
     label = std::string("Next-Box Hybrid 2-ply (") + tb::rngModeName(rngMode) + ")";
+  } else if (mode == BenchMode::NextBoxHeurV2) {
+    label = std::string("Next-Box Heur-V2 2-ply (") + tb::rngModeName(rngMode) + ")";
   } else {
     label = std::string("Next-Box Heur 2-ply (") + tb::rngModeName(rngMode) + ")";
   }

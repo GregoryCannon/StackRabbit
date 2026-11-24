@@ -59,20 +59,23 @@ flowchart LR
 ### Phase D-1: Linear Distillation, Residual Mining & Feature Discovery (`distill_linear.hpp`, `distill_linear.cpp`)
 Establish the exact ceiling of fast, interpretable linear heuristics — directly applicable to StackRabbit's hand-crafted `src/backend/eval.cpp`.
 
-- [ ] **Trajectory dataset sampler** (shared `distill_data.hpp`):
-  - Samples `N` labeled `(b, c, n)` positions (e.g., `500k` train / `50k` val) from `nb_final_nes.tb.bin` using the 70/30 on-policy + recovery mix, storing board bitmasks, exact `V*(b, 0..6)`, and exact fully-in-TB legal move Q-lists `Q*(b, c, n, m)`.
-- [ ] **Step 1a — Linear Value Regression (Ridge / OLS on existing 10 board features + intercept)**:
-  - Fit `V_hat(b) ≈ E_NES[V*(b)]` via closed-form Cholesky/Gaussian elimination.
-  - Report $R^2$, RMSE, and MAE stratified by hole count (`0h`, `1h`, `2h`, `3+h`).
-  - **Residual Outlier Dump**: print the top 25 positive-error (`V_hat >> V*`, heuristic overvalues a trap!) and top 25 negative-error (`V_hat << V*`, heuristic undervalues a strong setup!) boards with ASCII diagrams, hex strings (pasteable straight into `index.html`), `V*(b)`, `V_hat(b)`, and feature breakdowns.
-- [ ] **Step 1b — Regret-Weighted Move Ranking (same 11 `EvalWeights`)**:
-  - Train the exact same `EvalWeights` with multi-threaded Adam minimizing **regret-weighted listwise cross-entropy / pairwise margin loss** on `Q*(b, c, n, m)` (directly minimizing expected lines lost per move rather than squared value error across unrelated boards).
-  - Evaluate both **1-ply** (`r + V_hat(b')`) and **2-ply Next-Box** (`r_1 + max(r_2 + V_hat(b''))`) play on 10,000 NES games (`seed=700000`) against the `30.05 ± 0.28` baseline.
-- [ ] **Step 1c — Residual-Guided v2 Linear Feature Set (`~20–30` interpretable features)**:
-  - Inspect the Step 1a outliers to add high-signal, Tetris-generalizable linear features (candidate pool informed by actual residuals: e.g., covered cells above holes, column-height profile / edge vs. center height, 1-wide/2-wide well location & count, `S`/`Z`/`I`/`O` surface dependencies, row transitions, empty-row availability, hole depth).
-  - Re-run Ridge regression + regret-weighted ranking, measure exact validation regret drop and 10k-game NES score lift, and document which features matter most for real Tetris.
-- [ ] **Verification**:
-  - Unit tests in `tablebase_test.cpp`: exact Ridge regression recovery on synthetic noiseless linear data, finite-difference gradient verification for regret-weighted ranking loss, deterministic `1T` vs `4T` sampling, and `benchmark_cli` integration (`--mode=nextbox-heur-v2`).
+- [x] **Trajectory dataset sampler** (`distill_data.hpp`):
+  - Deterministic, chunked 70% greedy + 30% `ε=0.08` recovery rollouts over `nb_final_nes.tb.bin`, filtering out-of-TB candidate moves per-decision (keeping decisions with `>= 2` in-TB moves) so ~99% of decisions are retained with zero `V=0` boundary bias.
+- [x] **Step 1a — Linear Value Regression (V1 10 features + intercept)**:
+  - Val $R^2 = 0.6812$, RMSE `6.086`, MAE `3.714` lines (`0h=2.82`, `1h=8.45`, `2h=15.34`, `3+h=21.86`).
+  - Residual outlier mining exposed two structural blind spots in V1:
+    1. **Overestimated traps** (`V_hat >> V*`, up to `+41` lines): isolated row-0 pinholes buried under `>= 2` messy covering rows.
+    2. **Underestimated strong setups** (`V_hat << V*`, up to `-71` lines): contiguous multi-hole cavities sitting under a single nearly-full covering row (`1–2` cells from clearing and wiping all holes in one shot).
+- [x] **Step 1b — Regret-Weighted Move Ranking (same 10 V1 features)**:
+  - Ranking board-only `V(b)` against piece-averaged `expectedQStar = r + E_NES[V*(b')]` lifts the exact same 10-feature model from `30.05 ± 0.28` (hand-tuned) and `27.89 ± 0.26` (V1 Ridge MSE) to **`31.73 ± 0.30`** (`+1.68` lines; validation regret `0.7549 → 0.6924`).
+- [x] **Step 1c — Residual-Guided V2 Linear Feature Set (`26` interpretable features)**:
+  - Adding 16 residual-guided features (`hasAnyHole`, `holeColumns`, `holeRows`, `coveredMinoCount`, `buriedDepth2Plus`, `coverRowMissing`, `minHoleRowPenalty`, `totalCells`, `maxHeight`, `rowTransitions`, `colTransitions`, `edgeHeightSum`, `centerHeightSum`, `wellCount`, `maxWellDepth`, `adjHighColPairs`) jumps Val $R^2$ from `0.6812 → 0.8139`, cuts `3+h` value MAE from `21.86 → 8.40`, and lifts 10,000-game held-out NES survival (`seed=700000`) to:
+    - V2 Ridge 2-ply: **`42.85 ± 0.41`** (`+12.80` lines)
+    - V2 Joint-Rank 2-ply: **`46.86 ± 0.46`** (`+16.81` lines)
+    - V2 Pure-Rank 2-ply (`--mode=nextbox-heur-v2`): **`48.94 ± 0.46`** (**`+18.89` lines / `+62.9%`**, `med=35.0`, `p90=111`, `max=436`, top-1 `83.56%`, meanRegret `0.4084`, `300.5k mv/s`).
+  - Top-weight takeaways actionable for real Tetris: `holeRows` (penalize distinct rows containing holes, not just raw hole count), `rowTransitions`, `coveredMinoCount`, and `buriedDepth2Plus` carry far more signal than raw `sealedHoles` alone.
+- [x] **Verification**:
+  - `tablebase_test.cpp` (21/21): exact Ridge recovery, singular/NaN/constant-target guards, V1/V2 prefix parity & explicit board checks, central finite-difference gradient check (`< 1e-6`), `1T` vs `4T` sampling determinism, `benchmark_cli --mode=nextbox-heur-v2`, plus Logic & Simplicity code reviews passed.
 
 ---
 

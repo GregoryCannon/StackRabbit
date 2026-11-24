@@ -2,6 +2,8 @@
 #include "../../src/tests/vendor/doctest.h"
 
 #include "core.hpp"
+#include "distill_data.hpp"
+#include "distill_linear.hpp"
 #include "heuristic.hpp"
 #include "nextbox_gen.hpp"
 #include "nextbox_solver.hpp"
@@ -2679,4 +2681,338 @@ TEST_CASE("Server routes Next-Box (SRTBV002) auto-detection, /ping, /moves, /sta
   std::remove(nbUniPath.c_str());
   std::remove(nnbPath.c_str());
   std::remove(badPath.c_str());
+}
+
+TEST_CASE("Linear distillation: Ridge recovery, gradient check, V2 features, and 1T/4T sampling") {
+  // 1. Exact Ridge regression recovery on synthetic noiseless linear data + singular guard.
+  {
+    std::vector<double> singA = {1.0, 2.0, 2.0, 4.0};
+    std::vector<double> singB = {3.0, 6.0};
+    std::vector<double> sol;
+    CHECK_FALSE(tb::solveLinearSystem(singA, singB, 2, sol));
+    CHECK_FALSE(tb::solveLinearSystem({}, {}, 0, sol));
+
+    const double trueIntercept = 42.5;
+    const std::array<double, 3> trueW = {-7.25, 3.5, 1.125};
+    std::vector<tb::LabeledDecisionSample> syn;
+    for (int i = 0; i < 64; ++i) {
+      tb::LabeledDecisionSample s{};
+      s.board = static_cast<uint64_t>(i);
+      s.boardInTb = true;
+      const double x0 = static_cast<double>(i % 5);
+      const double x1 = static_cast<double>((i / 5) % 4);
+      const double x2 = static_cast<double>((i * 7 + 3) % 11);
+      s.expectedVStar = trueIntercept + trueW[0] * x0 + trueW[1] * x1 + trueW[2] * x2;
+      syn.push_back(s);
+    }
+    const auto synFeat = [](uint64_t b, double *out) {
+      const int i = static_cast<int>(b);
+      out[0] = static_cast<double>(i % 5);
+      out[1] = static_cast<double>((i / 5) % 4);
+      out[2] = static_cast<double>((i * 7 + 3) % 11);
+    };
+    const tb::RidgeRegressionResult fit = tb::fitRidgeValueModel(syn, 3, 0.0, synFeat);
+    REQUIRE(fit.ok);
+    CHECK(fit.intercept == doctest::Approx(trueIntercept).epsilon(1e-9));
+    for (int j = 0; j < 3; ++j) {
+      CHECK(fit.weights[static_cast<size_t>(j)]
+            == doctest::Approx(trueW[static_cast<size_t>(j)]).epsilon(1e-9));
+    }
+    CHECK(fit.r2 == doctest::Approx(1.0).epsilon(1e-12));
+    CHECK(fit.rmse == doctest::Approx(0.0).epsilon(1e-9));
+  }
+
+  // 2. V2 residual-guided feature extraction sanity on explicit ASCII boards:
+  //    (a) Buried row-0 pinhole under 2 covering rows.
+  const uint64_t buriedBoard = mustParse("..........\n"
+                                         "XXXX......\n"
+                                         "XXXX......\n"
+                                         "XX.X......");
+  double fBuried[tb::V2_NUM_BOARD_FEATURES] = {};
+  tb::extractV2BoardFeatures(buriedBoard, fBuried);
+  CHECK(fBuried[tb::V2_SEALED_HOLES] == doctest::Approx(1.0));
+  CHECK(fBuried[tb::V2_OVERHANGS] == doctest::Approx(0.0));
+  CHECK(fBuried[tb::V2_HAS_ANY_HOLE] == doctest::Approx(1.0));
+  CHECK(fBuried[tb::V2_HOLE_COLUMNS] == doctest::Approx(1.0));
+  CHECK(fBuried[tb::V2_HOLE_ROWS] == doctest::Approx(1.0));
+  CHECK(fBuried[tb::V2_COVERED_MINO_COUNT] == doctest::Approx(2.0));
+  CHECK(fBuried[tb::V2_BURIED_DEPTH_2PLUS] == doctest::Approx(1.0));
+  CHECK(fBuried[tb::V2_COVER_ROW_MISSING] == doctest::Approx(6.0));
+  CHECK(fBuried[tb::V2_MIN_HOLE_ROW_PENALTY] == doctest::Approx(3.0));
+  CHECK(fBuried[tb::V2_TOTAL_CELLS] == doctest::Approx(11.0));
+  CHECK(fBuried[tb::V2_MAX_HEIGHT] == doctest::Approx(3.0));
+  CHECK(fBuried[tb::V2_ADJ_HIGH_COL_PAIRS] == doctest::Approx(3.0));
+
+  //    (b) Contiguous 3-hole cavity under one nearly-full covering row (1 cell missing).
+  const uint64_t cavityBoard = mustParse("..........\n"
+                                         "..........\n"
+                                         "XXXXXXX.XX\n"
+                                         "XXXX...XXX");
+  double fCavity[tb::V2_NUM_BOARD_FEATURES] = {};
+  tb::extractV2BoardFeatures(cavityBoard, fCavity);
+  CHECK(fCavity[tb::V2_SEALED_HOLES] == doctest::Approx(3.0));
+  CHECK(fCavity[tb::V2_HAS_ANY_HOLE] == doctest::Approx(1.0));
+  CHECK(fCavity[tb::V2_HOLE_COLUMNS] == doctest::Approx(3.0));
+  CHECK(fCavity[tb::V2_HOLE_ROWS] == doctest::Approx(1.0));
+  CHECK(fCavity[tb::V2_COVERED_MINO_COUNT] == doctest::Approx(3.0));
+  CHECK(fCavity[tb::V2_BURIED_DEPTH_2PLUS] == doctest::Approx(0.0));
+  CHECK(fCavity[tb::V2_COVER_ROW_MISSING] == doctest::Approx(1.0));
+  CHECK(fCavity[tb::V2_MIN_HOLE_ROW_PENALTY] == doctest::Approx(3.0));
+
+  //    (c) Filled cell below a hole (excluded from coveredMinoCount) + stacked holes + deep well.
+  const uint64_t stackedHoleBoard = mustParse("X.X.......\n"
+                                              "X.X.......\n"
+                                              "..X.......\n"
+                                              "X.X.......");
+  double fStacked[tb::V2_NUM_BOARD_FEATURES] = {};
+  tb::extractV2BoardFeatures(stackedHoleBoard, fStacked);
+  CHECK(fStacked[tb::V2_HOLE_COLUMNS] == doctest::Approx(1.0));
+  CHECK(fStacked[tb::V2_COVERED_MINO_COUNT] == doctest::Approx(2.0)); // Rows 2&3, NOT row 0
+  CHECK(fStacked[tb::V2_BURIED_DEPTH_2PLUS] == doctest::Approx(1.0));
+  CHECK(fStacked[tb::V2_MIN_HOLE_ROW_PENALTY] == doctest::Approx(2.0)); // Lowest hole in row 1
+  CHECK(fStacked[tb::V2_WELL_COUNT] == doctest::Approx(1.0));           // Col 1 depth 4
+  CHECK(fStacked[tb::V2_MAX_WELL_DEPTH] == doctest::Approx(4.0));
+  CHECK(fStacked[tb::V2_EDGE_HEIGHT_SUM] == doctest::Approx(4.0));
+  CHECK(fStacked[tb::V2_CENTER_HEIGHT_SUM] == doctest::Approx(0.0));
+
+  //    (d) Empty board transitions, zeroed hole metrics, and V1/V2 prefix parity across boards.
+  double fEmpty[tb::V2_NUM_BOARD_FEATURES] = {};
+  tb::extractV2BoardFeatures(0ULL, fEmpty);
+  CHECK(fEmpty[tb::V2_HAS_ANY_HOLE] == doctest::Approx(0.0));
+  CHECK(fEmpty[tb::V2_COVER_ROW_MISSING] == doctest::Approx(0.0));
+  CHECK(fEmpty[tb::V2_MIN_HOLE_ROW_PENALTY] == doctest::Approx(0.0));
+  CHECK(fEmpty[tb::V2_ROW_TRANSITIONS] == doctest::Approx(8.0));
+  CHECK(fEmpty[tb::V2_COL_TRANSITIONS] == doctest::Approx(10.0));
+
+  for (uint64_t b : {0ULL, buriedBoard, cavityBoard, stackedHoleBoard}) {
+    double v1f[tb::V1_NUM_BOARD_FEATURES] = {};
+    double v2f[tb::V2_NUM_BOARD_FEATURES] = {};
+    tb::extractV1BoardFeatures(b, v1f);
+    tb::extractV2BoardFeatures(b, v2f);
+    for (int j = 0; j < tb::V1_NUM_BOARD_FEATURES; ++j) {
+      CHECK(v1f[j] == doctest::Approx(v2f[j]));
+    }
+  }
+
+  // 3. Deterministic 1T vs 4T trajectory sampling on a small solved Next-Box TB, plus exact
+  //    finite-difference gradient verification, trainer smoke test, and hostile/edge guards.
+  const std::vector<uint64_t> boards2x10 = tb::enumerateZeroSealedHoleBoards(1, 4, 2, 10);
+  tb::NextBoxSolveConfig solveCfg{};
+  solveCfg.rngMode = tb::RngMode::Nes;
+  solveCfg.tolerance = 1e-8;
+  solveCfg.innerEvalSweeps = 20;
+  solveCfg.numThreads = 4;
+  const tb::NextBoxSolveResult solved2x10 = tb::solveNextBoxMPI(boards2x10, solveCfg);
+  REQUIRE(solved2x10.ok);
+
+  const std::string tmpDistillTb = "build/test_distill_2x10.tb.bin";
+  REQUIRE(tb::writeNextBoxTablebaseFile(tmpDistillTb, boards2x10, solved2x10.values,
+                                        tb::RngMode::Nes, solved2x10.finalBellmanResidual));
+  tb::MappedNextBoxTablebase mappedTb;
+  REQUIRE(mappedTb.open(tmpDistillTb));
+  tb::IndexedNextBoxTablebase idxTb(mappedTb);
+
+  tb::DistillSampleConfig sCfg{};
+  sCfg.numGames = 40;
+  sCfg.maxDecisions = 120;
+  sCfg.baseSeed = 9001ULL;
+  sCfg.numThreads = 1;
+  const tb::DistillDataset ds1 = tb::sampleDistillDataset(idxTb, sCfg);
+  sCfg.numThreads = 4;
+  const tb::DistillDataset ds4 = tb::sampleDistillDataset(idxTb, sCfg);
+
+  REQUIRE_FALSE(ds1.decisions.empty());
+  REQUIRE(ds1.decisions.size() == ds4.decisions.size());
+  CHECK(ds1.totalStepsSimulated == ds4.totalStepsSimulated);
+  CHECK(ds1.skippedIncomplete == ds4.skippedIncomplete);
+  for (size_t i = 0; i < ds1.decisions.size(); ++i) {
+    CHECK(ds1.decisions[i].board == ds4.decisions[i].board);
+    CHECK(ds1.decisions[i].curPiece == ds4.decisions[i].curPiece);
+    CHECK(ds1.decisions[i].nextPiece == ds4.decisions[i].nextPiece);
+    CHECK(ds1.decisions[i].moves.size() == ds4.decisions[i].moves.size());
+  }
+
+  // Zero-game/decision and requireAllMovesInTb filtering checks.
+  {
+    tb::DistillSampleConfig zeroCfg = sCfg;
+    zeroCfg.numGames = 0;
+    CHECK(tb::sampleDistillDataset(idxTb, zeroCfg).decisions.empty());
+    zeroCfg.numGames = 10;
+    zeroCfg.maxDecisions = 0;
+    CHECK(tb::sampleDistillDataset(idxTb, zeroCfg).decisions.empty());
+
+    tb::DistillSampleConfig strictCfg = sCfg;
+    strictCfg.requireAllMovesInTb = true;
+    const tb::DistillDataset dsStrict = tb::sampleDistillDataset(idxTb, strictCfg);
+    CHECK(dsStrict.skippedIncomplete >= ds1.skippedIncomplete);
+  }
+
+  // Oracle ranker + degenerate empty-move decision guard in evaluateMoveRanker.
+  const tb::RankingEvalMetrics oracleM =
+      tb::evaluateMoveRanker(ds1.decisions, [&](uint64_t afterB, int lc, int nxt) {
+        float v = 0.0f;
+        idxTb.lookupPiece(afterB, nxt, v);
+        return static_cast<double>(lc) + static_cast<double>(v);
+      });
+  CHECK(oracleM.top1ExactPct == doctest::Approx(100.0));
+  CHECK(oracleM.meanRegret == doctest::Approx(0.0).epsilon(1e-9));
+  {
+    std::vector<tb::LabeledDecisionSample> emptyMoves(3);
+    const tb::RankingEvalMetrics em =
+        tb::evaluateMoveRanker(emptyMoves, [](uint64_t, int, int) { return 0.0; });
+    CHECK(em.numDecisions == 0);
+    CHECK(em.p95Regret == 0.0);
+  }
+
+  // Ridge edge guards: negative/NaN lambda, empty samples, constant-target R^2, residual outliers.
+  {
+    CHECK_FALSE(tb::fitRidgeValueModel({}, 3, 1.0, tb::extractV1BoardFeatures).ok);
+    CHECK_FALSE(tb::fitRidgeValueModel(ds1.decisions, tb::V1_NUM_BOARD_FEATURES, -1.0,
+                                       tb::extractV1BoardFeatures)
+                    .ok);
+    CHECK_FALSE(tb::fitRidgeValueModel(ds1.decisions, tb::V1_NUM_BOARD_FEATURES,
+                                       std::numeric_limits<double>::quiet_NaN(),
+                                       tb::extractV1BoardFeatures)
+                    .ok);
+    std::vector<tb::LabeledDecisionSample> constTarget(4);
+    for (auto &s : constTarget) {
+      s.board = 0ULL;
+      s.boardInTb = true;
+      s.expectedVStar = 5.0;
+    }
+    tb::RidgeRegressionResult constRes{};
+    constRes.r2 = 0.99;
+    tb::evaluateRidgeFit(
+        constTarget, 1, 9.0, {0.0}, [](uint64_t, double *o) { o[0] = 0.0; }, constRes);
+    CHECK(constRes.r2 == doctest::Approx(0.0)); // Wrong constant prediction -> R^2 == 0, not 1
+    tb::evaluateRidgeFit({}, 1, 0.0, {0.0}, [](uint64_t, double *o) { o[0] = 0.0; }, constRes);
+    CHECK(constRes.rmse == 0.0);
+
+    // Outlier collection deduplicates repeated boards and orders over/under tails correctly.
+    std::vector<tb::LabeledDecisionSample> outSamples(4);
+    outSamples[0].board = 0ULL;
+    outSamples[0].boardInTb = true;
+    outSamples[0].expectedVStar = 10.0;
+    outSamples[1].board = 0ULL; // Duplicate board
+    outSamples[1].boardInTb = true;
+    outSamples[1].expectedVStar = 10.0;
+    outSamples[2].board = buriedBoard;
+    outSamples[2].boardInTb = true;
+    outSamples[2].expectedVStar = 2.0;
+    outSamples[3].board = cavityBoard;
+    outSamples[3].boardInTb = true;
+    outSamples[3].expectedVStar = 25.0;
+    std::vector<tb::ResidualOutlier> over, under;
+    tb::collectResidualOutliers(outSamples, tb::V1_NUM_BOARD_FEATURES, 10.0,
+                                std::vector<double>(tb::V1_NUM_BOARD_FEATURES, 0.0), 5,
+                                tb::extractV1BoardFeatures, over, under);
+    REQUIRE(over.size() == 3);
+    REQUIRE(under.size() == 3);
+    CHECK(over[0].board == buriedBoard);  // pred=10, V*=2 -> err=+8
+    CHECK(under[0].board == cavityBoard); // pred=10, V*=25 -> err=-15
+  }
+
+  // Finite-difference numerical gradient check across all 12 parameters (intercept, lineClear, 10
+  // V1 features) for both fixLineClearToOne = false and fixLineClearToOne = true, plus
+  // useExpectedTarget=false and extreme Q/score magnitudes (overflow-free softmax).
+  std::vector<size_t> order(ds1.decisions.size());
+  std::iota(order.begin(), order.end(), 0);
+  const size_t checkN = std::min<size_t>(order.size(), 25);
+  std::vector<double> w(tb::V1_NUM_BOARD_FEATURES + tb::LINEAR_PARAM_BOARD_OFFSET, 0.0);
+  w[tb::LINEAR_PARAM_INTERCEPT] = 12.3;
+  w[tb::LINEAR_PARAM_LINE_CLEAR] = 1.25;
+  for (int j = 0; j < tb::V1_NUM_BOARD_FEATURES; ++j) {
+    w[static_cast<size_t>(j + tb::LINEAR_PARAM_BOARD_OFFSET)] =
+        -0.35 + 0.09 * static_cast<double>(j);
+  }
+  for (bool fixLc : {false, true}) {
+    std::vector<double> grad;
+    std::vector<double> dummyGrad;
+    tb::computeLinearJointLossAndGrad(ds1.decisions, order, 0, checkN, w, /*temperature=*/0.8,
+                                      /*valueLossWeight=*/0.05, /*l2Reg=*/1e-3,
+                                      /*useExpectedTarget=*/!fixLc, fixLc,
+                                      tb::extractV1BoardFeatures, grad);
+    constexpr double EPS = 1e-6;
+    for (size_t k = 0; k < w.size(); ++k) {
+      if (fixLc && k == static_cast<size_t>(tb::LINEAR_PARAM_LINE_CLEAR)) {
+        CHECK(grad[k] == 0.0);
+        continue;
+      }
+      std::vector<double> wp = w;
+      std::vector<double> wm = w;
+      wp[k] += EPS;
+      wm[k] -= EPS;
+      const double lp =
+          tb::computeLinearJointLossAndGrad(ds1.decisions, order, 0, checkN, wp, 0.8, 0.05, 1e-3,
+                                            !fixLc, fixLc, tb::extractV1BoardFeatures, dummyGrad);
+      const double lm =
+          tb::computeLinearJointLossAndGrad(ds1.decisions, order, 0, checkN, wm, 0.8, 0.05, 1e-3,
+                                            !fixLc, fixLc, tb::extractV1BoardFeatures, dummyGrad);
+      const double numGrad = (lp - lm) / (2.0 * EPS);
+      const double denom = std::max(1.0, std::abs(numGrad));
+      CHECK(std::abs(grad[k] - numGrad) / denom < 1e-6);
+    }
+  }
+  {
+    // Extreme-magnitude Q/score softmax stability check (must remain finite without NaN/Inf).
+    tb::LabeledDecisionSample extreme{};
+    extreme.board = 0ULL;
+    extreme.moves.push_back({0ULL, 0, 1e4, 1e4});
+    extreme.moves.push_back({buriedBoard, 1, -1e4, -1e4});
+    std::vector<tb::LabeledDecisionSample> exVec = {extreme};
+    std::vector<size_t> exIdx = {0};
+    std::vector<double> exGrad;
+    std::vector<double> bigW = w;
+    bigW[tb::LINEAR_PARAM_LINE_CLEAR] = 1e4;
+    const double exLoss = tb::computeLinearJointLossAndGrad(
+        exVec, exIdx, 0, 1, bigW, 1.0, 0.0, 0.0, false, false, tb::extractV1BoardFeatures, exGrad);
+    CHECK(std::isfinite(exLoss));
+    for (double g : exGrad) {
+      CHECK(std::isfinite(g));
+    }
+  }
+
+  // Lightweight smoke test for trainLinearRegretRanking (finite outputs & fixLineClearToOne).
+  {
+    tb::LinearRankingConfig rCfg{};
+    rCfg.epochs = 3;
+    rCfg.batchSize = 32;
+    rCfg.fixLineClearToOne = true;
+    const std::vector<double> zeroW(tb::V1_NUM_BOARD_FEATURES, 0.0);
+    const tb::LinearRankingResult rRes =
+        tb::trainLinearRegretRanking(ds1.decisions, ds1.decisions, tb::V1_NUM_BOARD_FEATURES, 1.0,
+                                     zeroW, 2.5, rCfg, tb::extractV1BoardFeatures);
+    CHECK(rRes.lineClearWeight == doctest::Approx(1.0));
+    CHECK(std::isfinite(rRes.intercept));
+    CHECK(std::isfinite(rRes.bestValLoss));
+    CHECK(rRes.boardWeights.size() == tb::V1_NUM_BOARD_FEATURES);
+  }
+
+  // 4. defaultV2LinearEval() edge cases: clamping at 0, ply-2 top-out return, top-out avoidance.
+  {
+    tb::LinearBoardEvalV1 negEval{};
+    negEval.intercept = -50.0;
+    CHECK(negEval.evalBoard(0ULL) == 0.0);
+  }
+  const tb::LinearBoardEvalV2 v2 = tb::defaultV2LinearEval();
+  const uint64_t tetrisReady = mustParse("XXXXXXXXX.\n"
+                                         "XXXXXXXXX.\n"
+                                         "XXXXXXXXX.\n"
+                                         "XXXXXXXXX.");
+  CHECK_FALSE(
+      v2.pickBestNextBox2Ply(tetrisReady, tb::parsePieceChar('O'), tb::parsePieceChar('I')).found);
+  CHECK(v2.scoreNextBox2Ply(tetrisReady, 2, tb::parsePieceChar('O')) == doctest::Approx(2.0));
+  const uint64_t narrowO = mustParse("XXXXXXX...\n"
+                                     "XXXXXXX...\n"
+                                     "XXXXXXX...\n"
+                                     "XXXXXXX...");
+  const auto avoidO =
+      v2.pickBestNextBox2Ply(narrowO, tb::parsePieceChar('I'), tb::parsePieceChar('O'));
+  REQUIRE(avoidO.found);
+  tb::TransitionList oAfter;
+  tb::generateTransitions(avoidO.transition.afterBoard, tb::parsePieceChar('O'), oAfter);
+  CHECK_FALSE(oAfter.empty());
+
+  mappedTb.close();
+  std::remove(tmpDistillTb.c_str());
 }
