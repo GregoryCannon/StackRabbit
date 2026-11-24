@@ -341,6 +341,37 @@ inline ChosenTransition pickBestTransition2Ply(uint64_t board, int pieceIdx,
   return best;
 }
 
+// Evaluates placing the current piece into (afterBoard, linesCleared) when nextPiece is known:
+//   w.lineClear * r1 + max_{b'' in Moves(afterBoard, nextPiece)} [w.lineClear * r2 + eval(b'')],
+// returning w.lineClear * r1 + w.deathPenalty if nextPiece has no legal placement on afterBoard.
+inline double scoreNextBoxHeuristicTransition(uint64_t afterBoard, int linesCleared, int nextPiece,
+                                              const EvalWeights &w = EvalWeights{}) {
+  TransitionList tl2;
+  return w.lineClear * static_cast<double>(linesCleared)
+         + detail::bestReplyScore1Ply(afterBoard, nextPiece, w, tl2);
+}
+
+// 2-ply Next-Box heuristic selector: chooses the placement of curPiece maximizing the combined
+// two-piece score with the known nextPiece (breaking exact ties in move-generation order).
+inline ChosenTransition pickBestNextBoxHeuristic(uint64_t board, int curPiece, int nextPiece,
+                                                 const EvalWeights &w = EvalWeights{}) {
+  TransitionList tl1;
+  generateTransitions(board, curPiece, tl1);
+  if (tl1.empty()) {
+    return {};
+  }
+  TransitionList tl2;
+  ChosenTransition best{};
+  for (int i = 0; i < tl1.size(); ++i) {
+    const double s = w.lineClear * static_cast<double>(tl1[i].linesCleared)
+                     + detail::bestReplyScore1Ply(tl1[i].afterBoard, nextPiece, w, tl2);
+    if (!best.found || s > best.score) {
+      best = {tl1[i], s, true};
+    }
+  }
+  return best;
+}
+
 } // namespace tb
 
 #endif // TABLEBASE_HEURISTIC_HPP

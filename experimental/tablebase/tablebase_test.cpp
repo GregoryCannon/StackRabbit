@@ -1325,3 +1325,219 @@ TEST_CASE("Solver evaluation, TB frontier exploration, and iterative expansion m
   mappedR0.close();
   std::remove(tmpR0Tb.c_str());
 }
+
+TEST_CASE("NES RNG transition matrix, stationary distribution, and Next-Box heuristic/hybrid") {
+  // 1. Verify exact NES transition table row sums, exact stationary equation pi * P = pi, and
+  // exact match against the canonical T, J, Z, O, S, L, I NES ROM transition probabilities.
+  uint64_t statSum = 0;
+  for (int i = 0; i < tb::NUM_PIECES; ++i) {
+    int rowSum = 0;
+    for (int j = 0; j < tb::NUM_PIECES; ++j) {
+      rowSum += tb::NES_TRANSITION_NUM[i][j];
+    }
+    CHECK(rowSum == tb::NES_TRANSITION_DENOM);
+    statSum += tb::NES_STATIONARY_NUM[i];
+  }
+  CHECK(statSum == tb::NES_STATIONARY_DENOM);
+
+  for (int next = 0; next < tb::NUM_PIECES; ++next) {
+    uint64_t weighted = 0;
+    for (int prev = 0; prev < tb::NUM_PIECES; ++prev) {
+      weighted +=
+          tb::NES_STATIONARY_NUM[prev] * static_cast<uint64_t>(tb::NES_TRANSITION_NUM[prev][next]);
+    }
+    CHECK(weighted
+          == tb::NES_STATIONARY_NUM[next] * static_cast<uint64_t>(tb::NES_TRANSITION_DENOM));
+  }
+
+  // Spot-check key NES asymmetric pairs: I->S=12, I->I=2, O->O=4, S->S=4, L->T=12, J->T=12,
+  // T->Z=12, Z->J=12.
+  CHECK(tb::NES_TRANSITION_NUM[tb::parsePieceChar('I')][tb::parsePieceChar('S')] == 12);
+  CHECK(tb::NES_TRANSITION_NUM[tb::parsePieceChar('I')][tb::parsePieceChar('I')] == 2);
+  CHECK(tb::NES_TRANSITION_NUM[tb::parsePieceChar('O')][tb::parsePieceChar('O')] == 4);
+  CHECK(tb::NES_TRANSITION_NUM[tb::parsePieceChar('S')][tb::parsePieceChar('S')] == 4);
+  CHECK(tb::NES_TRANSITION_NUM[tb::parsePieceChar('L')][tb::parsePieceChar('T')] == 12);
+  CHECK(tb::NES_TRANSITION_NUM[tb::parsePieceChar('J')][tb::parsePieceChar('T')] == 12);
+  CHECK(tb::NES_TRANSITION_NUM[tb::parsePieceChar('T')][tb::parsePieceChar('Z')] == 12);
+  CHECK(tb::NES_TRANSITION_NUM[tb::parsePieceChar('Z')][tb::parsePieceChar('J')] == 12);
+
+  tb::RngMode parsedMode = tb::RngMode::Uniform;
+  CHECK(tb::parseRngMode("nes", parsedMode));
+  CHECK(parsedMode == tb::RngMode::Nes);
+  CHECK(std::string(tb::rngModeName(parsedMode)) == "nes");
+  CHECK(tb::parseRngMode("uniform", parsedMode));
+  CHECK(parsedMode == tb::RngMode::Uniform);
+  CHECK(std::string(tb::rngModeName(parsedMode)) == "uniform");
+  CHECK_FALSE(tb::parseRngMode("NES", parsedMode));
+  CHECK_FALSE(tb::parseRngMode("", parsedMode));
+  CHECK(tb::openingPieceProb(tb::RngMode::Uniform, 0) == doctest::Approx(1.0 / 7.0));
+  CHECK(tb::pieceTransitionProb(tb::RngMode::Uniform, 0, 0) == doctest::Approx(1.0 / 7.0));
+
+  // Verify Uniform mode delegates to nextPiece() identically across opening & transition draws.
+  {
+    tb::Rng rA(999ULL);
+    tb::Rng rB(999ULL);
+    int pA = rA.nextOpeningPiece(tb::RngMode::Uniform);
+    int pB = rB.nextPiece();
+    CHECK(pA == pB);
+    for (int k = 0; k < 50; ++k) {
+      pA = rA.nextPiece(tb::RngMode::Uniform, pA);
+      pB = rB.nextPiece();
+      CHECK(pA == pB);
+    }
+  }
+
+  // 2. Verify empirical NES RNG stream matches stationary frequencies and low repeat rate (2/64
+  // for I/L/J/T/Z, 4/64 for O/S) over 200,000 draws.
+  tb::Rng nesRng(123456ULL);
+  int piece = nesRng.nextOpeningPiece(tb::RngMode::Nes);
+  uint64_t counts[tb::NUM_PIECES] = {};
+  uint64_t iRepeats = 0;
+  uint64_t iTotal = 0;
+  constexpr uint64_t N_DRAWS = 200000;
+  for (uint64_t k = 0; k < N_DRAWS; ++k) {
+    ++counts[piece];
+    const int next = nesRng.nextPiece(tb::RngMode::Nes, piece);
+    if (piece == tb::parsePieceChar('I')) {
+      ++iTotal;
+      if (next == piece) {
+        ++iRepeats;
+      }
+    }
+    piece = next;
+  }
+  for (int p = 0; p < tb::NUM_PIECES; ++p) {
+    const double emp = static_cast<double>(counts[p]) / static_cast<double>(N_DRAWS);
+    CHECK(std::abs(emp - tb::openingPieceProb(tb::RngMode::Nes, p)) < 0.004);
+  }
+  const double empIRepeat = static_cast<double>(iRepeats) / static_cast<double>(iTotal);
+  const double expectedIRepeat =
+      tb::pieceTransitionProb(tb::RngMode::Nes, tb::parsePieceChar('I'), tb::parsePieceChar('I'));
+  CHECK(std::abs(empIRepeat - expectedIRepeat) < 0.005);
+
+  // 3. Test pickBestNextBoxHeuristic & chooseNextBoxHybridMove:
+  //    (a) Top-out returns found == false.
+  const uint64_t tetrisReady = mustParse("XXXXXXXXX.\n"
+                                         "XXXXXXXXX.\n"
+                                         "XXXXXXXXX.\n"
+                                         "XXXXXXXXX.");
+  CHECK_FALSE(
+      tb::pickBestNextBoxHeuristic(tetrisReady, tb::parsePieceChar('O'), tb::parsePieceChar('I'))
+          .found);
+
+  //    (b) Ply-2 top-out avoidance: on a 3-wide open well, only vertical I in col 7 leaves a
+  //        2-wide column pair (cols 8..9) where nextPiece='O' survives.
+  const uint64_t narrowO = mustParse("XXXXXXX...\n"
+                                     "XXXXXXX...\n"
+                                     "XXXXXXX...\n"
+                                     "XXXXXXX...");
+  const auto avoidDeath =
+      tb::pickBestNextBoxHeuristic(narrowO, tb::parsePieceChar('I'), tb::parsePieceChar('O'));
+  REQUIRE(avoidDeath.found);
+  tb::TransitionList oAfterI;
+  tb::generateTransitions(avoidDeath.transition.afterBoard, tb::parsePieceChar('O'), oAfterI);
+  CHECK_FALSE(oAfterI.empty());
+
+  //    (c) On a board where O clears 2 full rows, knowing nextPiece='I' matches
+  //        scoreNextBoxHeuristicTransition exactly.
+  const uint64_t lowBoard = mustParse("..........\n"
+                                      "..........\n"
+                                      "XXXX..XXXX\n"
+                                      "XXXX..XXXX");
+  const auto nbHeur =
+      tb::pickBestNextBoxHeuristic(lowBoard, tb::parsePieceChar('O'), tb::parsePieceChar('I'));
+  REQUIRE(nbHeur.found);
+  CHECK(nbHeur.score
+        == tb::scoreNextBoxHeuristicTransition(
+            nbHeur.transition.afterBoard, nbHeur.transition.linesCleared, tb::parsePieceChar('I')));
+  CHECK(nbHeur.transition.afterBoard == 0ULL);
+  CHECK(nbHeur.transition.linesCleared == 2);
+
+  //    (d) Hybrid move selector: place a single high-value target leaf b2 in a tiny NNB TB and
+  //        verify chooseNextBoxHybridMove steers curPiece='O' to chosenMid so nextPiece='I' reaches
+  //        b2, handles ply-1 top-out, inner-loop in-TB vs out-of-TB q ties, outer-loop equal-Q
+  //        heuristic tie-breaking, and unloaded-TB fallback cleanly.
+  tb::TransitionList oMoves;
+  tb::generateTransitions(0ULL, tb::parsePieceChar('O'), oMoves);
+  REQUIRE(oMoves.size() == 9);
+  const uint64_t chosenMid = oMoves[7].afterBoard;
+  tb::TransitionList iMovesFromMid;
+  tb::generateTransitions(chosenMid, tb::parsePieceChar('I'), iMovesFromMid);
+  REQUIRE_FALSE(iMovesFromMid.empty());
+  const uint64_t targetLeaf = iMovesFromMid[0].afterBoard;
+
+  const std::string tmpHybridTb = "build/test_nb_hybrid.tb.bin";
+  REQUIRE(tb::writeTablebaseFile(tmpHybridTb, {targetLeaf}, {50.0f}, 0.0));
+  tb::MappedTablebase hybridTb;
+  REQUIRE(hybridTb.open(tmpHybridTb));
+
+  CHECK_FALSE(tb::chooseNextBoxHybridMove(tetrisReady, tb::parsePieceChar('O'),
+                                          tb::parsePieceChar('I'), hybridTb)
+                  .found);
+
+  const auto hyb =
+      tb::chooseNextBoxHybridMove(0ULL, tb::parsePieceChar('O'), tb::parsePieceChar('I'), hybridTb);
+  REQUIRE(hyb.found);
+  CHECK(hyb.transition.afterBoard == chosenMid);
+  CHECK(hyb.afterInTablebase);
+  CHECK_FALSE(hyb.usedFallback);
+  CHECK(hyb.tablebaseQ
+        == doctest::Approx(50.0 + static_cast<double>(iMovesFromMid[0].linesCleared)));
+
+  // Inner-loop tie check: targetLeaf has value 0.0f (same q=0.0 as out-of-TB leaves) at j > 0;
+  // branchBestInTb must still report true for the winning branch.
+  const uint64_t lateLeaf = iMovesFromMid[iMovesFromMid.size() - 1].afterBoard;
+  const std::string tmpTieTb = "build/test_nb_hybrid_tie.tb.bin";
+  REQUIRE(tb::writeTablebaseFile(tmpTieTb, {lateLeaf}, {0.0f}, 0.0));
+  tb::MappedTablebase tieTb;
+  REQUIRE(tieTb.open(tmpTieTb));
+  // With all branches tied at q=0.0, outer-loop heuristic tie-breaking picks the exact same move as
+  // pickBestNextBoxHeuristic; if we instead give two distinct O branches' leaves equal value 25.0f,
+  // outer-loop tie-break selects whichever of those two has higher Next-Box heuristic score.
+  const auto zeroTie =
+      tb::chooseNextBoxHybridMove(0ULL, tb::parsePieceChar('O'), tb::parsePieceChar('I'), tieTb);
+  REQUIRE(zeroTie.found);
+  CHECK_FALSE(zeroTie.usedFallback);
+  CHECK(zeroTie.transition.afterBoard
+        == tb::pickBestNextBoxHeuristic(0ULL, tb::parsePieceChar('O'), tb::parsePieceChar('I'))
+               .transition.afterBoard);
+  tieTb.close();
+
+  // Direct inner-loop in-TB tie check on a branch where j == 0 is out-of-TB (q=0) and last j is
+  // in-TB with value 0.0f on a board with only 1 ply-1 move (vertical I on tetrisReady cleared ->
+  // 0ULL, nextPiece='O' has 9 moves, last O move in TB with 0.0f).
+  tb::TransitionList oOnEmpty;
+  tb::generateTransitions(0ULL, tb::parsePieceChar('O'), oOnEmpty);
+  REQUIRE(oOnEmpty.size() == 9);
+  REQUIRE(
+      tb::writeTablebaseFile(tmpTieTb, {oOnEmpty[oOnEmpty.size() - 1].afterBoard}, {0.0f}, 0.0));
+  REQUIRE(tieTb.open(tmpTieTb));
+  const auto innerTie = tb::chooseNextBoxHybridMove(tetrisReady, tb::parsePieceChar('I'),
+                                                    tb::parsePieceChar('O'), tieTb);
+  REQUIRE(innerTie.found);
+  CHECK(innerTie.afterInTablebase);
+  CHECK(innerTie.tablebaseQ == doctest::Approx(4.0));
+  tieTb.close();
+  std::remove(tmpTieTb.c_str());
+
+  // With unloaded TB, hybrid falls back cleanly to pickBestNextBoxHeuristic with 2-ply r1+max_r2.
+  const tb::MappedTablebase emptyTb;
+  const auto hybFb = tb::chooseNextBoxHybridMove(lowBoard, tb::parsePieceChar('O'),
+                                                 tb::parsePieceChar('I'), emptyTb);
+  REQUIRE(hybFb.found);
+  CHECK(hybFb.usedFallback);
+  CHECK_FALSE(hybFb.afterInTablebase);
+  CHECK(hybFb.transition.afterBoard == nbHeur.transition.afterBoard);
+  CHECK(hybFb.tablebaseQ == doctest::Approx(2.0));
+
+  hybridTb.close();
+  std::remove(tmpHybridTb.c_str());
+
+  // 4. Verify /moves?next=<piece> route validation & hybrid scoring.
+  tb::ServerContext nbCtx;
+  const auto badNext = tb::handleApiRequest("/moves", "board=0&piece=O&next=Q", nbCtx);
+  CHECK(badNext.status == 400);
+  const auto okNext = tb::handleApiRequest("/moves", "board=0&piece=O&next=I", nbCtx);
+  CHECK(okNext.status == 200);
+  CHECK(okNext.body.find("\"nextPieceChar\":\"I\"") != std::string::npos);
+}

@@ -269,7 +269,7 @@ inline HttpRouteResult handleApiRequest(std::string_view path, std::string_view 
 
   if (path == "/moves") {
     for (const auto &kv : params) {
-      if (kv.first != "board" && kv.first != "piece" && kv.first != "ply") {
+      if (kv.first != "board" && kv.first != "piece" && kv.first != "ply" && kv.first != "next") {
         return detail::jsonErrorResponse(400, "Unknown query parameter: " + kv.first);
       }
     }
@@ -286,6 +286,13 @@ inline HttpRouteResult handleApiRequest(std::string_view path, std::string_view 
     int pieceIdx = -1;
     if (!detail::parsePieceParamStrict(pIt->second, pieceIdx)) {
       return detail::jsonErrorResponse(400, "Invalid 'piece' (expected 0..6 or I,O,L,J,T,S,Z)");
+    }
+    int nextPieceIdx = -1;
+    const auto nIt = params.find("next");
+    if (nIt != params.end()) {
+      if (!detail::parsePieceParamStrict(nIt->second, nextPieceIdx)) {
+        return detail::jsonErrorResponse(400, "Invalid 'next' (expected 0..6 or I,O,L,J,T,S,Z)");
+      }
     }
     int ply = 1;
     if (!detail::parsePlyParamStrict(params, ply)) {
@@ -307,6 +314,12 @@ inline HttpRouteResult handleApiRequest(std::string_view path, std::string_view 
     json += ",\"pieceChar\":\"";
     json.push_back(PIECE_CHARS[pieceIdx]);
     json += "\"";
+    if (nextPieceIdx >= 0) {
+      json += ",\"nextPiece\":" + std::to_string(nextPieceIdx);
+      json += ",\"nextPieceChar\":\"";
+      json.push_back(PIECE_CHARS[nextPieceIdx]);
+      json += "\"";
+    }
     json += ",\"heuristicPly\":" + std::to_string(ply);
     json += ",\"tablebaseLoaded\":";
     json += (ctx.tablebase.isLoaded() ? "true" : "false");
@@ -316,17 +329,43 @@ inline HttpRouteResult handleApiRequest(std::string_view path, std::string_view 
     json += (boardInTb ? detail::fmtDouble(boardTbVal) : "null");
     json += ",\"moves\":[";
 
+    TransitionList tl2;
     for (int i = 0; i < placements.size(); ++i) {
       if (i > 0)
         json.push_back(',');
       const Placement &m = placements[i];
-      const double heurQ =
-          detail::scoreTransitionByPly(m.afterBoard, m.linesCleared, ply, ctx.weights);
+      double heurQ = 0.0;
       float afterVal = 0.0f;
-      const bool afterInTb = ctx.tablebase.lookup(m.afterBoard, afterVal);
-      // Matches Value Iteration's closed-world boundary rule: V(b') = 0.0 when b' is outside S.
-      const double tbQ =
-          static_cast<double>(m.linesCleared) + (afterInTb ? static_cast<double>(afterVal) : 0.0);
+      bool afterInTb = false;
+      double tbQ = 0.0;
+
+      if (nextPieceIdx >= 0) {
+        heurQ = scoreNextBoxHeuristicTransition(m.afterBoard, m.linesCleared, nextPieceIdx,
+                                                ctx.weights);
+        const double r1 = static_cast<double>(m.linesCleared);
+        tbQ = r1;
+        if (ctx.tablebase.isLoaded()) {
+          generateTransitions(m.afterBoard, nextPieceIdx, tl2);
+          for (int j = 0; j < tl2.size(); ++j) {
+            float leafVal = 0.0f;
+            const bool leafInTb = ctx.tablebase.lookup(tl2[j].afterBoard, leafVal);
+            const double q = r1
+                             + static_cast<double>(tl2[j].linesCleared)
+                             + (leafInTb ? static_cast<double>(leafVal) : 0.0);
+            if (j == 0 || q > tbQ || (q == tbQ && leafInTb && !afterInTb)) {
+              tbQ = q;
+              afterInTb = leafInTb;
+              afterVal = leafVal;
+            }
+          }
+        }
+      } else {
+        heurQ = detail::scoreTransitionByPly(m.afterBoard, m.linesCleared, ply, ctx.weights);
+        afterInTb = ctx.tablebase.lookup(m.afterBoard, afterVal);
+        // Matches Value Iteration's closed-world boundary rule: V(b') = 0.0 when b' is outside S.
+        tbQ =
+            static_cast<double>(m.linesCleared) + (afterInTb ? static_cast<double>(afterVal) : 0.0);
+      }
 
       json += "{\"index\":" + std::to_string(i);
       json += ",\"rot\":" + std::to_string(m.rot);

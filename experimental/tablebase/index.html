@@ -473,7 +473,8 @@
 
         <div style="margin-top:10px;">
           <div class="row-controls" style="justify-content:space-between;">
-            <span class="muted" style="font-weight:600;">Current Piece (NNB):</span>
+            <span class="muted" style="font-weight:600;">Current Piece: <span id="nextPieceBadge"
+                class="badge accent" style="display:none;margin-left:6px;">Next: ?</span></span>
             <span id="tuckStateBadge" class="badge neutral">Entry Zone (free x/rot)</span>
           </div>
           <div id="piecePills" class="piece-pills"></div>
@@ -493,6 +494,11 @@
             title="Generate a fresh seed from the system clock on each New Game">
             <input id="randomSeedCheckbox" type="checkbox" checked />
             <span>Clock</span>
+          </label>
+          <label class="muted" style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;"
+            title="Use exact 7x7 NES Tetris piece RNG instead of uniform 1/7">
+            <input id="nesRngCheckbox" type="checkbox" />
+            <span>NES RNG</span>
           </label>
           <label class="muted">Hex:</label>
           <input id="hexInput" type="text" value="0000000000" maxlength="10"
@@ -520,9 +526,11 @@
         <div class="row-controls" style="margin-bottom:10px;">
           <label class="muted">AI Policy:</label>
           <select id="aiPolicySelect">
-            <option value="tb">Tablebase (fallback 2-ply Heuristic)</option>
-            <option value="heur2">Heuristic (2-ply Expectimax)</option>
-            <option value="heur1">Heuristic (1-ply Fast)</option>
+            <option value="hybrid">Hybrid Next-Box (TB + 2-ply)</option>
+            <option value="nbHeur">Next-Box Heuristic (2-ply)</option>
+            <option value="tb">NNB Tablebase (fallback 2-ply)</option>
+            <option value="heur2">NNB Heuristic (2-ply Expectimax)</option>
+            <option value="heur1">NNB Heuristic (1-ply Fast)</option>
           </select>
           <button id="btnStepAi" class="primary">Step AI (1)</button>
           <button id="btnAutoPlay">Autoplay</button>
@@ -624,6 +632,18 @@
       { id: "Z", numRots: 2, rows: [[0, 384, 192, 0], [64, 192, 128, 0]] }
     ];
 
+    const NES_TRANSITION_NUM = [
+      [2, 10, 10, 10, 10, 12, 10],
+      [10, 4, 10, 10, 10, 10, 10],
+      [10, 10, 2, 10, 12, 10, 10],
+      [10, 10, 10, 2, 12, 10, 10],
+      [10, 10, 10, 10, 2, 10, 12],
+      [10, 10, 10, 10, 10, 4, 10],
+      [10, 10, 10, 12, 10, 10, 2]
+    ];
+    const NES_STATIONARY_DENOM = 335916n;
+    const NES_STATIONARY_NUM = [46655n, 47988n, 46655n, 47989n, 49284n, 49321n, 48024n];
+
     // Deterministic SplitMix64 + Xoshiro256** in BigInt matching tb::Rng in core.hpp.
     class JsRng {
       constructor(seedBigInt) {
@@ -654,12 +674,34 @@
         this.s[3] = this.rotl(this.s[3], 45n);
         return result;
       }
-      nextPiece() {
-        const limit = this.MASK64 - (this.MASK64 % 7n);
+      nextBounded(boundBig) {
+        const limit = this.MASK64 - (this.MASK64 % boundBig);
         while (true) {
           const r = this.nextU64();
-          if (r < limit) return Number(r % 7n);
+          if (r < limit) return r % boundBig;
         }
+      }
+      nextPiece() {
+        return Number(this.nextBounded(7n));
+      }
+      nextOpeningPiece(useNes) {
+        if (!useNes) return this.nextPiece();
+        let roll = this.nextBounded(NES_STATIONARY_DENOM);
+        for (let i = 0; i < 7; i++) {
+          if (roll < NES_STATIONARY_NUM[i]) return i;
+          roll -= NES_STATIONARY_NUM[i];
+        }
+        return 6;
+      }
+      nextPieceAfter(useNes, prevPiece) {
+        if (!useNes) return this.nextPiece();
+        let roll = Number(this.nextU64() & 63n);
+        const row = NES_TRANSITION_NUM[prevPiece];
+        for (let i = 0; i < 7; i++) {
+          if (roll < row[i]) return i;
+          roll -= row[i];
+        }
+        return 6;
       }
       cloneState() { return [...this.s]; }
       restoreState(st) { this.s = [...st]; }
@@ -673,6 +715,7 @@
     let rng = new JsRng(42n);
     let boardBig = 0n;
     let currentPiece = 0;
+    let nextPiece = 0;
     let linesClearedTotal = 0;
     let piecesPlacedTotal = 0;
     let historyStack = [];
@@ -905,6 +948,15 @@
       }
     }
 
+    function isNextBoxPolicy() {
+      const p = document.getElementById("aiPolicySelect").value;
+      return p === "hybrid" || p === "nbHeur";
+    }
+
+    function useNesRng() {
+      return document.getElementById("nesRngCheckbox").checked;
+    }
+
     function selectedHeuristicPly() {
       return document.getElementById("aiPolicySelect").value === "heur1" ? 1 : 2;
     }
@@ -916,14 +968,20 @@
       movesReady = false;
       currentMoves = [];
       hoveredMove = null;
+      const nbMode = isNextBoxPolicy();
+      const nextBadge = document.getElementById("nextPieceBadge");
+      nextBadge.style.display = nbMode ? "inline-block" : "none";
+      nextBadge.textContent = `Next: ${PIECE_CHARS[nextPiece]}`;
       renderPiecePills();
       renderBoard();
 
       const ply = selectedHeuristicPly();
-      document.getElementById("heurColHeader").textContent = `Heuristic (${ply}-ply)`;
+      document.getElementById("heurColHeader").textContent =
+        nbMode ? `Heuristic (Next ${PIECE_CHARS[nextPiece]})` : `Heuristic (${ply}-ply)`;
+      const nextParam = nbMode ? `&next=${nextPiece}` : "";
       try {
         const [movesRes, infoRes] = await Promise.all([
-          fetch(`${apiBase()}/moves?board=${hex}&piece=${currentPiece}&ply=${ply}`),
+          fetch(`${apiBase()}/moves?board=${hex}&piece=${currentPiece}&ply=${ply}${nextParam}`),
           fetch(`${apiBase()}/state-info?board=${hex}&ply=${ply}`)
         ]);
         const movesData = await movesRes.json();
@@ -1122,6 +1180,7 @@
       historyStack.push({
         boardBig,
         currentPiece,
+        nextPiece,
         linesClearedTotal,
         piecesPlacedTotal,
         rngState: rng.cloneState()
@@ -1131,7 +1190,8 @@
       boardBig = BigInt("0x" + move.afterBoardHex);
       linesClearedTotal += move.linesCleared;
       piecesPlacedTotal += 1;
-      currentPiece = rng.nextPiece();
+      currentPiece = nextPiece;
+      nextPiece = rng.nextPieceAfter(useNesRng(), currentPiece);
       movesReady = false;
       currentMoves = [];
       hoveredMove = null;
@@ -1245,7 +1305,8 @@
       if (!movesReady || currentMoves.length === 0) return false;
       const { bestHeur, bestTb } = chooseBestMoves(currentMoves);
       const policy = document.getElementById("aiPolicySelect").value;
-      const chosen = (policy === "tb" && tbLoaded) ? bestTb : bestHeur;
+      const useTb = (policy === "tb" || policy === "hybrid") && tbLoaded;
+      const chosen = useTb ? bestTb : bestHeur;
       if (!chosen) return false;
       await commitMove(chosen);
       return movesReady && currentMoves.length > 0;
@@ -1341,7 +1402,8 @@
       piecesPlacedTotal = 0;
       historyStack = [];
       document.getElementById("btnUndo").disabled = true;
-      currentPiece = rng.nextPiece();
+      currentPiece = rng.nextOpeningPiece(useNesRng());
+      nextPiece = rng.nextPieceAfter(useNesRng(), currentPiece);
       resetCursor();
       refreshPosition();
     });
@@ -1352,6 +1414,7 @@
       const prev = historyStack.pop();
       boardBig = prev.boardBig;
       currentPiece = prev.currentPiece;
+      nextPiece = prev.nextPiece;
       linesClearedTotal = prev.linesClearedTotal;
       piecesPlacedTotal = prev.piecesPlacedTotal;
       rng.restoreState(prev.rngState);
@@ -1422,7 +1485,8 @@
       document.getElementById("seedInput").value = bootSeed.toString();
       rng = new JsRng(bootSeed);
     }
-    currentPiece = rng.nextPiece();
+    currentPiece = rng.nextOpeningPiece(useNesRng());
+    nextPiece = rng.nextPieceAfter(useNesRng(), currentPiece);
     resetCursor();
     (async () => {
       await pingServer();

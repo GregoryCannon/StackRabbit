@@ -18,6 +18,81 @@ inline constexpr uint64_t VALID_BOARD_MASK = (1ULL << BOARD_CELLS) - 1ULL;
 inline constexpr int NUM_PIECES = 7;
 inline constexpr char PIECE_CHARS[NUM_PIECES + 1] = "IOLJTSZ";
 
+enum class RngMode : uint32_t {
+  Uniform = 0,
+  Nes = 1,
+};
+
+// Exact NES Tetris piece transition numerators out of 64, indexed by [prevPiece][nextPiece] in
+// PIECE_CHARS (I, O, L, J, T, S, Z) order (remapped from src/backend/piece_rng.cpp).
+inline constexpr int NES_TRANSITION_DENOM = 64;
+static_assert((NES_TRANSITION_DENOM & (NES_TRANSITION_DENOM - 1)) == 0,
+              "NES_TRANSITION_DENOM must be a power of two");
+inline constexpr int NES_TRANSITION_NUM[NUM_PIECES][NUM_PIECES] = {
+    {2, 10, 10, 10, 10, 12, 10}, // prev = I
+    {10, 4, 10, 10, 10, 10, 10}, // prev = O
+    {10, 10, 2, 10, 12, 10, 10}, // prev = L
+    {10, 10, 10, 2, 12, 10, 10}, // prev = J
+    {10, 10, 10, 10, 2, 10, 12}, // prev = T
+    {10, 10, 10, 10, 10, 4, 10}, // prev = S
+    {10, 10, 10, 12, 10, 10, 2}, // prev = Z
+};
+
+// Exact stationary distribution of NES_TRANSITION_NUM (numerators over 335916) in I, O, L, J, T, S,
+// Z order: pi * P = pi.
+inline constexpr uint64_t NES_STATIONARY_DENOM = 335916ULL;
+inline constexpr uint64_t NES_STATIONARY_NUM[NUM_PIECES] = {
+    46655ULL, // I = 5 / 36        (13.8889%)
+    47988ULL, // O = 1 / 7         (14.2857%)
+    46655ULL, // L = 5 / 36        (13.8889%)
+    47989ULL, // J = 47989/335916  (14.2860%)
+    49284ULL, // T = 1369 / 9331   (14.6715%)
+    49321ULL, // S = 37 / 252      (14.6825%)
+    48024ULL, // Z = 1334 / 9331   (14.2964%)
+};
+
+inline constexpr double NES_STATIONARY_PROB[NUM_PIECES] = {
+    static_cast<double>(NES_STATIONARY_NUM[0]) / static_cast<double>(NES_STATIONARY_DENOM),
+    static_cast<double>(NES_STATIONARY_NUM[1]) / static_cast<double>(NES_STATIONARY_DENOM),
+    static_cast<double>(NES_STATIONARY_NUM[2]) / static_cast<double>(NES_STATIONARY_DENOM),
+    static_cast<double>(NES_STATIONARY_NUM[3]) / static_cast<double>(NES_STATIONARY_DENOM),
+    static_cast<double>(NES_STATIONARY_NUM[4]) / static_cast<double>(NES_STATIONARY_DENOM),
+    static_cast<double>(NES_STATIONARY_NUM[5]) / static_cast<double>(NES_STATIONARY_DENOM),
+    static_cast<double>(NES_STATIONARY_NUM[6]) / static_cast<double>(NES_STATIONARY_DENOM),
+};
+
+constexpr double pieceTransitionProb(RngMode mode, int prevPiece, int nextPiece) noexcept {
+  assert(prevPiece >= 0 && prevPiece < NUM_PIECES);
+  assert(nextPiece >= 0 && nextPiece < NUM_PIECES);
+  if (mode == RngMode::Nes) {
+    return static_cast<double>(NES_TRANSITION_NUM[prevPiece][nextPiece])
+           / static_cast<double>(NES_TRANSITION_DENOM);
+  }
+  return 1.0 / static_cast<double>(NUM_PIECES);
+}
+
+constexpr double openingPieceProb(RngMode mode, int piece) noexcept {
+  assert(piece >= 0 && piece < NUM_PIECES);
+  return (mode == RngMode::Nes) ? NES_STATIONARY_PROB[piece]
+                                : (1.0 / static_cast<double>(NUM_PIECES));
+}
+
+constexpr const char *rngModeName(RngMode mode) noexcept {
+  return (mode == RngMode::Nes) ? "nes" : "uniform";
+}
+
+constexpr bool parseRngMode(std::string_view s, RngMode &out) noexcept {
+  if (s == "uniform") {
+    out = RngMode::Uniform;
+    return true;
+  }
+  if (s == "nes") {
+    out = RngMode::Nes;
+    return true;
+  }
+  return false;
+}
+
 // Coordinate conventions used during move generation:
 //   - Board coordinates use (rowFromBottom in [0..3], col in [0..9]), where rowFromBottom = 0 is
 //     the bottom floor and col = 0 is the left wall.
@@ -567,14 +642,39 @@ public:
   }
 
   // Unbiased uniform piece draw in [0, 6].
-  constexpr int nextPiece() {
-    constexpr uint64_t limit = UINT64_MAX - (UINT64_MAX % static_cast<uint64_t>(NUM_PIECES));
-    while (true) {
-      const uint64_t r = nextU64();
-      if (r < limit) {
-        return static_cast<int>(r % static_cast<uint64_t>(NUM_PIECES));
-      }
+  constexpr int nextPiece() { return static_cast<int>(nextBounded<NUM_PIECES>()); }
+
+  // Exact draw for the opening piece c_0 under the requested RngMode (Uniform 1/7 or exact NES
+  // stationary distribution NES_STATIONARY_NUM / NES_STATIONARY_DENOM).
+  constexpr int nextOpeningPiece(RngMode mode) {
+    if (mode != RngMode::Nes) {
+      return nextPiece();
     }
+    uint64_t roll = nextBounded<NES_STATIONARY_DENOM>();
+    for (int i = 0; i < NUM_PIECES; ++i) {
+      if (roll < NES_STATIONARY_NUM[i]) {
+        return i;
+      }
+      roll -= NES_STATIONARY_NUM[i];
+    }
+    return NUM_PIECES - 1;
+  }
+
+  // Exact conditional draw for the next piece given prevPiece in [0, 6].
+  constexpr int nextPiece(RngMode mode, int prevPiece) {
+    assert(prevPiece >= 0 && prevPiece < NUM_PIECES);
+    if (mode != RngMode::Nes) {
+      return nextPiece();
+    }
+    int roll = static_cast<int>(nextU64() & static_cast<uint64_t>(NES_TRANSITION_DENOM - 1));
+    for (int i = 0; i < NUM_PIECES; ++i) {
+      const int num = NES_TRANSITION_NUM[prevPiece][i];
+      if (roll < num) {
+        return i;
+      }
+      roll -= num;
+    }
+    return NUM_PIECES - 1;
   }
 
   // Uniform double in [0.0, 1.0).
@@ -582,6 +682,17 @@ public:
 
 private:
   uint64_t s_[4];
+
+  template <uint64_t Bound> constexpr uint64_t nextBounded() {
+    static_assert(Bound > 0, "Bound must be positive");
+    constexpr uint64_t limit = UINT64_MAX - (UINT64_MAX % Bound);
+    while (true) {
+      const uint64_t r = nextU64();
+      if (r < limit) {
+        return r % Bound;
+      }
+    }
+  }
 
   static constexpr uint64_t rotl(uint64_t x, int k) { return (x << k) | (x >> (64 - k)); }
 };

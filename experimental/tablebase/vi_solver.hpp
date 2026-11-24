@@ -109,6 +109,33 @@ inline std::pair<double, double> computeMeanAndStdErr(const std::vector<int> &sa
   return {mean, std::sqrt(varSum / (n * (n - 1.0)))};
 }
 
+struct DistributionStats {
+  double mean = 0.0;
+  double stdErr = 0.0;
+  double median = 0.0;
+  int p90 = 0;
+  int maxVal = 0;
+};
+
+inline DistributionStats computeDistributionStats(std::vector<int> samples) {
+  DistributionStats d{};
+  if (samples.empty()) {
+    return d;
+  }
+  const auto meanSe = computeMeanAndStdErr(samples);
+  d.mean = meanSe.first;
+  d.stdErr = meanSe.second;
+  std::sort(samples.begin(), samples.end());
+  const size_t n = samples.size();
+  d.median =
+      (n % 2 == 1)
+          ? static_cast<double>(samples[n / 2])
+          : 0.5 * (static_cast<double>(samples[n / 2 - 1]) + static_cast<double>(samples[n / 2]));
+  d.p90 = samples[(n - 1) * 9 / 10];
+  d.maxVal = samples.back();
+  return d;
+}
+
 template <typename WorkerFn>
 inline void runWorkerPool(int numThreads, size_t workCount, size_t minParallelWork,
                           WorkerFn &&worker) {
@@ -618,6 +645,96 @@ inline TablebaseMoveChoice chooseTablebaseMove(uint64_t board, int pieceIdx,
   return {fb.transition, static_cast<double>(fb.transition.linesCleared), false, true, true};
 }
 
+// Hybrid Next-Box move selector using a No-Next-Box tablebase (SRTBV001): searches all legal
+// (curPiece, nextPiece) pairs and maximizes r1 + r2 + V_nnb(b2), where out-of-TB b2 leaves get
+// V = 0.0 and nextPiece top-outs contribute r1 + 0.0.
+// Note: TablebaseMoveChoice::afterInTablebase reports whether the winning 2-ply leaf b2 landed in
+// nnbTb (not the 1-ply transition.afterBoard). If no 2-ply leaf lands in the tablebase (or nnbTb
+// is unloaded), falls back to pickBestNextBoxHeuristic with tablebaseQ = r1 + max_r2. Exact Q ties
+// break lazily via the Next-Box heuristic.
+inline TablebaseMoveChoice chooseNextBoxHybridMove(uint64_t board, int curPiece, int nextPiece,
+                                                   const MappedTablebase &nnbTb,
+                                                   const EvalWeights &w = EvalWeights{}) {
+  TransitionList tl1;
+  generateTransitions(board, curPiece, tl1);
+  if (tl1.empty()) {
+    return {};
+  }
+
+  TransitionList tl2;
+  const auto makeFallbackChoice = [&]() -> TablebaseMoveChoice {
+    const ChosenTransition fb = pickBestNextBoxHeuristic(board, curPiece, nextPiece, w);
+    generateTransitions(fb.transition.afterBoard, nextPiece, tl2);
+    int maxR2 = 0;
+    for (int j = 0; j < tl2.size(); ++j) {
+      if (tl2[j].linesCleared > maxR2) {
+        maxR2 = tl2[j].linesCleared;
+      }
+    }
+    return {fb.transition, static_cast<double>(fb.transition.linesCleared + maxR2), false, true,
+            true};
+  };
+
+  if (!nnbTb.isLoaded() || nnbTb.size() == 0) {
+    return makeFallbackChoice();
+  }
+
+  bool anyLeafInTb = false;
+  int bestIdx = 0;
+  double bestQ = 0.0;
+  bool bestLeafInTb = false;
+  bool hasBestHeur = false;
+  double bestTieHeur = 0.0;
+
+  for (int i = 0; i < tl1.size(); ++i) {
+    const Transition &t1 = tl1[i];
+    const double r1 = static_cast<double>(t1.linesCleared);
+    generateTransitions(t1.afterBoard, nextPiece, tl2);
+
+    double branchQ = r1;
+    bool branchBestInTb = false;
+    if (!tl2.empty()) {
+      for (int j = 0; j < tl2.size(); ++j) {
+        float leafVal = 0.0f;
+        const bool inTb = nnbTb.lookup(tl2[j].afterBoard, leafVal);
+        anyLeafInTb = anyLeafInTb || inTb;
+        const double q = r1
+                         + static_cast<double>(tl2[j].linesCleared)
+                         + (inTb ? static_cast<double>(leafVal) : 0.0);
+        if (j == 0 || q > branchQ || (q == branchQ && inTb && !branchBestInTb)) {
+          branchQ = q;
+          branchBestInTb = inTb;
+        }
+      }
+    }
+
+    if (i == 0 || branchQ > bestQ) {
+      bestQ = branchQ;
+      bestIdx = i;
+      bestLeafInTb = branchBestInTb;
+      hasBestHeur = false;
+    } else if (branchQ == bestQ) {
+      if (!hasBestHeur) {
+        bestTieHeur = scoreNextBoxHeuristicTransition(tl1[bestIdx].afterBoard,
+                                                      tl1[bestIdx].linesCleared, nextPiece, w);
+        hasBestHeur = true;
+      }
+      const double candHeur =
+          scoreNextBoxHeuristicTransition(t1.afterBoard, t1.linesCleared, nextPiece, w);
+      if (candHeur > bestTieHeur) {
+        bestIdx = i;
+        bestLeafInTb = branchBestInTb;
+        bestTieHeur = candHeur;
+      }
+    }
+  }
+
+  if (anyLeafInTb) {
+    return {tl1[bestIdx], bestQ, bestLeafInTb, false, true};
+  }
+  return makeFallbackChoice();
+}
+
 struct TablebaseEvalStats {
   int games = 0;
   double meanLines = 0.0;
@@ -726,18 +843,12 @@ inline TablebaseEvalStats evaluateTablebasePolicy(const MappedTablebase &mappedT
     stats.byHoles.accumulate(threadHoles[static_cast<size_t>(t)]);
   }
 
-  const auto meanSe = detail::computeMeanAndStdErr(gameLines);
-  stats.meanLines = meanSe.first;
-  stats.stdErrLines = meanSe.second;
-
-  std::sort(gameLines.begin(), gameLines.end());
-  const size_t n = gameLines.size();
-  stats.medianLines = (n % 2 == 1) ? static_cast<double>(gameLines[n / 2])
-                                   : 0.5
-                                         * (static_cast<double>(gameLines[n / 2 - 1])
-                                            + static_cast<double>(gameLines[n / 2]));
-  stats.p90Lines = gameLines[(n - 1) * 9 / 10];
-  stats.maxLines = gameLines.back();
+  const detail::DistributionStats dist = detail::computeDistributionStats(std::move(gameLines));
+  stats.meanLines = dist.mean;
+  stats.stdErrLines = dist.stdErr;
+  stats.medianLines = dist.median;
+  stats.p90Lines = dist.p90;
+  stats.maxLines = dist.maxVal;
 
   const uint64_t totMoves = stats.byHoles.allTotal();
   if (totMoves > 0) {
