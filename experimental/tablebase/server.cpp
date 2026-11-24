@@ -300,13 +300,29 @@ int main(int argc, char **argv) {
   if (argc >= 3) {
     ctx.configuredTbPath = argv[2];
     std::string err;
-    if (!ctx.tablebase.open(ctx.configuredTbPath, &err)) {
+    if (!ctx.openTablebase(ctx.configuredTbPath, &err)) {
       std::fprintf(stderr, "tablebase_server: %s\n", err.c_str());
       return 1;
     }
-    std::printf("tablebase_server: loaded %llu boards from %s (V(empty)=%.4f, residual=%.2e)\n",
-                static_cast<unsigned long long>(ctx.tablebase.size()), ctx.configuredTbPath.c_str(),
-                ctx.tablebase.emptyBoardValue(), ctx.tablebase.bellmanResidual());
+    const double ev = ctx.activeEmptyBoardValue();
+    char evBuf[32];
+    if (ev >= 0.0) {
+      std::snprintf(evBuf, sizeof(evBuf), "%.4f", ev);
+    } else {
+      std::snprintf(evBuf, sizeof(evBuf), "N/A");
+    }
+    if (ctx.activeFormat() == tb::TablebaseFormat::NextBoxV2) {
+      std::printf("tablebase_server: loaded %llu boards (SRTBV002 Next-Box, rng=%s) from %s "
+                  "(E[V(0)]=%s, residual=%.2e)\n",
+                  static_cast<unsigned long long>(ctx.nextBoxTablebase.size()),
+                  tb::rngModeName(ctx.nextBoxTablebase.rngMode()), ctx.configuredTbPath.c_str(),
+                  evBuf, ctx.nextBoxTablebase.bellmanResidual());
+    } else {
+      std::printf("tablebase_server: loaded %llu boards (SRTBV001 NNB) from %s (V(empty)=%s, "
+                  "residual=%.2e)\n",
+                  static_cast<unsigned long long>(ctx.tablebase.size()),
+                  ctx.configuredTbPath.c_str(), evBuf, ctx.tablebase.bellmanResidual());
+    }
   }
 
   const SocketFd listenFd = ::socket(AF_INET, SOCK_STREAM, 0);

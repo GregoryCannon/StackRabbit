@@ -6,10 +6,12 @@
 #include "tablebase_io.hpp"
 
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <map>
 #include <string>
 #include <string_view>
+#include <utility>
 
 namespace tb {
 
@@ -17,6 +19,105 @@ struct HttpRouteResult {
   int status = 200;
   std::string contentType = "application/json; charset=utf-8";
   std::string body;
+};
+
+struct ServerContext {
+  MappedTablebase tablebase;
+  MappedNextBoxTablebase nextBoxTablebase;
+  std::string configuredTbPath;
+  EvalWeights weights{};
+
+  TablebaseFormat activeFormat() const noexcept {
+    if (nextBoxTablebase.isLoaded()) {
+      return TablebaseFormat::NextBoxV2;
+    }
+    if (tablebase.isLoaded()) {
+      return TablebaseFormat::NnbV1;
+    }
+    return TablebaseFormat::Unknown;
+  }
+
+  bool isAnyTablebaseLoaded() const noexcept { return activeFormat() != TablebaseFormat::Unknown; }
+
+  const char *activeRngModeName() const noexcept {
+    const TablebaseFormat fmt = activeFormat();
+    if (fmt == TablebaseFormat::NextBoxV2) {
+      return rngModeName(nextBoxTablebase.rngMode());
+    }
+    if (fmt == TablebaseFormat::NnbV1) {
+      return "uniform";
+    }
+    return nullptr;
+  }
+
+  uint64_t activeBoardCount() const noexcept {
+    const TablebaseFormat fmt = activeFormat();
+    if (fmt == TablebaseFormat::NextBoxV2) {
+      return nextBoxTablebase.size();
+    }
+    if (fmt == TablebaseFormat::NnbV1) {
+      return tablebase.size();
+    }
+    return 0;
+  }
+
+  double activeEmptyBoardValue() const noexcept {
+    const TablebaseFormat fmt = activeFormat();
+    if (fmt == TablebaseFormat::NextBoxV2) {
+      return nextBoxTablebase.emptyBoardValue();
+    }
+    if (fmt == TablebaseFormat::NnbV1) {
+      return tablebase.emptyBoardValue();
+    }
+    return MISSING_BOARD_VALUE;
+  }
+
+  double activeBellmanResidual() const noexcept {
+    const TablebaseFormat fmt = activeFormat();
+    if (fmt == TablebaseFormat::NextBoxV2) {
+      return nextBoxTablebase.bellmanResidual();
+    }
+    if (fmt == TablebaseFormat::NnbV1) {
+      return tablebase.bellmanResidual();
+    }
+    return 0.0;
+  }
+
+  // Opens either an SRTBV001 (NNB) or SRTBV002 (Next-Box) tablebase file atomically so any open
+  // failure leaves the previously loaded tablebase intact.
+  bool openTablebase(const std::string &path, std::string *errOut = nullptr) {
+    TablebaseFormat fmt = TablebaseFormat::Unknown;
+    if (!detectTablebaseFormat(path, fmt, errOut)) {
+      return false;
+    }
+    if (fmt == TablebaseFormat::NnbV1) {
+      MappedTablebase nextNnb;
+      if (!nextNnb.open(path, errOut)) {
+        return false;
+      }
+      nextBoxTablebase.close();
+      tablebase = std::move(nextNnb);
+      return true;
+    }
+    if (fmt == TablebaseFormat::NextBoxV2) {
+      MappedNextBoxTablebase nextNb;
+      if (!nextNb.open(path, errOut)) {
+        return false;
+      }
+      tablebase.close();
+      nextBoxTablebase = std::move(nextNb);
+      return true;
+    }
+    if (errOut != nullptr) {
+      *errOut = "Unrecognized tablebase format";
+    }
+    return false;
+  }
+
+  void closeAll() noexcept {
+    tablebase.close();
+    nextBoxTablebase.close();
+  }
 };
 
 namespace detail {
@@ -219,13 +320,484 @@ inline double scoreTransitionByPly(uint64_t afterBoard, int linesCleared, int pl
                     : scoreTransition1Ply(afterBoard, linesCleared, w);
 }
 
-} // namespace detail
+inline double scoreMoveHeuristic(uint64_t afterBoard, int linesCleared, int nextPieceIdx, int ply,
+                                 const EvalWeights &w) {
+  return (nextPieceIdx >= 0)
+             ? scoreNextBoxHeuristicTransition(afterBoard, linesCleared, nextPieceIdx, w)
+             : scoreTransitionByPly(afterBoard, linesCleared, ply, w);
+}
 
-struct ServerContext {
-  MappedTablebase tablebase;
-  std::string configuredTbPath;
-  EvalWeights weights{};
+inline const char *tablebaseFormatName(TablebaseFormat fmt) noexcept {
+  switch (fmt) {
+  case TablebaseFormat::NnbV1:
+    return "nnb";
+  case TablebaseFormat::NextBoxV2:
+    return "nextbox";
+  case TablebaseFormat::Unknown:
+  default:
+    return "none";
+  }
+}
+
+inline void appendJsonNullableStr(std::string &json, const char *s) {
+  if (s == nullptr) {
+    json += "null";
+  } else {
+    json.push_back('"');
+    json += s;
+    json.push_back('"');
+  }
+}
+
+inline void appendTablebaseStatusFields(std::string &json, const ServerContext &ctx,
+                                        bool includeRngMode) {
+  const TablebaseFormat fmt = ctx.activeFormat();
+  json += ",\"tablebaseLoaded\":";
+  json += (fmt != TablebaseFormat::Unknown ? "true" : "false");
+  json += ",\"tablebaseFormat\":\"";
+  json += tablebaseFormatName(fmt);
+  json.push_back('"');
+  if (includeRngMode) {
+    json += ",\"rngMode\":";
+    appendJsonNullableStr(json, ctx.activeRngModeName());
+  }
+}
+
+inline void appendOptionalNextFields(std::string &json, int nextPieceIdx) {
+  if (nextPieceIdx >= 0) {
+    json += ",\"nextPiece\":" + std::to_string(nextPieceIdx);
+    json += ",\"nextPieceChar\":\"";
+    json.push_back(PIECE_CHARS[nextPieceIdx]);
+    json.push_back('"');
+  }
+}
+
+struct ParsedBoardQuery {
+  uint64_t board = 0;
+  int pieceIdx = -1;
+  int nextPieceIdx = -1;
+  int ply = 1;
 };
+
+inline bool parseBoardQueryParams(const std::map<std::string, std::string> &params,
+                                  bool allowPiece, bool requireNext, ParsedBoardQuery &out,
+                                  std::string &errOut) {
+  for (const auto &kv : params) {
+    const bool valid = kv.first == "board"
+                       || kv.first == "ply"
+                       || kv.first == "next"
+                       || (allowPiece && kv.first == "piece");
+    if (!valid) {
+      errOut = "Unknown query parameter: " + kv.first;
+      return false;
+    }
+  }
+  const auto bIt = params.find("board");
+  const auto pIt = params.find("piece");
+  if (bIt == params.end() || (allowPiece && pIt == params.end())) {
+    errOut = allowPiece ? "Missing required 'board' and/or 'piece' parameter"
+                        : "Missing required 'board' parameter";
+    return false;
+  }
+  if (!parseBoardParamStrict(bIt->second, out.board)) {
+    errOut = "Invalid 'board' (expected 1-10 hex chars or 40 board chars)";
+    return false;
+  }
+  if (allowPiece && !parsePieceParamStrict(pIt->second, out.pieceIdx)) {
+    errOut = "Invalid 'piece' (expected 0..6 or I,O,L,J,T,S,Z)";
+    return false;
+  }
+  const auto nIt = params.find("next");
+  if (nIt != params.end()) {
+    if (!parsePieceParamStrict(nIt->second, out.nextPieceIdx)) {
+      errOut = "Invalid 'next' (expected 0..6 or I,O,L,J,T,S,Z)";
+      return false;
+    }
+  } else if (requireNext) {
+    errOut = "Missing required 'next' parameter when a Next-Box tablebase is loaded";
+    return false;
+  }
+  if (!parsePlyParamStrict(params, out.ply)) {
+    errOut = "Invalid 'ply' (expected 1 or 2)";
+    return false;
+  }
+  return true;
+}
+
+// Evaluates a single hybrid 2-ply move (curPiece placed -> afterBoard, then optimal nextPiece
+// placement scored by NNB tablebase with V = 0 outside S). Sets outAnyLeafInTb if any 2-ply leaf
+// lands in nnbTb, matching chooseNextBoxHybridMove's fallback criterion.
+inline void evalHybridNnbMove(uint64_t afterBoard, int linesCleared, int nextPieceIdx,
+                              const MappedTablebase &nnbTb, TransitionList &tl2, double &outTbQ,
+                              bool &outBestLeafInTb, bool &outAnyLeafInTb, float &outAfterVal) {
+  const double r1 = static_cast<double>(linesCleared);
+  outTbQ = r1;
+  outBestLeafInTb = false;
+  outAnyLeafInTb = false;
+  outAfterVal = 0.0f;
+  if (!nnbTb.isLoaded()) {
+    return;
+  }
+  generateTransitions(afterBoard, nextPieceIdx, tl2);
+  for (int j = 0; j < tl2.size(); ++j) {
+    float leafVal = 0.0f;
+    const bool leafInTb = nnbTb.lookup(tl2[j].afterBoard, leafVal);
+    outAnyLeafInTb = outAnyLeafInTb || leafInTb;
+    const double q = r1
+                     + static_cast<double>(tl2[j].linesCleared)
+                     + (leafInTb ? static_cast<double>(leafVal) : 0.0);
+    if (j == 0 || q > outTbQ || (q == outTbQ && leafInTb && !outBestLeafInTb)) {
+      outTbQ = q;
+      outBestLeafInTb = leafInTb;
+      outAfterVal = leafVal;
+    }
+  }
+}
+
+inline HttpRouteResult handlePing(const std::map<std::string, std::string> &params,
+                                  const ServerContext &ctx) {
+  if (!params.empty()) {
+    return jsonErrorResponse(400, "/ping does not accept query parameters");
+  }
+  const bool tbLoaded = ctx.isAnyTablebaseLoaded();
+  std::string json = "{\"ok\":true";
+  appendTablebaseStatusFields(json, ctx, /*includeRngMode=*/true);
+  json += ",\"configuredPath\":\"" + jsonEscape(ctx.configuredTbPath) + "\"";
+  json += ",\"boardCount\":" + std::to_string(ctx.activeBoardCount());
+  const double ev = ctx.activeEmptyBoardValue();
+  json += ",\"emptyBoardValue\":" + (tbLoaded && ev >= 0.0 ? fmtDouble(ev) : "null");
+  json += ",\"bellmanResidual\":" + (tbLoaded ? fmtSci(ctx.activeBellmanResidual()) : "null");
+  json.push_back('}');
+  return {200, "application/json; charset=utf-8", std::move(json)};
+}
+
+inline HttpRouteResult handleReload(const std::map<std::string, std::string> &params,
+                                    ServerContext &ctx) {
+  if (!params.empty()) {
+    return jsonErrorResponse(400, "/reload does not accept query parameters");
+  }
+  if (ctx.configuredTbPath.empty()) {
+    return jsonErrorResponse(400, "No tablebase path was configured on server startup");
+  }
+  std::string err;
+  if (!ctx.openTablebase(ctx.configuredTbPath, &err)) {
+    return jsonErrorResponse(500, err);
+  }
+  return handlePing(params, ctx);
+}
+
+inline HttpRouteResult handleMoves(const std::map<std::string, std::string> &params,
+                                   const ServerContext &ctx) {
+  const bool tbLoaded = ctx.isAnyTablebaseLoaded();
+  const bool isNextBoxTb = (ctx.activeFormat() == TablebaseFormat::NextBoxV2);
+
+  ParsedBoardQuery q{};
+  std::string err;
+  if (!parseBoardQueryParams(params, /*allowPiece=*/true, /*requireNext=*/isNextBoxTb, q, err)) {
+    return jsonErrorResponse(400, err);
+  }
+
+  float boardTbVal = 0.0f;
+  const bool boardInTb = isNextBoxTb
+                             ? ctx.nextBoxTablebase.lookupPiece(q.board, q.pieceIdx, boardTbVal)
+                             : ctx.tablebase.lookup(q.board, boardTbVal);
+
+  PlacementList placements;
+  generatePlacements(q.board, q.pieceIdx, placements);
+
+  std::string json;
+  json.reserve(512 + static_cast<size_t>(placements.size()) * 240);
+  json += "{\"boardHex\":\"" + formatBoardHex(q.board) + "\"";
+  json += ",\"isCanonical\":";
+  json += (isCanonicalBoard(q.board) ? "true" : "false");
+  json += ",\"piece\":" + std::to_string(q.pieceIdx);
+  json += ",\"pieceChar\":\"";
+  json.push_back(PIECE_CHARS[q.pieceIdx]);
+  json.push_back('"');
+  appendOptionalNextFields(json, q.nextPieceIdx);
+  json += ",\"heuristicPly\":" + std::to_string(q.ply);
+  appendTablebaseStatusFields(json, ctx, /*includeRngMode=*/false);
+  json += ",\"inTablebase\":";
+  json += (boardInTb ? "true" : "false");
+  json += ",\"boardValue\":";
+  json += (boardInTb ? fmtDouble(boardTbVal) : "null");
+  json += ",\"moves\":[";
+
+  TransitionList tl2;
+  for (int i = 0; i < placements.size(); ++i) {
+    if (i > 0)
+      json.push_back(',');
+    const Placement &m = placements[i];
+    const double heurQ =
+        scoreMoveHeuristic(m.afterBoard, m.linesCleared, q.nextPieceIdx, q.ply, ctx.weights);
+    float afterVal = 0.0f;
+    bool afterInTb = false;
+    double tbQ = 0.0;
+
+    if (isNextBoxTb) {
+      afterInTb = ctx.nextBoxTablebase.lookupPiece(m.afterBoard, q.nextPieceIdx, afterVal);
+      tbQ =
+          static_cast<double>(m.linesCleared) + (afterInTb ? static_cast<double>(afterVal) : 0.0);
+    } else if (q.nextPieceIdx >= 0) {
+      bool anyLeafInTb = false;
+      evalHybridNnbMove(m.afterBoard, m.linesCleared, q.nextPieceIdx, ctx.tablebase, tl2, tbQ,
+                        afterInTb, anyLeafInTb, afterVal);
+      // Reflect whether any 2-ply leaf hit TB so JS fallback matches chooseNextBoxHybridMove.
+      afterInTb = afterInTb || anyLeafInTb;
+    } else {
+      afterInTb = ctx.tablebase.lookup(m.afterBoard, afterVal);
+      tbQ =
+          static_cast<double>(m.linesCleared) + (afterInTb ? static_cast<double>(afterVal) : 0.0);
+    }
+
+    json += "{\"index\":" + std::to_string(i);
+    json += ",\"rot\":" + std::to_string(m.rot);
+    json += ",\"x\":" + std::to_string(m.x);
+    json += ",\"lockY\":" + std::to_string(m.lockY);
+    json += ",\"tuckInput\":\"";
+    json.push_back(m.tuckInput);
+    json.push_back('"');
+    json += ",\"lockedMaskHex\":\"" + formatBoardHex(m.lockedMask) + "\"";
+    json += ",\"afterBoardHex\":\"" + formatBoardHex(m.afterBoard) + "\"";
+    json += ",\"linesCleared\":" + std::to_string(m.linesCleared);
+    json += ",\"afterHoles\":" + std::to_string(countHoles(m.afterBoard));
+    json += ",\"heuristicScore\":" + fmtDouble(heurQ);
+    json += ",\"afterInTablebase\":";
+    json += (afterInTb ? "true" : "false");
+    json += ",\"afterBoardValue\":";
+    json += (afterInTb ? fmtDouble(afterVal) : "null");
+    json += ",\"tablebaseQ\":";
+    json += (tbLoaded ? fmtDouble(tbQ) : "null");
+    json.push_back('}');
+  }
+  json += "]}";
+  return {200, "application/json; charset=utf-8", std::move(json)};
+}
+
+inline void appendStateInfoPieceEntry(std::string &json, uint64_t board, int pieceIdx,
+                                      int nextPieceIdx, int ply, bool boardInTb,
+                                      const float boardVals[NUM_PIECES], const ServerContext &ctx,
+                                      TransitionList &tl, TransitionList &tl2,
+                                      double &expectedBackup) {
+  const bool tbLoaded = ctx.isAnyTablebaseLoaded();
+  const bool isNextBoxTb = (ctx.activeFormat() == TablebaseFormat::NextBoxV2);
+
+  generateTransitions(board, pieceIdx, tl);
+
+  double bestHeur = 0.0;
+  uint64_t bestHeurAfter = 0;
+  double bestTbQ = 0.0;
+  double bestTbTieHeur = 0.0;
+  uint64_t bestTbAfter = 0;
+  bool anyInTb = false;
+  bool allInTb = !tl.empty();
+  double pieceBackup = 0.0;
+
+  if (isNextBoxTb) {
+    const RngMode mode = ctx.nextBoxTablebase.rngMode();
+    double maxQPerNext[NUM_PIECES] = {};
+    float childRow[NUM_PIECES] = {};
+
+    for (int i = 0; i < tl.size(); ++i) {
+      const Transition &t = tl[i];
+      const double hScore =
+          scoreMoveHeuristic(t.afterBoard, t.linesCleared, nextPieceIdx, ply, ctx.weights);
+      if (i == 0 || hScore > bestHeur) {
+        bestHeur = hScore;
+        bestHeurAfter = t.afterBoard;
+      }
+      const bool inTb = ctx.nextBoxTablebase.lookup(t.afterBoard, childRow);
+      anyInTb = anyInTb || inTb;
+      allInTb = allInTb && inTb;
+      const double rew = static_cast<double>(t.linesCleared);
+      for (int n = 0; n < NUM_PIECES; ++n) {
+        const double qn = rew + (inTb ? static_cast<double>(childRow[n]) : 0.0);
+        if (i == 0 || qn > maxQPerNext[n]) {
+          maxQPerNext[n] = qn;
+        }
+      }
+      if (nextPieceIdx >= 0) {
+        const double q = rew + (inTb ? static_cast<double>(childRow[nextPieceIdx]) : 0.0);
+        if (i == 0 || q > bestTbQ || (q == bestTbQ && hScore > bestTbTieHeur)) {
+          bestTbQ = q;
+          bestTbTieHeur = hScore;
+          bestTbAfter = t.afterBoard;
+        }
+      }
+    }
+    if (!tl.empty()) {
+      for (int n = 0; n < NUM_PIECES; ++n) {
+        pieceBackup += pieceTransitionProb(mode, pieceIdx, n) * maxQPerNext[n];
+      }
+    }
+    expectedBackup += openingPieceProb(mode, pieceIdx) * pieceBackup;
+    if (nextPieceIdx < 0) {
+      bestTbQ = pieceBackup;
+    }
+  } else {
+    double nnbBestQ = 0.0;
+    for (int i = 0; i < tl.size(); ++i) {
+      const Transition &t = tl[i];
+      const double hScore =
+          scoreMoveHeuristic(t.afterBoard, t.linesCleared, nextPieceIdx, ply, ctx.weights);
+      if (i == 0 || hScore > bestHeur) {
+        bestHeur = hScore;
+        bestHeurAfter = t.afterBoard;
+      }
+      if (tbLoaded) {
+        double q = 0.0;
+        bool inTb = false;
+        float childVal = 0.0f;
+        if (nextPieceIdx >= 0) {
+          bool anyLeafInTb = false;
+          evalHybridNnbMove(t.afterBoard, t.linesCleared, nextPieceIdx, ctx.tablebase, tl2, q, inTb,
+                            anyLeafInTb, childVal);
+          anyInTb = anyInTb || anyLeafInTb;
+          allInTb = allInTb && inTb;
+          float nnbVal = 0.0f;
+          const bool nnbIn = ctx.tablebase.lookup(t.afterBoard, nnbVal);
+          const double nnbQ =
+              static_cast<double>(t.linesCleared) + (nnbIn ? static_cast<double>(nnbVal) : 0.0);
+          if (i == 0 || nnbQ > nnbBestQ) {
+            nnbBestQ = nnbQ;
+          }
+        } else {
+          inTb = ctx.tablebase.lookup(t.afterBoard, childVal);
+          q = static_cast<double>(t.linesCleared) + (inTb ? static_cast<double>(childVal) : 0.0);
+          anyInTb = anyInTb || inTb;
+          allInTb = allInTb && inTb;
+        }
+        if (i == 0 || q > bestTbQ || (q == bestTbQ && hScore > bestTbTieHeur)) {
+          bestTbQ = q;
+          bestTbTieHeur = hScore;
+          bestTbAfter = t.afterBoard;
+        }
+      }
+    }
+    expectedBackup +=
+        ((tbLoaded && nextPieceIdx >= 0) ? nnbBestQ : bestTbQ) / static_cast<double>(NUM_PIECES);
+  }
+
+  // Mirror play-time policy: if no child lands in TB, TB policy falls back to heuristic.
+  const uint64_t effectiveTbAfter = anyInTb ? bestTbAfter : bestHeurAfter;
+  const bool canComparePolicy = tbLoaded && (!isNextBoxTb || nextPieceIdx >= 0);
+  const bool disagree = canComparePolicy && !tl.empty() && (effectiveTbAfter != bestHeurAfter);
+
+  json += "{\"piece\":" + std::to_string(pieceIdx);
+  json += ",\"pieceChar\":\"";
+  json.push_back(PIECE_CHARS[pieceIdx]);
+  json.push_back('"');
+  json += ",\"numTransitions\":" + std::to_string(tl.size());
+  json += ",\"bestHeuristicScore\":";
+  json += (tl.empty() ? "null" : fmtDouble(bestHeur));
+  json += ",\"bestTablebaseQ\":";
+  json += ((!tbLoaded || tl.empty()) ? "null" : fmtDouble(bestTbQ));
+  if (isNextBoxTb) {
+    json += ",\"tablebaseValue\":";
+    json += (boardInTb ? fmtDouble(boardVals[pieceIdx]) : "null");
+    json += ",\"bellmanBackupValue\":" + fmtDouble(pieceBackup);
+  }
+  json += ",\"anyInTablebase\":";
+  json += (anyInTb ? "true" : "false");
+  json += ",\"allInTablebase\":";
+  json += ((tbLoaded && allInTb) ? "true" : "false");
+  json += ",\"disagree\":";
+  json += (disagree ? "true" : "false");
+  json.push_back('}');
+}
+
+inline HttpRouteResult handleStateInfo(const std::map<std::string, std::string> &params,
+                                       const ServerContext &ctx) {
+  ParsedBoardQuery q{};
+  std::string err;
+  if (!parseBoardQueryParams(params, /*allowPiece=*/false, /*requireNext=*/false, q, err)) {
+    return jsonErrorResponse(400, err);
+  }
+
+  const bool tbLoaded = ctx.isAnyTablebaseLoaded();
+  const bool isNextBoxTb = (ctx.activeFormat() == TablebaseFormat::NextBoxV2);
+
+  int heights[BOARD_WIDTH];
+  getColumnHeights(q.board, heights);
+  const HeuristicBreakdown hb = evaluateBoardBreakdown(q.board, ctx.weights);
+
+  float boardVals[NUM_PIECES] = {};
+  double boardTbVal = 0.0;
+  bool boardInTb = false;
+  if (isNextBoxTb) {
+    boardInTb = ctx.nextBoxTablebase.lookup(q.board, boardVals);
+    if (boardInTb) {
+      const RngMode mode = ctx.nextBoxTablebase.rngMode();
+      for (int c = 0; c < NUM_PIECES; ++c) {
+        boardTbVal += openingPieceProb(mode, c) * static_cast<double>(boardVals[c]);
+      }
+    }
+  } else if (tbLoaded) {
+    float scalarVal = 0.0f;
+    boardInTb = ctx.tablebase.lookup(q.board, scalarVal);
+    boardTbVal = static_cast<double>(scalarVal);
+  }
+
+  std::string json;
+  json.reserve(1536);
+  json += "{\"boardHex\":\"" + formatBoardHex(q.board) + "\"";
+  json += ",\"isCanonical\":";
+  json += (isCanonicalBoard(q.board) ? "true" : "false");
+  json += ",\"heuristicPly\":" + std::to_string(q.ply);
+  appendOptionalNextFields(json, q.nextPieceIdx);
+  json += ",\"popcount\":" + std::to_string(popcount64(q.board));
+  json += ",\"maxHeight\":" + std::to_string(getMaxHeight(q.board));
+  json += ",\"holes\":" + std::to_string(hb.holes);
+  json += ",\"overhangs\":" + std::to_string(hb.overhangs);
+  json += ",\"sealedHoles\":" + std::to_string(hb.sealedHoles);
+  json += ",\"bumpiness\":" + std::to_string(hb.bumpiness);
+  json += ",\"heuristicBoardScore\":" + fmtDouble(hb.boardScore);
+  json += ",\"heights\":[";
+  for (int c = 0; c < BOARD_WIDTH; ++c) {
+    if (c > 0)
+      json.push_back(',');
+    json += std::to_string(heights[c]);
+  }
+  json.push_back(']');
+  appendTablebaseStatusFields(json, ctx, /*includeRngMode=*/true);
+  json += ",\"inTablebase\":";
+  json += (boardInTb ? "true" : "false");
+  json += ",\"boardValue\":";
+  json += (boardInTb ? fmtDouble(boardTbVal) : "null");
+  if (isNextBoxTb) {
+    json += ",\"boardValues\":";
+    if (boardInTb) {
+      json.push_back('[');
+      for (int c = 0; c < NUM_PIECES; ++c) {
+        if (c > 0)
+          json.push_back(',');
+        json += fmtDouble(boardVals[c]);
+      }
+      json.push_back(']');
+    } else {
+      json += "null";
+    }
+  }
+  json += ",\"perPiece\":[";
+
+  double expectedBackup = 0.0;
+  TransitionList tl;
+  TransitionList tl2;
+  for (int p = 0; p < NUM_PIECES; ++p) {
+    if (p > 0)
+      json.push_back(',');
+    appendStateInfoPieceEntry(json, q.board, p, q.nextPieceIdx, q.ply, boardInTb, boardVals, ctx,
+                              tl, tl2, expectedBackup);
+  }
+
+  json += "]";
+  json += ",\"bellmanBackupValue\":";
+  json += (tbLoaded ? fmtDouble(expectedBackup) : "null");
+  json.push_back('}');
+  return {200, "application/json; charset=utf-8", std::move(json)};
+}
+
+} // namespace detail
 
 inline HttpRouteResult handleApiRequest(std::string_view path, std::string_view query,
                                         ServerContext &ctx) {
@@ -236,287 +808,17 @@ inline HttpRouteResult handleApiRequest(std::string_view path, std::string_view 
   }
 
   if (path == "/ping") {
-    if (!params.empty()) {
-      return detail::jsonErrorResponse(400, "/ping does not accept query parameters");
-    }
-    std::string json = "{\"ok\":true,\"tablebaseLoaded\":";
-    json += (ctx.tablebase.isLoaded() ? "true" : "false");
-    json += ",\"configuredPath\":\"" + detail::jsonEscape(ctx.configuredTbPath) + "\"";
-    json += ",\"boardCount\":" + std::to_string(ctx.tablebase.size());
-    json += ",\"emptyBoardValue\":"
-            + (ctx.tablebase.isLoaded() && ctx.tablebase.emptyBoardValue() >= 0.0
-                   ? detail::fmtDouble(ctx.tablebase.emptyBoardValue())
-                   : "null");
-    json += ",\"bellmanResidual\":"
-            + (ctx.tablebase.isLoaded() ? detail::fmtSci(ctx.tablebase.bellmanResidual()) : "null");
-    json += "}";
-    return {200, "application/json; charset=utf-8", std::move(json)};
+    return detail::handlePing(params, ctx);
   }
-
   if (path == "/reload") {
-    if (!params.empty()) {
-      return detail::jsonErrorResponse(400, "/reload does not accept query parameters");
-    }
-    if (ctx.configuredTbPath.empty()) {
-      return detail::jsonErrorResponse(400, "No tablebase path was configured on server startup");
-    }
-    std::string err;
-    if (!ctx.tablebase.open(ctx.configuredTbPath, &err)) {
-      return detail::jsonErrorResponse(500, err);
-    }
-    return handleApiRequest("/ping", "", ctx);
+    return detail::handleReload(params, ctx);
   }
-
   if (path == "/moves") {
-    for (const auto &kv : params) {
-      if (kv.first != "board" && kv.first != "piece" && kv.first != "ply" && kv.first != "next") {
-        return detail::jsonErrorResponse(400, "Unknown query parameter: " + kv.first);
-      }
-    }
-    const auto bIt = params.find("board");
-    const auto pIt = params.find("piece");
-    if (bIt == params.end() || pIt == params.end()) {
-      return detail::jsonErrorResponse(400, "Missing required 'board' and/or 'piece' parameter");
-    }
-    uint64_t board = 0;
-    if (!detail::parseBoardParamStrict(bIt->second, board)) {
-      return detail::jsonErrorResponse(
-          400, "Invalid 'board' (expected 1-10 hex chars or 40 board chars)");
-    }
-    int pieceIdx = -1;
-    if (!detail::parsePieceParamStrict(pIt->second, pieceIdx)) {
-      return detail::jsonErrorResponse(400, "Invalid 'piece' (expected 0..6 or I,O,L,J,T,S,Z)");
-    }
-    int nextPieceIdx = -1;
-    const auto nIt = params.find("next");
-    if (nIt != params.end()) {
-      if (!detail::parsePieceParamStrict(nIt->second, nextPieceIdx)) {
-        return detail::jsonErrorResponse(400, "Invalid 'next' (expected 0..6 or I,O,L,J,T,S,Z)");
-      }
-    }
-    int ply = 1;
-    if (!detail::parsePlyParamStrict(params, ply)) {
-      return detail::jsonErrorResponse(400, "Invalid 'ply' (expected 1 or 2)");
-    }
-
-    float boardTbVal = 0.0f;
-    const bool boardInTb = ctx.tablebase.lookup(board, boardTbVal);
-
-    PlacementList placements;
-    generatePlacements(board, pieceIdx, placements);
-
-    std::string json;
-    json.reserve(512 + static_cast<size_t>(placements.size()) * 240);
-    json += "{\"boardHex\":\"" + formatBoardHex(board) + "\"";
-    json += ",\"isCanonical\":";
-    json += (isCanonicalBoard(board) ? "true" : "false");
-    json += ",\"piece\":" + std::to_string(pieceIdx);
-    json += ",\"pieceChar\":\"";
-    json.push_back(PIECE_CHARS[pieceIdx]);
-    json += "\"";
-    if (nextPieceIdx >= 0) {
-      json += ",\"nextPiece\":" + std::to_string(nextPieceIdx);
-      json += ",\"nextPieceChar\":\"";
-      json.push_back(PIECE_CHARS[nextPieceIdx]);
-      json += "\"";
-    }
-    json += ",\"heuristicPly\":" + std::to_string(ply);
-    json += ",\"tablebaseLoaded\":";
-    json += (ctx.tablebase.isLoaded() ? "true" : "false");
-    json += ",\"inTablebase\":";
-    json += (boardInTb ? "true" : "false");
-    json += ",\"boardValue\":";
-    json += (boardInTb ? detail::fmtDouble(boardTbVal) : "null");
-    json += ",\"moves\":[";
-
-    TransitionList tl2;
-    for (int i = 0; i < placements.size(); ++i) {
-      if (i > 0)
-        json.push_back(',');
-      const Placement &m = placements[i];
-      double heurQ = 0.0;
-      float afterVal = 0.0f;
-      bool afterInTb = false;
-      double tbQ = 0.0;
-
-      if (nextPieceIdx >= 0) {
-        heurQ = scoreNextBoxHeuristicTransition(m.afterBoard, m.linesCleared, nextPieceIdx,
-                                                ctx.weights);
-        const double r1 = static_cast<double>(m.linesCleared);
-        tbQ = r1;
-        if (ctx.tablebase.isLoaded()) {
-          generateTransitions(m.afterBoard, nextPieceIdx, tl2);
-          for (int j = 0; j < tl2.size(); ++j) {
-            float leafVal = 0.0f;
-            const bool leafInTb = ctx.tablebase.lookup(tl2[j].afterBoard, leafVal);
-            const double q = r1
-                             + static_cast<double>(tl2[j].linesCleared)
-                             + (leafInTb ? static_cast<double>(leafVal) : 0.0);
-            if (j == 0 || q > tbQ || (q == tbQ && leafInTb && !afterInTb)) {
-              tbQ = q;
-              afterInTb = leafInTb;
-              afterVal = leafVal;
-            }
-          }
-        }
-      } else {
-        heurQ = detail::scoreTransitionByPly(m.afterBoard, m.linesCleared, ply, ctx.weights);
-        afterInTb = ctx.tablebase.lookup(m.afterBoard, afterVal);
-        // Matches Value Iteration's closed-world boundary rule: V(b') = 0.0 when b' is outside S.
-        tbQ =
-            static_cast<double>(m.linesCleared) + (afterInTb ? static_cast<double>(afterVal) : 0.0);
-      }
-
-      json += "{\"index\":" + std::to_string(i);
-      json += ",\"rot\":" + std::to_string(m.rot);
-      json += ",\"x\":" + std::to_string(m.x);
-      json += ",\"lockY\":" + std::to_string(m.lockY);
-      json += ",\"tuckInput\":\"";
-      json.push_back(m.tuckInput);
-      json += "\"";
-      json += ",\"lockedMaskHex\":\"" + formatBoardHex(m.lockedMask) + "\"";
-      json += ",\"afterBoardHex\":\"" + formatBoardHex(m.afterBoard) + "\"";
-      json += ",\"linesCleared\":" + std::to_string(m.linesCleared);
-      json += ",\"afterHoles\":" + std::to_string(countHoles(m.afterBoard));
-      json += ",\"heuristicScore\":" + detail::fmtDouble(heurQ);
-      json += ",\"afterInTablebase\":";
-      json += (afterInTb ? "true" : "false");
-      json += ",\"afterBoardValue\":";
-      json += (afterInTb ? detail::fmtDouble(afterVal) : "null");
-      json += ",\"tablebaseQ\":";
-      json += (ctx.tablebase.isLoaded() ? detail::fmtDouble(tbQ) : "null");
-      json.push_back('}');
-    }
-    json += "]}";
-    return {200, "application/json; charset=utf-8", std::move(json)};
+    return detail::handleMoves(params, ctx);
   }
-
   if (path == "/state-info") {
-    for (const auto &kv : params) {
-      if (kv.first != "board" && kv.first != "ply") {
-        return detail::jsonErrorResponse(400, "Unknown query parameter: " + kv.first);
-      }
-    }
-    const auto bIt = params.find("board");
-    if (bIt == params.end()) {
-      return detail::jsonErrorResponse(400, "Missing required 'board' parameter");
-    }
-    uint64_t board = 0;
-    if (!detail::parseBoardParamStrict(bIt->second, board)) {
-      return detail::jsonErrorResponse(
-          400, "Invalid 'board' (expected 1-10 hex chars or 40 board chars)");
-    }
-    int ply = 1;
-    if (!detail::parsePlyParamStrict(params, ply)) {
-      return detail::jsonErrorResponse(400, "Invalid 'ply' (expected 1 or 2)");
-    }
-
-    int heights[BOARD_WIDTH];
-    getColumnHeights(board, heights);
-    const HeuristicBreakdown hb = evaluateBoardBreakdown(board, ctx.weights);
-
-    float boardTbVal = 0.0f;
-    const bool boardInTb = ctx.tablebase.lookup(board, boardTbVal);
-    const bool tbLoaded = ctx.tablebase.isLoaded();
-
-    std::string json;
-    json.reserve(1024);
-    json += "{\"boardHex\":\"" + formatBoardHex(board) + "\"";
-    json += ",\"isCanonical\":";
-    json += (isCanonicalBoard(board) ? "true" : "false");
-    json += ",\"heuristicPly\":" + std::to_string(ply);
-    json += ",\"popcount\":" + std::to_string(popcount64(board));
-    json += ",\"maxHeight\":" + std::to_string(getMaxHeight(board));
-    json += ",\"holes\":" + std::to_string(hb.holes);
-    json += ",\"overhangs\":" + std::to_string(hb.overhangs);
-    json += ",\"sealedHoles\":" + std::to_string(hb.sealedHoles);
-    json += ",\"bumpiness\":" + std::to_string(hb.bumpiness);
-    json += ",\"heuristicBoardScore\":" + detail::fmtDouble(hb.boardScore);
-    json += ",\"heights\":[";
-    for (int c = 0; c < BOARD_WIDTH; ++c) {
-      if (c > 0)
-        json.push_back(',');
-      json += std::to_string(heights[c]);
-    }
-    json += "]";
-    json += ",\"tablebaseLoaded\":";
-    json += (tbLoaded ? "true" : "false");
-    json += ",\"inTablebase\":";
-    json += (boardInTb ? "true" : "false");
-    json += ",\"boardValue\":";
-    json += (boardInTb ? detail::fmtDouble(boardTbVal) : "null");
-    json += ",\"perPiece\":[";
-
-    double sumBestTbQ = 0.0;
-    TransitionList tl;
-    for (int p = 0; p < NUM_PIECES; ++p) {
-      if (p > 0)
-        json.push_back(',');
-      generateTransitions(board, p, tl);
-
-      double bestHeur = 0.0;
-      uint64_t bestHeurAfter = 0;
-      // Top-out (tl.empty()) contributes 0.0 to the 7-piece Bellman expectation sumBestTbQ;
-      // when tl is non-empty, iteration i == 0 unconditionally initializes bestTbQ.
-      double bestTbQ = 0.0;
-      double bestTbTieHeur = 0.0;
-      uint64_t bestTbAfter = 0;
-      bool anyInTb = false;
-      bool allInTb = !tl.empty();
-
-      for (int i = 0; i < tl.size(); ++i) {
-        const Transition &t = tl[i];
-        const double hScore =
-            detail::scoreTransitionByPly(t.afterBoard, t.linesCleared, ply, ctx.weights);
-        if (i == 0 || hScore > bestHeur) {
-          bestHeur = hScore;
-          bestHeurAfter = t.afterBoard;
-        }
-        if (tbLoaded) {
-          float childVal = 0.0f;
-          const bool inTb = ctx.tablebase.lookup(t.afterBoard, childVal);
-          anyInTb = anyInTb || inTb;
-          allInTb = allInTb && inTb;
-          const double q =
-              static_cast<double>(t.linesCleared) + (inTb ? static_cast<double>(childVal) : 0.0);
-          if (i == 0 || q > bestTbQ || (q == bestTbQ && hScore > bestTbTieHeur)) {
-            bestTbQ = q;
-            bestTbTieHeur = hScore;
-            bestTbAfter = t.afterBoard;
-          }
-        }
-      }
-      sumBestTbQ += bestTbQ;
-
-      // Mirror play-time policy: if no child lands in TB, TB policy falls back to heuristic.
-      const uint64_t effectiveTbAfter = anyInTb ? bestTbAfter : bestHeurAfter;
-      const bool disagree = tbLoaded && !tl.empty() && (effectiveTbAfter != bestHeurAfter);
-
-      json += "{\"piece\":" + std::to_string(p);
-      json += ",\"pieceChar\":\"";
-      json.push_back(PIECE_CHARS[p]);
-      json += "\"";
-      json += ",\"numTransitions\":" + std::to_string(tl.size());
-      json += ",\"bestHeuristicScore\":";
-      json += (tl.empty() ? "null" : detail::fmtDouble(bestHeur));
-      json += ",\"bestTablebaseQ\":";
-      json += ((!tbLoaded || tl.empty()) ? "null" : detail::fmtDouble(bestTbQ));
-      json += ",\"anyInTablebase\":";
-      json += (anyInTb ? "true" : "false");
-      json += ",\"allInTablebase\":";
-      json += ((tbLoaded && allInTb) ? "true" : "false");
-      json += ",\"disagree\":";
-      json += (disagree ? "true" : "false");
-      json.push_back('}');
-    }
-
-    json += "]";
-    json += ",\"bellmanBackupValue\":";
-    json += (tbLoaded ? detail::fmtDouble(sumBestTbQ / static_cast<double>(NUM_PIECES)) : "null");
-    json += "}";
-    return {200, "application/json; charset=utf-8", std::move(json)};
+    return detail::handleStateInfo(params, ctx);
   }
-
   return detail::jsonErrorResponse(404, std::string("Unknown route: ") + std::string(path));
 }
 

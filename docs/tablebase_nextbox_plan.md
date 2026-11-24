@@ -171,13 +171,13 @@ Sample Next-Box-specific board shapes and run the head-to-head comparison.
 ### Phase NB-5: Browser UI & Server Next-Box Support (`server_routes.hpp`, `server.cpp`, `index.html`)
 Make the Next-Box tablebase playable and inspectable interactively in the browser.
 
-- [ ] Auto-detect `SRTBV001` (No-Next-Box) vs `SRTBV002` (Next-Box) in `server.cpp` (on startup and `/reload`) and report `tablebaseFormat` (`"nnb"` / `"nextbox"`) and `rngMode` (`"uniform"` / `"nes"`) in `/ping`.
-- [ ] Extend `/moves?board=...&piece=c&next=n` and `/state-info?board=...&next=n` to score `r + V(b', n)` and display all 7 `V(b, c)` values when a Next-Box tablebase is loaded (keeping full backwards compatibility for `SRTBV001`).
-- [ ] Update `index.html`:
-  - Add a **Next Piece** preview box (matching the C++ piece RNG stream bit-for-bit in JS for both Uniform and NES modes).
-  - Compare `r + V(b', next)` against the 2-ply Next-Box heuristic in the Move Inspector, with working Autoplay, Undo, Edit Mode (choose both current and next piece), and **Step to Disagreement**.
-- [ ] **Verification**:
-  - Unit tests in `tablebase_test.cpp` for all new `/ping`, `/moves`, `/state-info` Next-Box endpoints and strict query validation (rejecting missing or invalid `next`), plus a live HTTP smoke check against `build/tablebase_server`.
+- [x] Auto-detect `SRTBV001` (No-Next-Box) vs `SRTBV002` (Next-Box) in `server.cpp` and `ServerContext::openTablebase` (on startup and `/reload`, atomically preserving the prior mmap on error) and report `tablebaseFormat` (`"nnb"` / `"nextbox"` / `"none"`) and `rngMode` (`"uniform"` / `"nes"` / `null`) in `/ping`.
+- [x] Extend `/moves?board=...&piece=c&next=n` and `/state-info?board=...&next=n` to score `r + V(b', n)`, report piece-specific `V(b, c)`, return all 7 `boardValues` and exact per-piece/expected Bellman backups, and strictly reject missing/invalid `next` when an `SRTBV002` tablebase is loaded (keeping 100% backwards compatibility for `SRTBV001`).
+- [x] Update `index.html`:
+  - Add a visual 4×2 **Next Piece** preview grid + **Next Piece** selector pills (matching the C++ piece RNG stream bit-for-bit in JS for both Uniform and NES modes, auto-syncing `nbTb` policy and `NES RNG` checkbox on connect/reload).
+  - Compare `r + V(b', next)` against the 2-ply Next-Box heuristic in the Move Inspector and per-piece `V(b, c)`/`Q` strip, with working Autoplay, Undo, Edit Mode (choose both current and next piece), and **Step to Disagreement**.
+- [x] **Verification**:
+  - Unit tests in `tablebase_test.cpp` numerically verifying `/ping`, `/reload` (including format switching and corrupt-file rollback), `/moves` (piece-specific `V(b, c)` and `400` rejections), `/state-info` (`boardValues`, exact Bellman backup agreement, top-out, and disagreement/all-OUT fallback), plus a live HTTP smoke check against `build/tablebase_server` serving the 19.54M-board `nb_final_nes.tb.bin`.
 
 ---
 

@@ -2485,3 +2485,198 @@ TEST_CASE("Next-Box state generator determinism, frontier probing, and round mon
     std::remove(tmpR0Tb.c_str());
   }
 }
+
+TEST_CASE("Server routes Next-Box (SRTBV002) auto-detection, /ping, /moves, /state-info, and "
+          "reload") {
+  const std::string nbNesPath = "build/test_srv_nb_nes.tb.bin";
+  const std::string nbUniPath = "build/test_srv_nb_uni.tb.bin";
+  const std::string nnbPath = "build/test_srv_nnb.tb.bin";
+  const std::string badPath = "build/test_srv_corrupt.tb.bin";
+
+  // Build an exact solved 4x4 SRTBV002 tablebase under NES RNG (includes empty board 0ULL),
+  // a synthetic single-board SRTBV002 under Uniform RNG (for disagreement + reload switching),
+  // and a 1-board SRTBV001 NNB tablebase.
+  const std::vector<uint64_t> boards4x4 = tb::enumerateZeroSealedHoleBoards(1, 4, 4, 4);
+  tb::NextBoxSolveConfig sCfg{};
+  sCfg.rngMode = tb::RngMode::Nes;
+  sCfg.policyCacheMode = tb::PolicyCacheMode::Ram;
+  sCfg.tolerance = 1e-9;
+  sCfg.innerEvalSweeps = 30;
+  sCfg.numThreads = 2;
+  const tb::NextBoxSolveResult solved4x4 = tb::solveNextBoxMPI(boards4x4, sCfg);
+  REQUIRE(solved4x4.ok);
+  REQUIRE(tb::writeNextBoxTablebaseFile(nbNesPath, boards4x4, solved4x4.values, tb::RngMode::Nes,
+                                        solved4x4.finalBellmanResidual));
+
+  // Synthetic Uniform SRTBV002 with a boosted non-heuristic I placement for next=O.
+  tb::TransitionList emptyIMoves;
+  tb::generateTransitions(0ULL, tb::parsePieceChar('I'), emptyIMoves);
+  REQUIRE(emptyIMoves.size() == 17);
+  const uint64_t boostedI = emptyIMoves[16].afterBoard;
+  std::vector<float> boostVals(tb::NUM_PIECES, 1.0f);
+  boostVals[tb::parsePieceChar('O')] = 123.5f;
+  REQUIRE(
+      tb::writeNextBoxTablebaseFile(nbUniPath, {boostedI}, boostVals, tb::RngMode::Uniform, 0.0));
+  REQUIRE(tb::writeTablebaseFile(nnbPath, {boostedI}, {77.0f}, 0.0));
+
+  // Write a truncated invalid file to test reload failure rollback.
+  {
+    std::ofstream badOut(badPath, std::ios::binary | std::ios::trunc);
+    REQUIRE(badOut.is_open());
+    badOut.write("BADMAGIC", 8);
+    REQUIRE(badOut.good());
+  }
+
+  auto extractJsonNumberAfter = [](const std::string &json, const std::string &needle,
+                                   size_t startPos = 0) -> double {
+    const size_t pos = json.find(needle, startPos);
+    REQUIRE(pos != std::string::npos);
+    const char *numStart = json.c_str() + pos + needle.size();
+    char *endPtr = nullptr;
+    const double val = std::strtod(numStart, &endPtr);
+    REQUIRE(endPtr != numStart);
+    return val;
+  };
+
+  tb::ServerContext ctx;
+  const auto pingNone = tb::handleApiRequest("/ping", "", ctx);
+  CHECK(pingNone.status == 200);
+  CHECK(pingNone.body.find("\"tablebaseLoaded\":false") != std::string::npos);
+  CHECK(pingNone.body.find("\"tablebaseFormat\":\"none\"") != std::string::npos);
+  CHECK(pingNone.body.find("\"rngMode\":null") != std::string::npos);
+
+  // 1. Auto-detect SRTBV002 (NES) on openTablebase & verify /ping.
+  ctx.configuredTbPath = nbNesPath;
+  std::string err;
+  REQUIRE(ctx.openTablebase(ctx.configuredTbPath, &err));
+  CHECK(ctx.activeFormat() == tb::TablebaseFormat::NextBoxV2);
+  const auto pingNes = tb::handleApiRequest("/ping", "", ctx);
+  CHECK(pingNes.status == 200);
+  CHECK(pingNes.body.find("\"tablebaseLoaded\":true") != std::string::npos);
+  CHECK(pingNes.body.find("\"tablebaseFormat\":\"nextbox\"") != std::string::npos);
+  CHECK(pingNes.body.find("\"rngMode\":\"nes\"") != std::string::npos);
+  CHECK(pingNes.body.find("\"boardCount\":" + std::to_string(boards4x4.size()))
+        != std::string::npos);
+
+  // 2. Strict /moves validation for SRTBV002: missing or invalid 'next' rejected with 400,
+  //    and valid /moves reports piece-specific V(b, c) (I vs O).
+  CHECK(tb::handleApiRequest("/moves", "board=0&piece=I", ctx).status == 400);
+  CHECK(tb::handleApiRequest("/moves", "board=0&piece=I&next=Q", ctx).status == 400);
+  CHECK(tb::handleApiRequest("/moves", "board=0&piece=I&next=7", ctx).status == 400);
+  CHECK(tb::handleApiRequest("/state-info", "board=0&next=Q", ctx).status == 400);
+
+  const auto movesNbI = tb::handleApiRequest("/moves", "board=0&piece=I&next=O", ctx);
+  const auto movesNbO = tb::handleApiRequest("/moves", "board=0&piece=O&next=I", ctx);
+  CHECK(movesNbI.status == 200);
+  CHECK(movesNbO.status == 200);
+  CHECK(movesNbI.body.find("\"tablebaseFormat\":\"nextbox\"") != std::string::npos);
+  CHECK(movesNbI.body.find("\"nextPiece\":1,\"nextPieceChar\":\"O\"") != std::string::npos);
+  CHECK(movesNbI.body.find("\"inTablebase\":true") != std::string::npos);
+  CHECK(extractJsonNumberAfter(movesNbI.body, "\"boardValue\":")
+        == doctest::Approx(solved4x4.emptyBoardValues[tb::parsePieceChar('I')]).epsilon(1e-5));
+  CHECK(extractJsonNumberAfter(movesNbO.body, "\"boardValue\":")
+        == doctest::Approx(solved4x4.emptyBoardValues[tb::parsePieceChar('O')]).epsilon(1e-5));
+
+  // 3. /state-info with and without 'next' on solved SRTBV002: numerically verify boardValue,
+  //    boardValues[0..6], per-piece tablebaseValue & bellmanBackupValue, and top-level backup.
+  const auto infoWithNext = tb::handleApiRequest("/state-info", "board=0&next=O", ctx);
+  CHECK(infoWithNext.status == 200);
+  CHECK(infoWithNext.body.find("\"tablebaseFormat\":\"nextbox\"") != std::string::npos);
+  CHECK(infoWithNext.body.find("\"rngMode\":\"nes\"") != std::string::npos);
+  CHECK(infoWithNext.body.find("\"nextPiece\":1,\"nextPieceChar\":\"O\"") != std::string::npos);
+  CHECK(extractJsonNumberAfter(infoWithNext.body, "\"boardValue\":")
+        == doctest::Approx(solved4x4.emptyBoardExpectedValue).epsilon(1e-5));
+  const size_t topBackupPos = infoWithNext.body.rfind("\"bellmanBackupValue\":");
+  REQUIRE(topBackupPos != std::string::npos);
+  CHECK(extractJsonNumberAfter(infoWithNext.body, "\"bellmanBackupValue\":", topBackupPos)
+        == doctest::Approx(solved4x4.emptyBoardExpectedValue).epsilon(1e-5));
+  for (int c = 0; c < tb::NUM_PIECES; ++c) {
+    const std::string pTag = "\"piece\":" + std::to_string(c) + ",";
+    const size_t pPos = infoWithNext.body.find(pTag);
+    REQUIRE(pPos != std::string::npos);
+    CHECK(extractJsonNumberAfter(infoWithNext.body, "\"tablebaseValue\":", pPos)
+          == doctest::Approx(solved4x4.emptyBoardValues[static_cast<size_t>(c)]).epsilon(1e-5));
+    CHECK(extractJsonNumberAfter(infoWithNext.body, "\"bellmanBackupValue\":", pPos)
+          == doctest::Approx(solved4x4.emptyBoardValues[static_cast<size_t>(c)]).epsilon(1e-5));
+  }
+
+  const auto infoNoNext = tb::handleApiRequest("/state-info", "board=0", ctx);
+  CHECK(infoNoNext.status == 200);
+  CHECK(infoNoNext.body.find("\"boardValues\":[") != std::string::npos);
+  CHECK(infoNoNext.body.find("\"disagree\":true") == std::string::npos);
+
+  // 3b. Top-out board under SRTBV002: /moves returns empty list; /state-info reports
+  //     bestTablebaseQ:null, bellmanBackupValue:0, allInTablebase:false, disagree:false for O.
+  const uint64_t topOutWall = mustParse("XXXXXXXXX.\n"
+                                        "XXXXXXXXX.\n"
+                                        "XXXXXXXXX.\n"
+                                        "XXXXXXXXX.");
+  const std::string topOutHex = tb::formatBoardHex(topOutWall);
+  const auto topOutMoves =
+      tb::handleApiRequest("/moves", "board=" + topOutHex + "&piece=O&next=I", ctx);
+  CHECK(topOutMoves.status == 200);
+  CHECK(topOutMoves.body.find("\"moves\":[]") != std::string::npos);
+  const auto topOutInfo =
+      tb::handleApiRequest("/state-info", "board=" + topOutHex + "&next=I", ctx);
+  CHECK(topOutInfo.status == 200);
+  const size_t oPos = topOutInfo.body.find("\"pieceChar\":\"O\"");
+  REQUIRE(oPos != std::string::npos);
+  CHECK(topOutInfo.body.find("\"numTransitions\":0", oPos) != std::string::npos);
+  CHECK(topOutInfo.body.find("\"bestTablebaseQ\":null", oPos) != std::string::npos);
+  CHECK(extractJsonNumberAfter(topOutInfo.body, "\"bellmanBackupValue\":", oPos) == 0.0);
+  CHECK(topOutInfo.body.find("\"allInTablebase\":false,\"disagree\":false", oPos)
+        != std::string::npos);
+
+  // 4. Reload switching to synthetic Uniform SRTBV002 -> verify exact Q=123.5, disagreement on I,
+  //    and all-OUT fallback (disagree:false) on O.
+  ctx.configuredTbPath = nbUniPath;
+  const auto reloadUni = tb::handleApiRequest("/reload", "", ctx);
+  CHECK(reloadUni.status == 200);
+  CHECK(reloadUni.body.find("\"tablebaseFormat\":\"nextbox\"") != std::string::npos);
+  CHECK(reloadUni.body.find("\"rngMode\":\"uniform\"") != std::string::npos);
+  CHECK(reloadUni.body.find("\"emptyBoardValue\":null") != std::string::npos);
+
+  const auto movesUni = tb::handleApiRequest("/moves", "board=0&piece=I&next=O", ctx);
+  CHECK(movesUni.status == 200);
+  CHECK(movesUni.body.find("\"tablebaseQ\":123.5") != std::string::npos);
+  const auto infoUni = tb::handleApiRequest("/state-info", "board=0&next=O", ctx);
+  CHECK(infoUni.status == 200);
+  CHECK(infoUni.body.find("\"boardValues\":null") != std::string::npos);
+  CHECK(infoUni.body.find("\"bestTablebaseQ\":123.5") != std::string::npos);
+  CHECK(infoUni.body.find("\"disagree\":true") != std::string::npos);
+  const size_t oUniPos = infoUni.body.find("\"pieceChar\":\"O\"");
+  REQUIRE(oUniPos != std::string::npos);
+  CHECK(infoUni.body.find("\"anyInTablebase\":false,\"allInTablebase\":false,\"disagree\":false",
+                          oUniPos)
+        != std::string::npos);
+
+  // 5. Failed /reload must return 500 and keep the previously loaded Uniform SRTBV002 active.
+  ctx.configuredTbPath = badPath;
+  CHECK(tb::handleApiRequest("/reload", "", ctx).status == 500);
+  CHECK(ctx.activeFormat() == tb::TablebaseFormat::NextBoxV2);
+  CHECK(ctx.nextBoxTablebase.rngMode() == tb::RngMode::Uniform);
+
+  // 6. Reload switching from SRTBV002 back to SRTBV001 NNB closes NextBox mmap and restores NNB
+  //    endpoints (including /moves without 'next' and /state-info with optional 'next').
+  ctx.configuredTbPath = nnbPath;
+  const auto reloadNnb = tb::handleApiRequest("/reload", "", ctx);
+  CHECK(reloadNnb.status == 200);
+  CHECK(reloadNnb.body.find("\"tablebaseFormat\":\"nnb\"") != std::string::npos);
+  CHECK(reloadNnb.body.find("\"rngMode\":\"uniform\"") != std::string::npos);
+  CHECK_FALSE(ctx.nextBoxTablebase.isLoaded());
+  CHECK(ctx.tablebase.isLoaded());
+
+  const auto movesNnb = tb::handleApiRequest("/moves", "board=0&piece=I", ctx);
+  CHECK(movesNnb.status == 200);
+  CHECK(movesNnb.body.find("\"tablebaseQ\":77") != std::string::npos);
+  const auto infoHybrid = tb::handleApiRequest("/state-info", "board=0&next=O", ctx);
+  CHECK(infoHybrid.status == 200);
+  CHECK(infoHybrid.body.find("\"tablebaseFormat\":\"nnb\"") != std::string::npos);
+  CHECK(infoHybrid.body.find("\"nextPiece\":1,\"nextPieceChar\":\"O\"") != std::string::npos);
+
+  ctx.closeAll();
+  std::remove(nbNesPath.c_str());
+  std::remove(nbUniPath.c_str());
+  std::remove(nnbPath.c_str());
+  std::remove(badPath.c_str());
+}

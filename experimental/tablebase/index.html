@@ -72,7 +72,6 @@
     }
 
     input[type="text"],
-    input[type="number"],
     select {
       background: #fff;
       border: 1px solid var(--border);
@@ -304,6 +303,47 @@
       color: #fff;
     }
 
+    .piece-pill.next-selected {
+      background: #0f766e;
+      border-color: #0f766e;
+      color: #fff;
+    }
+
+    .next-preview-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-top: 8px;
+      padding: 6px 8px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--surface-alt);
+    }
+
+    .next-mini-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 14px);
+      grid-template-rows: repeat(2, 14px);
+      gap: 1px;
+      padding: 4px;
+      background: #0f172a;
+      border-radius: 4px;
+      border: 1px solid #334155;
+      flex-shrink: 0;
+    }
+
+    .next-mini-cell {
+      width: 14px;
+      height: 14px;
+      border-radius: 2px;
+      background: rgba(148, 163, 184, 0.08);
+    }
+
+    .next-mini-cell.filled {
+      box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.45);
+    }
+
     .stats-grid {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
@@ -473,11 +513,21 @@
 
         <div style="margin-top:10px;">
           <div class="row-controls" style="justify-content:space-between;">
-            <span class="muted" style="font-weight:600;">Current Piece: <span id="nextPieceBadge"
-                class="badge accent" style="display:none;margin-left:6px;">Next: ?</span></span>
+            <span class="muted" style="font-weight:600;">Current Piece:</span>
             <span id="tuckStateBadge" class="badge neutral">Entry Zone (free x/rot)</span>
           </div>
           <div id="piecePills" class="piece-pills"></div>
+
+          <div id="nextPieceSection" class="next-preview-row" style="display:none;">
+            <div style="min-width:0;flex:1;">
+              <div class="row-controls" style="gap:6px;">
+                <span class="muted" style="font-weight:600;">Next Piece:</span>
+                <span id="nextPieceBadge" class="badge accent">Next: ?</span>
+              </div>
+              <div id="nextPiecePills" class="piece-pills" style="margin-top:5px;"></div>
+            </div>
+            <div id="nextMiniGrid" class="next-mini-grid" title="Visible Next Box piece"></div>
+          </div>
         </div>
 
         <div class="row-controls" style="margin-top:10px;">
@@ -526,7 +576,8 @@
         <div class="row-controls" style="margin-bottom:10px;">
           <label class="muted">AI Policy:</label>
           <select id="aiPolicySelect">
-            <option value="hybrid">Hybrid Next-Box (TB + 2-ply)</option>
+            <option value="nbTb">Next-Box Tablebase (V(b,c))</option>
+            <option value="hybrid">Hybrid Next-Box (NNB TB + 2-ply)</option>
             <option value="nbHeur">Next-Box Heuristic (2-ply)</option>
             <option value="tb">NNB Tablebase (fallback 2-ply)</option>
             <option value="heur2">NNB Heuristic (2-ply Expectimax)</option>
@@ -542,11 +593,15 @@
           <span id="speedLabel" class="muted" style="font-family:var(--mono);width:48px;">12/s</span>
         </div>
 
+        <div id="rngMismatchBanner" class="banner warn" style="display:none;margin-top:0;margin-bottom:10px;"></div>
+
         <div class="stats-grid">
           <div class="stat-item"><span>Lines Cleared</span><span id="statLines" class="stat-val">0</span></div>
           <div class="stat-item"><span>Pieces Placed</span><span id="statPieces" class="stat-val">0</span></div>
-          <div class="stat-item"><span>Tablebase V(b)</span><span id="statBoardVal" class="stat-val">—</span></div>
-          <div class="stat-item"><span>Bellman 1/7 Σ max Q</span><span id="statBackupVal" class="stat-val">—</span>
+          <div class="stat-item"><span id="statBoardValLabel">Tablebase V(b)</span><span id="statBoardVal"
+              class="stat-val">—</span></div>
+          <div class="stat-item"><span id="statBackupValLabel">Bellman 1/7 Σ max Q</span><span id="statBackupVal"
+              class="stat-val">—</span>
           </div>
           <div class="stat-item"><span>Holes (Open Overhangs)</span><span id="statHoles" class="stat-val">0 (0)</span>
           </div>
@@ -555,8 +610,8 @@
         </div>
 
         <div style="margin-top:10px;">
-          <div class="muted" style="font-size:12px;font-weight:600;">Per-Piece Best Q (click to switch current piece;
-            amber = TB ≠ Heuristic):</div>
+          <div id="pieceStripHeader" class="muted" style="font-size:12px;font-weight:600;">Per-Piece Best Q (click to
+            switch current piece; amber = TB ≠ Heuristic):</div>
           <div id="pieceEvStrip" class="piece-ev-strip"></div>
         </div>
       </div>
@@ -585,7 +640,7 @@
                 <th>Clears</th>
                 <th>Holes'</th>
                 <th>TB Status</th>
-                <th>TB Q (r + V')</th>
+                <th id="tbQColHeader">TB Q (r + V')</th>
                 <th id="heurColHeader">Heuristic (2-ply)</th>
                 <th>After Hex</th>
               </tr>
@@ -731,6 +786,9 @@
     let movesReady = false;
     let refreshSeq = 0;
     let tbLoaded = false;
+    let tbFormat = "none";
+    let tbRngMode = null;
+    let hasSyncedServerDefaults = false;
     let autoTimer = null;
     let seekSeq = 0;
 
@@ -920,28 +978,101 @@
       return document.getElementById("serverUrlInput").value.replace(/\/+$/, "");
     }
 
-    function updateTbDependentButtons() {
-      document.getElementById("btnNextDisagree").disabled = !tbLoaded;
+    const AI_POLICIES = {
+      nbTb: { nextBox: true, useTb: true, ply: 2, allowedFormats: ["nextbox"] },
+      hybrid: { nextBox: true, useTb: true, ply: 2, allowedFormats: ["nnb"] },
+      nbHeur: { nextBox: true, useTb: false, ply: 2, allowedFormats: ["nextbox", "nnb", "none"] },
+      tb: { nextBox: false, useTb: true, ply: 2, allowedFormats: ["nnb"] },
+      heur2: { nextBox: false, useTb: false, ply: 2, allowedFormats: ["nnb", "none"] },
+      heur1: { nextBox: false, useTb: false, ply: 1, allowedFormats: ["nnb", "none"] }
+    };
+
+    function currentPolicySpec() {
+      const val = document.getElementById("aiPolicySelect").value;
+      return AI_POLICIES[val] || AI_POLICIES.nbHeur;
     }
 
-    async function pingServer() {
+    function updateTbDependentButtons() {
+      document.getElementById("btnStepAi").disabled = editMode;
+      document.getElementById("btnAutoPlay").disabled = editMode;
+      document.getElementById("btnNextDisagree").disabled = !tbLoaded || editMode;
+
+      const sel = document.getElementById("aiPolicySelect");
+      for (const [key, spec] of Object.entries(AI_POLICIES)) {
+        const opt = sel.querySelector(`option[value="${key}"]`);
+        if (opt) opt.disabled = !spec.allowedFormats.includes(tbFormat);
+      }
+      const curOpt = sel.querySelector(`option[value="${sel.value}"]`);
+      if (!curOpt || curOpt.disabled) {
+        if (tbFormat === "nextbox") sel.value = "nbTb";
+        else if (tbFormat === "nnb") sel.value = "hybrid";
+        else sel.value = "nbHeur";
+      }
+      updateRngMismatchBanner();
+    }
+
+    function updateRngMismatchBanner() {
+      const banner = document.getElementById("rngMismatchBanner");
+      if (tbFormat === "nextbox" && tbRngMode) {
+        const uiRng = useNesRng() ? "nes" : "uniform";
+        if (uiRng !== tbRngMode) {
+          banner.textContent =
+            `Note: Loaded Next-Box tablebase was solved for ${tbRngMode.toUpperCase()} RNG, while UI is using ${uiRng.toUpperCase()} RNG.`;
+          banner.style.display = "block";
+          return;
+        }
+      }
+      banner.style.display = "none";
+    }
+
+    function applyPingPayload(data, syncDefaults = false) {
+      const badge = document.getElementById("serverStatus");
+      const prevFmt = tbFormat;
+      const prevRng = tbRngMode;
+      tbLoaded = !!data.tablebaseLoaded;
+      tbFormat = data.tablebaseFormat || (tbLoaded ? "nnb" : "none");
+      tbRngMode = data.rngMode || null;
+
+      const shouldAutoSelect = syncDefaults || !hasSyncedServerDefaults || tbFormat !== prevFmt || tbRngMode !== prevRng;
+      if (shouldAutoSelect && tbLoaded) {
+        hasSyncedServerDefaults = true;
+        const sel = document.getElementById("aiPolicySelect");
+        if (tbFormat === "nextbox") {
+          sel.value = "nbTb";
+          if (tbRngMode === "nes" || tbRngMode === "uniform") {
+            document.getElementById("nesRngCheckbox").checked = (tbRngMode === "nes");
+          }
+        }
+      }
+      updateTbDependentButtons();
+
+      if (tbLoaded) {
+        if (tbFormat === "nextbox") {
+          const ev = data.emptyBoardValue !== null ? ` · E[V(0)]=${data.emptyBoardValue.toFixed(2)}` : "";
+          const rngTag = tbRngMode ? ` (${tbRngMode.toUpperCase()})` : "";
+          badge.textContent = `Connected · NB TB${rngTag}: ${data.boardCount.toLocaleString()} boards${ev}`;
+        } else {
+          const ev = data.emptyBoardValue !== null ? ` · V(0)=${data.emptyBoardValue.toFixed(2)}` : "";
+          badge.textContent = `Connected · NNB TB: ${data.boardCount.toLocaleString()} boards${ev}`;
+        }
+        badge.className = "badge ok";
+      } else {
+        badge.textContent = "Connected · No TB loaded (Heuristic mode)";
+        badge.className = "badge warn";
+      }
+    }
+
+    async function pingServer(syncDefaults = false) {
       const badge = document.getElementById("serverStatus");
       try {
         const res = await fetch(`${apiBase()}/ping`);
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || res.statusText);
-        tbLoaded = !!data.tablebaseLoaded;
-        updateTbDependentButtons();
-        if (tbLoaded) {
-          const ev = data.emptyBoardValue !== null ? ` · V(0)=${data.emptyBoardValue.toFixed(2)}` : "";
-          badge.textContent = `Connected · TB: ${data.boardCount.toLocaleString()} boards${ev}`;
-          badge.className = "badge ok";
-        } else {
-          badge.textContent = "Connected · No TB loaded (Heuristic mode)";
-          badge.className = "badge warn";
-        }
+        applyPingPayload(data, syncDefaults);
       } catch (err) {
         tbLoaded = false;
+        tbFormat = "none";
+        tbRngMode = null;
         updateTbDependentButtons();
         badge.textContent = `Offline (${err.message})`;
         badge.className = "badge err";
@@ -949,8 +1080,7 @@
     }
 
     function isNextBoxPolicy() {
-      const p = document.getElementById("aiPolicySelect").value;
-      return p === "hybrid" || p === "nbHeur";
+      return currentPolicySpec().nextBox;
     }
 
     function useNesRng() {
@@ -958,7 +1088,39 @@
     }
 
     function selectedHeuristicPly() {
-      return document.getElementById("aiPolicySelect").value === "heur1" ? 1 : 2;
+      return currentPolicySpec().ply;
+    }
+
+    function updateTableHeaders(nbMode, ply) {
+      document.getElementById("heurColHeader").textContent =
+        nbMode ? `Heuristic (Next ${PIECE_CHARS[nextPiece]})` : `Heuristic (${ply}-ply)`;
+      document.getElementById("tbQColHeader").textContent =
+        tbFormat === "nextbox"
+          ? `TB Q (r + V(b', ${PIECE_CHARS[nextPiece]}))`
+          : (nbMode ? "Hybrid Q (2-ply)" : "TB Q (r + V')");
+    }
+
+    function renderNextMiniGrid() {
+      const grid = document.getElementById("nextMiniGrid");
+      grid.innerHTML = "";
+      const p = PIECES[nextPiece];
+      const color = PIECE_COLORS[PIECE_CHARS[nextPiece]];
+      const rows = p.rows[0];
+      // Piece spawn masks occupy rows 1..2 (or row 2 for I); find the two non-empty display rows.
+      const startRow = (rows[1] === 0 && rows[2] !== 0) ? 2 : 1;
+      for (let dr = 0; dr < 2; dr++) {
+        const r = startRow + dr;
+        const rowBits = r < 4 ? rows[r] : 0;
+        for (let c = 0; c < 4; c++) {
+          const cell = document.createElement("div");
+          cell.className = "next-mini-cell";
+          if ((rowBits & (1 << (9 - c))) !== 0) {
+            cell.classList.add("filled");
+            cell.style.backgroundColor = color;
+          }
+          grid.appendChild(cell);
+        }
+      }
     }
 
     async function refreshPosition() {
@@ -968,21 +1130,20 @@
       movesReady = false;
       currentMoves = [];
       hoveredMove = null;
-      const nbMode = isNextBoxPolicy();
-      const nextBadge = document.getElementById("nextPieceBadge");
-      nextBadge.style.display = nbMode ? "inline-block" : "none";
-      nextBadge.textContent = `Next: ${PIECE_CHARS[nextPiece]}`;
+      const nbMode = isNextBoxPolicy() || tbFormat === "nextbox";
+      document.getElementById("nextPieceSection").style.display = nbMode ? "flex" : "none";
+      document.getElementById("nextPieceBadge").textContent = `Next: ${PIECE_CHARS[nextPiece]}`;
       renderPiecePills();
+      if (nbMode) renderNextMiniGrid();
       renderBoard();
 
       const ply = selectedHeuristicPly();
-      document.getElementById("heurColHeader").textContent =
-        nbMode ? `Heuristic (Next ${PIECE_CHARS[nextPiece]})` : `Heuristic (${ply}-ply)`;
+      updateTableHeaders(nbMode, ply);
       const nextParam = nbMode ? `&next=${nextPiece}` : "";
       try {
         const [movesRes, infoRes] = await Promise.all([
           fetch(`${apiBase()}/moves?board=${hex}&piece=${currentPiece}&ply=${ply}${nextParam}`),
-          fetch(`${apiBase()}/state-info?board=${hex}&ply=${ply}`)
+          fetch(`${apiBase()}/state-info?board=${hex}&ply=${ply}${nextParam}`)
         ]);
         const movesData = await movesRes.json();
         const infoData = await infoRes.json();
@@ -991,7 +1152,10 @@
         if (!infoRes.ok) throw new Error(infoData.error || "Failed /state-info");
 
         tbLoaded = !!movesData.tablebaseLoaded;
+        if (movesData.tablebaseFormat) tbFormat = movesData.tablebaseFormat;
+        if (infoData.rngMode !== undefined) tbRngMode = infoData.rngMode;
         updateTbDependentButtons();
+        updateTableHeaders(isNextBoxPolicy() || tbFormat === "nextbox", selectedHeuristicPly());
         currentMoves = movesData.moves || [];
         movesReady = true;
 
@@ -1014,10 +1178,38 @@
     function updateStatsAndBanners(info) {
       document.getElementById("statLines").textContent = linesClearedTotal.toLocaleString();
       document.getElementById("statPieces").textContent = piecesPlacedTotal.toLocaleString();
-      document.getElementById("statBoardVal").textContent =
-        info.boardValue !== null ? info.boardValue.toFixed(4) : (info.tablebaseLoaded ? "OUT (0.0)" : "—");
-      document.getElementById("statBackupVal").textContent =
-        info.bellmanBackupValue !== null ? info.bellmanBackupValue.toFixed(4) : "—";
+
+      const isNbTb = info.tablebaseFormat === "nextbox";
+      const curPieceInfo = info.perPiece.find((p) => p.piece === currentPiece);
+      if (isNbTb) {
+        const curChar = PIECE_CHARS[currentPiece];
+        document.getElementById("statBoardValLabel").textContent = `V(b, ${curChar}) / E[V(b)]`;
+        if (curPieceInfo && curPieceInfo.tablebaseValue !== null && info.boardValue !== null) {
+          document.getElementById("statBoardVal").textContent =
+            `${curPieceInfo.tablebaseValue.toFixed(3)} / ${info.boardValue.toFixed(3)}`;
+        } else {
+          document.getElementById("statBoardVal").textContent = info.tablebaseLoaded ? "OUT (0.0)" : "—";
+        }
+        document.getElementById("statBackupValLabel").textContent = `Bellman Backup (${curChar})`;
+        document.getElementById("statBackupVal").textContent =
+          curPieceInfo && typeof curPieceInfo.bellmanBackupValue === "number"
+            ? curPieceInfo.bellmanBackupValue.toFixed(4)
+            : "—";
+        document.getElementById("pieceStripHeader").textContent =
+          `Per-Piece V(b, c) & Best Q for Next=${PIECE_CHARS[nextPiece]} (click to switch current; amber = TB ≠ Heuristic):`;
+      } else {
+        document.getElementById("statBoardValLabel").textContent = "Tablebase V(b)";
+        document.getElementById("statBoardVal").textContent =
+          info.boardValue !== null ? info.boardValue.toFixed(4) : (info.tablebaseLoaded ? "OUT (0.0)" : "—");
+        document.getElementById("statBackupValLabel").textContent = "Bellman 1/7 Σ max Q";
+        document.getElementById("statBackupVal").textContent =
+          info.bellmanBackupValue !== null ? info.bellmanBackupValue.toFixed(4) : "—";
+        document.getElementById("pieceStripHeader").textContent =
+          isNextBoxPolicy()
+            ? `Per-Piece Best Q for Next=${PIECE_CHARS[nextPiece]} (click to switch current; amber = TB ≠ Heuristic):`
+            : "Per-Piece Best Q (click to switch current piece; amber = TB ≠ Heuristic):";
+      }
+
       document.getElementById("statHoles").textContent = `${info.holes} (${info.overhangs})`;
       document.getElementById("statHeur").textContent = info.heuristicBoardScore.toFixed(2);
 
@@ -1043,13 +1235,22 @@
         box.className = "piece-ev-box" +
           (p.piece === currentPiece ? " active" : "") +
           (p.disagree ? " disagree" : "");
-        const valText = p.numTransitions === 0
+        const qText = p.numTransitions === 0
           ? "DEAD"
           : (p.bestTablebaseQ !== null ? p.bestTablebaseQ.toFixed(2) : p.bestHeuristicScore.toFixed(1));
-        box.innerHTML = `<div style="font-weight:700;font-family:var(--mono);">${p.pieceChar}</div>` +
-          `<div style="font-size:11px;font-family:var(--mono);">${valText}</div>` +
-          `<div class="muted" style="font-size:10px;">${p.numTransitions} mv</div>`;
+        if (isNbTb) {
+          const vText = p.tablebaseValue !== null ? p.tablebaseValue.toFixed(2) : "OUT";
+          box.innerHTML = `<div style="font-weight:700;font-family:var(--mono);">${p.pieceChar}</div>` +
+            `<div style="font-size:11px;font-family:var(--mono);" title="Stored V(b, ${p.pieceChar})">V=${vText}</div>` +
+            `<div style="font-size:10.5px;font-family:var(--mono);color:var(--accent);" title="Best Q = r + V(b', ${PIECE_CHARS[nextPiece]})">Q=${qText}</div>` +
+            `<div class="muted" style="font-size:10px;">${p.numTransitions} mv</div>`;
+        } else {
+          box.innerHTML = `<div style="font-weight:700;font-family:var(--mono);">${p.pieceChar}</div>` +
+            `<div style="font-size:11px;font-family:var(--mono);">${qText}</div>` +
+            `<div class="muted" style="font-size:10px;">${p.numTransitions} mv</div>`;
+        }
         box.addEventListener("click", () => {
+          stopAutoplay();
           currentPiece = p.piece;
           resetCursor();
           refreshPosition();
@@ -1154,24 +1355,38 @@
           hoveredMove = null;
           renderBoard();
         });
-        tr.addEventListener("click", () => commitMove(m));
+        tr.addEventListener("click", () => {
+          stopAutoplay();
+          commitMove(m);
+        });
         tbody.appendChild(tr);
       });
     }
 
-    function renderPiecePills() {
-      const wrap = document.getElementById("piecePills");
+    function renderPiecePillRow(containerId, activeIdx, activeClass, onSelect) {
+      const wrap = document.getElementById(containerId);
       wrap.innerHTML = "";
       PIECE_CHARS.forEach((ch, idx) => {
         const btn = document.createElement("button");
-        btn.className = "piece-pill" + (idx === currentPiece ? " selected" : "");
+        btn.className = "piece-pill" + (idx === activeIdx ? ` ${activeClass}` : "");
         btn.textContent = ch;
         btn.addEventListener("click", () => {
-          currentPiece = idx;
-          resetCursor();
-          refreshPosition();
+          stopAutoplay();
+          onSelect(idx);
         });
         wrap.appendChild(btn);
+      });
+    }
+
+    function renderPiecePills() {
+      renderPiecePillRow("piecePills", currentPiece, "selected", (idx) => {
+        currentPiece = idx;
+        resetCursor();
+        refreshPosition();
+      });
+      renderPiecePillRow("nextPiecePills", nextPiece, "next-selected", (idx) => {
+        nextPiece = idx;
+        refreshPosition();
       });
     }
 
@@ -1302,10 +1517,9 @@
     });
 
     async function stepAiOnce() {
-      if (!movesReady || currentMoves.length === 0) return false;
+      if (editMode || !movesReady || currentMoves.length === 0) return false;
       const { bestHeur, bestTb } = chooseBestMoves(currentMoves);
-      const policy = document.getElementById("aiPolicySelect").value;
-      const useTb = (policy === "tb" || policy === "hybrid") && tbLoaded;
+      const useTb = currentPolicySpec().useTb && tbLoaded;
       const chosen = useTb ? bestTb : bestHeur;
       if (!chosen) return false;
       await commitMove(chosen);
@@ -1324,6 +1538,7 @@
     }
 
     document.getElementById("btnAutoPlay").addEventListener("click", () => {
+      if (editMode) return;
       if (autoTimer) {
         stopAutoplay();
         return;
@@ -1351,12 +1566,13 @@
     });
 
     document.getElementById("btnStepAi").addEventListener("click", () => {
+      if (editMode) return;
       stopAutoplay();
       stepAiOnce();
     });
 
     document.getElementById("btnNextDisagree").addEventListener("click", async () => {
-      if (!tbLoaded) return;
+      if (editMode || !tbLoaded) return;
       stopAutoplay();
       const mySeek = ++seekSeq;
       for (let i = 0; i < 500; i++) {
@@ -1381,9 +1597,7 @@
       document.getElementById("seedInput").disabled = useClock;
     }
 
-    document.getElementById("randomSeedCheckbox").addEventListener("change", syncSeedInputState);
-
-    document.getElementById("btnNewGame").addEventListener("click", () => {
+    async function startNewGame(allowFallbackSeed = false) {
       stopAutoplay();
       let parsedSeed;
       if (document.getElementById("randomSeedCheckbox").checked) {
@@ -1392,8 +1606,12 @@
       } else {
         parsedSeed = parseSeedBig(document.getElementById("seedInput").value);
         if (parsedSeed === null) {
-          alert("Seed must be a non-negative integer.");
-          return;
+          if (allowFallbackSeed) {
+            parsedSeed = 42n;
+          } else {
+            alert("Seed must be a non-negative integer.");
+            return;
+          }
         }
       }
       rng = new JsRng(parsedSeed);
@@ -1405,8 +1623,11 @@
       currentPiece = rng.nextOpeningPiece(useNesRng());
       nextPiece = rng.nextPieceAfter(useNesRng(), currentPiece);
       resetCursor();
-      refreshPosition();
-    });
+      await refreshPosition();
+    }
+
+    document.getElementById("randomSeedCheckbox").addEventListener("change", syncSeedInputState);
+    document.getElementById("btnNewGame").addEventListener("click", () => startNewGame(false));
 
     document.getElementById("btnUndo").addEventListener("click", () => {
       stopAutoplay();
@@ -1430,6 +1651,7 @@
       const mb = document.getElementById("modeBadge");
       mb.textContent = editMode ? "EDIT MODE" : "PLAY MODE";
       mb.className = editMode ? "badge warn" : "badge ok";
+      updateTbDependentButtons();
       resetCursor();
       updateGameOverBanner();
       renderBoard();
@@ -1455,11 +1677,13 @@
     });
 
     document.getElementById("sortModeSelect").addEventListener("change", renderMovesTable);
+    document.getElementById("nesRngCheckbox").addEventListener("change", updateRngMismatchBanner);
     document.getElementById("aiPolicySelect").addEventListener("change", () => {
       stopAutoplay();
       refreshPosition();
     });
     document.getElementById("btnPing").addEventListener("click", async () => {
+      stopAutoplay();
       await pingServer();
       await refreshPosition();
     });
@@ -1467,30 +1691,28 @@
       document.getElementById("btnPing").click();
     });
     document.getElementById("btnReloadTb").addEventListener("click", async () => {
+      stopAutoplay();
       try {
         const res = await fetch(`${apiBase()}/reload`);
         const data = await res.json();
-        if (!res.ok) alert(data.error || "Reload failed");
+        if (!res.ok) {
+          alert(data.error || "Reload failed");
+          await pingServer();
+        } else {
+          applyPingPayload(data, true);
+        }
       } catch (err) {
         alert(err.message);
+        await pingServer();
       }
-      await pingServer();
       await refreshPosition();
     });
 
     initBoardDom();
     syncSeedInputState();
-    if (document.getElementById("randomSeedCheckbox").checked) {
-      const bootSeed = generateClockSeed();
-      document.getElementById("seedInput").value = bootSeed.toString();
-      rng = new JsRng(bootSeed);
-    }
-    currentPiece = rng.nextOpeningPiece(useNesRng());
-    nextPiece = rng.nextPieceAfter(useNesRng(), currentPiece);
-    resetCursor();
     (async () => {
-      await pingServer();
-      await refreshPosition();
+      await pingServer(true);
+      await startNewGame(true);
     })();
   </script>
 </body>
