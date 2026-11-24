@@ -3,6 +3,7 @@
 
 #include "core.hpp"
 #include "heuristic.hpp"
+#include "nextbox_gen.hpp"
 #include "nextbox_solver.hpp"
 #include "server_routes.hpp"
 #include "state_generator.hpp"
@@ -2146,4 +2147,341 @@ TEST_CASE("Next-Box V(b,c) MPI solver: packing, Ram vs Disk parity, thread deter
   mappedSub.close();
   std::remove(tmpSubTb.c_str());
   std::remove(tmpFullNb.c_str());
+}
+
+TEST_CASE("Next-Box state generator determinism, frontier probing, and round monotonicity") {
+  // 1. Thread determinism (1T vs 4T) for both Uniform and Nes modes without a tablebase.
+  for (tb::RngMode mode : {tb::RngMode::Uniform, tb::RngMode::Nes}) {
+    tb::NextBoxGenConfig cfg1{};
+    cfg1.rngMode = mode;
+    cfg1.numGames = 80;
+    cfg1.baseSeed = 51515ULL;
+    cfg1.epsilon = 0.08;
+    cfg1.exploreTopK = 4;
+    cfg1.minVisits = 1;
+    cfg1.maxBoards = 2000;
+    cfg1.siblingMinVisits = 3;
+    cfg1.numThreads = 1;
+    const tb::StateGenResult r1 = tb::generateNextBoxStateSpace(cfg1);
+
+    tb::NextBoxGenConfig cfg4 = cfg1;
+    cfg4.numThreads = 4;
+    const tb::StateGenResult r4 = tb::generateNextBoxStateSpace(cfg4);
+
+    CHECK(r1.sortedBoards == r4.sortedBoards);
+    CHECK(r1.rawUniqueDiscovered == r4.rawUniqueDiscovered);
+    CHECK(r1.siblingBoardsAdded == r4.siblingBoardsAdded);
+    CHECK(r1.totalMovesSimulated == r4.totalMovesSimulated);
+    REQUIRE_FALSE(r1.sortedBoards.empty());
+    CHECK(r1.sortedBoards.front() == 0ULL);
+    CHECK(std::is_sorted(r1.sortedBoards.begin(), r1.sortedBoards.end()));
+    CHECK(std::adjacent_find(r1.sortedBoards.begin(), r1.sortedBoards.end())
+          == r1.sortedBoards.end());
+    CHECK(r1.sortedBoards.size() <= cfg1.maxBoards);
+  }
+
+  // 2. Frontier probing: verify both TB runner-up AND out-of-TB 2-ply heuristic winner are
+  //    sampled, and greedy TB move is never repeated during exploration (even when TB and
+  //    heuristic agree).
+  {
+    const int oIdx = tb::parsePieceChar('O');
+    const int iIdx = tb::parsePieceChar('I');
+    tb::TransitionList oMoves;
+    tb::generateTransitions(0ULL, oIdx, oMoves);
+    REQUIRE(oMoves.size() == 9);
+
+    const tb::ChosenTransition heurWinner = tb::pickBestNextBoxHeuristic(0ULL, oIdx, iIdx);
+    REQUIRE(heurWinner.found);
+
+    // Put 4 non-heuristic-winner moves into the TB with distinct positive values.
+    std::vector<std::pair<uint64_t, float>> entries;
+    float val = 10.0f;
+    uint64_t tbBestBoard = 0ULL;
+    uint64_t tbRunnerUpBoard = 0ULL;
+    for (int m = 0; m < oMoves.size() && entries.size() < 4; ++m) {
+      if (oMoves[m].afterBoard == heurWinner.transition.afterBoard) {
+        continue;
+      }
+      if (entries.empty()) {
+        tbBestBoard = oMoves[m].afterBoard;
+      } else if (entries.size() == 1) {
+        tbRunnerUpBoard = oMoves[m].afterBoard;
+      }
+      entries.emplace_back(oMoves[m].afterBoard, val);
+      val -= 1.0f;
+    }
+    REQUIRE(entries.size() == 4);
+    std::sort(entries.begin(), entries.end());
+    std::vector<uint64_t> tbBoards;
+    std::vector<float> tbVals;
+    for (const auto &e : entries) {
+      tbBoards.push_back(e.first);
+      for (int p = 0; p < tb::NUM_PIECES; ++p) {
+        tbVals.push_back(e.second);
+      }
+    }
+
+    const std::string tmpProbeTb = "build/test_nb_probe.tb.bin";
+    REQUIRE(tb::writeNextBoxTablebaseFile(tmpProbeTb, tbBoards, tbVals, tb::RngMode::Nes, 0.0));
+    tb::MappedNextBoxTablebase mProbe;
+    REQUIRE(mProbe.open(tmpProbeTb));
+    tb::IndexedNextBoxTablebase iProbe(mProbe);
+
+    tb::Rng probeRng(777ULL);
+    bool sawRunnerUp = false;
+    bool sawHeurFrontier = false;
+    for (int trial = 0; trial < 200; ++trial) {
+      const tb::ChosenTransition ch =
+          tb::selectNextBoxRolloutTransition(0ULL, oIdx, iIdx, probeRng, &iProbe, /*epsilon=*/1.0,
+                                             /*exploreTopK=*/4, tb::EvalWeights{});
+      REQUIRE(ch.found);
+      CHECK(ch.transition.afterBoard != tbBestBoard);
+      if (ch.transition.afterBoard == tbRunnerUpBoard) {
+        sawRunnerUp = true;
+      }
+      if (ch.transition.afterBoard == heurWinner.transition.afterBoard) {
+        sawHeurFrontier = true;
+      }
+    }
+    CHECK(sawRunnerUp);
+    CHECK(sawHeurFrontier);
+    mProbe.close();
+    std::remove(tmpProbeTb.c_str());
+
+    // When TB greedy winner IS the heuristic winner, exploration must still never repeat it.
+    std::vector<uint64_t> agreeBoards = {heurWinner.transition.afterBoard};
+    std::vector<float> agreeVals(tb::NUM_PIECES, 20.0f);
+    const std::string tmpAgreeTb = "build/test_nb_agree.tb.bin";
+    REQUIRE(
+        tb::writeNextBoxTablebaseFile(tmpAgreeTb, agreeBoards, agreeVals, tb::RngMode::Nes, 0.0));
+    tb::MappedNextBoxTablebase mAgree;
+    REQUIRE(mAgree.open(tmpAgreeTb));
+    tb::IndexedNextBoxTablebase iAgree(mAgree);
+    tb::Rng agreeRng(888ULL);
+    for (int trial = 0; trial < 100; ++trial) {
+      const tb::ChosenTransition ch =
+          tb::selectNextBoxRolloutTransition(0ULL, oIdx, iIdx, agreeRng, &iAgree, /*epsilon=*/1.0,
+                                             /*exploreTopK=*/4, tb::EvalWeights{});
+      REQUIRE(ch.found);
+      CHECK(ch.transition.afterBoard != heurWinner.transition.afterBoard);
+    }
+
+    // All-OUT (anyInTb == false) with a loaded TB: exploration falls back to heuristic probe and
+    // must still never repeat the #1 heuristic move.
+    const tb::ChosenTransition iHeurBest = tb::pickBestNextBoxHeuristic(0ULL, iIdx, oIdx);
+    REQUIRE(iHeurBest.found);
+    for (int trial = 0; trial < 60; ++trial) {
+      const tb::ChosenTransition ch =
+          tb::selectNextBoxRolloutTransition(0ULL, iIdx, oIdx, agreeRng, &iAgree, /*epsilon=*/1.0,
+                                             /*exploreTopK=*/4, tb::EvalWeights{});
+      REQUIRE(ch.found);
+      CHECK(ch.transition.afterBoard != iHeurBest.transition.afterBoard);
+    }
+
+    // Exact tbQ tie-breaking parity: two moves tied at max tbQ = 15.0; both exploration branches
+    // must match chooseNextBoxTablebaseMove(..., closedWorld=false) on rank 0 while allowing the
+    // tied runner-up to be sampled.
+    std::vector<uint64_t> tieBoards = {oMoves[0].afterBoard, oMoves[4].afterBoard};
+    std::sort(tieBoards.begin(), tieBoards.end());
+    std::vector<float> tieVals(tieBoards.size() * tb::NUM_PIECES, 15.0f);
+    const std::string tmpTieTb = "build/test_nb_roll_tie.tb.bin";
+    REQUIRE(tb::writeNextBoxTablebaseFile(tmpTieTb, tieBoards, tieVals, tb::RngMode::Nes, 0.0));
+    tb::MappedNextBoxTablebase mTie;
+    REQUIRE(mTie.open(tmpTieTb));
+    tb::IndexedNextBoxTablebase iTie(mTie);
+    const tb::TablebaseMoveChoice greedyTie =
+        tb::chooseNextBoxTablebaseMove(0ULL, oIdx, iIdx, iTie, /*closedWorld=*/false);
+    REQUIRE(greedyTie.found);
+    const uint64_t otherTied = (greedyTie.transition.afterBoard == oMoves[0].afterBoard)
+                                   ? oMoves[4].afterBoard
+                                   : oMoves[0].afterBoard;
+    bool sawOtherTied = false;
+    for (int trial = 0; trial < 150; ++trial) {
+      const tb::ChosenTransition ch =
+          tb::selectNextBoxRolloutTransition(0ULL, oIdx, iIdx, agreeRng, &iTie, /*epsilon=*/1.0,
+                                             /*exploreTopK=*/4, tb::EvalWeights{});
+      REQUIRE(ch.found);
+      CHECK(ch.transition.afterBoard != greedyTie.transition.afterBoard);
+      if (ch.transition.afterBoard == otherTied) {
+        sawOtherTied = true;
+      }
+    }
+    CHECK(sawOtherTied);
+
+    // Boundary cases: epsilon == 0, exploreTopK < 2, single legal move (tl.size() == 1), top-out.
+    CHECK(tb::selectNextBoxRolloutTransition(0ULL, oIdx, iIdx, agreeRng, &iTie, 0.0, 4,
+                                             tb::EvalWeights{})
+              .transition.afterBoard
+          == greedyTie.transition.afterBoard);
+    CHECK(tb::selectNextBoxRolloutTransition(0ULL, oIdx, iIdx, agreeRng, &iTie, 1.0, 1,
+                                             tb::EvalWeights{})
+              .transition.afterBoard
+          == greedyTie.transition.afterBoard);
+    const uint64_t oneSlotBoard = mustParse("XXXXXXXXX.\n"
+                                            "XXXXXXXXX.\n"
+                                            "XXXXXXXXX.\n"
+                                            "XXXXXXXXX.");
+    const tb::ChosenTransition singleMove =
+        tb::selectNextBoxRolloutTransition(oneSlotBoard, iIdx, oIdx, agreeRng, &iTie,
+                                           /*epsilon=*/1.0, /*exploreTopK=*/4, tb::EvalWeights{});
+    REQUIRE(singleMove.found);
+    CHECK(singleMove.transition.linesCleared == 4);
+    CHECK(singleMove.transition.afterBoard == 0ULL);
+    CHECK_FALSE(tb::selectNextBoxRolloutTransition(oneSlotBoard, oIdx, iIdx, agreeRng, &iTie,
+                                                   /*epsilon=*/1.0, /*exploreTopK=*/4,
+                                                   tb::EvalWeights{})
+                    .found);
+
+    mTie.close();
+    std::remove(tmpTieTb.c_str());
+    mAgree.close();
+    std::remove(tmpAgreeTb.c_str());
+  }
+
+  // 2b. Direct expandNextBoxCoreSiblings multi-next emission + dedup check and tight maxBoards cap.
+  {
+    const int oIdx = tb::parsePieceChar('O');
+    tb::TransitionList oMoves;
+    tb::generateTransitions(0ULL, oIdx, oMoves);
+    REQUIRE(oMoves.size() == 9);
+    const uint64_t heur1PlyBoard = tb::pickBestTransition1Ply(0ULL, oIdx).transition.afterBoard;
+
+    std::vector<uint64_t> distinctMoves;
+    for (int m = 0; m < oMoves.size() && distinctMoves.size() < 3; ++m) {
+      if (oMoves[m].afterBoard != heur1PlyBoard) {
+        distinctMoves.push_back(oMoves[m].afterBoard);
+      }
+    }
+    REQUIRE(distinctMoves.size() == 3);
+    std::sort(distinctMoves.begin(), distinctMoves.end());
+
+    // Make move 0 win for next=0, move 1 win for next=1, move 2 win for next=2..6.
+    std::vector<float> multiVals(distinctMoves.size() * tb::NUM_PIECES, 1.0f);
+    multiVals[0 * tb::NUM_PIECES + 0] = 50.0f;
+    multiVals[1 * tb::NUM_PIECES + 1] = 50.0f;
+    for (int n = 2; n < tb::NUM_PIECES; ++n) {
+      multiVals[2 * tb::NUM_PIECES + static_cast<size_t>(n)] = 50.0f;
+    }
+    const std::string tmpSibTb = "build/test_nb_sib.tb.bin";
+    REQUIRE(
+        tb::writeNextBoxTablebaseFile(tmpSibTb, distinctMoves, multiVals, tb::RngMode::Nes, 0.0));
+    tb::MappedNextBoxTablebase mSib;
+    REQUIRE(mSib.open(tmpSibTb));
+    tb::IndexedNextBoxTablebase iSib(mSib);
+
+    tb::NextBoxGenConfig sibCfg{};
+    sibCfg.siblingMinVisits = 5;
+    sibCfg.numThreads = 2;
+    const std::vector<std::pair<uint64_t, uint32_t>> rawCore = {{0ULL, 5U}};
+    const std::vector<uint64_t> sibs =
+        tb::detail::expandNextBoxCoreSiblings(rawCore, sibCfg, &iSib);
+    CHECK(std::is_sorted(sibs.begin(), sibs.end()));
+    CHECK(std::adjacent_find(sibs.begin(), sibs.end()) == sibs.end());
+    CHECK(std::binary_search(sibs.begin(), sibs.end(), heur1PlyBoard));
+    for (uint64_t b : distinctMoves) {
+      CHECK(std::binary_search(sibs.begin(), sibs.end(), b));
+    }
+
+    // Tight maxBoards cap with priorBoards + 0ULL preservation.
+    tb::NextBoxGenConfig capCfg{};
+    capCfg.rngMode = tb::RngMode::Nes;
+    capCfg.numGames = 30;
+    capCfg.baseSeed = 4242ULL;
+    capCfg.minVisits = 1;
+    capCfg.maxBoards = 10;
+    capCfg.siblingMinVisits = 0;
+    capCfg.numThreads = 2;
+    const tb::StateGenResult capped =
+        tb::generateNextBoxStateSpace(capCfg, nullptr, &distinctMoves);
+    CHECK(capped.sortedBoards.size() == 10);
+    CHECK(capped.sortedBoards.front() == 0ULL);
+    CHECK(capped.priorBoardsMerged == distinctMoves.size());
+    CHECK(std::includes(capped.sortedBoards.begin(), capped.sortedBoards.end(),
+                        distinctMoves.begin(), distinctMoves.end()));
+
+    mSib.close();
+    std::remove(tmpSibTb.c_str());
+  }
+
+  // 3. Mini end-to-end iterative Next-Box loop (Round 0 -> Solve -> Round 1 with TB + merge ->
+  //    Warm-Started Solve): verify superset growth, thread determinism with TB + merge,
+  //    coverage determinism, and round-over-round value monotonicity V_1(0, c) >= V_0(0, c).
+  {
+    tb::NextBoxGenConfig gen0Cfg{};
+    gen0Cfg.rngMode = tb::RngMode::Nes;
+    gen0Cfg.numGames = 60;
+    gen0Cfg.baseSeed = 9001ULL;
+    gen0Cfg.epsilon = 0.06;
+    gen0Cfg.minVisits = 2;
+    gen0Cfg.maxBoards = 4000;
+    gen0Cfg.siblingMinVisits = 4;
+    gen0Cfg.numThreads = 4;
+    const tb::StateGenResult gen0 = tb::generateNextBoxStateSpace(gen0Cfg);
+    REQUIRE(gen0.sortedBoards.size() > 10);
+    CHECK(gen0.sortedBoards.front() == 0ULL);
+
+    tb::NextBoxSolveConfig solveCfg{};
+    solveCfg.rngMode = tb::RngMode::Nes;
+    solveCfg.policyCacheMode = tb::PolicyCacheMode::Ram;
+    solveCfg.tolerance = 1e-8;
+    solveCfg.innerEvalSweeps = 30;
+    solveCfg.numThreads = 4;
+    const tb::NextBoxSolveResult sol0 = tb::solveNextBoxMPI(gen0.sortedBoards, solveCfg);
+    REQUIRE(sol0.ok);
+
+    const std::string tmpR0Tb = "build/test_nb_r0.tb.bin";
+    REQUIRE(tb::writeNextBoxTablebaseFile(tmpR0Tb, gen0.sortedBoards, sol0.values, tb::RngMode::Nes,
+                                          sol0.finalBellmanResidual));
+    tb::MappedNextBoxTablebase tb0;
+    REQUIRE(tb0.open(tmpR0Tb));
+
+    tb::NextBoxGenConfig gen1Cfg = gen0Cfg;
+    gen1Cfg.baseSeed = 9002ULL;
+    gen1Cfg.epsilon = 0.04;
+    gen1Cfg.maxBoards = 10000;
+    gen1Cfg.numThreads = 1;
+    const tb::StateGenResult gen1T1 =
+        tb::generateNextBoxStateSpace(gen1Cfg, &tb0, &gen0.sortedBoards);
+    gen1Cfg.numThreads = 4;
+    const tb::StateGenResult gen1T4 =
+        tb::generateNextBoxStateSpace(gen1Cfg, &tb0, &gen0.sortedBoards);
+
+    CHECK(gen1T1.sortedBoards == gen1T4.sortedBoards);
+    CHECK(gen1T4.priorBoardsMerged == gen0.sortedBoards.size());
+    CHECK(gen1T4.sortedBoards.size() >= gen0.sortedBoards.size());
+    CHECK(std::includes(gen1T4.sortedBoards.begin(), gen1T4.sortedBoards.end(),
+                        gen0.sortedBoards.begin(), gen0.sortedBoards.end()));
+
+    const tb::CoverageReport cov0 =
+        tb::measureNextBoxCoverage(gen1T4.sortedBoards, 0, 12345ULL, tb::RngMode::Nes, &tb0, 2);
+    CHECK(cov0.games == 0);
+    const tb::CoverageReport covHeur =
+        tb::measureNextBoxCoverage(gen1T4.sortedBoards, 15, 12345ULL, tb::RngMode::Nes, nullptr, 2);
+    CHECK(covHeur.games == 15);
+    CHECK(covHeur.overallHitPct > 0.0);
+
+    const tb::CoverageReport cov1 =
+        tb::measureNextBoxCoverage(gen1T4.sortedBoards, 40, 12345ULL, tb::RngMode::Nes, &tb0, 1);
+    const tb::CoverageReport cov4 =
+        tb::measureNextBoxCoverage(gen1T4.sortedBoards, 40, 12345ULL, tb::RngMode::Nes, &tb0, 4);
+    CHECK(cov1.meanLines == cov4.meanLines);
+    CHECK(cov1.stdErrLines == cov4.stdErrLines);
+    CHECK(cov1.overallHitPct == cov4.overallHitPct);
+    CHECK(cov1.fullyCoveredGamePct == cov4.fullyCoveredGamePct);
+    CHECK(cov1.byHoles.total == cov4.byHoles.total);
+    CHECK(cov1.byHoles.inSet == cov4.byHoles.inSet);
+    CHECK(cov1.overallHitPct > 0.0);
+
+    const tb::NextBoxSolveResult sol1 = tb::solveNextBoxMPI(gen1T4.sortedBoards, solveCfg, &tb0);
+    REQUIRE(sol1.ok);
+    CHECK(sol1.warmStartBoardsMatched == gen0.sortedBoards.size());
+    CHECK(sol1.emptyBoardExpectedValue >= sol0.emptyBoardExpectedValue - 1e-5);
+    for (int c = 0; c < tb::NUM_PIECES; ++c) {
+      CHECK(sol1.emptyBoardValues[static_cast<size_t>(c)]
+            >= sol0.emptyBoardValues[static_cast<size_t>(c)] - 1e-5);
+    }
+
+    tb0.close();
+    std::remove(tmpR0Tb.c_str());
+  }
 }

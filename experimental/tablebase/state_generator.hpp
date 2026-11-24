@@ -24,9 +24,8 @@ namespace tb {
 namespace detail {
 
 template <typename NnbTablebase>
-inline ChosenTransition chooseGreedyPolicyMove(uint64_t board, int pieceIdx,
-                                               const NnbTablebase *tb, int heurPly,
-                                               const EvalWeights &w) {
+inline ChosenTransition chooseGreedyPolicyMove(uint64_t board, int pieceIdx, const NnbTablebase *tb,
+                                               int heurPly, const EvalWeights &w) {
   assert(heurPly == 1 || heurPly == 2);
   if (tb != nullptr && tb->isLoaded()) {
     const TablebaseMoveChoice ch =
@@ -258,23 +257,18 @@ struct StateGenResult {
   std::array<uint64_t, NUM_HOLE_BUCKETS> boardHoleDistribution{};
 };
 
-// Picks a rollout move under the mixed (1 - epsilon) greedy + epsilon top-K exploration policy.
-// When epsilon triggers and >= 2 legal moves exist, selects uniformly among ranks [1 .. min(K,
-// N)-1] (strictly non-greedy runner-up moves) so epsilon equals the exact deviation rate.
-template <typename NnbTablebase>
-inline ChosenTransition selectRolloutTransition(uint64_t board, int pieceIdx, Rng &rng,
-                                                const NnbTablebase *tb, int heurPly, double epsilon,
-                                                int exploreTopK, const EvalWeights &w) {
-  assert(heurPly == 1 || heurPly == 2);
-  const bool tbActive = (tb != nullptr && tb->isLoaded());
-  const bool doExplore = (epsilon > 0.0 && exploreTopK >= 2 && rng.nextDouble() < epsilon);
+namespace detail {
 
-  if (!doExplore) {
-    return detail::chooseGreedyPolicyMove(board, pieceIdx, tb, heurPly, w);
-  }
-
-  TransitionList tl;
-  generateTransitions(board, pieceIdx, tl);
+// Shared top-K exploration selector used by both NNB and Next-Box rollout samplers.
+// When a tablebase is active with in-set moves, splits exploration 50/50 between:
+//   - TB runner-up moves (ranks 2..K by TB Q, lazy heuristic tie-break),
+//   - Heuristic frontier probes (top non-greedy moves by evalHeur, pinning the greedy TB move
+//     to rank 0 so epsilon equals the exact deviation rate and strong out-of-TB moves get
+//     discovered).
+template <typename LookupChildValFn, typename EvalHeurFn>
+inline ChosenTransition selectExploreTransition(const TransitionList &tl, Rng &rng, int exploreTopK,
+                                                bool tbActive, LookupChildValFn &&lookupChildVal,
+                                                EvalHeurFn &&evalHeur) {
   if (tl.empty()) {
     return {};
   }
@@ -291,28 +285,19 @@ inline ChosenTransition selectRolloutTransition(uint64_t board, int pieceIdx, Rn
   ScoredMove scored[MAX_TRANSITIONS];
   const int n = tl.size();
 
-  const auto evalHeur = [&](const Transition &t) {
-    return (heurPly == 2) ? scoreTransition2Ply(t.afterBoard, t.linesCleared, w)
-                          : scoreTransition1Ply(t.afterBoard, t.linesCleared, w);
-  };
-
   constexpr uint64_t NO_BOARD = ~0ULL;
   bool anyInTb = false;
   double tbQ[MAX_TRANSITIONS];
   if (tbActive) {
     for (int i = 0; i < n; ++i) {
       float childVal = 0.0f;
-      const bool inTb = tb->lookup(tl[i].afterBoard, childVal);
+      const bool inTb = lookupChildVal(tl[i].afterBoard, childVal);
       anyInTb = anyInTb || inTb;
       tbQ[i] =
           static_cast<double>(tl[i].linesCleared) + (inTb ? static_cast<double>(childVal) : 0.0);
     }
   }
 
-  // When a tablebase is active with in-set moves, split exploration 50/50 between:
-  //   - TB runner-up moves (ranks 2..K by TB Q): explores alternative in-set trajectories;
-  //   - Heuristic frontier probes (top non-greedy moves by heuristic): discovers strong moves
-  //     outside the current tablebase that TB currently values at 0.0.
   const bool useHeuristicProbe = !tbActive || !anyInTb || ((rng.nextU64() & 1ULL) != 0ULL);
   uint64_t excludeBoard = NO_BOARD;
 
@@ -338,8 +323,6 @@ inline ChosenTransition selectRolloutTransition(uint64_t board, int pieceIdx, Rn
     for (int i = 0; i < n; ++i) {
       scored[i] = {tl[i], tbQ[i], 0.0, i};
     }
-    // Lazily break equal-Q ties (including tied q == 0 out-of-TB exits) with the same heurPly
-    // tie-breaker used by chooseTablebaseMove so rank 0 always matches the greedy TB move.
     for (int i = 0; i < n; ++i) {
       bool hasTie = false;
       for (int j = 0; j < n; ++j) {
@@ -354,25 +337,53 @@ inline ChosenTransition selectRolloutTransition(uint64_t board, int pieceIdx, Rn
     }
   }
 
-  // Pin excludeBoard (if set) to rank 0 so pickRank in [1 .. kEff - 1] never repeats the greedy TB
-  // move (in heuristic-probe mode, rank 1 can be the #1 heuristic move whenever it disagrees with
-  // TB).
   const int kEff = std::min(exploreTopK, n);
   std::partial_sort(scored, scored + kEff, scored + n,
                     [excludeBoard](const ScoredMove &a, const ScoredMove &b) {
                       const bool aExcl = (a.t.afterBoard == excludeBoard);
                       const bool bExcl = (b.t.afterBoard == excludeBoard);
-                      if (aExcl != bExcl)
+                      if (aExcl != bExcl) {
                         return aExcl;
-                      if (a.primary != b.primary)
+                      }
+                      if (a.primary != b.primary) {
                         return a.primary > b.primary;
-                      if (a.secondary != b.secondary)
+                      }
+                      if (a.secondary != b.secondary) {
                         return a.secondary > b.secondary;
+                      }
                       return a.origIdx < b.origIdx;
                     });
 
   const int pickRank = 1 + static_cast<int>(rng.nextU64() % static_cast<uint64_t>(kEff - 1));
   return {scored[pickRank].t, scored[pickRank].primary, true};
+}
+
+} // namespace detail
+
+// Picks a rollout move under the mixed (1 - epsilon) greedy + epsilon top-K exploration policy.
+// When epsilon triggers and >= 2 legal moves exist, selects uniformly among ranks [1 .. min(K,
+// N)-1] (strictly non-greedy runner-up moves) so epsilon equals the exact deviation rate.
+template <typename NnbTablebase>
+inline ChosenTransition selectRolloutTransition(uint64_t board, int pieceIdx, Rng &rng,
+                                                const NnbTablebase *tb, int heurPly, double epsilon,
+                                                int exploreTopK, const EvalWeights &w) {
+  assert(heurPly == 1 || heurPly == 2);
+  const bool tbActive = (tb != nullptr && tb->isLoaded());
+  const bool doExplore = (epsilon > 0.0 && exploreTopK >= 2 && rng.nextDouble() < epsilon);
+
+  if (!doExplore) {
+    return detail::chooseGreedyPolicyMove(board, pieceIdx, tb, heurPly, w);
+  }
+
+  TransitionList tl;
+  generateTransitions(board, pieceIdx, tl);
+  return detail::selectExploreTransition(
+      tl, rng, exploreTopK, tbActive,
+      [&](uint64_t b, float &outVal) { return tb->lookup(b, outVal); },
+      [&](const Transition &t) {
+        return (heurPly == 2) ? scoreTransition2Ply(t.afterBoard, t.linesCleared, w)
+                              : scoreTransition1Ply(t.afterBoard, t.linesCleared, w);
+      });
 }
 
 inline ChosenTransition selectRolloutTransition(uint64_t board, int pieceIdx, Rng &rng,
@@ -384,18 +395,21 @@ inline ChosenTransition selectRolloutTransition(uint64_t board, int pieceIdx, Rn
 
 namespace detail {
 
-template <typename NnbTablebase>
+// Parallel core-board sibling collector shared by NNB and Next-Box generators.
+// Each worker deduplicates its local buffer periodically and on exit to bound peak RAM and
+// parallelize sorting across large core sets.
+template <typename ExpandBoardFn>
 inline std::vector<uint64_t>
-expandCoreSiblings(const std::vector<std::pair<uint64_t, uint32_t>> &rawEntries,
-                   const StateGenConfig &cfg, const NnbTablebase *tb) {
+collectCoreSiblings(const std::vector<std::pair<uint64_t, uint32_t>> &rawEntries,
+                    uint32_t siblingMinVisits, int numThreads, ExpandBoardFn &&expandBoard) {
   std::vector<uint64_t> siblingCandidates;
-  if (cfg.siblingMinVisits == 0 || rawEntries.empty()) {
+  if (siblingMinVisits == 0 || rawEntries.empty()) {
     return siblingCandidates;
   }
 
   std::vector<uint64_t> coreBoards;
   for (const auto &kv : rawEntries) {
-    if (kv.second >= cfg.siblingMinVisits) {
+    if (kv.second >= siblingMinVisits) {
       coreBoards.push_back(kv.first);
     }
   }
@@ -404,20 +418,57 @@ expandCoreSiblings(const std::vector<std::pair<uint64_t, uint32_t>> &rawEntries,
   }
 
   constexpr size_t SIBLING_CHUNK_SIZE = 256;
-  const int threads = std::max(1, cfg.numThreads);
-  const bool tbActive = (tb != nullptr && tb->isLoaded());
+  constexpr size_t LOCAL_DEDUP_THRESHOLD = 2000000;
+  const int threads = std::max(1, numThreads);
   std::vector<std::vector<uint64_t>> threadSiblings(static_cast<size_t>(threads));
   std::atomic<size_t> nextCore{0};
 
+  const auto dedupVec = [](std::vector<uint64_t> &v) {
+    std::sort(v.begin(), v.end());
+    v.erase(std::unique(v.begin(), v.end()), v.end());
+  };
+
   runWorkerPool(threads, coreBoards.size(), /*minParallelWork=*/512, [&](int tid) {
     auto &out = threadSiblings[static_cast<size_t>(tid)];
+    size_t dedupLimit = LOCAL_DEDUP_THRESHOLD;
     while (true) {
       const size_t start = nextCore.fetch_add(SIBLING_CHUNK_SIZE, std::memory_order_relaxed);
-      if (start >= coreBoards.size())
+      if (start >= coreBoards.size()) {
         break;
+      }
       const size_t end = std::min(coreBoards.size(), start + SIBLING_CHUNK_SIZE);
       for (size_t i = start; i < end; ++i) {
-        const uint64_t b = coreBoards[i];
+        expandBoard(coreBoards[i], out);
+      }
+      if (out.size() >= dedupLimit) {
+        dedupVec(out);
+        dedupLimit = std::max(LOCAL_DEDUP_THRESHOLD, out.size() * 2);
+      }
+    }
+    dedupVec(out);
+  });
+
+  size_t totalSibs = 0;
+  for (const auto &v : threadSiblings) {
+    totalSibs += v.size();
+  }
+  siblingCandidates.reserve(totalSibs);
+  for (auto &v : threadSiblings) {
+    siblingCandidates.insert(siblingCandidates.end(), v.begin(), v.end());
+    std::vector<uint64_t>().swap(v);
+  }
+  dedupVec(siblingCandidates);
+  return siblingCandidates;
+}
+
+template <typename NnbTablebase>
+inline std::vector<uint64_t>
+expandCoreSiblings(const std::vector<std::pair<uint64_t, uint32_t>> &rawEntries,
+                   const StateGenConfig &cfg, const NnbTablebase *tb) {
+  const bool tbActive = (tb != nullptr && tb->isLoaded());
+  return collectCoreSiblings(
+      rawEntries, cfg.siblingMinVisits, cfg.numThreads,
+      [&](uint64_t b, std::vector<uint64_t> &out) {
         for (int c = 0; c < NUM_PIECES; ++c) {
           // Always expand the heuristic reply so frontier moves preferred by the heuristic enter
           // the next state set even when TB currently values them at 0.0; also expand TB's reply
@@ -436,28 +487,137 @@ expandCoreSiblings(const std::vector<std::pair<uint64_t, uint32_t>> &rawEntries,
             }
           }
         }
+      });
+}
+
+// Parallel rollout collector shared by NNB and Next-Box state generators.
+// Releases the ShardedVisitCounter immediately upon returning rawEntries so downstream sibling
+// expansion and board merging do not hold both tables simultaneously.
+template <typename PlayGameFn>
+inline std::vector<std::pair<uint64_t, uint32_t>>
+collectRolloutVisits(int numGames, int numThreads, uint64_t baseSeed, bool verbose,
+                     int progressInterval, const char *progressTag,
+                     std::chrono::steady_clock::time_point t0, uint64_t &outTotalMoves,
+                     double &outMeanTrainLines, PlayGameFn &&playGame) {
+  const int threads = std::max(1, numThreads);
+  ShardedVisitCounter counter;
+
+  std::atomic<int> nextGame{0};
+  std::atomic<int> completedGames{0};
+  std::atomic<uint64_t> totalMoves{0};
+  std::atomic<uint64_t> totalLines{0};
+
+  constexpr size_t LOCAL_FLUSH_THRESHOLD = 100000;
+
+  runWorkerPool(threads, static_cast<size_t>(numGames), /*minParallelWork=*/64, [&](int /*tid*/) {
+    FlatVisitMap localMap(65536);
+    uint64_t localMoves = 0;
+    uint64_t localLines = 0;
+
+    while (true) {
+      const int g = nextGame.fetch_add(1, std::memory_order_relaxed);
+      if (g >= numGames) {
+        break;
+      }
+
+      Rng rng(deriveGameSeed(baseSeed, g));
+      playGame(rng, localMap, localMoves, localLines);
+
+      if (localMap.size() >= LOCAL_FLUSH_THRESHOLD) {
+        counter.flushLocal(localMap);
+        localMap.clear();
+      }
+
+      const int done = completedGames.fetch_add(1, std::memory_order_relaxed) + 1;
+      if (verbose && progressInterval > 0 && (done % progressInterval == 0)) {
+        const double elapsed =
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+        std::printf("  [%s %7d / %d games] ~%zu unique flushed | %.1fs\n", progressTag, done,
+                    numGames, counter.approxUniqueCount(), elapsed);
+        std::fflush(stdout);
       }
     }
+
+    if (localMap.size() > 0) {
+      counter.flushLocal(localMap);
+      localMap.clear();
+    }
+    totalMoves.fetch_add(localMoves, std::memory_order_relaxed);
+    totalLines.fetch_add(localLines, std::memory_order_relaxed);
   });
 
-  size_t totalSibs = 0;
-  for (const auto &v : threadSiblings)
-    totalSibs += v.size();
-  siblingCandidates.reserve(totalSibs);
-  for (auto &v : threadSiblings) {
-    siblingCandidates.insert(siblingCandidates.end(), v.begin(), v.end());
-    std::vector<uint64_t>().swap(v);
+  outTotalMoves = totalMoves.load(std::memory_order_relaxed);
+  outMeanTrainLines = (numGames > 0)
+                          ? (static_cast<double>(totalLines.load(std::memory_order_relaxed))
+                             / static_cast<double>(numGames))
+                          : 0.0;
+  return counter.extractAll();
+}
+
+// Parallel held-out greedy coverage evaluator shared by NNB and Next-Box generators.
+template <typename EvalGameFn>
+inline CoverageReport runCoverageEval(const std::vector<uint64_t> &sortedBoards, int numGames,
+                                      uint64_t baseSeed, int numThreads, EvalGameFn &&evalGame) {
+  assert(numGames >= 0);
+  CoverageReport report{};
+  if (numGames <= 0) {
+    return report;
   }
-  std::sort(siblingCandidates.begin(), siblingCandidates.end());
-  siblingCandidates.erase(std::unique(siblingCandidates.begin(), siblingCandidates.end()),
-                          siblingCandidates.end());
-  return siblingCandidates;
+  report.games = numGames;
+
+  const FlatBoardIndex index(sortedBoards);
+  const int threads = std::max(1, numThreads);
+
+  std::vector<int> gameLines(static_cast<size_t>(numGames), 0);
+  std::vector<HoleStratifiedCounts> threadCounts(static_cast<size_t>(threads));
+  std::atomic<int> fullyCoveredGames{0};
+  std::atomic<int> nextGame{0};
+
+  runWorkerPool(threads, static_cast<size_t>(numGames), /*minParallelWork=*/32, [&](int tid) {
+    HoleStratifiedCounts local{};
+    int localFull = 0;
+    while (true) {
+      const int g = nextGame.fetch_add(1, std::memory_order_relaxed);
+      if (g >= numGames) {
+        break;
+      }
+
+      Rng rng(deriveGameSeed(baseSeed, g));
+      bool allIn = true;
+      const int lines = evalGame(rng, index, local, allIn);
+      if (allIn) {
+        ++localFull;
+      }
+      gameLines[static_cast<size_t>(g)] = lines;
+    }
+    threadCounts[static_cast<size_t>(tid)] = local;
+    fullyCoveredGames.fetch_add(localFull, std::memory_order_relaxed);
+  });
+
+  for (const auto &tc : threadCounts) {
+    report.byHoles.accumulate(tc);
+  }
+
+  const auto meanSe = computeMeanAndStdErr(gameLines);
+  report.meanLines = meanSe.first;
+  report.stdErrLines = meanSe.second;
+
+  const uint64_t totMoves = report.byHoles.allTotal();
+  report.overallHitPct =
+      (totMoves > 0)
+          ? (100.0 * static_cast<double>(report.byHoles.allInSet()) / static_cast<double>(totMoves))
+          : 0.0;
+  report.fullyCoveredGamePct =
+      100.0
+      * static_cast<double>(fullyCoveredGames.load(std::memory_order_relaxed))
+      / static_cast<double>(numGames);
+  return report;
 }
 
 inline void mergeFilterAndCapBoards(std::vector<std::pair<uint64_t, uint32_t>> &rawEntries,
                                     const std::vector<uint64_t> &siblingCandidates,
-                                    const std::vector<uint64_t> *priorBoards,
-                                    const StateGenConfig &cfg, StateGenResult &result) {
+                                    const std::vector<uint64_t> *priorBoards, uint32_t minVisits,
+                                    size_t maxBoards, StateGenResult &result) {
   std::sort(rawEntries.begin(), rawEntries.end(),
             [](const auto &a, const auto &b) { return a.first < b.first; });
 
@@ -512,11 +672,10 @@ inline void mergeFilterAndCapBoards(std::vector<std::pair<uint64_t, uint32_t>> &
       ++iSib;
     }
 
-    const bool keep = isPrior || isSib || (nextKey == 0ULL) || (visits >= cfg.minVisits);
+    const bool keep = isPrior || isSib || (nextKey == 0ULL) || (visits >= minVisits);
     if (keep) {
-      const bool rescuedBySibling =
-          isSib && !isPrior && (nextKey != 0ULL) && (visits < cfg.minVisits);
-      const uint32_t effectiveVisits = (isSib && visits < cfg.minVisits) ? cfg.minVisits : visits;
+      const bool rescuedBySibling = isSib && !isPrior && (nextKey != 0ULL) && (visits < minVisits);
+      const uint32_t effectiveVisits = (isSib && visits < minVisits) ? minVisits : visits;
       merged.push_back({nextKey, effectiveVisits, isPrior, rescuedBySibling});
     }
   }
@@ -527,8 +686,8 @@ inline void mergeFilterAndCapBoards(std::vector<std::pair<uint64_t, uint32_t>> &
   //   key),
   //   3. Newly sampled/sibling boards ranked by visits descending, then board key ascending.
   bool needsResort = false;
-  if (cfg.maxBoards > 0 && merged.size() > cfg.maxBoards) {
-    std::nth_element(merged.begin(), merged.begin() + static_cast<std::ptrdiff_t>(cfg.maxBoards),
+  if (maxBoards > 0 && merged.size() > maxBoards) {
+    std::nth_element(merged.begin(), merged.begin() + static_cast<std::ptrdiff_t>(maxBoards),
                      merged.end(), [](const RankedBoard &a, const RankedBoard &b) {
                        const bool aEmpty = (a.board == 0ULL);
                        const bool bEmpty = (b.board == 0ULL);
@@ -540,7 +699,7 @@ inline void mergeFilterAndCapBoards(std::vector<std::pair<uint64_t, uint32_t>> &
                          return a.visits > b.visits;
                        return a.board < b.board;
                      });
-    merged.resize(cfg.maxBoards);
+    merged.resize(maxBoards);
     needsResort = true;
   }
 
@@ -574,16 +733,6 @@ inline StateGenResult generateStateSpace(const StateGenConfig &cfg,
   assert(cfg.numGames >= 0);
   const auto t0 = std::chrono::steady_clock::now();
 
-  const int threads = std::max(1, cfg.numThreads);
-  ShardedVisitCounter counter;
-
-  std::atomic<int> nextGame{0};
-  std::atomic<int> completedGames{0};
-  std::atomic<uint64_t> totalMoves{0};
-  std::atomic<uint64_t> totalLines{0};
-
-  constexpr size_t LOCAL_FLUSH_THRESHOLD = 100000;
-
   // Build an in-memory O(1) hash index once before launching workers so high-volume rollouts avoid
   // repeated O(log N) binary-search cache misses over mmap.
   IndexedTablebase indexedTb;
@@ -593,70 +742,33 @@ inline StateGenResult generateStateSpace(const StateGenConfig &cfg,
     fastTb = &indexedTb;
   }
 
-  detail::runWorkerPool(
-      threads, static_cast<size_t>(cfg.numGames), /*minParallelWork=*/64, [&](int /*tid*/) {
-        FlatVisitMap localMap(65536);
-        uint64_t localMoves = 0;
-        uint64_t localLines = 0;
-
-        while (true) {
-          const int g = nextGame.fetch_add(1, std::memory_order_relaxed);
-          if (g >= cfg.numGames)
-            break;
-
-          Rng rng(detail::deriveGameSeed(cfg.baseSeed, g));
-          uint64_t board = 0ULL;
-          localMap.add(board, 1);
-
-          for (int step = 0; step < cfg.maxPiecesPerGame; ++step) {
-            const int piece = rng.nextPiece();
-            const ChosenTransition ch = selectRolloutTransition(
-                board, piece, rng, fastTb, cfg.heurPly, cfg.epsilon, cfg.exploreTopK, cfg.weights);
-            if (!ch.found) {
-              break;
-            }
-            ++localMoves;
-            localLines += ch.transition.linesCleared;
-            board = ch.transition.afterBoard;
-            localMap.add(board, 1);
-          }
-
-          if (localMap.size() >= LOCAL_FLUSH_THRESHOLD) {
-            counter.flushLocal(localMap);
-            localMap.clear();
-          }
-
-          const int done = completedGames.fetch_add(1, std::memory_order_relaxed) + 1;
-          if (cfg.verbose && cfg.progressInterval > 0 && (done % cfg.progressInterval == 0)) {
-            const double elapsed =
-                std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
-            std::printf("  [gen %7d / %d games] ~%zu unique flushed | %.1fs\n", done, cfg.numGames,
-                        counter.approxUniqueCount(), elapsed);
-            std::fflush(stdout);
-          }
-        }
-
-        if (localMap.size() > 0) {
-          counter.flushLocal(localMap);
-          localMap.clear();
-        }
-        totalMoves.fetch_add(localMoves, std::memory_order_relaxed);
-        totalLines.fetch_add(localLines, std::memory_order_relaxed);
-      });
-
   StateGenResult result{};
-  result.totalMovesSimulated = totalMoves.load(std::memory_order_relaxed);
-  result.meanTrainLines = (cfg.numGames > 0)
-                              ? static_cast<double>(totalLines.load(std::memory_order_relaxed))
-                                    / static_cast<double>(cfg.numGames)
-                              : 0.0;
-
-  std::vector<std::pair<uint64_t, uint32_t>> rawEntries = counter.extractAll();
+  std::vector<std::pair<uint64_t, uint32_t>> rawEntries = detail::collectRolloutVisits(
+      cfg.numGames, cfg.numThreads, cfg.baseSeed, cfg.verbose, cfg.progressInterval, "gen", t0,
+      result.totalMovesSimulated, result.meanTrainLines,
+      [&](Rng &rng, FlatVisitMap &localMap, uint64_t &localMoves, uint64_t &localLines) {
+        uint64_t board = 0ULL;
+        localMap.add(board, 1);
+        for (int step = 0; step < cfg.maxPiecesPerGame; ++step) {
+          const int piece = rng.nextPiece();
+          const ChosenTransition ch = selectRolloutTransition(
+              board, piece, rng, fastTb, cfg.heurPly, cfg.epsilon, cfg.exploreTopK, cfg.weights);
+          if (!ch.found) {
+            break;
+          }
+          ++localMoves;
+          localLines += ch.transition.linesCleared;
+          board = ch.transition.afterBoard;
+          localMap.add(board, 1);
+        }
+      });
   result.rawUniqueDiscovered = rawEntries.size();
 
   const std::vector<uint64_t> siblingCandidates =
       detail::expandCoreSiblings(rawEntries, cfg, fastTb);
-  detail::mergeFilterAndCapBoards(rawEntries, siblingCandidates, priorBoards, cfg, result);
+  indexedTb.clear();
+  detail::mergeFilterAndCapBoards(rawEntries, siblingCandidates, priorBoards, cfg.minVisits,
+                                  cfg.maxBoards, result);
 
   result.elapsedSec = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
   return result;
@@ -669,85 +781,38 @@ inline CoverageReport measureCoverage(const std::vector<uint64_t> &sortedBoards,
                                       int numThreads, const EvalWeights &w = EvalWeights{},
                                       int maxPiecesPerGame = DEFAULT_MAX_PIECES_PER_GAME) {
   assert(heurPly == 1 || heurPly == 2);
-  assert(numGames >= 0);
-  CoverageReport report{};
-  if (numGames <= 0) {
-    return report;
-  }
-  report.games = numGames;
-
-  const FlatBoardIndex index(sortedBoards);
   IndexedTablebase indexedTb;
   const IndexedTablebase *fastTb = nullptr;
   if (tb != nullptr && tb->isLoaded()) {
     indexedTb.buildFromMapped(*tb);
     fastTb = &indexedTb;
   }
-  const int threads = std::max(1, numThreads);
 
-  std::vector<int> gameLines(static_cast<size_t>(numGames), 0);
-  std::vector<HoleStratifiedCounts> threadCounts(static_cast<size_t>(threads));
-  std::atomic<int> fullyCoveredGames{0};
-  std::atomic<int> nextGame{0};
+  return detail::runCoverageEval(
+      sortedBoards, numGames, baseSeed, numThreads,
+      [&](Rng &rng, const FlatBoardIndex &index, HoleStratifiedCounts &local, bool &allIn) {
+        uint64_t board = 0ULL;
+        int lines = 0;
+        for (int step = 0; step < maxPiecesPerGame; ++step) {
+          const int piece = rng.nextPiece();
+          const ChosenTransition ch =
+              detail::chooseGreedyPolicyMove(board, piece, fastTb, heurPly, w);
+          if (!ch.found) {
+            break;
+          }
+          lines += ch.transition.linesCleared;
+          board = ch.transition.afterBoard;
 
-  detail::runWorkerPool(threads, static_cast<size_t>(numGames), /*minParallelWork=*/32,
-                        [&](int tid) {
-                          HoleStratifiedCounts local{};
-                          int localFull = 0;
-                          while (true) {
-                            const int g = nextGame.fetch_add(1, std::memory_order_relaxed);
-                            if (g >= numGames)
-                              break;
-
-                            Rng rng(detail::deriveGameSeed(baseSeed, g));
-                            uint64_t board = 0ULL;
-                            int lines = 0;
-                            bool allIn = true;
-
-                            for (int step = 0; step < maxPiecesPerGame; ++step) {
-                              const int piece = rng.nextPiece();
-                              const ChosenTransition ch =
-                                  detail::chooseGreedyPolicyMove(board, piece, fastTb, heurPly, w);
-                              if (!ch.found) {
-                                break;
-                              }
-                              lines += ch.transition.linesCleared;
-                              board = ch.transition.afterBoard;
-
-                              const int hb = HoleStratifiedCounts::bucket(countHoles(board));
-                              ++local.total[static_cast<size_t>(hb)];
-                              if (index.find(board) != INVALID_BOARD_ID) {
-                                ++local.inSet[static_cast<size_t>(hb)];
-                              } else {
-                                allIn = false;
-                              }
-                            }
-                            if (allIn)
-                              ++localFull;
-                            gameLines[static_cast<size_t>(g)] = lines;
-                          }
-                          threadCounts[static_cast<size_t>(tid)] = local;
-                          fullyCoveredGames.fetch_add(localFull, std::memory_order_relaxed);
-                        });
-
-  for (const auto &tc : threadCounts) {
-    report.byHoles.accumulate(tc);
-  }
-
-  const auto meanSe = detail::computeMeanAndStdErr(gameLines);
-  report.meanLines = meanSe.first;
-  report.stdErrLines = meanSe.second;
-
-  const uint64_t totMoves = report.byHoles.allTotal();
-  report.overallHitPct =
-      (totMoves > 0)
-          ? (100.0 * static_cast<double>(report.byHoles.allInSet()) / static_cast<double>(totMoves))
-          : 0.0;
-  report.fullyCoveredGamePct =
-      100.0
-      * static_cast<double>(fullyCoveredGames.load(std::memory_order_relaxed))
-      / static_cast<double>(numGames);
-  return report;
+          const int hb = HoleStratifiedCounts::bucket(countHoles(board));
+          ++local.total[static_cast<size_t>(hb)];
+          if (index.find(board) != INVALID_BOARD_ID) {
+            ++local.inSet[static_cast<size_t>(hb)];
+          } else {
+            allIn = false;
+          }
+        }
+        return lines;
+      });
 }
 
 } // namespace tb
