@@ -57,6 +57,35 @@ rebuilding on disk does not update it. Rebuild and restart `live_game_server`
   behavior caused by an in-progress refactor may carry a `TODO` naming the
   follow-up.
 
+## Writing Docs
+
+When taking on big code changes, you should make the following docs:
+
+#### A plan doc 
+
+The purpose of this doc is to pin down all major technical design decisions and scopes the project into distinct phases. Agents will check off the TODO items within each phase as they are completed.
+
+#### A retrospective doc 
+
+The purpose of this doc is to share any quantitative or qualitative results, as well as high-level takeaways from the project.
+
+### Doc Style
+
+The writing style of docs varies by what the intended audience is:
+
+#### Planning docs
+The target audience is agents, so make sure the doc is as clear and specific as possible, without being verbose. Human-readability, while important, is not as much of a priority.
+
+#### Retrospective docs
+The target audience is humans, so comprehensibility is the #1 priority.
+
+- Explain both *what* was done and *why* certain decisions were made. These insights are often the most important part of the doc.
+- Using established technical language is totally fine, but include a glossary in every major section to define (in simple language) any technical terms you use.
+- Too many abbreviations can make docs unreadable, especially to those not familiar with the technical language. The following guidelines should be followed for abbreviations:
+  - Only use very common abbreviations (e.g. NN for neural net), and make sure each one is defined in a glossary before use.
+  - Abbreviations must be used at least 3 times in the doc to be worth shortening. You should scan the doc for abbreviation counts after the first draft and after major edits. The exception to this rule is for technical terms like ReLU where the abbreviated form is more used/recognizable than the expanded version.
+
+
 ## Performance landmines
 
 - **Never widen hot-path structs to carry feature data.** Adding ~40 bytes to
