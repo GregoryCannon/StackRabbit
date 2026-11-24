@@ -1,15 +1,16 @@
 // benchmark_cli.cpp — throughput & survival benchmark + coordinate/random weight tuner
-// for Very Low Lineout agents (NNB 1-ply/2-ply, Next-Box 2-ply heuristic, Hybrid
-// NNB-tablebase + 2-ply Next-Box search, and Next-Box V(b, c) tablebase).
+// for Very Low Lineout agents (NNB 1-ply/2-ply, Next-Box V1/V2 2-ply heuristics, TinyNextBoxNet
+// 1-ply/2-ply neural evaluators, Hybrid NNB-tablebase + 2-ply search, and Next-Box V(b, c) TB).
 //
 // Build:
-//   g++ -O3 -std=c++17 -pthread -Wall -Wextra -Werror experimental/tablebase/benchmark_cli.cpp -o
-//   build/tablebase_bench
+//   g++ -O3 -DNDEBUG -std=c++17 -pthread -Wall -Wextra -Werror \
+//       experimental/tablebase/benchmark_cli.cpp -o build/tablebase_bench
 //
 // Usage:
 //   ./build/tablebase_bench [games=500] [maxPiecesPerGame=50000]
 //   ./build/tablebase_bench tune [trainGames=400] [evalGames=1000] [iters=80]
 //   ./build/tablebase_bench --mode=nextbox-heur|nextbox-heur-v2 [--rng=uniform|nes] [--games=10000]
+//   ./build/tablebase_bench --mode=nextbox-nn1|nextbox-nn2 --nn=PATH [--rng=uniform|nes]
 //   ./build/tablebase_bench --mode=nextbox-hybrid --tb=PATH [--rng=uniform|nes] [--games=10000]
 //   ./build/tablebase_bench --mode=nextbox-tb --tb=PATH [--rng=uniform|nes] [--games=10000]
 
@@ -17,6 +18,7 @@
 #include "distill_linear.hpp"
 #include "heuristic.hpp"
 #include "nextbox_solver.hpp"
+#include "tiny_nn.hpp"
 #include "vi_solver.hpp"
 
 #include <algorithm>
@@ -38,6 +40,8 @@ enum class BenchMode {
   Nnb2Ply,
   NextBoxHeur,
   NextBoxHeurV2,
+  NextBoxNn1,
+  NextBoxNn2,
   NextBoxHybrid,
   NextBoxTb,
 };
@@ -68,18 +72,21 @@ void printUsage(const char *prog, FILE *out) {
   std::fprintf(out, "Usage:\n");
   std::fprintf(out, "  %s [games=500] [maxPiecesPerGame=50000]\n", prog);
   std::fprintf(out, "  %s tune [trainGames=400] [evalGames=1000] [iters=80]\n", prog);
-  std::fprintf(out,
-               "  %s --mode=nextbox-heur|nextbox-heur-v2|nextbox-hybrid|nextbox-tb [--tb=PATH] "
-               "[--rng=uniform|nes]\n"
-               "     [--games=10000] [--seed=700000] [--max-pieces=50000] [--threads=T]\n",
-               prog);
+  std::fprintf(
+      out,
+      "  %s --mode=nextbox-heur|nextbox-heur-v2|nextbox-nn1|nextbox-nn2|nextbox-hybrid|nextbox-tb\n"
+      "     [--tb=PATH] [--nn=PATH] [--rng=uniform|nes]\n"
+      "     [--games=10000] [--seed=700000] [--max-pieces=50000] [--threads=T]\n",
+      prog);
 }
 
 GameResult runSingleGame(uint64_t seed, BenchMode mode, tb::RngMode rngMode,
                          const tb::EvalWeights &w, const tb::IndexedTablebase *nnbTb,
-                         const tb::IndexedNextBoxTablebase *nbTb, int maxPieces) {
+                         const tb::IndexedNextBoxTablebase *nbTb, const tb::TinyNextBoxNet *nnPtr,
+                         int maxPieces) {
   assert(mode != BenchMode::NextBoxHybrid || nnbTb != nullptr);
   assert(mode != BenchMode::NextBoxTb || nbTb != nullptr);
+  assert((mode != BenchMode::NextBoxNn1 && mode != BenchMode::NextBoxNn2) || nnPtr != nullptr);
   tb::Rng rng(seed);
   uint64_t board = 0ULL;
   GameResult res{};
@@ -124,10 +131,16 @@ GameResult runSingleGame(uint64_t seed, BenchMode mode, tb::RngMode rngMode,
       board = ch.transition.afterBoard;
       res.linesCleared += ch.transition.linesCleared;
     } else {
-      const tb::ChosenTransition ch =
-          (mode == BenchMode::NextBoxHeurV2)
-              ? v2Eval.pickBestNextBox2Ply(board, curPiece, nextPiece)
-              : tb::pickBestNextBoxHeuristic(board, curPiece, nextPiece, w);
+      tb::ChosenTransition ch{};
+      if (mode == BenchMode::NextBoxHeurV2) {
+        ch = v2Eval.pickBestNextBox2Ply(board, curPiece, nextPiece);
+      } else if (mode == BenchMode::NextBoxNn1) {
+        ch = tb::chooseNextBoxNnMove1Ply(board, curPiece, nextPiece, *nnPtr);
+      } else if (mode == BenchMode::NextBoxNn2) {
+        ch = tb::chooseNextBoxNnMove2Ply(board, curPiece, nextPiece, *nnPtr, rngMode);
+      } else {
+        ch = tb::pickBestNextBoxHeuristic(board, curPiece, nextPiece, w);
+      }
       if (!ch.found) {
         return res;
       }
@@ -144,22 +157,23 @@ GameResult runSingleGame(uint64_t seed, BenchMode mode, tb::RngMode rngMode,
 
 BenchmarkSummary evaluateGames(int numGames, uint64_t baseSeed, BenchMode mode, tb::RngMode rngMode,
                                const tb::EvalWeights &w, const tb::IndexedTablebase *nnbTb,
-                               const tb::IndexedNextBoxTablebase *nbTb, int maxPieces,
-                               int numThreads) {
+                               const tb::IndexedNextBoxTablebase *nbTb,
+                               const tb::TinyNextBoxNet *nnPtr, int maxPieces, int numThreads) {
   std::vector<GameResult> results(static_cast<size_t>(numGames));
   std::atomic<int> nextIdx{0};
 
   const auto t0 = std::chrono::steady_clock::now();
-  tb::detail::runWorkerPool(
-      numThreads, static_cast<size_t>(numGames), /*minParallelWork=*/16, [&](int /*tid*/) {
-        while (true) {
-          const int i = nextIdx.fetch_add(1, std::memory_order_relaxed);
-          if (i >= numGames)
-            break;
-          results[static_cast<size_t>(i)] = runSingleGame(tb::detail::deriveGameSeed(baseSeed, i),
-                                                          mode, rngMode, w, nnbTb, nbTb, maxPieces);
-        }
-      });
+  tb::detail::runWorkerPool(numThreads, static_cast<size_t>(numGames), /*minParallelWork=*/16,
+                            [&](int /*tid*/) {
+                              while (true) {
+                                const int i = nextIdx.fetch_add(1, std::memory_order_relaxed);
+                                if (i >= numGames)
+                                  break;
+                                results[static_cast<size_t>(i)] =
+                                    runSingleGame(tb::detail::deriveGameSeed(baseSeed, i), mode,
+                                                  rngMode, w, nnbTb, nbTb, nnPtr, maxPieces);
+                              }
+                            });
   const auto t1 = std::chrono::steady_clock::now();
 
   BenchmarkSummary s{};
@@ -248,10 +262,10 @@ int runTuner(int trainGames, int evalGames, int iters) {
 
   const BenchmarkSummary initTrain =
       evaluateGames(trainGames, TRAIN_SEED, BenchMode::Nnb1Ply, tb::RngMode::Uniform, bestW,
-                    nullptr, nullptr, MAX_PIECES, hwThreads);
+                    nullptr, nullptr, nullptr, MAX_PIECES, hwThreads);
   const BenchmarkSummary initEval1 =
       evaluateGames(evalGames, HELD_OUT_SEED, BenchMode::Nnb1Ply, tb::RngMode::Uniform, bestW,
-                    nullptr, nullptr, MAX_PIECES, hwThreads);
+                    nullptr, nullptr, nullptr, MAX_PIECES, hwThreads);
   printSummary("Initial 1-ply (train)", initTrain, trainGames);
   printSummary("Initial 1-ply (held-out)", initEval1, evalGames);
 
@@ -265,7 +279,7 @@ int runTuner(int trainGames, int evalGames, int iters) {
     if (iter == switchIter) {
       bestScore =
           evaluateGames(twoPlyTrainGames, TRAIN_SEED, BenchMode::Nnb2Ply, tb::RngMode::Uniform,
-                        bestW, nullptr, nullptr, MAX_PIECES, hwThreads)
+                        bestW, nullptr, nullptr, nullptr, MAX_PIECES, hwThreads)
               .meanLines;
       std::printf("  --- Switching to 2-ply fine-tuning (baseline 2-ply train mean = %.2f) ---\n",
                   bestScore);
@@ -294,7 +308,7 @@ int runTuner(int trainGames, int evalGames, int iters) {
     const BenchMode stageMode = use2PlyStage ? BenchMode::Nnb2Ply : BenchMode::Nnb1Ply;
     const BenchmarkSummary s =
         evaluateGames(stageGames, TRAIN_SEED, stageMode, tb::RngMode::Uniform, cand, nullptr,
-                      nullptr, MAX_PIECES, hwThreads);
+                      nullptr, nullptr, MAX_PIECES, hwThreads);
     if (s.meanLines > bestScore) {
       bestScore = s.meanLines;
       bestW = cand;
@@ -306,10 +320,10 @@ int runTuner(int trainGames, int evalGames, int iters) {
 
   const BenchmarkSummary finalEval1 =
       evaluateGames(evalGames, HELD_OUT_SEED, BenchMode::Nnb1Ply, tb::RngMode::Uniform, bestW,
-                    nullptr, nullptr, MAX_PIECES, hwThreads);
+                    nullptr, nullptr, nullptr, MAX_PIECES, hwThreads);
   const BenchmarkSummary finalEval2 =
       evaluateGames(evalGames, HELD_OUT_SEED, BenchMode::Nnb2Ply, tb::RngMode::Uniform, bestW,
-                    nullptr, nullptr, MAX_PIECES, hwThreads);
+                    nullptr, nullptr, nullptr, MAX_PIECES, hwThreads);
   printSummary("Tuned 1-ply (held-out)", finalEval1, evalGames);
   printSummary("Tuned 2-ply (held-out)", finalEval2, evalGames);
   printWeightsCode(bestW);
@@ -322,6 +336,7 @@ int runFlaggedBenchmark(int argc, char **argv) {
   BenchMode mode = BenchMode::NextBoxHeur;
   tb::RngMode rngMode = tb::RngMode::Uniform;
   std::string tbPath;
+  std::string nnPath;
   int games = 10000;
   int maxPieces = tb::DEFAULT_MAX_PIECES_PER_GAME;
   uint64_t seed = 700000ULL;
@@ -354,16 +369,19 @@ int runFlaggedBenchmark(int argc, char **argv) {
         mode = BenchMode::NextBoxHeur;
       } else if (val == "nextbox-heur-v2") {
         mode = BenchMode::NextBoxHeurV2;
+      } else if (val == "nextbox-nn1") {
+        mode = BenchMode::NextBoxNn1;
+      } else if (val == "nextbox-nn2") {
+        mode = BenchMode::NextBoxNn2;
       } else if (val == "nextbox-hybrid") {
         mode = BenchMode::NextBoxHybrid;
       } else if (val == "nextbox-tb") {
         mode = BenchMode::NextBoxTb;
       } else {
-        std::fprintf(
-            stderr,
-            "Invalid --mode '%s' (expected nextbox-heur, nextbox-heur-v2, nextbox-hybrid, or "
-            "nextbox-tb)\n",
-            val.c_str());
+        std::fprintf(stderr,
+                     "Invalid --mode '%s' (expected nextbox-heur, nextbox-heur-v2, nextbox-nn1, "
+                     "nextbox-nn2, nextbox-hybrid, or nextbox-tb)\n",
+                     val.c_str());
         return 1;
       }
       modeSet = true;
@@ -379,6 +397,12 @@ int runFlaggedBenchmark(int argc, char **argv) {
         return 1;
       }
       tbPath = val;
+    } else if (flag == "--nn") {
+      if (val.empty()) {
+        std::fprintf(stderr, "Empty path for --nn=\n");
+        return 1;
+      }
+      nnPath = val;
     } else if (flag == "--games") {
       if (!tb::cli::parseStrictU64(val, 1, 1000000ULL, uVal)) {
         std::fprintf(stderr, "Invalid --games '%s' (expected 1..1000000)\n", val.c_str());
@@ -411,13 +435,13 @@ int runFlaggedBenchmark(int argc, char **argv) {
   }
 
   if (!modeSet) {
-    std::fprintf(
-        stderr,
-        "Missing required --mode=nextbox-heur|nextbox-heur-v2|nextbox-hybrid|nextbox-tb.\n");
+    std::fprintf(stderr, "Missing required --mode=nextbox-heur|nextbox-heur-v2|nextbox-nn1|"
+                         "nextbox-nn2|nextbox-hybrid|nextbox-tb.\n");
     printUsage(argv[0], stderr);
     return 1;
   }
   const bool needsTb = (mode == BenchMode::NextBoxHybrid || mode == BenchMode::NextBoxTb);
+  const bool needsNn = (mode == BenchMode::NextBoxNn1 || mode == BenchMode::NextBoxNn2);
   if (needsTb && tbPath.empty()) {
     std::fprintf(stderr, "--mode=%s requires --tb=<path.tb.bin>.\n",
                  mode == BenchMode::NextBoxTb ? "nextbox-tb" : "nextbox-hybrid");
@@ -427,11 +451,22 @@ int runFlaggedBenchmark(int argc, char **argv) {
     std::fprintf(stderr, "--tb= is only valid with --mode=nextbox-hybrid or nextbox-tb.\n");
     return 1;
   }
+  if (needsNn && nnPath.empty()) {
+    std::fprintf(stderr, "--mode=%s requires --nn=<model.nn.bin>.\n",
+                 mode == BenchMode::NextBoxNn1 ? "nextbox-nn1" : "nextbox-nn2");
+    return 1;
+  }
+  if (!needsNn && !nnPath.empty()) {
+    std::fprintf(stderr, "--nn= is only valid with --mode=nextbox-nn1 or nextbox-nn2.\n");
+    return 1;
+  }
 
   tb::IndexedTablebase indexedNnbTb;
   const tb::IndexedTablebase *nnbTbPtr = nullptr;
   tb::IndexedNextBoxTablebase indexedNbTb;
   const tb::IndexedNextBoxTablebase *nbTbPtr = nullptr;
+  tb::TinyNextBoxNet loadedNn;
+  const tb::TinyNextBoxNet *nnPtr = nullptr;
   if (mode == BenchMode::NextBoxHybrid) {
     tb::MappedTablebase mappedTb;
     std::string err;
@@ -454,6 +489,16 @@ int runFlaggedBenchmark(int argc, char **argv) {
     }
     indexedNbTb.buildFromMapped(mappedNbTb);
     nbTbPtr = &indexedNbTb;
+  } else if (needsNn) {
+    std::string err;
+    if (!loadedNn.load(nnPath, &err)) {
+      std::fprintf(stderr, "Error loading NN '%s': %s\n", nnPath.c_str(), err.c_str());
+      return 1;
+    }
+    if (!rngSet) {
+      rngMode = loadedNn.rngMode;
+    }
+    nnPtr = &loadedNn;
   }
 
   const tb::EvalWeights w{};
@@ -473,13 +518,26 @@ int runFlaggedBenchmark(int argc, char **argv) {
   } else if (mode == BenchMode::NextBoxHybrid) {
     tbHitLabel = "in-TB-leaf";
     label = std::string("Next-Box Hybrid 2-ply (") + tb::rngModeName(rngMode) + ")";
+  } else if (mode == BenchMode::NextBoxNn1 || mode == BenchMode::NextBoxNn2) {
+    const std::string prefix =
+        (mode == BenchMode::NextBoxNn1) ? "Next-Box NN 1-ply" : "Next-Box NN 2-ply";
+    if (nnPtr->rngMode != rngMode) {
+      label = prefix
+              + " [nn="
+              + tb::rngModeName(nnPtr->rngMode)
+              + ", eval="
+              + tb::rngModeName(rngMode)
+              + "]";
+    } else {
+      label = prefix + " (" + tb::rngModeName(rngMode) + ")";
+    }
   } else if (mode == BenchMode::NextBoxHeurV2) {
     label = std::string("Next-Box Heur-V2 2-ply (") + tb::rngModeName(rngMode) + ")";
   } else {
     label = std::string("Next-Box Heur 2-ply (") + tb::rngModeName(rngMode) + ")";
   }
   const BenchmarkSummary s =
-      evaluateGames(games, seed, mode, rngMode, w, nnbTbPtr, nbTbPtr, maxPieces, numThreads);
+      evaluateGames(games, seed, mode, rngMode, w, nnbTbPtr, nbTbPtr, nnPtr, maxPieces, numThreads);
   printSummary(label.c_str(), s, games, tbHitLabel);
   return 0;
 }
@@ -528,20 +586,20 @@ int main(int argc, char **argv) {
   std::printf("=== Single-Core Throughput Check (1 thread) ===\n");
   const BenchmarkSummary st1 =
       evaluateGames(std::min(games, 200), SEED, BenchMode::Nnb1Ply, tb::RngMode::Uniform, w,
-                    nullptr, nullptr, maxPieces, 1);
+                    nullptr, nullptr, nullptr, maxPieces, 1);
   printSummary("1-ply NNB (1 thread)", st1, std::min(games, 200));
   const BenchmarkSummary st2 =
       evaluateGames(std::min(games, 50), SEED, BenchMode::Nnb2Ply, tb::RngMode::Uniform, w, nullptr,
-                    nullptr, maxPieces, 1);
+                    nullptr, nullptr, maxPieces, 1);
   printSummary("2-ply Expectimax (1 thread)", st2, std::min(games, 50));
 
   std::printf("\n=== Multi-Core Lineout Survival Benchmark (%d threads, identical seeds) ===\n",
               hwThreads);
   const BenchmarkSummary mt1 = evaluateGames(games, SEED, BenchMode::Nnb1Ply, tb::RngMode::Uniform,
-                                             w, nullptr, nullptr, maxPieces, hwThreads);
+                                             w, nullptr, nullptr, nullptr, maxPieces, hwThreads);
   printSummary("1-ply NNB", mt1, games);
   const BenchmarkSummary mt2 = evaluateGames(games, SEED, BenchMode::Nnb2Ply, tb::RngMode::Uniform,
-                                             w, nullptr, nullptr, maxPieces, hwThreads);
+                                             w, nullptr, nullptr, nullptr, maxPieces, hwThreads);
   printSummary("2-ply Expectimax", mt2, games);
   return 0;
 }

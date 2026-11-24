@@ -10,6 +10,7 @@
 #include "server_routes.hpp"
 #include "state_generator.hpp"
 #include "tablebase_io.hpp"
+#include "tiny_nn.hpp"
 #include "vi_solver.hpp"
 
 #include <algorithm>
@@ -3015,4 +3016,360 @@ TEST_CASE("Linear distillation: Ridge recovery, gradient check, V2 features, and
 
   mappedTb.close();
   std::remove(tmpDistillTb.c_str());
+}
+
+TEST_CASE("TinyNextBoxNet: gradient check, SRNNV001 I/O corruption guards, and 1T/4T parity") {
+  // 1. Exact central finite-difference gradient check across ALL 6 parameter blocks
+  //    (W1, b1, W2, b2, W3, b3) with parent Huber value, child Huber value, Boltzmann ranking CE,
+  //    and L2 weight decay all active simultaneously.
+  const uint64_t b0 = 0ULL;
+  const uint64_t b1 = mustParse("..........\n"
+                                "..........\n"
+                                "XXXX......\n"
+                                "XXXX....XX");
+  const uint64_t b2 = mustParse("..........\n"
+                                "XXXX......\n"
+                                "XXXX......\n"
+                                "XX.X......");
+  const uint64_t b3 = mustParse("..........\n"
+                                "..........\n"
+                                "XXXXXXX.XX\n"
+                                "XXXX...XXX");
+
+  tb::LabeledDecisionSample s1{};
+  s1.board = b1;
+  s1.curPiece = 0;
+  s1.nextPiece = 2;
+  s1.boardInTb = true;
+  s1.vStar = {12.5f, 11.0f, 14.2f, 10.5f, 9.8f, 13.1f, 11.4f};
+  s1.moves.push_back({b0, 1, 20.5, 20.5});
+  s1.moves.push_back({b2, 0, 5.2, 5.2});
+  s1.moves.push_back({b3, 0, 11.8, 11.8});
+
+  tb::LabeledDecisionSample s2{};
+  s2.board = b2;
+  s2.curPiece = 3;
+  s2.nextPiece = 5;
+  s2.boardInTb = true;
+  s2.vStar = {3.2f, 4.1f, 2.9f, 5.0f, 3.7f, 6.4f, 4.8f};
+  s2.moves.push_back({b1, 0, 13.1, 13.1});
+  s2.moves.push_back({b3, 1, 9.5, 9.5});
+
+  const std::vector<tb::LabeledDecisionSample> synDecisions = {s1, s2};
+  const std::vector<size_t> order = {0, 1};
+
+  tb::TinyNextBoxNet net;
+  net.initRandom(/*hidden1=*/8, /*hidden2=*/6, tb::RngMode::Nes, 424242ULL, 8.0f);
+  tb::NnLossConfig lossCfg{};
+  lossCfg.huberDelta = 2.0;
+  lossCfg.valueWeight = 1.0;
+  lossCfg.childValueWeight = 0.75;
+  lossCfg.rankWeight = 2.5;
+  lossCfg.temperature = 1.2;
+  lossCfg.weightDecay = 1e-2;
+
+  std::vector<float> analyticGrad;
+  std::vector<float> dummyGrad;
+  tb::NnBatchScratch scratch;
+  const tb::NnLossBreakdown baseLoss = tb::computeNnSliceLossAndGrad(
+      net, synDecisions, order, 0, synDecisions.size(), lossCfg, analyticGrad, scratch, true);
+  CHECK(std::isfinite(baseLoss.totalLoss));
+  REQUIRE(analyticGrad.size() == net.params.size());
+
+  // Check representative indices in every single parameter block (W1, b1, W2, b2, W3, b3) using
+  // central differences; skip any parameter sitting right on a ReLU kink (detected by asymmetric
+  // one-sided slopes differing markedly).
+  const std::vector<std::pair<size_t, size_t>> blocks = {
+      {net.offW1(), static_cast<size_t>(net.inDim) * static_cast<size_t>(net.h1)},
+      {net.offB1(), static_cast<size_t>(net.h1)},
+      {net.offW2(), static_cast<size_t>(net.h1) * static_cast<size_t>(net.h2)},
+      {net.offB2(), static_cast<size_t>(net.h2)},
+      {net.offW3(), static_cast<size_t>(net.outDim) * static_cast<size_t>(net.h2)},
+      {net.offB3(), static_cast<size_t>(net.outDim)},
+  };
+  constexpr float EPS = 1e-3f;
+  for (const auto &blk : blocks) {
+    const size_t step = std::max<size_t>(1, blk.second / 12);
+    size_t checkedInBlock = 0;
+    for (size_t off = 0; off < blk.second; off += step) {
+      const size_t idx = blk.first + off;
+      const float orig = net.params[idx];
+      net.params[idx] = orig + EPS;
+      const double lp =
+          tb::computeNnSliceLossAndGrad(net, synDecisions, order, 0, synDecisions.size(), lossCfg,
+                                        dummyGrad, scratch, true)
+              .totalLoss;
+      net.params[idx] = orig - EPS;
+      const double lm =
+          tb::computeNnSliceLossAndGrad(net, synDecisions, order, 0, synDecisions.size(), lossCfg,
+                                        dummyGrad, scratch, true)
+              .totalLoss;
+      net.params[idx] = orig;
+      const double slopeP = (lp - baseLoss.totalLoss) / static_cast<double>(EPS);
+      const double slopeM = (baseLoss.totalLoss - lm) / static_cast<double>(EPS);
+      if (std::abs(slopeP - slopeM) > 1e-2 * std::max(1.0, std::abs(slopeP))) {
+        continue; // ReLU/Huber non-differentiable kink within +-EPS
+      }
+      const double numGrad = (lp - lm) / (2.0 * static_cast<double>(EPS));
+      const double denom = std::max(1.0, std::abs(numGrad));
+      CHECK(std::abs(static_cast<double>(analyticGrad[idx]) - numGrad) / denom < 2e-3);
+      ++checkedInBlock;
+    }
+    CHECK(checkedInBlock > 0);
+  }
+
+  // 2. evalPiece vs evalAll exact parity + SRNNV001 save/load round-trip & corruption rejection.
+  for (uint64_t b : {b0, b1, b2, b3}) {
+    float allV[tb::NUM_PIECES] = {};
+    net.evalAll(b, allV);
+    for (int p = 0; p < tb::NUM_PIECES; ++p) {
+      CHECK(net.evalPiece(b, p) == doctest::Approx(allV[p]).epsilon(1e-6));
+    }
+  }
+
+  const std::string tmpNnPath = "build/test_tiny_nn.nn.bin";
+  const std::string tmpCorruptNn = "build/test_tiny_nn_corrupt.nn.bin";
+  std::string err;
+  REQUIRE(net.save(tmpNnPath, &err));
+
+  tb::TinyNextBoxNet loaded;
+  REQUIRE(loaded.load(tmpNnPath, &err));
+  CHECK(loaded.isLoaded());
+  CHECK(loaded.inDim == net.inDim);
+  CHECK(loaded.h1 == net.h1);
+  CHECK(loaded.h2 == net.h2);
+  CHECK(loaded.outDim == net.outDim);
+  CHECK(loaded.rngMode == net.rngMode);
+  CHECK(loaded.params == net.params);
+
+  // Save guards: uninitialized net and NaN weight must be rejected.
+  tb::TinyNextBoxNet emptyNet;
+  CHECK_FALSE(emptyNet.save(tmpCorruptNn, &err));
+  tb::TinyNextBoxNet nanNet = net;
+  nanNet.params[0] = std::numeric_limits<float>::quiet_NaN();
+  CHECK_FALSE(nanNet.save(tmpCorruptNn, &err));
+
+  // Corrupt binary header/payload tests.
+  {
+    std::ifstream src(tmpNnPath, std::ios::binary);
+    std::vector<char> bytes((std::istreambuf_iterator<char>(src)),
+                            std::istreambuf_iterator<char>());
+    REQUIRE(bytes.size() == net.byteSize());
+    const auto writeBytes = [&](const std::vector<char> &buf) {
+      std::ofstream(tmpCorruptNn, std::ios::binary | std::ios::trunc)
+          .write(buf.data(), static_cast<std::streamsize>(buf.size()));
+    };
+
+    tb::TinyNextBoxNet bad;
+    // Wrong magic
+    auto badMagic = bytes;
+    badMagic[0] = 'X';
+    writeBytes(badMagic);
+    CHECK_FALSE(bad.load(tmpCorruptNn, &err));
+
+    // Wrong featureVersion
+    auto badVer = bytes;
+    const uint32_t v99 = 99U;
+    std::memcpy(badVer.data() + offsetof(tb::TinyNnHeader, featureVersion), &v99, sizeof(v99));
+    writeBytes(badVer);
+    CHECK_FALSE(bad.load(tmpCorruptNn, &err));
+
+    // Zero/oversized h1 & h2, bad inDim/outDim
+    auto badH1 = bytes;
+    const uint32_t hugeH1 = tb::NN_MAX_HIDDEN_DIM + 1;
+    std::memcpy(badH1.data() + offsetof(tb::TinyNnHeader, h1), &hugeH1, sizeof(hugeH1));
+    writeBytes(badH1);
+    CHECK_FALSE(bad.load(tmpCorruptNn, &err));
+
+    auto zeroH1 = bytes;
+    const uint32_t zeroU = 0U;
+    std::memcpy(zeroH1.data() + offsetof(tb::TinyNnHeader, h1), &zeroU, sizeof(zeroU));
+    writeBytes(zeroH1);
+    CHECK_FALSE(bad.load(tmpCorruptNn, &err));
+
+    auto zeroH2 = bytes;
+    std::memcpy(zeroH2.data() + offsetof(tb::TinyNnHeader, h2), &zeroU, sizeof(zeroU));
+    writeBytes(zeroH2);
+    CHECK_FALSE(bad.load(tmpCorruptNn, &err));
+
+    auto badInDim = bytes;
+    const uint32_t badIn = 72U;
+    std::memcpy(badInDim.data() + offsetof(tb::TinyNnHeader, inDim), &badIn, sizeof(badIn));
+    writeBytes(badInDim);
+    CHECK_FALSE(bad.load(tmpCorruptNn, &err));
+
+    auto badOutDim = bytes;
+    const uint32_t badOut = 6U;
+    std::memcpy(badOutDim.data() + offsetof(tb::TinyNnHeader, outDim), &badOut, sizeof(badOut));
+    writeBytes(badOutDim);
+    CHECK_FALSE(bad.load(tmpCorruptNn, &err));
+
+    // Invalid rngMode
+    auto badRng = bytes;
+    const uint32_t badR = 2U;
+    std::memcpy(badRng.data() + offsetof(tb::TinyNnHeader, rngMode), &badR, sizeof(badR));
+    writeBytes(badRng);
+    CHECK_FALSE(bad.load(tmpCorruptNn, &err));
+
+    // Truncated header, truncated payload, bloated payload, nonexistent file
+    writeBytes(std::vector<char>(bytes.begin(), bytes.begin() + 16));
+    CHECK_FALSE(bad.load(tmpCorruptNn, &err));
+    writeBytes(std::vector<char>(bytes.begin(), bytes.end() - 4));
+    CHECK_FALSE(bad.load(tmpCorruptNn, &err));
+    auto bloated = bytes;
+    bloated.push_back(0);
+    writeBytes(bloated);
+    CHECK_FALSE(bad.load(tmpCorruptNn, &err));
+    CHECK_FALSE(bad.load("build/nonexistent_tiny_nn.nn.bin", &err));
+
+    // Non-finite float weights (NaN & +Inf) + transactional preservation of loaded net on failure
+    auto nanPayload = bytes;
+    const float nanVal = std::numeric_limits<float>::quiet_NaN();
+    std::memcpy(nanPayload.data() + sizeof(tb::TinyNnHeader), &nanVal, sizeof(nanVal));
+    writeBytes(nanPayload);
+    CHECK_FALSE(bad.load(tmpCorruptNn, &err));
+
+    auto infPayload = bytes;
+    const float infVal = std::numeric_limits<float>::infinity();
+    std::memcpy(infPayload.data() + sizeof(tb::TinyNnHeader), &infVal, sizeof(infVal));
+    writeBytes(infPayload);
+    CHECK_FALSE(bad.load(tmpCorruptNn, &err));
+
+    tb::TinyNextBoxNet infNet = net;
+    infNet.params[1] = -infVal;
+    CHECK_FALSE(infNet.save(tmpCorruptNn, &err));
+
+    // Failed load must not corrupt an already-loaded network.
+    const std::vector<float> savedParams = loaded.params;
+    CHECK_FALSE(loaded.load(tmpCorruptNn, &err));
+    CHECK(loaded.isLoaded());
+    CHECK(loaded.params == savedParams);
+  }
+
+  // Uniform RngMode save/load round-trip.
+  {
+    tb::TinyNextBoxNet uniNet;
+    REQUIRE(uniNet.initRandom(8, 6, tb::RngMode::Uniform, 999ULL, 1.5f));
+    const std::string tmpUniNn = "build/test_tiny_nn_uni.nn.bin";
+    REQUIRE(uniNet.save(tmpUniNn, &err));
+    tb::TinyNextBoxNet uniLoaded;
+    REQUIRE(uniLoaded.load(tmpUniNn, &err));
+    CHECK(uniLoaded.rngMode == tb::RngMode::Uniform);
+    CHECK(uniLoaded.params == uniNet.params);
+    std::remove(tmpUniNn.c_str());
+  }
+
+  // 3. Bitwise extractNnFeatures parity vs extractV2BoardFeatures + fast hasAnyLegalTransition
+  //    exact parity vs generateTransitions across 128 boards x 7 pieces.
+  std::vector<uint64_t> testBoards = {b0, b1, b2, b3};
+  tb::Rng bRng(1234ULL);
+  for (int i = 0; i < 124; ++i) {
+    testBoards.push_back(bRng.nextU64() & tb::VALID_BOARD_MASK);
+  }
+  for (uint64_t tbBoard : testBoards) {
+    float nnF[tb::NN_INPUT_DIM] = {};
+    double v2F[tb::V2_NUM_BOARD_FEATURES] = {};
+    tb::extractNnFeatures(tbBoard, nnF);
+    tb::extractV2BoardFeatures(tbBoard, v2F);
+    CHECK(nnF[tb::NN_FEAT_GLOBALS_OFF + 21] * 30.0f
+          == doctest::Approx(v2F[tb::V2_ROW_TRANSITIONS]).epsilon(1e-4));
+    CHECK(nnF[tb::NN_FEAT_GLOBALS_OFF + 22] * 30.0f
+          == doctest::Approx(v2F[tb::V2_COL_TRANSITIONS]).epsilon(1e-4));
+    CHECK(nnF[tb::NN_FEAT_GLOBALS_OFF + 5] * 10.0f
+          == doctest::Approx(v2F[tb::V2_COVERED_MINO_COUNT]).epsilon(1e-4));
+    CHECK(nnF[tb::NN_FEAT_GLOBALS_OFF + 6] * 6.0f
+          == doctest::Approx(v2F[tb::V2_BURIED_DEPTH_2PLUS]).epsilon(1e-4));
+    for (int p = 0; p < tb::NUM_PIECES; ++p) {
+      tb::TransitionList tl;
+      tb::generateTransitions(tbBoard, p, tl);
+      CHECK(tb::hasAnyLegalTransition(tbBoard, p) == !tl.empty());
+    }
+  }
+
+  // 4. 1T vs 4T inference parity across boards, evalNextPieceExpected Markov + per-piece clamping,
+  //    evaluateNnValueAccuracy, hostile loss configs, and top-out / ply-2 avoidance checks.
+  std::vector<std::array<float, tb::NUM_PIECES>> out1T(testBoards.size());
+  std::vector<std::array<float, tb::NUM_PIECES>> out4T(testBoards.size());
+  for (size_t i = 0; i < testBoards.size(); ++i) {
+    loaded.evalAll(testBoards[i], out1T[i].data());
+  }
+  tb::detail::runWorkerPool(4, testBoards.size(), 1, [&](int tid) {
+    for (size_t i = static_cast<size_t>(tid); i < testBoards.size(); i += 4) {
+      loaded.evalAll(testBoards[i], out4T[i].data());
+    }
+  });
+  CHECK(out1T == out4T);
+
+  // Per-piece max(0, v) clamping + exact Markov transition weights in evalNextPieceExpected.
+  {
+    tb::TinyNextBoxNet biasNet;
+    REQUIRE(biasNet.initRandom(4, 4, tb::RngMode::Nes, 7ULL, 0.0f));
+    std::fill(biasNet.params.begin(), biasNet.params.end(), 0.0f);
+    // Piece 0 = -10.0 (must clamp to 0.0), piece 1 = +14.0, others = 0.0.
+    biasNet.params[biasNet.offB3() + 0] = -10.0f;
+    biasNet.params[biasNet.offB3() + 1] = 14.0f;
+    CHECK(biasNet.evalNextPieceExpected(0ULL, tb::RngMode::Uniform, 0)
+          == doctest::Approx(14.0 / 7.0).epsilon(1e-6));
+    const double expectedNes = tb::pieceTransitionProb(tb::RngMode::Nes, 0, 1) * 14.0;
+    CHECK(biasNet.evalNextPieceExpected(0ULL, tb::RngMode::Nes, 0)
+          == doctest::Approx(expectedNes).epsilon(1e-6));
+
+    // evaluateNnValueAccuracy on synthetic exact targets + empty/unloaded guards.
+    tb::LabeledDecisionSample vs{};
+    vs.board = 0ULL;
+    vs.boardInTb = true;
+    vs.vStar = {-10.0f, 14.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+    const tb::NnValueEvalMetrics exactAcc = tb::evaluateNnValueAccuracy(biasNet, {vs});
+    CHECK(exactAcc.numSamples == 1);
+    CHECK(exactAcc.mae == doctest::Approx(0.0).epsilon(1e-6));
+    CHECK(tb::evaluateNnValueAccuracy(emptyNet, {vs}).numSamples == 0);
+  }
+
+  // Hostile loss config guards (NaN / negative / OOB slice / unloaded net).
+  {
+    tb::NnLossConfig badCfg = lossCfg;
+    badCfg.temperature = std::numeric_limits<double>::quiet_NaN();
+    CHECK(
+        tb::computeNnSliceLossAndGrad(loaded, synDecisions, order, 0, 2, badCfg, dummyGrad, scratch)
+            .totalLoss
+        == 0.0);
+    badCfg = lossCfg;
+    badCfg.valueWeight = -1.0;
+    CHECK(
+        tb::computeNnSliceLossAndGrad(loaded, synDecisions, order, 0, 2, badCfg, dummyGrad, scratch)
+            .totalLoss
+        == 0.0);
+    CHECK(tb::computeNnSliceLossAndGrad(loaded, synDecisions, order, 0, 99, lossCfg, dummyGrad,
+                                        scratch)
+              .totalLoss
+          == 0.0);
+    CHECK_FALSE(tb::chooseNextBoxNnMove1Ply(0ULL, 0, 1, emptyNet).found);
+    CHECK_FALSE(tb::chooseNextBoxNnMove2Ply(0ULL, 0, 1, emptyNet, tb::RngMode::Nes).found);
+  }
+
+  // Top-out and ply-2 top-out avoidance checks (narrowO: only vertical I in col 7 lets O survive).
+  const uint64_t tetrisReady = mustParse("XXXXXXXXX.\n"
+                                         "XXXXXXXXX.\n"
+                                         "XXXXXXXXX.\n"
+                                         "XXXXXXXXX.");
+  CHECK_FALSE(tb::chooseNextBoxNnMove1Ply(tetrisReady, tb::parsePieceChar('O'),
+                                          tb::parsePieceChar('I'), loaded)
+                  .found);
+  CHECK_FALSE(tb::chooseNextBoxNnMove2Ply(tetrisReady, tb::parsePieceChar('O'),
+                                          tb::parsePieceChar('I'), loaded, tb::RngMode::Nes)
+                  .found);
+  CHECK(tb::scoreNextBoxNn2Ply(tetrisReady, 2, tb::parsePieceChar('O'), loaded, tb::RngMode::Nes)
+        == doctest::Approx(2.0));
+
+  const uint64_t narrowO = mustParse("XXXXXXX...\n"
+                                     "XXXXXXX...\n"
+                                     "XXXXXXX...\n"
+                                     "XXXXXXX...");
+  const auto avoidO = tb::chooseNextBoxNnMove2Ply(
+      narrowO, tb::parsePieceChar('I'), tb::parsePieceChar('O'), loaded, tb::RngMode::Nes);
+  REQUIRE(avoidO.found);
+  CHECK(tb::hasAnyLegalTransition(avoidO.transition.afterBoard, tb::parsePieceChar('O')));
+
+  std::remove(tmpNnPath.c_str());
+  std::remove(tmpCorruptNn.c_str());
 }

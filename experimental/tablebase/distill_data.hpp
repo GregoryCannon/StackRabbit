@@ -48,6 +48,9 @@ struct DistillSampleConfig {
   uint64_t baseSeed = 20000000ULL;
   int numThreads = 1;
   bool requireAllMovesInTb = false; // If false, keeps all in-TB moves when >= 2 in-TB moves exist
+  // Include out-of-TB moves where nextPiece tops out (exact qStar = linesCleared; expectedQStar
+  // is approximate if other pieces still fit, so keep false for board-only linear training).
+  bool includeTerminalOutMoves = false;
   EvalWeights weights{};
 };
 
@@ -76,11 +79,40 @@ inline double expectedValueFromRow(const float row[NUM_PIECES], RngMode mode) no
   return ev;
 }
 
+// Fast early-exit check equivalent to !generateTransitions(board, pieceIdx, tmp).empty().
+// Checks straight drops first (returning immediately on the first ceiling-fitting lock), and
+// falls back to full generateTransitions only on the rare tuck-only / top-out boards.
+inline bool hasAnyLegalTransition(uint64_t board, int pieceIdx) noexcept {
+  if (pieceIdx < 0 || pieceIdx >= NUM_PIECES) {
+    return false;
+  }
+  const int numRots = PIECES[pieceIdx].numRots;
+  for (int rot = 0; rot < numRots; ++rot) {
+    for (int xIdx = 0; xIdx < NUM_X_SLOTS; ++xIdx) {
+      const auto &colGeom = detail::GEOMETRY[pieceIdx][rot][xIdx];
+      if (!colGeom[0].inBounds) {
+        continue;
+      }
+      int y = 0;
+      while (!collides(board, colGeom[y + 1])) {
+        ++y;
+      }
+      if (colGeom[y].fitsCeiling) {
+        return true;
+      }
+    }
+  }
+  TransitionList tmp;
+  generateTransitions(board, pieceIdx, tmp);
+  return !tmp.empty();
+}
+
 // Samples a deterministic (thread-count invariant) dataset of labeled Next-Box decision points
 // directly from self-play rollouts of a solved IndexedNextBoxTablebase.
 // Mixes on-policy greedy games (1 - recoverFrac) with epsilon-perturbed games (recoverFrac) so
 // training reflects true strong-play visitation while still covering 1..3+-hole recoveries.
-// Out-of-TB moves are excluded from candidate lists so ranking labels have zero V=0 boundary bias.
+// Out-of-TB moves are excluded so ranking labels have zero V=0 boundary bias (except optional
+// exact terminal moves where nextPiece tops out when includeTerminalOutMoves is enabled).
 inline DistillDataset sampleDistillDataset(const IndexedNextBoxTablebase &tb,
                                            const DistillSampleConfig &cfg) {
   assert(tb.isLoaded());
@@ -152,16 +184,8 @@ inline DistillDataset sampleDistillDataset(const IndexedNextBoxTablebase &tb,
               std::vector<LabeledMoveCandidate> cands;
               cands.reserve(static_cast<size_t>(tl.size()));
 
-              for (int m = 0; m < tl.size(); ++m) {
-                const bool inTb = tb.lookup(tl[m].afterBoard, childRow);
-                if (!inTb) {
-                  allInTb = false;
-                  continue;
-                }
-                const double rew = static_cast<double>(tl[m].linesCleared);
-                const double q = rew + static_cast<double>(childRow[nextPiece]);
-                const double expQ = rew + expectedValueFromRow(childRow, rngMode);
-                cands.push_back({tl[m].afterBoard, tl[m].linesCleared, q, expQ});
+              auto pushCand = [&](uint64_t afterB, uint8_t lc, double q, double expQ) {
+                cands.push_back({afterB, lc, q, expQ});
                 if (q > bestQ) {
                   bestQ = q;
                 }
@@ -171,6 +195,23 @@ inline DistillDataset sampleDistillDataset(const IndexedNextBoxTablebase &tb,
                 if (expQ > bestExpQ) {
                   bestExpQ = expQ;
                 }
+              };
+
+              for (int m = 0; m < tl.size(); ++m) {
+                const bool inTb = tb.lookup(tl[m].afterBoard, childRow);
+                if (!inTb) {
+                  allInTb = false;
+                  if (cfg.includeTerminalOutMoves
+                      && !hasAnyLegalTransition(tl[m].afterBoard, nextPiece)) {
+                    const double rew = static_cast<double>(tl[m].linesCleared);
+                    pushCand(tl[m].afterBoard, tl[m].linesCleared, rew, rew);
+                  }
+                  continue;
+                }
+                const double rew = static_cast<double>(tl[m].linesCleared);
+                const double q = rew + static_cast<double>(childRow[nextPiece]);
+                const double expQ = rew + expectedValueFromRow(childRow, rngMode);
+                pushCand(tl[m].afterBoard, tl[m].linesCleared, q, expQ);
               }
 
               if ((cfg.requireAllMovesInTb && !allInTb) || cands.size() < 2) {

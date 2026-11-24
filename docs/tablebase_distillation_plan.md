@@ -80,24 +80,21 @@ Establish the exact ceiling of fast, interpretable linear heuristics — directl
 ---
 
 ### Phase D-2: Compact Stockfish-Style Neural Evaluator (`tiny_nn.hpp`, `train_nn.cpp`)
-Test how much of a `670 MB` tablebase can be compressed into a **`~30–60 KB`** cache-resident C++ neural network predicting all 7 `V_hat(b, c)` values directly.
+Test how much of a `670 MB` tablebase can be compressed into a **`~30–80 KB`** cache-resident C++ neural network predicting all 7 `V_hat(b, c)` values directly.
 
-- [ ] **Compact Architecture (`TinyNextBoxNet`)**:
-  - **Input layer (~60–80 floats)**: 40 raw binary cells (`b` bits `0..39`) + normalized structural inputs (10 column heights, 10 column hole indicators, overhang/sealed counts, row fills, parity).
-  - **Hidden layers**: `FC(in → H1) + ClippedReLU` → `FC(H1 → H2) + ClippedReLU` → `FC(H2 → 7)` outputting **`V_hat(b, c)` for all 7 pieces `c = 0..6`** simultaneously (matching the exact shape of `SRTBV002`!).
-  - Start with `H1 = 64, H2 = 32` (`~6.5k` params = **`26 KB`** float32) and optionally compare against `H1 = 128, H2 = 64` (`~18k` params = **`72 KB`**).
-  - Clean binary weight format (`SRNNV001` with magic, architecture dims, input feature version, and float32 weights) loadable in `< 1 ms`.
-- [ ] **Multi-Task Training (`train_nn.cpp`)**:
-  - Joint loss:
-    $$\mathcal{L} = \mathcal{L}_{\text{Huber/MSE}}\big(\hat{V}(b, 0..6),\; V^*(b, 0..6)\big) + \lambda \cdot \mathcal{L}_{\text{regret-rank}}\big(r_m + \hat{V}(b'_m, n),\; Q^*(b, c, n, m)\big)$$
-  - Multi-threaded data-parallel mini-batch Adam with cosine learning-rate schedule and validation checkpointing (saving the model with lowest validation move regret).
-- [ ] **Fast Inference & Benchmarks (`benchmark_cli.cpp`)**:
-  - Add `--mode=nextbox-nn --nn=PATH` supporting both:
-    - **1-ply NN**: `argmax_m [r_m + V_hat(b'_m, n)]` (single NN forward pass per candidate child — ultra-fast, directly mirrors 1-ply TB lookup!), and
-    - **2-ply NN**: `argmax_{m1} [r_1 + max_{m2} (r_2 + E_NES[V_hat(b''_{m2}, p_3)])]` (tests whether 2-ply search over a distilled `V_hat(b, c)` closes even more of the gap to `89.90`!).
-  - Measure exact 10k-game NES score (`seed=700000`), validation regret, throughput (`mv/s`), and generalization on **out-of-TB boards** (comparing `V_hat` accuracy on held-out `nb_final \ round8` boards when trained only on `round8`!).
-- [ ] **Verification**:
-  - Finite-difference numerical gradient check across every layer in `tablebase_test.cpp` (relative error `< 1e-4`), `SRNNV001` save/load + corruption rejection tests, and deterministic `1T` vs `4T` inference parity.
+- [x] **Compact Architecture (`TinyNextBoxNet`, `SRNNV001`)**:
+  - **Input layer (`88` floats)**: 40 raw binary cells + 10 col heights + 10 col hole counts + 4 row fills + 24 normalized V2 structural summaries, using bitwise `rowTransitions`/`colTransitions` and a 16-entry `constexpr` column LUT.
+  - **Hidden layers**: `FC(88 → H1) + ReLU` → `FC(H1 → H2) + ReLU` → `FC(H2 → 7)` with sparsity-exploiting `[in x H1]` / `[H1 x H2]` / `[7 x H2]` layout, branchless NEON ReLU, 4-lane dot products, `< 4 KB` fast-path stack buffers, and strict `SRNNV001` binary I/O.
+  - Compared **`64x32`** (`8,007` params = **`31.3 KB`**) and **`128x64`** (`20,103` params = **`78.6 KB`**).
+- [x] **Multi-Task Training (`train_nn.cpp`)**:
+  - Joint loss combining parent 7-output Huber (`valueWeight=1.0`), **candidate-child Huber (`childValueWeight=1.0`)**, exact terminal ply-2 top-out supervision (`includeTerminalOutMoves=true`), and Boltzmann move-ranking CE (`rankWeight=4.0, T=1.0`) with a persistent thread pool, `alignas(128)` worker states, parallel validation, and cosine Adam decay.
+  - Adding candidate-child + terminal top-out supervision was decisive: lifted `64x32` 2-ply from `52.67 → 65.88` lines and 1-ply from `15.05 → 22.73` lines.
+- [x] **Fast Inference & Benchmarks (`10,000` held-out NES games, `seed=700000`)**:
+  - `64x32` (`31.3 KB`): `valMAE=2.893`, 1-ply `top1=78.68%` (`regret=0.7908`) → **1-ply `22.73 ± 0.22`** (`383.2k mv/s`), **2-ply `65.88 ± 0.64`** (`med=47.0`, `p90=146`, `max=577`).
+  - `128x64` (`78.6 KB`, **8,535× smaller** than `670.9 MB` TB): `valMAE=2.463` (`0h=1.78`), 1-ply `top1=81.47%` (`regret=0.5786`) → **1-ply `32.27 ± 0.31`** (beats 2-ply hand-tuned `30.05`!), **2-ply `71.79 ± 0.68`** (`med=52.0`, `p90=161`, `max=958` — closing **70%** of the gap to the `89.90` tablebase!).
+  - Out-of-TB generalization (`nb_round0_nes` → `nb_final_nes \ round8`): `OOD MAE = 12.60` (`0h=9.42`), of which `~7.5` lines is the global closed-world offset between `round8` (`79.4`) and `nb_final` (`86.85`) — confirming strong relative generalization on unseen states.
+- [x] **Verification**:
+  - `tablebase_test.cpp` (22/22): 6-block central finite-difference gradient check (`W1, b1, W2, b2, W3, b3`), full `SRNNV001` corruption & transactional load guards, bitwise feature parity & `hasAnyLegalTransition` parity, `1T` vs `4T` inference parity, Markov `evalNextPieceExpected` per-piece clamp test, plus Logic, Simplicity, and Performance & Scale reviews passed.
 
 ---
 
