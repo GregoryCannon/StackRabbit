@@ -43,7 +43,16 @@ inline constexpr int NN_FEAT_ROW_FILLS_OFF = 60;
 inline constexpr int NN_FEAT_GLOBALS_OFF = 64;
 inline constexpr int NN_INPUT_DIM = 88;
 inline constexpr int NN_MAX_HIDDEN_DIM = 512;
-inline constexpr int NN_FAST_STACK_SUM = 256; // Fast-path stack buffer (<4 KB total frame)
+inline constexpr int NN_FAST_STACK_SUM = 384; // Fast-path stack buffer (<2 KB total frame)
+inline constexpr int NN_DEFAULT_3PLY_TOPK = 6;
+// Pre-screen slack (lines) for skipping 3-ply expansion on clearly losing partial-OUT candidates.
+inline constexpr double NN_3PLY_PRESCREEN_SLACK = 6.0;
+
+#if defined(_MSC_VER)
+#define TB_NN_NOINLINE __declspec(noinline)
+#else
+#define TB_NN_NOINLINE __attribute__((noinline))
+#endif
 
 struct TinyNnHeader {
   char magic[8];
@@ -454,8 +463,26 @@ public:
     }
   }
 
-  // Evaluates V_hat(board, 0..6) for all 7 pieces simultaneously (zero heap allocation for
-  // h1 + h2 <= NN_FAST_STACK_SUM, keeping stack frames below 4 KB).
+  // Outlined cold fallback for large hidden widths (h1 + h2 > NN_FAST_STACK_SUM) so the common
+  // evalAll / evalPiece frames stay under 2 KB and never trigger macOS ___chkstk_darwin probes.
+  TB_NN_NOINLINE void evalAllLarge(const float *x, float outV[NUM_PIECES]) const noexcept {
+    float a1[NN_MAX_HIDDEN_DIM];
+    float a2[NN_MAX_HIDDEN_DIM];
+    forwardToH2(x, a1, a2);
+    for (int p = 0; p < NUM_PIECES; ++p) {
+      outV[p] = dotOutputRow(p, a2);
+    }
+  }
+
+  TB_NN_NOINLINE float evalPieceLarge(const float *x, int pieceIdx) const noexcept {
+    float a1[NN_MAX_HIDDEN_DIM];
+    float a2[NN_MAX_HIDDEN_DIM];
+    forwardToH2(x, a1, a2);
+    return dotOutputRow(pieceIdx, a2);
+  }
+
+  // Evaluates V_hat(board, 0..6) for all 7 pieces simultaneously (zero heap allocation; stack
+  // frame stays below 2 KB for h1 + h2 <= NN_FAST_STACK_SUM).
   void evalAll(uint64_t board, float outV[NUM_PIECES]) const noexcept {
     float x[NN_INPUT_DIM];
     extractNnFeatures(board, x);
@@ -469,12 +496,7 @@ public:
       }
       return;
     }
-    float a1[NN_MAX_HIDDEN_DIM];
-    float a2[NN_MAX_HIDDEN_DIM];
-    forwardToH2(x, a1, a2);
-    for (int p = 0; p < NUM_PIECES; ++p) {
-      outV[p] = dotOutputRow(p, a2);
-    }
+    evalAllLarge(x, outV);
   }
 
   // Evaluates V_hat(board, pieceIdx) computing only the single output row for pieceIdx.
@@ -489,10 +511,7 @@ public:
       forwardToH2(x, a1, a2);
       return dotOutputRow(pieceIdx, a2);
     }
-    float a1[NN_MAX_HIDDEN_DIM];
-    float a2[NN_MAX_HIDDEN_DIM];
-    forwardToH2(x, a1, a2);
-    return dotOutputRow(pieceIdx, a2);
+    return evalPieceLarge(x, pieceIdx);
   }
 
   // Computes E_{p3 | prevPiece}[max(0, V_hat(board, p3))] for 2-ply lookahead leaves.
@@ -753,15 +772,146 @@ public:
   }
 };
 
-// 1-ply Next-Box move selection using TinyNextBoxNet: argmax_m [r_m + V_hat(b'_m, nextPiece)].
+// 1-ply Next-Box move evaluation using TinyNextBoxNet: r_m + V_hat(b'_m, nextPiece).
 inline double scoreNextBoxNn1Ply(uint64_t afterBoard, int linesCleared, int nextPiece,
                                  const TinyNextBoxNet &net) noexcept {
-  return static_cast<double>(linesCleared)
-         + static_cast<double>(net.evalPiece(afterBoard, nextPiece));
+  const double r1 = static_cast<double>(linesCleared);
+  if (!net.isLoaded() || nextPiece < 0 || nextPiece >= NUM_PIECES) {
+    return r1;
+  }
+  return r1 + static_cast<double>(net.evalPiece(afterBoard, nextPiece));
 }
 
-inline ChosenTransition chooseNextBoxNnMove1Ply(uint64_t board, int curPiece, int nextPiece,
-                                                const TinyNextBoxNet &net) noexcept {
+namespace detail {
+
+// Computes max_{m} (r_m + E_{pNext | piece}[max(0, V_hat(b'_m, pNext))]) using a caller-provided
+// TransitionList scratch buffer. Returns 0.0 when piece has no legal transitions (top-out).
+inline double bestReplyNn2Ply(uint64_t board, int piece, const TinyNextBoxNet &net, RngMode mode,
+                              TransitionList &tl) noexcept {
+  generateTransitions(board, piece, tl);
+  if (tl.empty()) {
+    return 0.0;
+  }
+  double best = -std::numeric_limits<double>::infinity();
+  for (int i = 0; i < tl.size(); ++i) {
+    const double sc = static_cast<double>(tl[i].linesCleared)
+                      + net.evalNextPieceExpected(tl[i].afterBoard, mode, piece);
+    if (sc > best) {
+      best = sc;
+    }
+  }
+  return best;
+}
+
+} // namespace detail
+
+// 2-ply Next-Box move evaluation using TinyNextBoxNet:
+//   r_1 + max_{m2} (r_2 + E_{p3 | nextPiece}[max(0, V_hat(b''_{m2}, p3))])
+// When nextPiece tops out (no legal ply-2 moves), continuation is 0.0 lines.
+inline double scoreNextBoxNn2Ply(uint64_t afterBoard, int linesCleared, int nextPiece,
+                                 const TinyNextBoxNet &net, RngMode mode) noexcept {
+  const double r1 = static_cast<double>(linesCleared);
+  if (!net.isLoaded() || nextPiece < 0 || nextPiece >= NUM_PIECES) {
+    return r1;
+  }
+  TransitionList tl2;
+  return r1 + detail::bestReplyNn2Ply(afterBoard, nextPiece, net, mode, tl2);
+}
+
+// Pruned Top-K 3-ply Next-Box evaluation using TinyNextBoxNet:
+//   1. When topK < tl2.size(), score every ply-2 move by 2-ply value
+//      r2 + E_{p3 | nextPiece}[max(0, V_hat(b'', p3))] and keep the top K ply-2 leaves
+//      (deterministic tie-break by transition index; topK <= 0 falls back to exact 2-ply).
+//      When topK >= tl2.size(), skip ply-2 NN ranking and evaluate all ply-2 leaves at ply 3.
+//   2. For each kept ply-2 leaf b'', compute exact expectation over p3 in [0..6]:
+//      E_{p3 | nextPiece}[ max_{m3} (r3 + E_{p4 | p3}[max(0, V_hat(b''', p4))]) ]
+//      (0.0 when p3 tops out).
+// Returns r1 + max_{k < K} (r2_k + E_{p3}[best3(b''_k, p3)]).
+inline double scoreNextBoxNn3PlyTopK(uint64_t afterBoard, int linesCleared, int nextPiece,
+                                     const TinyNextBoxNet &net, RngMode mode,
+                                     int topK = NN_DEFAULT_3PLY_TOPK) noexcept {
+  const double r1 = static_cast<double>(linesCleared);
+  if (!net.isLoaded() || nextPiece < 0 || nextPiece >= NUM_PIECES) {
+    return r1;
+  }
+  if (topK <= 0) {
+    return scoreNextBoxNn2Ply(afterBoard, linesCleared, nextPiece, net, mode);
+  }
+  TransitionList tl2;
+  generateTransitions(afterBoard, nextPiece, tl2);
+  if (tl2.empty()) {
+    return r1;
+  }
+
+  const int keep = std::min(tl2.size(), topK);
+  uint8_t keptIdx[MAX_TRANSITIONS];
+  if (keep < tl2.size()) {
+    struct Ply2Cand {
+      double sc;
+      int idx;
+    };
+    Ply2Cand cands[MAX_TRANSITIONS];
+    for (int i = 0; i < tl2.size(); ++i) {
+      cands[i] = {static_cast<double>(tl2[i].linesCleared)
+                      + net.evalNextPieceExpected(tl2[i].afterBoard, mode, nextPiece),
+                  i};
+    }
+    std::partial_sort(cands, cands + keep, cands + tl2.size(),
+                      [](const Ply2Cand &a, const Ply2Cand &b) {
+                        return (a.sc != b.sc) ? (a.sc > b.sc) : (a.idx < b.idx);
+                      });
+    for (int k = 0; k < keep; ++k) {
+      keptIdx[k] = static_cast<uint8_t>(cands[k].idx);
+    }
+  } else {
+    for (int k = 0; k < keep; ++k) {
+      keptIdx[k] = static_cast<uint8_t>(k);
+    }
+  }
+
+  TransitionList tl3;
+  double best2 = -std::numeric_limits<double>::infinity();
+  for (int k = 0; k < keep; ++k) {
+    const Transition &t2 = tl2[keptIdx[k]];
+    double expPly3 = 0.0;
+    for (int p3 = 0; p3 < NUM_PIECES; ++p3) {
+      const double best3 = detail::bestReplyNn2Ply(t2.afterBoard, p3, net, mode, tl3);
+      expPly3 += pieceTransitionProb(mode, nextPiece, p3) * best3;
+    }
+    const double sc2 = static_cast<double>(t2.linesCleared) + expPly3;
+    if (sc2 > best2) {
+      best2 = sc2;
+    }
+  }
+  return r1 + best2;
+}
+
+// Neural search depth config: ply in [1..3] (values <= 1 clamp to 1-ply; >= 3 clamp to 3-ply),
+// with topK controlling the ply-2 beam width when ply == 3.
+struct NnOutSearchConfig {
+  int ply = 2;
+  int topK = NN_DEFAULT_3PLY_TOPK;
+
+  static constexpr NnOutSearchConfig ply1() noexcept { return {1, NN_DEFAULT_3PLY_TOPK}; }
+  static constexpr NnOutSearchConfig ply2() noexcept { return {2, NN_DEFAULT_3PLY_TOPK}; }
+  static constexpr NnOutSearchConfig ply3(int k = NN_DEFAULT_3PLY_TOPK) noexcept { return {3, k}; }
+};
+
+inline double scoreNextBoxNn(uint64_t afterBoard, int linesCleared, int nextPiece,
+                             const TinyNextBoxNet &net, RngMode mode,
+                             NnOutSearchConfig cfg = {}) noexcept {
+  if (cfg.ply >= 3) {
+    return scoreNextBoxNn3PlyTopK(afterBoard, linesCleared, nextPiece, net, mode, cfg.topK);
+  }
+  if (cfg.ply == 2) {
+    return scoreNextBoxNn2Ply(afterBoard, linesCleared, nextPiece, net, mode);
+  }
+  return scoreNextBoxNn1Ply(afterBoard, linesCleared, nextPiece, net);
+}
+
+inline ChosenTransition chooseNextBoxNnMove(uint64_t board, int curPiece, int nextPiece,
+                                            const TinyNextBoxNet &net, RngMode mode,
+                                            NnOutSearchConfig cfg = {}) noexcept {
   if (!net.isLoaded()
       || curPiece < 0
       || curPiece >= NUM_PIECES
@@ -776,7 +926,8 @@ inline ChosenTransition chooseNextBoxNnMove1Ply(uint64_t board, int curPiece, in
   }
   ChosenTransition best{};
   for (int i = 0; i < tl.size(); ++i) {
-    const double sc = scoreNextBoxNn1Ply(tl[i].afterBoard, tl[i].linesCleared, nextPiece, net);
+    const double sc =
+        scoreNextBoxNn(tl[i].afterBoard, tl[i].linesCleared, nextPiece, net, mode, cfg);
     if (!best.found || sc > best.score) {
       best = {tl[i], sc, true};
     }
@@ -784,51 +935,21 @@ inline ChosenTransition chooseNextBoxNnMove1Ply(uint64_t board, int curPiece, in
   return best;
 }
 
-// 2-ply Next-Box move selection using TinyNextBoxNet:
-//   argmax_{m1} [ r_1 + max_{m2} (r_2 + E_{p3 | nextPiece}[max(0, V_hat(b''_{m2}, p3))]) ]
-// When nextPiece tops out (no legal ply-2 moves), continuation is 0.0 lines.
-inline double scoreNextBoxNn2Ply(uint64_t afterBoard, int linesCleared, int nextPiece,
-                                 const TinyNextBoxNet &net, RngMode mode) noexcept {
-  TransitionList tl2;
-  generateTransitions(afterBoard, nextPiece, tl2);
-  const double r1 = static_cast<double>(linesCleared);
-  if (tl2.empty()) {
-    return r1;
-  }
-  double best2 = -std::numeric_limits<double>::infinity();
-  for (int i = 0; i < tl2.size(); ++i) {
-    const double cont = net.evalNextPieceExpected(tl2[i].afterBoard, mode, nextPiece);
-    const double sc = static_cast<double>(tl2[i].linesCleared) + cont;
-    if (sc > best2) {
-      best2 = sc;
-    }
-  }
-  return r1 + best2;
+inline ChosenTransition chooseNextBoxNnMove1Ply(uint64_t board, int curPiece, int nextPiece,
+                                                const TinyNextBoxNet &net) noexcept {
+  return chooseNextBoxNnMove(board, curPiece, nextPiece, net, net.rngMode,
+                             NnOutSearchConfig::ply1());
 }
 
 inline ChosenTransition chooseNextBoxNnMove2Ply(uint64_t board, int curPiece, int nextPiece,
                                                 const TinyNextBoxNet &net, RngMode mode) noexcept {
-  if (!net.isLoaded()
-      || curPiece < 0
-      || curPiece >= NUM_PIECES
-      || nextPiece < 0
-      || nextPiece >= NUM_PIECES) {
-    return {};
-  }
-  TransitionList tl1;
-  generateTransitions(board, curPiece, tl1);
-  if (tl1.empty()) {
-    return {};
-  }
-  ChosenTransition best{};
-  for (int i = 0; i < tl1.size(); ++i) {
-    const double sc =
-        scoreNextBoxNn2Ply(tl1[i].afterBoard, tl1[i].linesCleared, nextPiece, net, mode);
-    if (!best.found || sc > best.score) {
-      best = {tl1[i], sc, true};
-    }
-  }
-  return best;
+  return chooseNextBoxNnMove(board, curPiece, nextPiece, net, mode, NnOutSearchConfig::ply2());
+}
+
+inline ChosenTransition chooseNextBoxNnMove3PlyTopK(uint64_t board, int curPiece, int nextPiece,
+                                                    const TinyNextBoxNet &net, RngMode mode,
+                                                    int topK = NN_DEFAULT_3PLY_TOPK) noexcept {
+  return chooseNextBoxNnMove(board, curPiece, nextPiece, net, mode, NnOutSearchConfig::ply3(topK));
 }
 
 // Calibrated Next-Box tablebase move selector with optional TinyNextBoxNet fallback and partial-OUT
@@ -838,8 +959,8 @@ inline ChosenTransition chooseNextBoxNnMove2Ply(uint64_t board, int curPiece, in
 //       * out-of-TB m   : if nnPtr is loaded and safetyMargin is finite (negative values clamp to
 //                         0.0; non-finite values NaN / +-inf disable partial-OUT),
 //                         Q(m) = r_m + max(0.0, estCont(b'_m, nextPiece) - safetyMargin), where
-//                         estCont is 2-ply NN (or 1-ply NN with ply-2 survival check when
-//                         outUse2Ply == false). On exact Q ties, in-TB moves are preferred.
+//                         estCont uses outCfg.ply (1-ply with ply-2 survival check, 2-ply, or
+//                         pruned Top-K 3-ply). On exact Q ties, in-TB moves are preferred.
 //                         When partial-OUT is disabled, out-of-TB moves receive 0 continuation
 //                         (bit-exact parity with chooseNextBoxTablebaseMove).
 //   - When ALL legal moves land out-of-TB (all-OUT):
@@ -850,8 +971,8 @@ template <typename NextBoxTbType>
 inline TablebaseMoveChoice
 chooseNextBoxHybridFallbackMove(uint64_t board, int curPiece, int nextPiece,
                                 const NextBoxTbType &tb, const TinyNextBoxNet *nnPtr,
-                                double safetyMargin, RngMode evalRngMode, bool outUse2Ply = true,
-                                const EvalWeights &w = {}) {
+                                double safetyMargin, RngMode evalRngMode,
+                                NnOutSearchConfig outCfg = {}, const EvalWeights &w = {}) {
   if (curPiece < 0 || curPiece >= NUM_PIECES || nextPiece < 0 || nextPiece >= NUM_PIECES) {
     return {};
   }
@@ -865,10 +986,8 @@ chooseNextBoxHybridFallbackMove(uint64_t board, int curPiece, int nextPiece,
 
   if (!tb.isLoaded()) {
     const ChosenTransition fb =
-        hasNn
-            ? (outUse2Ply ? chooseNextBoxNnMove2Ply(board, curPiece, nextPiece, *nnPtr, evalRngMode)
-                          : chooseNextBoxNnMove1Ply(board, curPiece, nextPiece, *nnPtr))
-            : pickBestNextBoxHeuristic(board, curPiece, nextPiece, w);
+        hasNn ? chooseNextBoxNnMove(board, curPiece, nextPiece, *nnPtr, evalRngMode, outCfg)
+              : pickBestNextBoxHeuristic(board, curPiece, nextPiece, w);
     return wrapFallback(fb);
   }
 
@@ -887,16 +1006,24 @@ chooseNextBoxHybridFallbackMove(uint64_t board, int curPiece, int nextPiece,
     return {};
   }
 
-  // Pass 1: cheap TB lookup across all legal moves so all-OUT boards skip partial-OUT NN scoring.
+  // Pass 1: cheap TB lookup across all legal moves so all-OUT boards skip partial-OUT NN scoring
+  // and 3-ply partial-OUT can pre-screen clearly dominated out-of-TB moves against bestInTbQ.
   bool inTbArr[MAX_TRANSITIONS];
   float tbValArr[MAX_TRANSITIONS];
   bool anyInTb = false;
+  double bestInTbQ = -std::numeric_limits<double>::infinity();
   for (int i = 0; i < tl.size(); ++i) {
     float v = 0.0f;
     const bool hit = tb.lookupPiece(tl[i].afterBoard, nextPiece, v);
     inTbArr[i] = hit;
     tbValArr[i] = hit ? v : 0.0f;
-    anyInTb = anyInTb || hit;
+    if (hit) {
+      anyInTb = true;
+      const double inQ = static_cast<double>(tl[i].linesCleared) + static_cast<double>(v);
+      if (inQ > bestInTbQ) {
+        bestInTbQ = inQ;
+      }
+    }
   }
 
   if (!anyInTb) {
@@ -905,10 +1032,8 @@ chooseNextBoxHybridFallbackMove(uint64_t board, int curPiece, int nextPiece,
     int bestFbIdx = 0;
     double bestFbScore = -std::numeric_limits<double>::infinity();
     for (int i = 0; i < tl.size(); ++i) {
-      const double sc =
-          outUse2Ply ? scoreNextBoxNn2Ply(tl[i].afterBoard, tl[i].linesCleared, nextPiece, *nnPtr,
-                                          evalRngMode)
-                     : scoreNextBoxNn1Ply(tl[i].afterBoard, tl[i].linesCleared, nextPiece, *nnPtr);
+      const double sc = scoreNextBoxNn(tl[i].afterBoard, tl[i].linesCleared, nextPiece, *nnPtr,
+                                       evalRngMode, outCfg);
       if (i == 0 || sc > bestFbScore) {
         bestFbScore = sc;
         bestFbIdx = i;
@@ -917,8 +1042,15 @@ chooseNextBoxHybridFallbackMove(uint64_t board, int curPiece, int nextPiece,
     return {tl[bestFbIdx], static_cast<double>(tl[bestFbIdx].linesCleared), false, true, true};
   }
 
-  const auto evalOutContinuation = [&](uint64_t afterBoard) -> double {
-    if (outUse2Ply) {
+  const auto evalOutContinuation = [&](uint64_t afterBoard, double rew) -> double {
+    if (outCfg.ply >= 3) {
+      const double est2 = scoreNextBoxNn2Ply(afterBoard, 0, nextPiece, *nnPtr, evalRngMode);
+      if (rew + std::max(0.0, est2 - clampedMargin) + NN_3PLY_PRESCREEN_SLACK < bestInTbQ) {
+        return est2;
+      }
+      return scoreNextBoxNn3PlyTopK(afterBoard, 0, nextPiece, *nnPtr, evalRngMode, outCfg.topK);
+    }
+    if (outCfg.ply == 2) {
       return scoreNextBoxNn2Ply(afterBoard, 0, nextPiece, *nnPtr, evalRngMode);
     }
     if (!hasAnyLegalTransition(afterBoard, nextPiece)) {
@@ -944,7 +1076,7 @@ chooseNextBoxHybridFallbackMove(uint64_t board, int curPiece, int nextPiece,
     if (inTb) {
       q += static_cast<double>(tbValArr[i]);
     } else if (allowPartialOut) {
-      const double estCont = evalOutContinuation(tl[i].afterBoard);
+      const double estCont = evalOutContinuation(tl[i].afterBoard, rew);
       q += std::max(0.0, estCont - clampedMargin);
     }
 

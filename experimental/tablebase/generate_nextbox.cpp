@@ -49,9 +49,8 @@ void printUsage(const char *prog, FILE *out) {
                "  --sibling-min=S        Core sibling expansion threshold, 0=off (default: 5)\n");
   std::fprintf(out, "  --tb=PATH              Optional SRTBV002 Next-Box *.tb.bin policy\n");
   std::fprintf(out, "  --nn=PATH              Optional SRNNV001 TinyNextBoxNet frontier probe\n");
-  std::fprintf(
-      out,
-      "  --out-margin=F|inf     Partial-OUT margin when both --tb= & --nn= are set (default: 2.0)\n");
+  std::fprintf(out, "  --out-margin=F|inf     Partial-OUT margin when both --tb= & --nn= are set "
+                    "(default: 2.0)\n");
   std::fprintf(out, "  --merge=PATH           Optional existing *.states.bin to merge\n");
   std::fprintf(out, "  --seed=N               Base RNG seed (default: 1000000)\n");
   std::fprintf(out, "  --coverage-games=N     Held-out greedy coverage games (default: 5000)\n");
@@ -196,7 +195,8 @@ bool parseArgs(int argc, char **argv, CliOptions &opts) {
     return false;
   }
   if (opts.outMarginSet && (opts.nnPath.empty() || opts.tbPath.empty())) {
-    std::fprintf(stderr, "--out-margin= requires both --tb=<path.tb.bin> and --nn=<model.nn.bin>.\n");
+    std::fprintf(stderr,
+                 "--out-margin= requires both --tb=<path.tb.bin> and --nn=<model.nn.bin>.\n");
     return false;
   }
   opts.cfg.progressInterval = std::max(1, opts.cfg.numGames / 8);
@@ -298,7 +298,7 @@ int main(int argc, char **argv) {
     if (fastTb != nullptr && fastTb->isLoaded()) {
       const tb::TablebaseMoveChoice ch = tb::chooseNextBoxHybridFallbackMove(
           board, curPiece, nextPiece, *fastTb, nnPtr, opts.outMargin, opts.cfg.rngMode,
-          /*outUse2Ply=*/true, opts.cfg.weights);
+          tb::NnOutSearchConfig::ply2(), opts.cfg.weights);
       return {ch.transition, ch.tablebaseQ, ch.found};
     }
     return tb::chooseNextBoxNnMove2Ply(board, curPiece, nextPiece, *nnPtr, opts.cfg.rngMode);

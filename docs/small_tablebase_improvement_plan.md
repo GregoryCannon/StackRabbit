@@ -53,23 +53,21 @@ Test each of the 4 levers **in isolation first** (holding everything else equal 
 ### Phase S-1: Larger NNUE Capacity & Deeper Out-of-TB Search (`tiny_nn.hpp`, `train_nn.cpp`, `benchmark_cli.cpp`)
 Isolate how much of the `67.59 → 104.02` gap comes simply from **NN capacity** and **out-of-TB search depth** on the exact same `nb_mid_nes.tb.bin` (`2.49M`) board set.
 
-- [ ] **Raise stack fast-path & verify `256×64` throughput (`tiny_nn.hpp`)**:
-  - Current `evalAll` / `evalPiece` stack fast-path covers `h1 + h2 <= 256` (`1024 B`). Raise `FAST_HIDDEN_SUM` to `384` (`1536 B`, still well below macOS `4 KB` `___chkstk_darwin` threshold) so `256×64` (`h1 + h2 = 320`, `~160 KB` weights) runs zero-heap with zero stack probes.
-  - Benchmark `128×64` (`78.6 KB`) and `256×64` (`~158 KB`) self-distilled strictly from `nb_mid_nes.tb.bin` (`--tb=experimental/tablebase/data/nb_mid_nes.tb.bin`, 500k–1M samples, 25–30 epochs, cosine Adam).
-- [ ] **Implement pruned Top-K 3-ply out-of-TB search (`tiny_nn.hpp`, `benchmark_cli.cpp`)**:
-  - Add `scoreNextBoxNn3PlyTopK(afterBoard, linesCleared, nextPiece, net, evalRngMode, topK)` and `--out-ply=1|2|3` + `--out-topk=K` (default `K = 6`) in `benchmark_cli.cpp`:
-    - Ply 1 (`cur`): fixed by caller (`afterBoard`, `r1`).
-    - Ply 2 (`next`): generate all `tl2` legal moves, score each ply-2 leaf `b''` with fast 2-ply `r2 + E_{p3|next}[max(0, V_hat(b'', p3))]`, keep the top `K` ply-2 leaves (ties broken deterministically by transition index).
-    - Ply 3 (`p3`, exact expectation over all 7 third pieces weighted by `pieceTransitionProb(mode, nextPiece, p3)`): for each of the top `K` ply-2 leaves and each `p3 ∈ [0..6]`, compute `max_{m3} (r3 + E_{p4|p3}[max(0, V_hat(b''', p4))])` (or `0.0` if `p3` tops out). Return `r1 + max_{k < K} (r2_k + E_{p3}[best3(b''_k, p3)])`.
-  - Keep exact parity: when `topK <= 0`, fall back to 2-ply; when `tl2.empty()`, return `r1`.
-  - Support `--mode=nextbox-nn3` (standalone) and `--mode=nextbox-tb --out-ply=3 --out-topk=K` (only triggered on out-of-TB moves — `< 4%` of moves on `2.49M`, so live overhead stays modest!).
-- [ ] **Phase S-1 Ablations (`seed=30000000` margin sweep → `seed=700000` 10k NES games)**:
-  - Compare `64×32` vs `128×64` vs `256×64` (standalone 2-ply & TB partial-OUT 2-ply).
-  - Compare `out-ply=2` vs `out-ply=3` (`topK ∈ {4, 6, 8}`) on `nb_mid_nes` + best S-1 NN, logging both mean lines and throughput (`mv/s`).
-  - Record oracle-only diagnostics (`nb_final_nes` OOD MAE & bias) on frozen S-1 models.
-- [ ] **Verification & Review**:
-  - Add unit tests in `tablebase_test.cpp`: `256×64` forward/backward finite-difference check & `SRNNV001` round-trip; `scoreNextBoxNn3PlyTopK` exact check vs brute-force 3-ply when `topK >= MAX_TRANSITIONS`, top-out on ply-2 and ply-3, and `1T == 4T` determinism.
-  - Run `format_cpp`, `-Wall -Wextra -Werror`, `-DNDEBUG`, `tablebase_test`, `cpp_test_unit`, `precompute_static_lint`, dual reviews (`logic_reviewer` + `readability_reviewer`), commit `Phase S-1 (larger NNUE + top-K 3-ply out-of-TB search)`.
+- [x] **Raised stack fast-path & outlined large-model cold path (`tiny_nn.hpp`)**:
+  - Raised `NN_FAST_STACK_SUM` to `384` (`256×64` = `320`) and outlined `evalAllLarge` / `evalPieceLarge` (`TB_NN_NOINLINE`) so hot `evalAll`/`evalPiece` stack frames stay `< 2 KB` (eliminating macOS `___chkstk_darwin` probes).
+  - Self-distilled strictly from `nb_mid_nes.tb.bin` (`2,487,192` boards, `600k` decisions, `30` epochs):
+    - `mid_self_128x64.nn.bin` (`78.6 KB`, `70.7s`): `valMAE = 1.687` (`0h=1.43`), `top1 = 82.57%`, `regret = 0.3992`; read-only oracle `OOD MAE = 38.521` vs `nb_final_nes` (confirming ~40-line `V = 0` teacher truncation).
+    - `mid_self_256x64.nn.bin` (`155.1 KB`, `144.1s`): `valMAE = 1.468` (`0h=1.23`), `top1 = 84.74%`, `regret = 0.3043`; read-only oracle `OOD MAE = 38.620`.
+- [x] **Implemented pruned Top-K 3-ply out-of-TB search with 2-ply pre-screening (`tiny_nn.hpp`, `benchmark_cli.cpp`)**:
+  - Added `scoreNextBoxNn3PlyTopK`, unified `scoreNextBoxNn` / `chooseNextBoxNnMove`, `NnOutSearchConfig` (`ply1()`/`ply2()`/`ply3(k)`), `--mode=nextbox-nn3`, `--out-ply=1|2|3`, and `--out-topk=K`.
+  - Added `NN_3PLY_PRESCREEN_SLACK = 6.0` 2-ply pre-screening inside `chooseNextBoxHybridFallbackMove` for `ply >= 3`, speeding up `p3k4` by **57×** (`1100.9s → 19.3s` for 2,000 games; `28.2k mv/s` on 10,000 games — matching 2-ply throughput!).
+- [x] **Phase S-1 Held-Out Results (`10,000` NES games, `seed=700000`, `nb_mid_nes` `2.49M`)**:
+  - Standalone 2-ply NN: `64×32` `56.09 ± 0.54` → `128×64` **`59.40 ± 0.58`** (`18.2k mv/s`) → `256×64` **`61.25 ± 0.60`** (`8.8k mv/s`).
+  - TB + NN Partial-OUT 2-ply (`m=1.0`): `64×32` `67.59 ± 0.65` → `128×64` **`69.00 ± 0.67`** (`28.9k mv/s`, `m=2.0`: `68.09`) → `256×64` **`69.24 ± 0.68`** (`13.7k mv/s`, `m=2.0`: `68.14`).
+  - TB + NN Partial-OUT **3-ply Top-K** (`128×64`): `m=2.0, k=4` **`70.50 ± 0.68`** (`19.4k mv/s`), `m=1.0, k=4` **`72.37 ± 0.71`** (`25.4k mv/s`), **`m=1.0, k=6` `72.43 ± 0.71`** (`med=50.0, p90=168, max=685`, `28.2k mv/s`, **`+4.84` lines** over baseline!).
+  - Key finding: Scaling NN capacity `64×32 → 256×64` helps standalone (`+5.16` lines) but saturates around `~69.2` on 2-ply TB+NN due to `nb_mid_nes`'s `V = 0` value truncation (`OOD MAE = 38.6`); 3-ply Top-K out-of-TB adds **`+3.43` additional lines** (`69.00 → 72.43`) at nearly zero throughput cost.
+- [x] **Verification & Review**:
+  - `tablebase_test.cpp` (`25/25`, `382,010` assertions): `256×64` fast-path + `320×128` slow-path parity, independent brute-force 3-ply & pruned `topK=2` oracle, dedicated ply-3 top-out trap check, `topK <= 0` / unloaded-net / out-of-range guards, and loaded-TB all-OUT & partial-OUT `ply=3` tests (including exact ply-3 `O+I+I` line clear). Passed `cpp_test_unit` (`80/80`), `precompute_static_lint`, and Logic + Simplicity reviews.
 
 ---
 

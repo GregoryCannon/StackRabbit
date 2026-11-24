@@ -3406,14 +3406,14 @@ TEST_CASE("Calibrated partial-OUT fallback: +inf parity, margin clamping, and ed
   const tb::TablebaseMoveChoice refTb =
       tb::chooseNextBoxTablebaseMove(0ULL, curO, nxtI, idxTb, /*closedWorld=*/false);
   const tb::TablebaseMoveChoice infChoice = tb::chooseNextBoxHybridFallbackMove(
-      0ULL, curO, nxtI, idxTb, &constNet, inf, tb::RngMode::Nes, /*outUse2Ply=*/false);
+      0ULL, curO, nxtI, idxTb, &constNet, inf, tb::RngMode::Nes, tb::NnOutSearchConfig::ply1());
   const tb::TablebaseMoveChoice negInfChoice = tb::chooseNextBoxHybridFallbackMove(
-      0ULL, curO, nxtI, idxTb, &constNet, -inf, tb::RngMode::Nes, /*outUse2Ply=*/false);
+      0ULL, curO, nxtI, idxTb, &constNet, -inf, tb::RngMode::Nes, tb::NnOutSearchConfig::ply1());
   const tb::TablebaseMoveChoice nanChoice = tb::chooseNextBoxHybridFallbackMove(
       0ULL, curO, nxtI, idxTb, &constNet, std::numeric_limits<double>::quiet_NaN(),
-      tb::RngMode::Nes, /*outUse2Ply=*/false);
+      tb::RngMode::Nes, tb::NnOutSearchConfig::ply1());
   const tb::TablebaseMoveChoice nullChoice = tb::chooseNextBoxHybridFallbackMove(
-      0ULL, curO, nxtI, idxTb, nullptr, 0.0, tb::RngMode::Nes, /*outUse2Ply=*/false);
+      0ULL, curO, nxtI, idxTb, nullptr, 0.0, tb::RngMode::Nes, tb::NnOutSearchConfig::ply1());
   CHECK(infChoice.transition.afterBoard == refTb.transition.afterBoard);
   CHECK(infChoice.tablebaseQ == doctest::Approx(refTb.tablebaseQ));
   CHECK(infChoice.afterInTablebase);
@@ -3428,34 +3428,34 @@ TEST_CASE("Calibrated partial-OUT fallback: +inf parity, margin clamping, and ed
   //    - margin = -5.0 -> negative finite margin clamps to 0.0 -> out-of-TB scores 12.0 > 5.0
   //    - margin = 7.0  -> exact tie (12 - 7 == 5.0) -> prefers in-TB move
   //    - margin = 50.0 -> out-of-TB continuation clamps at 0.0, stays in-TB
-  const auto m2 = tb::chooseNextBoxHybridFallbackMove(0ULL, curO, nxtI, idxTb, &constNet, 2.0,
-                                                      tb::RngMode::Nes, /*outUse2Ply=*/false);
+  const auto m2 = tb::chooseNextBoxHybridFallbackMove(
+      0ULL, curO, nxtI, idxTb, &constNet, 2.0, tb::RngMode::Nes, tb::NnOutSearchConfig::ply1());
   CHECK(m2.found);
   CHECK_FALSE(m2.afterInTablebase);
   CHECK_FALSE(m2.usedFallback);
   CHECK(m2.tablebaseQ == doctest::Approx(10.0));
 
-  const auto m2Ply2 = tb::chooseNextBoxHybridFallbackMove(0ULL, curO, nxtI, idxTb, &constNet, 2.0,
-                                                          tb::RngMode::Nes, /*outUse2Ply=*/true);
+  const auto m2Ply2 = tb::chooseNextBoxHybridFallbackMove(
+      0ULL, curO, nxtI, idxTb, &constNet, 2.0, tb::RngMode::Nes, tb::NnOutSearchConfig::ply2());
   CHECK(m2Ply2.found);
   CHECK_FALSE(m2Ply2.afterInTablebase);
   CHECK(m2Ply2.tablebaseQ == doctest::Approx(10.0));
 
-  const auto mNeg = tb::chooseNextBoxHybridFallbackMove(0ULL, curO, nxtI, idxTb, &constNet, -5.0,
-                                                        tb::RngMode::Nes, /*outUse2Ply=*/false);
+  const auto mNeg = tb::chooseNextBoxHybridFallbackMove(
+      0ULL, curO, nxtI, idxTb, &constNet, -5.0, tb::RngMode::Nes, tb::NnOutSearchConfig::ply1());
   CHECK(mNeg.found);
   CHECK_FALSE(mNeg.afterInTablebase);
   CHECK(mNeg.tablebaseQ == doctest::Approx(12.0));
 
-  const auto m7 = tb::chooseNextBoxHybridFallbackMove(0ULL, curO, nxtI, idxTb, &constNet, 7.0,
-                                                      tb::RngMode::Nes, /*outUse2Ply=*/false);
+  const auto m7 = tb::chooseNextBoxHybridFallbackMove(
+      0ULL, curO, nxtI, idxTb, &constNet, 7.0, tb::RngMode::Nes, tb::NnOutSearchConfig::ply1());
   CHECK(m7.found);
   CHECK(m7.afterInTablebase);
   CHECK(m7.transition.afterBoard == inTbBoard);
   CHECK(m7.tablebaseQ == doctest::Approx(5.0));
 
-  const auto m50 = tb::chooseNextBoxHybridFallbackMove(0ULL, curO, nxtI, idxTb, &constNet, 50.0,
-                                                       tb::RngMode::Nes, /*outUse2Ply=*/false);
+  const auto m50 = tb::chooseNextBoxHybridFallbackMove(
+      0ULL, curO, nxtI, idxTb, &constNet, 50.0, tb::RngMode::Nes, tb::NnOutSearchConfig::ply1());
   CHECK(m50.found);
   CHECK(m50.afterInTablebase);
   CHECK(m50.transition.afterBoard == inTbBoard);
@@ -3487,13 +3487,15 @@ TEST_CASE("Calibrated partial-OUT fallback: +inf parity, margin clamping, and ed
   tb::IndexedNextBoxTablebase idxClamp(mappedClamp);
   const auto refClear =
       tb::chooseNextBoxTablebaseMove(lowClearBoard, curO, nxtI, idxClamp, /*closedWorld=*/false);
-  const auto infClear = tb::chooseNextBoxHybridFallbackMove(
-      lowClearBoard, curO, nxtI, idxClamp, &constNet, inf, tb::RngMode::Nes, /*outUse2Ply=*/false);
+  const auto infClear =
+      tb::chooseNextBoxHybridFallbackMove(lowClearBoard, curO, nxtI, idxClamp, &constNet, inf,
+                                          tb::RngMode::Nes, tb::NnOutSearchConfig::ply1());
   CHECK(infClear.transition.afterBoard == refClear.transition.afterBoard);
   CHECK(infClear.transition.linesCleared == 2);
   CHECK(infClear.tablebaseQ == doctest::Approx(2.0));
-  const auto clampClear = tb::chooseNextBoxHybridFallbackMove(
-      lowClearBoard, curO, nxtI, idxClamp, &constNet, 50.0, tb::RngMode::Nes, /*outUse2Ply=*/false);
+  const auto clampClear =
+      tb::chooseNextBoxHybridFallbackMove(lowClearBoard, curO, nxtI, idxClamp, &constNet, 50.0,
+                                          tb::RngMode::Nes, tb::NnOutSearchConfig::ply1());
   CHECK(clampClear.transition.linesCleared == 2);
   CHECK(clampClear.tablebaseQ == doctest::Approx(2.0)); // max(0, 12-50) == 0, never negative!
   mappedClamp.close();
@@ -3506,7 +3508,7 @@ TEST_CASE("Calibrated partial-OUT fallback: +inf parity, margin clamping, and ed
                                      "XXXXXXX...\n"
                                      "XXXXXXX...");
   const auto surv1Ply = tb::chooseNextBoxHybridFallbackMove(
-      narrowO, nxtI, curO, idxTb, &constNet, 2.0, tb::RngMode::Nes, /*outUse2Ply=*/false);
+      narrowO, nxtI, curO, idxTb, &constNet, 2.0, tb::RngMode::Nes, tb::NnOutSearchConfig::ply1());
   REQUIRE(surv1Ply.found);
   CHECK(surv1Ply.usedFallback); // All narrowO children are out-of-TB
 
@@ -3514,8 +3516,8 @@ TEST_CASE("Calibrated partial-OUT fallback: +inf parity, margin clamping, and ed
   //    chooseNextBoxNnMove2Ply even when safetyMargin = 50.0 (no clamping loss of ordering).
   tb::TinyNextBoxNet randNet;
   REQUIRE(randNet.initRandom(8, 6, tb::RngMode::Nes, 777ULL, 5.0f));
-  const auto allOut = tb::chooseNextBoxHybridFallbackMove(0ULL, nxtI, curO, idxTb, &randNet, 50.0,
-                                                          tb::RngMode::Nes, /*outUse2Ply=*/true);
+  const auto allOut = tb::chooseNextBoxHybridFallbackMove(
+      0ULL, nxtI, curO, idxTb, &randNet, 50.0, tb::RngMode::Nes, tb::NnOutSearchConfig::ply2());
   const auto pureNn2 = tb::chooseNextBoxNnMove2Ply(0ULL, nxtI, curO, randNet, tb::RngMode::Nes);
   CHECK(allOut.found);
   CHECK(allOut.usedFallback);
@@ -3525,21 +3527,21 @@ TEST_CASE("Calibrated partial-OUT fallback: +inf parity, margin clamping, and ed
   // 4. Unloaded TB, out-of-range pieces (across loaded NN, nullptr NN, unloaded TB), and top-out.
   tb::IndexedNextBoxTablebase emptyTb;
   const auto unloadedRes = tb::chooseNextBoxHybridFallbackMove(
-      0ULL, curO, nxtI, emptyTb, &constNet, 2.0, tb::RngMode::Nes, /*outUse2Ply=*/true);
+      0ULL, curO, nxtI, emptyTb, &constNet, 2.0, tb::RngMode::Nes, tb::NnOutSearchConfig::ply2());
   CHECK(unloadedRes.found);
   CHECK(unloadedRes.usedFallback);
 
   CHECK_FALSE(tb::chooseNextBoxHybridFallbackMove(0ULL, -1, nxtI, idxTb, nullptr, inf,
-                                                  tb::RngMode::Nes, /*outUse2Ply=*/true)
+                                                  tb::RngMode::Nes, tb::NnOutSearchConfig::ply2())
                   .found);
   CHECK_FALSE(tb::chooseNextBoxHybridFallbackMove(0ULL, curO, 7, idxTb, nullptr, inf,
-                                                  tb::RngMode::Nes, /*outUse2Ply=*/true)
+                                                  tb::RngMode::Nes, tb::NnOutSearchConfig::ply2())
                   .found);
   CHECK_FALSE(tb::chooseNextBoxHybridFallbackMove(0ULL, curO, 7, emptyTb, nullptr, inf,
-                                                  tb::RngMode::Nes, /*outUse2Ply=*/true)
+                                                  tb::RngMode::Nes, tb::NnOutSearchConfig::ply2())
                   .found);
   CHECK_FALSE(tb::chooseNextBoxHybridFallbackMove(0ULL, curO, -1, idxTb, &constNet, 2.0,
-                                                  tb::RngMode::Nes, /*outUse2Ply=*/true)
+                                                  tb::RngMode::Nes, tb::NnOutSearchConfig::ply2())
                   .found);
 
   const uint64_t tetrisReady = mustParse("XXXXXXXXX.\n"
@@ -3547,7 +3549,7 @@ TEST_CASE("Calibrated partial-OUT fallback: +inf parity, margin clamping, and ed
                                          "XXXXXXXXX.\n"
                                          "XXXXXXXXX.");
   CHECK_FALSE(tb::chooseNextBoxHybridFallbackMove(tetrisReady, curO, nxtI, idxTb, &constNet, 2.0,
-                                                  tb::RngMode::Nes, /*outUse2Ply=*/true)
+                                                  tb::RngMode::Nes, tb::NnOutSearchConfig::ply2())
                   .found);
 
   // 5. generateNextBoxStateSpaceWithPolicy 1T vs 4T bit-for-bit determinism with custom NN policy.
@@ -3815,4 +3817,182 @@ TEST_CASE(
   std::remove(tmpNnbPath.c_str());
   std::remove(tmpNnPath.c_str());
   std::remove(tmpBadPath.c_str());
+}
+
+TEST_CASE("TinyNextBoxNet 256x64 fast stack path and pruned Top-K 3-ply search") {
+  // 1. 256x64 fast stack path (h1 + h2 = 320 <= 384) AND 320x128 slow path (448 > 384):
+  //    save/load & evalPiece/evalAll parity across both stack paths.
+  const uint64_t testBoard = mustParse("..........\n"
+                                       "....XX....\n"
+                                       "XXX.XXXX..\n"
+                                       "XXXXXXXX.X");
+  for (auto dims : {std::pair<int, int>{256, 64}, std::pair<int, int>{320, 128}}) {
+    tb::TinyNextBoxNet sizedNet;
+    REQUIRE(sizedNet.initRandom(dims.first, dims.second, tb::RngMode::Nes, 2026ULL, 4.0f));
+    const std::string tmpPath = "build/test_nn_sized.nn.bin";
+    REQUIRE(sizedNet.save(tmpPath));
+    tb::TinyNextBoxNet loaded;
+    REQUIRE(loaded.load(tmpPath));
+    CHECK(loaded.params == sizedNet.params);
+    float allV[tb::NUM_PIECES] = {};
+    loaded.evalAll(testBoard, allV);
+    for (int p = 0; p < tb::NUM_PIECES; ++p) {
+      CHECK(loaded.evalPiece(testBoard, p) == doctest::Approx(allV[p]).epsilon(1e-5));
+    }
+    std::remove(tmpPath.c_str());
+  }
+
+  // 2. scoreNextBoxNn3PlyTopK exactness vs independent brute-force oracle for BOTH:
+  //    (a) unpruned topK >= MAX_TRANSITIONS, and
+  //    (b) pruned topK = 2 < tl2.size() (would fail immediately if cmpCand ordering were inverted).
+  tb::TinyNextBoxNet net;
+  REQUIRE(net.initRandom(12, 8, tb::RngMode::Nes, 31415ULL, 3.0f));
+  const int curT = tb::parsePieceChar('T');
+  const int nxtS = tb::parsePieceChar('S');
+  const double fullTopK =
+      tb::scoreNextBoxNn3PlyTopK(testBoard, 1, nxtS, net, tb::RngMode::Nes, tb::MAX_TRANSITIONS);
+  const double prunedTop2 =
+      tb::scoreNextBoxNn3PlyTopK(testBoard, 1, nxtS, net, tb::RngMode::Nes, 2);
+
+  tb::TransitionList tl2;
+  tb::generateTransitions(testBoard, nxtS, tl2);
+  REQUIRE(tl2.size() > 4);
+  std::vector<std::pair<double, int>> ply2Order;
+  std::vector<double> exactPly3Scores(static_cast<size_t>(tl2.size()), 0.0);
+  double bruteBest2 = -std::numeric_limits<double>::infinity();
+  for (int i = 0; i < tl2.size(); ++i) {
+    const double sc2Ply = static_cast<double>(tl2[i].linesCleared)
+                          + net.evalNextPieceExpected(tl2[i].afterBoard, tb::RngMode::Nes, nxtS);
+    ply2Order.emplace_back(sc2Ply, i);
+    double exp3 = 0.0;
+    for (int p3 = 0; p3 < tb::NUM_PIECES; ++p3) {
+      tb::TransitionList tl3;
+      tb::generateTransitions(tl2[i].afterBoard, p3, tl3);
+      double best3 = 0.0;
+      if (!tl3.empty()) {
+        best3 = -std::numeric_limits<double>::infinity();
+        for (int j = 0; j < tl3.size(); ++j) {
+          const double sc3 = static_cast<double>(tl3[j].linesCleared)
+                             + net.evalNextPieceExpected(tl3[j].afterBoard, tb::RngMode::Nes, p3);
+          if (sc3 > best3) {
+            best3 = sc3;
+          }
+        }
+      }
+      exp3 += tb::pieceTransitionProb(tb::RngMode::Nes, nxtS, p3) * best3;
+    }
+    exactPly3Scores[static_cast<size_t>(i)] = static_cast<double>(tl2[i].linesCleared) + exp3;
+    if (exactPly3Scores[static_cast<size_t>(i)] > bruteBest2) {
+      bruteBest2 = exactPly3Scores[static_cast<size_t>(i)];
+    }
+  }
+  CHECK(fullTopK == doctest::Approx(1.0 + bruteBest2).epsilon(1e-12));
+
+  std::sort(ply2Order.begin(), ply2Order.end(), [](const auto &a, const auto &b) {
+    return (a.first != b.first) ? (a.first > b.first) : (a.second < b.second);
+  });
+  const double expectedPruned2 =
+      1.0
+      + std::max(exactPly3Scores[static_cast<size_t>(ply2Order[0].second)],
+                 exactPly3Scores[static_cast<size_t>(ply2Order[1].second)]);
+  CHECK(prunedTop2 == doctest::Approx(expectedPruned2).epsilon(1e-12));
+
+  // 3. Dedicated ply-3 top-out check: constant +12 NN on a near-full board where ply-2 succeeds
+  //    (I fills 1 of 2 empty cols) and leaves only a 1-wide gap where O/S/Z/T/L/J all top out at
+  //    ply 3 (best3 == 0.0 for all non-I pieces, NOT 12.0!).
+  tb::TinyNextBoxNet constNet;
+  REQUIRE(constNet.initRandom(8, 6, tb::RngMode::Nes, 1ULL, 0.0f));
+  std::fill(constNet.params.begin(), constNet.params.end(), 0.0f);
+  for (int p = 0; p < tb::NUM_PIECES; ++p) {
+    constNet.params[constNet.offB3() + static_cast<size_t>(p)] = 12.0f;
+  }
+  const uint64_t twoColGap = mustParse("XXXXXXXX..\n"
+                                       "XXXXXXXX..\n"
+                                       "XXXXXXXX..\n"
+                                       "XXXXXXXX..");
+  const int pI = tb::parsePieceChar('I');
+  const int curO = tb::parsePieceChar('O');
+  // Placing I vertically in twoColGap leaves a 1-col gap (only I survives at ply 3 with 4 clears +
+  // 12.0 = 16.0; all other 6 pieces top out with 0.0).
+  const double ply3TrapSc =
+      tb::scoreNextBoxNn3PlyTopK(twoColGap, 0, pI, constNet, tb::RngMode::Nes, 6);
+  const double expectedTrap = tb::pieceTransitionProb(tb::RngMode::Nes, pI, pI) * (4.0 + 12.0);
+  CHECK(ply3TrapSc == doctest::Approx(expectedTrap).epsilon(1e-9));
+
+  // 4. topK <= 0 fallback to 2-ply, ply-2 top-out, unloaded net, and out-of-range piece guards.
+  const double exact2 = tb::scoreNextBoxNn2Ply(testBoard, 2, nxtS, net, tb::RngMode::Nes);
+  CHECK(tb::scoreNextBoxNn3PlyTopK(testBoard, 2, nxtS, net, tb::RngMode::Nes, 0) == exact2);
+  CHECK(tb::scoreNextBoxNn3PlyTopK(testBoard, 2, nxtS, net, tb::RngMode::Nes, -3) == exact2);
+
+  tb::TinyNextBoxNet emptyNet;
+  CHECK(tb::scoreNextBoxNn1Ply(testBoard, 2, nxtS, emptyNet) == doctest::Approx(2.0));
+  CHECK(tb::scoreNextBoxNn1Ply(testBoard, 2, 7, net) == doctest::Approx(2.0));
+  CHECK(tb::scoreNextBoxNn3PlyTopK(testBoard, 2, nxtS, emptyNet, tb::RngMode::Nes, 4)
+        == doctest::Approx(2.0));
+  CHECK_FALSE(
+      tb::chooseNextBoxNnMove3PlyTopK(0ULL, curT, nxtS, emptyNet, tb::RngMode::Nes, 4).found);
+
+  const uint64_t tetrisReady = mustParse("XXXXXXXXX.\n"
+                                         "XXXXXXXXX.\n"
+                                         "XXXXXXXXX.\n"
+                                         "XXXXXXXXX.");
+  CHECK(tb::scoreNextBoxNn3PlyTopK(tetrisReady, 3, curO, net, tb::RngMode::Nes, 6)
+        == doctest::Approx(3.0));
+  CHECK_FALSE(tb::chooseNextBoxNnMove3PlyTopK(0ULL, -1, nxtS, net, tb::RngMode::Nes, 6).found);
+  CHECK_FALSE(tb::chooseNextBoxNnMove3PlyTopK(0ULL, curT, 7, net, tb::RngMode::Nes, 6).found);
+  CHECK_FALSE(
+      tb::chooseNextBoxNnMove3PlyTopK(tetrisReady, curO, nxtS, net, tb::RngMode::Nes, 6).found);
+
+  // 5. Hybrid fallback with ply=3 across unloaded TB, loaded TB all-OUT, AND loaded TB partial-OUT.
+  tb::IndexedNextBoxTablebase emptyTb;
+  const auto pure3 =
+      tb::chooseNextBoxNnMove3PlyTopK(testBoard, curT, nxtS, net, tb::RngMode::Nes, 4);
+  const auto hyb3Unloaded = tb::chooseNextBoxHybridFallbackMove(
+      testBoard, curT, nxtS, emptyTb, &net, 2.0, tb::RngMode::Nes, tb::NnOutSearchConfig::ply3(4));
+  REQUIRE(pure3.found);
+  REQUIRE(hyb3Unloaded.found);
+  CHECK(hyb3Unloaded.usedFallback);
+  CHECK(hyb3Unloaded.transition.afterBoard == pure3.transition.afterBoard);
+
+  // Loaded TB containing 1 O-placement (V = 5.0):
+  //   - cur=T, next=S on testBoard is all-OUT -> matches pure3 exactly.
+  //   - cur=O, next=I on empty board is partial-OUT (constNet 3-ply cont = 12.0):
+  //     margin=2.0 -> Q = 10.0 > 5.0 escapes; margin=7.0 -> exact tie stays in-TB.
+  tb::TransitionList oEmpty;
+  tb::generateTransitions(0ULL, curO, oEmpty);
+  REQUIRE(!oEmpty.empty());
+  const std::string tmpPly3Tb = "build/test_ply3_hyb.tb.bin";
+  REQUIRE(tb::writeNextBoxTablebaseFile(tmpPly3Tb, {oEmpty[0].afterBoard},
+                                        {5.0f, 5.0f, 5.0f, 5.0f, 5.0f, 5.0f, 5.0f},
+                                        tb::RngMode::Nes, 0.0));
+  tb::MappedNextBoxTablebase mappedPly3;
+  REQUIRE(mappedPly3.open(tmpPly3Tb));
+  tb::IndexedNextBoxTablebase idxPly3(mappedPly3);
+
+  const auto hyb3AllOut = tb::chooseNextBoxHybridFallbackMove(
+      testBoard, curT, nxtS, idxPly3, &net, 50.0, tb::RngMode::Nes, tb::NnOutSearchConfig::ply3(4));
+  REQUIRE(hyb3AllOut.found);
+  CHECK(hyb3AllOut.usedFallback);
+  CHECK(hyb3AllOut.transition.afterBoard == pure3.transition.afterBoard);
+
+  // On empty board with cur=O, next=I, ply-3 can clear 1 line iff p3 == I (2+4+4 = 10 cells):
+  // exact 3-ply continuation under constNet(+12) is 12.0 + P_nes(I|I) * 1.0 = 12.03125.
+  const double expectedPly3Cont = 12.0 + tb::pieceTransitionProb(tb::RngMode::Nes, pI, pI);
+  const auto hyb3Escape = tb::chooseNextBoxHybridFallbackMove(
+      0ULL, curO, pI, idxPly3, &constNet, 2.0, tb::RngMode::Nes, tb::NnOutSearchConfig::ply3(4));
+  REQUIRE(hyb3Escape.found);
+  CHECK_FALSE(hyb3Escape.usedFallback);
+  CHECK_FALSE(hyb3Escape.afterInTablebase);
+  CHECK(hyb3Escape.tablebaseQ == doctest::Approx(expectedPly3Cont - 2.0));
+
+  const auto hyb3Tie = tb::chooseNextBoxHybridFallbackMove(0ULL, curO, pI, idxPly3, &constNet,
+                                                           expectedPly3Cont - 5.0, tb::RngMode::Nes,
+                                                           tb::NnOutSearchConfig::ply3(4));
+  REQUIRE(hyb3Tie.found);
+  CHECK_FALSE(hyb3Tie.usedFallback);
+  CHECK(hyb3Tie.afterInTablebase);
+  CHECK(hyb3Tie.transition.afterBoard == oEmpty[0].afterBoard);
+
+  mappedPly3.close();
+  std::remove(tmpPly3Tb.c_str());
 }
