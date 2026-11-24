@@ -7,6 +7,7 @@ Everything here is written from one perspective: **what directly transfers — a
 Companion docs:
 - [docs/tablebase_plan.md](tablebase_plan.md) — v0 No-Next-Box ruleset, oracle checks, and Phases 1–6.
 - [docs/tablebase_nextbox_plan.md](tablebase_nextbox_plan.md) — v1 1-Piece Next-Box format, disk-streamed solver, and Phases NB-1–NB-5.
+- [docs/tablebase_distillation_plan.md](tablebase_distillation_plan.md) & [docs/tablebase_distillation_retrospective.md](tablebase_distillation_retrospective.md) — distilling the `670.9 MB` tablebase into V2 linear heuristics (`48.94` lines), a `78.6 KB` Tiny NN (`71.79` lines), and calibrated partial-OUT fallbacks (`104.02` lines on full TB; `+11–17` lines on partial TBs).
 
 ---
 
