@@ -12,6 +12,7 @@
 // Usage:
 //   ./build/tablebase_solve <input.states.bin> <output.tb.bin> [options]
 
+#include "cli_utils.hpp"
 #include "vi_solver.hpp"
 
 #include <algorithm>
@@ -20,17 +21,12 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
-#include <cstdlib>
-#include <filesystem>
 #include <set>
 #include <string>
-#include <system_error>
 #include <thread>
 #include <vector>
 
 namespace {
-
-constexpr double MAX_PASSING_Z_SCORE = 3.5;
 
 struct CliOptions {
   std::string inPath;
@@ -62,71 +58,6 @@ void printUsage(const char *prog, FILE *out) {
   std::fprintf(out, "  --threads=T            Worker threads in [1,256] (default: hardware "
                     "concurrency)\n");
   std::fprintf(out, "  --quiet                Suppress per-iteration MPI progress lines\n");
-}
-
-bool parseStrictU64(const std::string &sub, uint64_t minVal, uint64_t maxVal, uint64_t &out) {
-  if (sub.empty())
-    return false;
-  uint64_t v = 0;
-  for (char c : sub) {
-    if (c < '0' || c > '9')
-      return false;
-    const uint64_t digit = static_cast<uint64_t>(c - '0');
-    if (digit > maxVal || v > (maxVal - digit) / 10ULL)
-      return false;
-    v = v * 10ULL + digit;
-  }
-  if (v < minVal || v > maxVal)
-    return false;
-  out = v;
-  return true;
-}
-
-// Strict positive decimal/scientific float parser (e.g. "1e-7", "0.00001"); rejects whitespace,
-// hex floats, NaN, Inf, or junk suffixes.
-bool parseStrictPositiveDouble(const std::string &sub, double minVal, double maxVal, double &out) {
-  if (sub.empty())
-    return false;
-  size_t i = 0;
-  bool seenMantissaDigit = false;
-  bool seenDot = false;
-  while (i < sub.size()) {
-    const char c = sub[i];
-    if (c >= '0' && c <= '9') {
-      seenMantissaDigit = true;
-      ++i;
-    } else if (c == '.' && !seenDot) {
-      seenDot = true;
-      ++i;
-    } else {
-      break;
-    }
-  }
-  if (!seenMantissaDigit)
-    return false;
-
-  if (i < sub.size()) {
-    if (sub[i] != 'e' && sub[i] != 'E')
-      return false;
-    ++i;
-    if (i < sub.size() && (sub[i] == '+' || sub[i] == '-'))
-      ++i;
-    bool seenExpDigit = false;
-    while (i < sub.size() && sub[i] >= '0' && sub[i] <= '9') {
-      seenExpDigit = true;
-      ++i;
-    }
-    if (!seenExpDigit || i != sub.size())
-      return false;
-  }
-
-  char *endPtr = nullptr;
-  const double v = std::strtod(sub.c_str(), &endPtr);
-  if (endPtr == sub.c_str() || *endPtr != '\0' || !std::isfinite(v) || v < minVal || v > maxVal) {
-    return false;
-  }
-  out = v;
-  return true;
 }
 
 bool parseArgs(int argc, char **argv, CliOptions &opts) {
@@ -170,53 +101,53 @@ bool parseArgs(int argc, char **argv, CliOptions &opts) {
       uint64_t uVal = 0;
       double dVal = 0.0;
       if (flag == "--tol") {
-        if (!parseStrictPositiveDouble(val, 1e-12, 1e-1, dVal)) {
+        if (!tb::cli::parseStrictPositiveDouble(val, 1e-12, 1e-1, dVal)) {
           std::fprintf(stderr, "Invalid --tol value '%s' (expected [1e-12, 1e-1])\n", val.c_str());
           return false;
         }
         opts.cfg.tolerance = dVal;
       } else if (flag == "--max-iters") {
-        if (!parseStrictU64(val, 1, 10000ULL, uVal)) {
+        if (!tb::cli::parseStrictU64(val, 1, 10000ULL, uVal)) {
           std::fprintf(stderr, "Invalid --max-iters value '%s' (expected 1..10000)\n", val.c_str());
           return false;
         }
         opts.cfg.maxOuterIters = static_cast<int>(uVal);
       } else if (flag == "--inner-sweeps") {
-        if (!parseStrictU64(val, 0, 1000ULL, uVal)) {
+        if (!tb::cli::parseStrictU64(val, 0, 1000ULL, uVal)) {
           std::fprintf(stderr, "Invalid --inner-sweeps value '%s' (expected 0..1000)\n",
                        val.c_str());
           return false;
         }
         opts.cfg.innerEvalSweeps = static_cast<int>(uVal);
       } else if (flag == "--mc-games") {
-        if (!parseStrictU64(val, 0, 1000000ULL, uVal) || (uVal > 0 && uVal < 100)) {
+        if (!tb::cli::parseStrictU64(val, 0, 1000000ULL, uVal) || (uVal > 0 && uVal < 100)) {
           std::fprintf(stderr, "Invalid --mc-games value '%s' (expected 0 or 100..1000000)\n",
                        val.c_str());
           return false;
         }
         opts.mcGames = static_cast<int>(uVal);
       } else if (flag == "--eval-games") {
-        if (!parseStrictU64(val, 0, 1000000ULL, uVal)) {
+        if (!tb::cli::parseStrictU64(val, 0, 1000000ULL, uVal)) {
           std::fprintf(stderr, "Invalid --eval-games value '%s' (expected 0..1000000)\n",
                        val.c_str());
           return false;
         }
         opts.evalGames = static_cast<int>(uVal);
       } else if (flag == "--fallback-ply") {
-        if (!parseStrictU64(val, 1, 2, uVal)) {
+        if (!tb::cli::parseStrictU64(val, 1, 2, uVal)) {
           std::fprintf(stderr, "Invalid --fallback-ply value '%s' (expected 1 or 2)\n",
                        val.c_str());
           return false;
         }
         opts.fallbackPly = static_cast<int>(uVal);
       } else if (flag == "--seed") {
-        if (!parseStrictU64(val, 0, UINT64_MAX, uVal)) {
+        if (!tb::cli::parseStrictU64(val, 0, UINT64_MAX, uVal)) {
           std::fprintf(stderr, "Invalid --seed value '%s'\n", val.c_str());
           return false;
         }
         opts.evalSeed = uVal;
       } else if (flag == "--threads") {
-        if (!parseStrictU64(val, 1, 256, uVal)) {
+        if (!tb::cli::parseStrictU64(val, 1, 256, uVal)) {
           std::fprintf(stderr, "Invalid --threads value '%s' (expected 1..256)\n", val.c_str());
           return false;
         }
@@ -312,15 +243,8 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  const std::filesystem::path p(opts.outPath);
-  if (p.has_parent_path()) {
-    std::error_code ec;
-    std::filesystem::create_directories(p.parent_path(), ec);
-    if (ec) {
-      std::fprintf(stderr, "Error creating parent directory '%s': %s\n",
-                   p.parent_path().string().c_str(), ec.message().c_str());
-      return 1;
-    }
+  if (!tb::cli::ensureParentDirectory(opts.outPath)) {
+    return 1;
   }
   if (!tb::writeTablebaseFile(opts.outPath, boards, solved.values, solved.finalBellmanResidual,
                               &err)) {
@@ -359,7 +283,7 @@ int main(int argc, char **argv) {
                      cw.stepCapHits, tb::DEFAULT_EVAL_MAX_STEPS);
         return 1;
       }
-      if (zScore > MAX_PASSING_Z_SCORE) {
+      if (zScore > tb::cli::MAX_PASSING_Z_SCORE) {
         std::fprintf(stderr, "ERROR: Closed-world MC deviated from V(empty) by %.2f sigma!\n",
                      zScore);
         return 1;

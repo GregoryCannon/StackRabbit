@@ -72,9 +72,8 @@ Keeps the existing `SRTBV001` No-Next-Box format untouched and adds a new versio
   - `ram`: stored in a normal `std::vector<uint32_t>` (great for smaller sets, e.g. `<= 6M` boards = `<= 1.18 GB`).
   - `disk` (default in `auto` above the RAM threshold): written sequentially to a temporary SSD file (`ScopedTempFile`, automatically deleted on exit or error) in `<= 32 MB` chunks, then streamed back sequentially during the inner sweeps — **`0 bytes` of RAM** for the policy cache at any board count.
 - **Value arrays in RAM**:
-  - Two `float` buffers (`vCur[N * 7]` + `vNext[N * 7]` = `56 bytes/board`) so worker threads read old values while writing new values cleanly with zero race conditions and identical results across thread counts.
-  - All sums inside backups and inner sweeps accumulate in `double` precision so values never drift on long Next-Box games.
-  - **Total solver RAM**: `boards (8 B)` + `FlatBoardIndex (~24 B)` + `vCur/vNext (56 B)` = **`~88 bytes/board`** (`16M` boards ≈ **`1.4 GB` RAM**; even `100M` boards ≈ **`8.8 GB` RAM**).
+  - Two `double` buffers (`vCur[N * 7]` + `vNext[N * 7]` = `112 bytes/board`) so worker threads read old values while writing new values cleanly with zero race conditions, identical results across thread counts, and zero `float32` rounding stalls even when expected line counts reach `100+` (`1 ULP` of `float32` at `V = 100` is `7.6e-6`, which would prevent `< 1e-7` convergence).
+  - **Total solver RAM**: `boards (8 B)` + `FlatBoardIndex (~24 B)` + `vCur/vNext (112 B)` + `12.8 MB` streaming buffer = **`~144 bytes/board`** (`16M` boards ≈ **`2.3 GB` RAM** — comfortable on 16 GB RAM).
 
 ```mermaid
 flowchart LR
@@ -116,21 +115,19 @@ Build the 36-byte Next-Box file format and fix the binary-search bottleneck in g
 ---
 
 ### Phase NB-3: Disk-Streamed & Warm-Started Next-Box MPI Solver (`nextbox_solver.hpp`, `solve_nextbox.cpp`)
-Build the `V(b, c)` solver with low RAM (`~88 bytes/board`) and full Monte Carlo verification.
+Build the `V(b, c)` solver with low RAM (`~144 bytes/board` in `double` precision) and full Monte Carlo verification.
 
-- [ ] Implement `packPolicyAction(childId, reward)` / unpack helpers (`29-bit id + 3-bit reward`) and `PolicyActionStore` supporting both `Ram` and chunked sequential `Disk` storage (`ScopedTempFile` that always cleans up its temp file on exit or error).
-- [ ] Implement parallel two-buffer `solveNextBoxMPI(sortedBoards, index, cfg, initTbPtr)`:
+- [x] Implement `packNextBoxAction(childId, reward)` / unpack helpers (`29-bit id + 3-bit reward`) and `PolicyActionStore` supporting both `Ram` and chunked sequential `Disk` storage (auto-unlinked temp file, `64-bit` offset safe).
+- [x] Implement parallel two-buffer `solveNextBoxMPI(sortedBoards, index, cfg, initTbPtr)` in `nextbox_solver.hpp`:
   - Generates moves and hashes children once per `(b, c)`, shared across all `7` next pieces `n = 0..6`.
-  - Accumulates sums in `double` into `float vCur`/`vNext` (`56 B/board`), 100% deterministic across thread counts.
-  - Configurable `--inner-sweeps` (default `50` since NES Next-Box games run 5–7× longer than No-Next-Box) and `--init=prev.tb.bin` warm-starting (safe because adding boards can only raise values, so starting from last round's values climbs straight to the same exact answer in fewer sweeps).
-  - Verifies exact largest update error across all `N × 7` entries after freeing the temp policy file/buffers.
-- [ ] Implement `chooseNextBoxTablebaseMove(b, c, n, tb, closedWorld, w)` and multi-threaded `evaluateNextBoxPolicy` (closed-world Monte Carlo check against expected `V(0, c_0)` + live TB + 2-ply Next-Box fallback stats with hole-stratified coverage).
-- [ ] Build `experimental/tablebase/solve_nextbox.cpp` (`./build/tablebase_solve_nb <in.states.bin> <out.tb.bin> [options]`) with strict flag validation (`--rng=uniform|nes`, `--policy-cache=auto|ram|disk`, `--init=PATH`, `--tol`, `--inner-sweeps`, `--mc-games`, `--eval-games`, `--seed`, `--threads`).
-- [ ] **Verification**:
-  - Unit tests in `tablebase_test.cpp`:
-    - Exact 2-row brute-force check against an independent plain double-precision solver (both `Uniform` and `Nes`).
-    - Bit-for-bit equality across thread counts (`1` vs `4`), across `Ram` vs `Disk` policy cache, and agreement between cold-start and warm-start.
-    - Closed-world Monte Carlo agreement (`<= 3.5σ`) for both `Uniform` and `Nes` RNG.
+  - Runs in `double` precision (`112 B/board` working arrays), 100% deterministic across thread counts and `Ram`/`Disk` modes.
+  - Supports `--inner-sweeps=50` default and validated `--init=prev.tb.bin` warm-starting (closing `--init` before write so in-place refinement is safe, and scoping solver buffers before post-solve eval).
+  - Verifies exact largest Bellman residual across all `N × 7` entries after freeing the temp policy store and `vNext`.
+- [x] Implement `chooseNextBoxTablebaseMove` and `evaluateNextBoxPolicy` (sharing `detail::runTablebaseEval` with `evaluateTablebasePolicy`).
+- [x] Build `experimental/tablebase/solve_nextbox.cpp` (`./build/tablebase_solve_nb`) and shared `cli_utils.hpp` with strict flag validation (`--rng`, `--eval-rng`, `--policy-cache`, `--init`, `--tol`, `--inner-sweeps`, `--mc-games`, `--eval-games`, `--seed`, `--threads`).
+- [x] **Verification**:
+  - Unit tests in `tablebase_test.cpp`: exact 4×4 reference parity (Uniform & NES), multi-chunk disk `PolicyActionStore` round-trip, 1T vs 4T & Ram vs Disk bit-for-bit equality, subset & superset warm-start convergence, `chooseNextBoxTablebaseMove` tie-breaking/fallback/top-out, and closed-world MC agreement (`<= 3.5σ`) for both Uniform & NES.
+  - Smoke-tested disk-streamed MPI on `round0.states.bin` (`673,453` boards, `19.6s`, `E[V(0)] = 19.556`, closed-world MC `1.53σ`, live `34.55`).
 
 ---
 

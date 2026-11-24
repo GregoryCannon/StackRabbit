@@ -890,16 +890,15 @@ struct TablebaseEvalStats {
   HoleStratifiedCounts byHoles{};
 };
 
-// Runs multi-threaded deterministic Monte Carlo evaluation of a loaded MappedTablebase.
-// In closedWorld mode, exiting the tablebase ends the episode with 0 continuation reward (verifying
-// empirical mean lines directly against V(0ULL)). In live mode (closedWorld == false), all-OUT
-// states fall back to fallbackPly heuristic play.
-inline TablebaseEvalStats evaluateTablebasePolicy(const MappedTablebase &mappedTb, bool closedWorld,
-                                                  int numGames, uint64_t baseSeed, int numThreads,
-                                                  int fallbackPly = 2,
-                                                  const EvalWeights &w = EvalWeights{},
-                                                  int maxSteps = DEFAULT_EVAL_MAX_STEPS) {
-  assert(fallbackPly == 1 || fallbackPly == 2);
+namespace detail {
+
+// Shared multi-threaded Monte Carlo game-evaluation loop used by both No-Next-Box and Next-Box
+// tablebase evaluators. makeGameStepper(Rng&) returns a callable step(uint64_t board) ->
+// TablebaseMoveChoice that draws pieces and selects the next move.
+template <typename MakeStepperFn>
+inline TablebaseEvalStats runTablebaseEval(bool closedWorld, int numGames, uint64_t baseSeed,
+                                           int numThreads, int maxSteps,
+                                           MakeStepperFn &&makeGameStepper) {
   assert(numGames >= 0);
   assert(maxSteps > 0);
   TablebaseEvalStats stats{};
@@ -916,67 +915,65 @@ inline TablebaseEvalStats evaluateTablebasePolicy(const MappedTablebase &mappedT
   std::atomic<int> stepCapHits{0};
   std::atomic<int> nextGame{0};
 
-  detail::runWorkerPool(
-      threads, static_cast<size_t>(numGames), /*minParallelWork=*/32, [&](int tid) {
-        HoleStratifiedCounts localHoles{};
-        uint64_t localFallback = 0;
-        int localFull = 0;
-        int localCapHits = 0;
+  runWorkerPool(threads, static_cast<size_t>(numGames), /*minParallelWork=*/32, [&](int tid) {
+    HoleStratifiedCounts localHoles{};
+    uint64_t localFallback = 0;
+    int localFull = 0;
+    int localCapHits = 0;
 
-        while (true) {
-          const int g = nextGame.fetch_add(1, std::memory_order_relaxed);
-          if (g >= numGames) {
+    while (true) {
+      const int g = nextGame.fetch_add(1, std::memory_order_relaxed);
+      if (g >= numGames) {
+        break;
+      }
+
+      Rng rng(deriveGameSeed(baseSeed, g));
+      auto stepMove = makeGameStepper(rng);
+      uint64_t board = 0ULL;
+      int lines = 0;
+      bool terminated = false;
+      bool allIn = true;
+
+      for (int step = 0; step < maxSteps; ++step) {
+        const TablebaseMoveChoice mv = stepMove(board);
+        if (!mv.found) {
+          terminated = true;
+          break;
+        }
+        lines += mv.transition.linesCleared;
+        const uint64_t nextBoard = mv.transition.afterBoard;
+        const int hb = HoleStratifiedCounts::bucket(countHoles(nextBoard));
+        ++localHoles.total[static_cast<size_t>(hb)];
+        if (mv.usedFallback) {
+          ++localFallback;
+        }
+        if (mv.afterInTablebase) {
+          ++localHoles.inSet[static_cast<size_t>(hb)];
+          board = nextBoard;
+        } else {
+          allIn = false;
+          if (closedWorld) {
+            // Exiting S in the closed-world MDP yields 0.0 continuation.
+            terminated = true;
             break;
           }
-
-          Rng rng(detail::deriveGameSeed(baseSeed, g));
-          uint64_t board = 0ULL;
-          int lines = 0;
-          bool terminated = false;
-          bool allIn = true;
-
-          for (int step = 0; step < maxSteps; ++step) {
-            const int piece = rng.nextPiece();
-            const TablebaseMoveChoice mv =
-                chooseTablebaseMove(board, piece, mappedTb, closedWorld, fallbackPly, w);
-            if (!mv.found) {
-              terminated = true;
-              break;
-            }
-            lines += mv.transition.linesCleared;
-            const uint64_t nextBoard = mv.transition.afterBoard;
-            const int hb = HoleStratifiedCounts::bucket(countHoles(nextBoard));
-            ++localHoles.total[static_cast<size_t>(hb)];
-            if (mv.usedFallback) {
-              ++localFallback;
-            }
-            if (mv.afterInTablebase) {
-              ++localHoles.inSet[static_cast<size_t>(hb)];
-              board = nextBoard;
-            } else {
-              allIn = false;
-              if (closedWorld) {
-                // Exiting S in the closed-world MDP yields 0.0 continuation.
-                terminated = true;
-                break;
-              }
-              board = nextBoard;
-            }
-          }
-          if (!terminated) {
-            ++localCapHits;
-          }
-          if (allIn) {
-            ++localFull;
-          }
-          gameLines[static_cast<size_t>(g)] = lines;
+          board = nextBoard;
         }
+      }
+      if (!terminated) {
+        ++localCapHits;
+      }
+      if (allIn) {
+        ++localFull;
+      }
+      gameLines[static_cast<size_t>(g)] = lines;
+    }
 
-        threadHoles[static_cast<size_t>(tid)] = localHoles;
-        threadFallbacks[static_cast<size_t>(tid)] = localFallback;
-        fullyCoveredGames.fetch_add(localFull, std::memory_order_relaxed);
-        stepCapHits.fetch_add(localCapHits, std::memory_order_relaxed);
-      });
+    threadHoles[static_cast<size_t>(tid)] = localHoles;
+    threadFallbacks[static_cast<size_t>(tid)] = localFallback;
+    fullyCoveredGames.fetch_add(localFull, std::memory_order_relaxed);
+    stepCapHits.fetch_add(localCapHits, std::memory_order_relaxed);
+  });
 
   uint64_t totalFallbacks = 0;
   for (int t = 0; t < threads; ++t) {
@@ -984,7 +981,7 @@ inline TablebaseEvalStats evaluateTablebasePolicy(const MappedTablebase &mappedT
     stats.byHoles.accumulate(threadHoles[static_cast<size_t>(t)]);
   }
 
-  const detail::DistributionStats dist = detail::computeDistributionStats(std::move(gameLines));
+  const DistributionStats dist = computeDistributionStats(std::move(gameLines));
   stats.meanLines = dist.mean;
   stats.stdErrLines = dist.stdErr;
   stats.medianLines = dist.median;
@@ -1004,6 +1001,28 @@ inline TablebaseEvalStats evaluateTablebasePolicy(const MappedTablebase &mappedT
       / static_cast<double>(numGames);
   stats.stepCapHits = stepCapHits.load(std::memory_order_relaxed);
   return stats;
+}
+
+} // namespace detail
+
+// Runs multi-threaded deterministic Monte Carlo evaluation of a loaded No-Next-Box tablebase.
+// In closedWorld mode, exiting the tablebase ends the episode with 0 continuation reward (verifying
+// empirical mean lines directly against V(0ULL)). In live mode (closedWorld == false), all-OUT
+// states fall back to fallbackPly heuristic play.
+template <typename NnbTablebase>
+inline TablebaseEvalStats evaluateTablebasePolicy(const NnbTablebase &mappedTb, bool closedWorld,
+                                                  int numGames, uint64_t baseSeed, int numThreads,
+                                                  int fallbackPly = 2,
+                                                  const EvalWeights &w = EvalWeights{},
+                                                  int maxSteps = DEFAULT_EVAL_MAX_STEPS) {
+  assert(fallbackPly == 1 || fallbackPly == 2);
+  return detail::runTablebaseEval(
+      closedWorld, numGames, baseSeed, numThreads, maxSteps, [&](Rng &rng) {
+        return [&rng, &mappedTb, closedWorld, fallbackPly, &w](uint64_t board) {
+          const int piece = rng.nextPiece();
+          return chooseTablebaseMove(board, piece, mappedTb, closedWorld, fallbackPly, w);
+        };
+      });
 }
 
 } // namespace tb

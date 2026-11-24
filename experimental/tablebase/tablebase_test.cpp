@@ -3,6 +3,7 @@
 
 #include "core.hpp"
 #include "heuristic.hpp"
+#include "nextbox_solver.hpp"
 #include "server_routes.hpp"
 #include "state_generator.hpp"
 #include "tablebase_io.hpp"
@@ -1840,4 +1841,309 @@ TEST_CASE("SRTBV002 Next-Box binary I/O, format detection, and O(1) IndexedTable
   std::remove(tmpV2.c_str());
   std::remove(tmpV2NoEmpty.c_str());
   std::remove(tmpCorrupt.c_str());
+}
+
+TEST_CASE("Next-Box V(b,c) MPI solver: packing, Ram vs Disk parity, thread determinism, warm-start,"
+          " and exact MC verification") {
+  // 1. Packed action round-trip tests.
+  CHECK(tb::unpackNextBoxChild(tb::packNextBoxAction(tb::INVALID_BOARD_ID, 0))
+        == tb::INVALID_BOARD_ID);
+  CHECK(tb::unpackNextBoxReward(tb::packNextBoxAction(tb::INVALID_BOARD_ID, 4)) == 4);
+  CHECK(tb::unpackNextBoxChild(tb::packNextBoxAction(0U, 0)) == 0U);
+  CHECK(tb::unpackNextBoxChild(tb::packNextBoxAction(123456789U, 3)) == 123456789U);
+  CHECK(tb::unpackNextBoxReward(tb::packNextBoxAction(123456789U, 3)) == 3);
+  CHECK(tb::unpackNextBoxChild(tb::packNextBoxAction(tb::NB_ACTION_OUT_CHILD - 1U, 4))
+        == tb::NB_ACTION_OUT_CHILD - 1U);
+
+  tb::PolicyCacheMode pm = tb::PolicyCacheMode::Auto;
+  CHECK(tb::parsePolicyCacheMode("auto", pm));
+  CHECK(pm == tb::PolicyCacheMode::Auto);
+  CHECK(tb::parsePolicyCacheMode("ram", pm));
+  CHECK(pm == tb::PolicyCacheMode::Ram);
+  CHECK(tb::parsePolicyCacheMode("disk", pm));
+  CHECK(pm == tb::PolicyCacheMode::Disk);
+  CHECK_FALSE(tb::parsePolicyCacheMode("ssd", pm));
+
+  // 2. Verify exact Next-Box solver behavior across:
+  //    (a) Exact parity vs an independent plain Jacobi VI reference on boards4x4 (Uniform & Nes).
+  //    (b) Multi-chunk disk PolicyActionStore round-trip (> CHUNK_BOARDS) + Ram vs Disk & 1T vs 4T
+  //        bit-for-bit determinism on boards2x10_1.
+  //    (c) Monotone (subset) and non-monotone (superset) warm-start convergence & rngMode guard.
+  //    (d) Direct chooseNextBoxTablebaseMove tie-breaking, fallback, top-out, Mapped vs Indexed
+  //        parity, and evaluateNextBoxPolicy closed-world MC (<= 3.5 sigma) & edge cases.
+  {
+    // Multi-chunk disk PolicyActionStore check (CHUNK_BOARDS + 137 boards exercises non-zero
+    // pwrite/pread offsets and partial tail chunk).
+    constexpr size_t MULTI_BOARDS = tb::detail::PolicyActionStore::CHUNK_BOARDS + 137;
+    tb::detail::PolicyActionStore store;
+    std::string storeErr;
+    REQUIRE(store.init(MULTI_BOARDS, /*useDisk=*/true, &storeErr));
+    CHECK(store.isDisk());
+    for (size_t off = 0; off < MULTI_BOARDS; off += tb::detail::PolicyActionStore::CHUNK_BOARDS) {
+      const size_t cnt = std::min(MULTI_BOARDS - off, tb::detail::PolicyActionStore::CHUNK_BOARDS);
+      uint32_t *wbuf = store.beginWriteChunk(off, cnt);
+      for (size_t i = 0; i < cnt; ++i) {
+        const uint32_t cid = static_cast<uint32_t>(off + i);
+        const uint8_t rew = static_cast<uint8_t>((off + i) % 5);
+        wbuf[i * tb::NB_ACTIONS_PER_BOARD] = tb::packNextBoxAction(cid, rew);
+        wbuf[i * tb::NB_ACTIONS_PER_BOARD + tb::NB_ACTIONS_PER_BOARD - 1] =
+            tb::packNextBoxAction(tb::INVALID_BOARD_ID, rew);
+      }
+      REQUIRE(store.finishWriteChunk(off, cnt, &storeErr));
+    }
+    const uint32_t *tail =
+        store.readChunk(tb::detail::PolicyActionStore::CHUNK_BOARDS, 137, &storeErr);
+    REQUIRE(tail != nullptr);
+    for (size_t i = 0; i < 137; ++i) {
+      const size_t absIdx = tb::detail::PolicyActionStore::CHUNK_BOARDS + i;
+      const uint32_t firstWord = tail[i * tb::NB_ACTIONS_PER_BOARD];
+      const uint32_t lastWord = tail[i * tb::NB_ACTIONS_PER_BOARD + tb::NB_ACTIONS_PER_BOARD - 1];
+      CHECK(tb::unpackNextBoxChild(firstWord) == static_cast<uint32_t>(absIdx));
+      CHECK(tb::unpackNextBoxReward(firstWord) == static_cast<uint8_t>(absIdx % 5));
+      CHECK(tb::unpackNextBoxChild(lastWord) == tb::INVALID_BOARD_ID);
+      CHECK(tb::unpackNextBoxReward(lastWord) == static_cast<uint8_t>(absIdx % 5));
+    }
+    store.close();
+  }
+
+  // Empty board set & innerEvalSweeps == 0 edge cases.
+  {
+    const tb::NextBoxSolveResult emptyRes = tb::solveNextBoxMPI({});
+    CHECK(emptyRes.ok);
+    CHECK(emptyRes.values.empty());
+    CHECK(emptyRes.emptyBoardExpectedValue == tb::MISSING_BOARD_VALUE);
+  }
+
+  const std::vector<uint64_t> boards2x10_0 = tb::enumerateZeroSealedHoleBoards(0, 4, 2, 10);
+  const std::vector<uint64_t> boards2x10_1 = tb::enumerateZeroSealedHoleBoards(1, 4, 2, 10);
+
+  // Independent plain double-precision VI reference on a small 4x4 board set (fast & exact).
+  const std::vector<uint64_t> boards4x4 = tb::enumerateZeroSealedHoleBoards(1, 4, 4, 4);
+  const tb::FlatBoardIndex idx4x4(boards4x4);
+  for (tb::RngMode mode : {tb::RngMode::Uniform, tb::RngMode::Nes}) {
+    std::vector<double> refV(boards4x4.size() * tb::NUM_PIECES, 0.0);
+    std::vector<double> refNext(boards4x4.size() * tb::NUM_PIECES, 0.0);
+    tb::TransitionList tl;
+    for (int iter = 0; iter < 500; ++iter) {
+      double maxDiff = 0.0;
+      for (size_t i = 0; i < boards4x4.size(); ++i) {
+        for (int c = 0; c < tb::NUM_PIECES; ++c) {
+          tb::generateTransitions(boards4x4[i], c, tl);
+          double val = 0.0;
+          if (!tl.empty()) {
+            for (int n = 0; n < tb::NUM_PIECES; ++n) {
+              double bestQ = 0.0;
+              for (int m = 0; m < tl.size(); ++m) {
+                const uint32_t cid = idx4x4.find(tl[m].afterBoard);
+                const double cont =
+                    (cid != tb::INVALID_BOARD_ID)
+                        ? refV[static_cast<size_t>(cid) * tb::NUM_PIECES + static_cast<size_t>(n)]
+                        : 0.0;
+                const double q = static_cast<double>(tl[m].linesCleared) + cont;
+                if (m == 0 || q > bestQ)
+                  bestQ = q;
+              }
+              val += tb::pieceTransitionProb(mode, c, n) * bestQ;
+            }
+          }
+          refNext[i * tb::NUM_PIECES + static_cast<size_t>(c)] = val;
+          maxDiff =
+              std::max(maxDiff, std::abs(val - refV[i * tb::NUM_PIECES + static_cast<size_t>(c)]));
+        }
+      }
+      refV.swap(refNext);
+      if (maxDiff <= 1e-11)
+        break;
+    }
+
+    tb::NextBoxSolveConfig cfg{};
+    cfg.rngMode = mode;
+    cfg.policyCacheMode = tb::PolicyCacheMode::Ram;
+    cfg.tolerance = 1e-10;
+    cfg.innerEvalSweeps = 30;
+    cfg.numThreads = 4;
+    const tb::NextBoxSolveResult res = tb::solveNextBoxMPI(boards4x4, idx4x4, cfg);
+    REQUIRE(res.ok);
+    CHECK(res.finalBellmanResidual <= 1e-10);
+    for (size_t k = 0; k < refV.size(); ++k) {
+      CHECK(static_cast<double>(res.values[k]) == doctest::Approx(refV[k]).epsilon(1e-5));
+    }
+  }
+
+  // Thread determinism (1T vs 4T) and Ram vs Disk bit-for-bit equality on boards2x10_1.
+  tb::NextBoxSolveConfig cfgRam1{};
+  cfgRam1.rngMode = tb::RngMode::Nes;
+  cfgRam1.policyCacheMode = tb::PolicyCacheMode::Ram;
+  cfgRam1.tolerance = 1e-9;
+  cfgRam1.innerEvalSweeps = 25;
+  cfgRam1.numThreads = 1;
+  const tb::NextBoxSolveResult ram1 = tb::solveNextBoxMPI(boards2x10_1, cfgRam1);
+  REQUIRE(ram1.ok);
+  CHECK_FALSE(ram1.usedDiskPolicyCache);
+  CHECK(ram1.finalBellmanResidual <= 1e-9);
+  CHECK(ram1.emptyBoardExpectedValue > 0.5);
+
+  tb::NextBoxSolveConfig cfgDisk4 = cfgRam1;
+  cfgDisk4.policyCacheMode = tb::PolicyCacheMode::Disk;
+  cfgDisk4.numThreads = 4;
+  const tb::NextBoxSolveResult disk4 = tb::solveNextBoxMPI(boards2x10_1, cfgDisk4);
+  REQUIRE(disk4.ok);
+  CHECK(disk4.usedDiskPolicyCache);
+  CHECK(disk4.emptyBoardExpectedValue == ram1.emptyBoardExpectedValue);
+  CHECK(disk4.values == ram1.values);
+  CHECK(disk4.outerIterations == ram1.outerIterations);
+
+  // Monotone (subset -> superset) AND non-monotone (superset -> subset) warm-start verification,
+  // plus innerEvalSweeps == 0 (pure Jacobi VI) check.
+  const tb::NextBoxSolveResult subRes = tb::solveNextBoxMPI(boards2x10_0, cfgDisk4);
+  REQUIRE(subRes.ok);
+  const std::string tmpSubTb = "build/test_nb_sub.tb.bin";
+  REQUIRE(tb::writeNextBoxTablebaseFile(tmpSubTb, boards2x10_0, subRes.values, tb::RngMode::Nes,
+                                        subRes.finalBellmanResidual));
+  tb::MappedNextBoxTablebase mappedSub;
+  REQUIRE(mappedSub.open(tmpSubTb));
+
+  const tb::NextBoxSolveResult warmRes = tb::solveNextBoxMPI(boards2x10_1, cfgDisk4, &mappedSub);
+  REQUIRE(warmRes.ok);
+  CHECK(warmRes.warmStartBoardsMatched == boards2x10_0.size());
+  CHECK(warmRes.finalBellmanResidual <= 1e-9);
+  CHECK(warmRes.emptyBoardExpectedValue
+        == doctest::Approx(ram1.emptyBoardExpectedValue).epsilon(1e-7));
+  CHECK(warmRes.emptyBoardExpectedValue >= subRes.emptyBoardExpectedValue - 1e-6);
+
+  // Reverse (superset -> subset) warm-start: values must contract back down to subRes cleanly.
+  const std::string tmpSupTb = "build/test_nb_sup.tb.bin";
+  REQUIRE(tb::writeNextBoxTablebaseFile(tmpSupTb, boards2x10_1, ram1.values, tb::RngMode::Nes,
+                                        ram1.finalBellmanResidual));
+  tb::MappedNextBoxTablebase mappedSup;
+  REQUIRE(mappedSup.open(tmpSupTb));
+  const tb::NextBoxSolveResult revWarm = tb::solveNextBoxMPI(boards2x10_0, cfgDisk4, &mappedSup);
+  REQUIRE(revWarm.ok);
+  CHECK(revWarm.warmStartBoardsMatched == boards2x10_0.size());
+  CHECK(revWarm.finalBellmanResidual <= 1e-9);
+  CHECK(revWarm.emptyBoardExpectedValue
+        == doctest::Approx(subRes.emptyBoardExpectedValue).epsilon(1e-7));
+  mappedSup.close();
+  std::remove(tmpSupTb.c_str());
+
+  // innerEvalSweeps == 0 (pure VI) check on boards4x4.
+  {
+    tb::NextBoxSolveConfig pureViCfg = cfgRam1;
+    pureViCfg.innerEvalSweeps = 0;
+    pureViCfg.maxOuterIters = 500;
+    const tb::NextBoxSolveResult pureRes = tb::solveNextBoxMPI(boards4x4, idx4x4, pureViCfg);
+    REQUIRE(pureRes.ok);
+    CHECK(pureRes.totalInnerSweeps == 0);
+    CHECK(pureRes.finalBellmanResidual <= 1e-9);
+  }
+
+  // Mismatched RngMode on warm-start must fail explicitly.
+  tb::NextBoxSolveConfig cfgWrongRng = cfgDisk4;
+  cfgWrongRng.rngMode = tb::RngMode::Uniform;
+  const tb::NextBoxSolveResult badWarm = tb::solveNextBoxMPI(boards2x10_1, cfgWrongRng, &mappedSub);
+  CHECK_FALSE(badWarm.ok);
+
+  // Direct chooseNextBoxTablebaseMove tests: closedWorld vs live tie-break, all-OUT fallback,
+  // top-out, and Mapped vs Indexed parity.
+  {
+    tb::TransitionList oMoves;
+    tb::generateTransitions(0ULL, tb::parsePieceChar('O'), oMoves);
+    REQUIRE(oMoves.size() == 9);
+    std::vector<uint64_t> tieKeys = {oMoves[0].afterBoard, oMoves[4].afterBoard};
+    std::sort(tieKeys.begin(), tieKeys.end());
+    std::vector<float> tieVals(tieKeys.size() * tb::NUM_PIECES, 15.0f);
+    const std::string tmpNbTie = "build/test_nb_choose_tie.tb.bin";
+    REQUIRE(tb::writeNextBoxTablebaseFile(tmpNbTie, tieKeys, tieVals, tb::RngMode::Nes, 0.0));
+    tb::MappedNextBoxTablebase mTie;
+    REQUIRE(mTie.open(tmpNbTie));
+    tb::IndexedNextBoxTablebase iTie(mTie);
+
+    const int oIdx = tb::parsePieceChar('O');
+    const int iIdx = tb::parsePieceChar('I');
+    const auto cwM = tb::chooseNextBoxTablebaseMove(0ULL, oIdx, iIdx, mTie, /*closedWorld=*/true);
+    const auto cwI = tb::chooseNextBoxTablebaseMove(0ULL, oIdx, iIdx, iTie, /*closedWorld=*/true);
+    REQUIRE(cwM.found);
+    CHECK(cwM.transition.afterBoard == oMoves[0].afterBoard);
+    CHECK(cwM.transition.afterBoard == cwI.transition.afterBoard);
+    CHECK(cwM.tablebaseQ == doctest::Approx(15.0));
+
+    const auto liveM =
+        tb::chooseNextBoxTablebaseMove(0ULL, oIdx, iIdx, mTie, /*closedWorld=*/false);
+    const auto liveI =
+        tb::chooseNextBoxTablebaseMove(0ULL, oIdx, iIdx, iTie, /*closedWorld=*/false);
+    REQUIRE(liveM.found);
+    CHECK(liveM.afterInTablebase);
+    CHECK_FALSE(liveM.usedFallback);
+    CHECK(liveM.transition.afterBoard == liveI.transition.afterBoard);
+    const double h0 = tb::scoreNextBoxHeuristicTransition(oMoves[0].afterBoard, 0, iIdx);
+    const double h4 = tb::scoreNextBoxHeuristicTransition(oMoves[4].afterBoard, 0, iIdx);
+    if (h0 != h4) {
+      const uint64_t expected = (h4 > h0) ? oMoves[4].afterBoard : oMoves[0].afterBoard;
+      CHECK(liveM.transition.afterBoard == expected);
+    }
+
+    // All-OUT fallback for piece 'I' on this O-only TB.
+    const auto fb = tb::chooseNextBoxTablebaseMove(0ULL, iIdx, oIdx, iTie, /*closedWorld=*/false);
+    REQUIRE(fb.found);
+    CHECK(fb.usedFallback);
+    CHECK_FALSE(fb.afterInTablebase);
+    CHECK(fb.transition.afterBoard
+          == tb::pickBestNextBoxHeuristic(0ULL, iIdx, oIdx).transition.afterBoard);
+
+    // Top-out returns found == false.
+    const uint64_t fullWall = mustParse("XXXXXXXXX.\n"
+                                        "XXXXXXXXX.\n"
+                                        "XXXXXXXXX.\n"
+                                        "XXXXXXXXX.");
+    CHECK_FALSE(tb::chooseNextBoxTablebaseMove(fullWall, oIdx, iIdx, iTie, false).found);
+
+    // evaluateNextBoxPolicy edge cases: numGames=0, numGames=1, maxSteps=1.
+    const auto ev0 = tb::evaluateNextBoxPolicy(iTie, tb::RngMode::Nes, false, 0, 1ULL, 1);
+    CHECK(ev0.games == 0);
+    const auto ev1 = tb::evaluateNextBoxPolicy(iTie, tb::RngMode::Nes, false, 1, 1ULL, 1);
+    CHECK(ev1.games == 1);
+    CHECK(ev1.stdErrLines == 0.0);
+    const auto evCap = tb::evaluateNextBoxPolicy(iTie, tb::RngMode::Nes, false, 10, 1ULL, 2,
+                                                 tb::EvalWeights{}, /*maxSteps=*/1);
+    CHECK(evCap.stepCapHits == 10);
+
+    mTie.close();
+    std::remove(tmpNbTie.c_str());
+  }
+
+  // Closed-world MC & live fallback verification for BOTH Nes and Uniform on boards2x10_1.
+  const std::string tmpFullNb = "build/test_nb_full.tb.bin";
+  for (tb::RngMode mode : {tb::RngMode::Nes, tb::RngMode::Uniform}) {
+    tb::NextBoxSolveConfig mCfg = cfgDisk4;
+    mCfg.rngMode = mode;
+    const tb::NextBoxSolveResult mRes = tb::solveNextBoxMPI(boards2x10_1, mCfg);
+    REQUIRE(mRes.ok);
+    REQUIRE(tb::writeNextBoxTablebaseFile(tmpFullNb, boards2x10_1, mRes.values, mode,
+                                          mRes.finalBellmanResidual));
+    tb::MappedNextBoxTablebase mappedNb;
+    REQUIRE(mappedNb.open(tmpFullNb));
+    tb::IndexedNextBoxTablebase idxNb(mappedNb);
+
+    const tb::TablebaseEvalStats cw1 =
+        tb::evaluateNextBoxPolicy(idxNb, mode, /*closedWorld=*/true, 3000, 4242ULL, 1);
+    const tb::TablebaseEvalStats cw4 =
+        tb::evaluateNextBoxPolicy(idxNb, mode, /*closedWorld=*/true, 3000, 4242ULL, 4);
+    CHECK(cw1.meanLines == cw4.meanLines);
+    CHECK(cw1.stdErrLines == cw4.stdErrLines);
+    CHECK(cw1.inTbMovePct == cw4.inTbMovePct);
+    CHECK(cw1.stepCapHits == 0);
+    CHECK(tb::computeClosedWorldZScore(cw1.meanLines, cw1.stdErrLines, mRes.emptyBoardExpectedValue)
+          <= 3.5);
+
+    const tb::TablebaseEvalStats live =
+        tb::evaluateNextBoxPolicy(idxNb, mode, /*closedWorld=*/false, 300, 4242ULL, 4);
+    CHECK(live.stepCapHits == 0);
+    CHECK(live.meanLines > cw1.meanLines);
+    CHECK(live.inTbMovePct > 0.0);
+    mappedNb.close();
+  }
+
+  mappedSub.close();
+  std::remove(tmpSubTb.c_str());
+  std::remove(tmpFullNb.c_str());
 }
