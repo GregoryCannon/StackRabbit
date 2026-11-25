@@ -763,6 +763,37 @@ private:
   File file_;
 };
 
+// Loads a sorted Next-Box board list from either an SRSTV001 (*.states.bin) or an SRTBV002
+// (*.tb.bin) file, closing any temporary mapping before returning. Explicitly rejects SRTBV001.
+inline bool loadNextBoxInputBoards(const std::string &path, std::vector<uint64_t> &boards,
+                                   std::string *errOut = nullptr) {
+  TablebaseFormat fmt = TablebaseFormat::Unknown;
+  if (detectTablebaseFormat(path, fmt)) {
+    if (fmt == TablebaseFormat::NextBoxV2) {
+      MappedNextBoxTablebase inTb;
+      if (!inTb.open(path, errOut, /*verifySorted=*/true)) {
+        return false;
+      }
+      const uint64_t n = inTb.size();
+      boards.resize(static_cast<size_t>(n));
+      for (uint64_t i = 0; i < n; ++i) {
+        boards[static_cast<size_t>(i)] = inTb.boardAt(i);
+      }
+      inTb.close();
+      return true;
+    }
+    if (fmt == TablebaseFormat::NnbV1) {
+      if (errOut) {
+        *errOut = "Unsupported SRTBV001 (No-Next-Box) input; expected SRSTV001 states or SRTBV002 "
+                  "Next-Box tablebase: "
+                  + path;
+      }
+      return false;
+    }
+  }
+  return readStatesFile(path, boards, errOut);
+}
+
 } // namespace tb
 
 #endif // TABLEBASE_IO_HPP

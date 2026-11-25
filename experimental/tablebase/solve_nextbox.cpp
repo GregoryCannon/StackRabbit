@@ -6,10 +6,11 @@
 //       experimental/tablebase/solve_nextbox.cpp -o build/tablebase_solve_nb
 //
 // Usage:
-//   ./build/tablebase_solve_nb <input.states.bin> <output.tb.bin> [options]
+//   ./build/tablebase_solve_nb <input.states.bin|input.tb.bin> <output.tb.bin> [options]
 
 #include "cli_utils.hpp"
 #include "nextbox_solver.hpp"
+#include "tiny_nn.hpp"
 
 #include <algorithm>
 #include <array>
@@ -28,6 +29,11 @@ struct CliOptions {
   std::string inPath;
   std::string outPath;
   std::string initPath;
+  std::string boundaryNnPath;
+  double boundaryMargin = 2.0;
+  int boundaryPly = 1;
+  bool boundaryMarginSet = false;
+  bool boundaryPlySet = false;
   tb::NextBoxSolveConfig cfg{};
   int mcGames = 20000;
   int evalGames = 10000;
@@ -38,7 +44,7 @@ struct CliOptions {
 };
 
 void printUsage(const char *prog, FILE *out) {
-  std::fprintf(out, "Usage: %s <input.states.bin> <output.tb.bin> [options]\n", prog);
+  std::fprintf(out, "Usage: %s <input.states.bin|input.tb.bin> <output.tb.bin> [options]\n", prog);
   std::fprintf(out, "  --rng=uniform|nes           RNG model for Bellman solve (default: nes)\n");
   std::fprintf(out,
                "  --eval-rng=uniform|nes      Optional override RNG for live eval (default: same "
@@ -48,6 +54,16 @@ void printUsage(const char *prog, FILE *out) {
                "above 6M boards)\n");
   std::fprintf(out,
                "  --init=PATH                 Optional prior SRTBV002 *.tb.bin for warm-start\n");
+  std::fprintf(out, "  --boundary-nn=PATH          Optional frozen *.nn.bin for soft-boundary "
+                    "Bellman bootstrapping\n");
+  std::fprintf(out, "  --boundary-margin=F         Conservative subtraction on NN boundary values "
+                    "in [0,1000] (default: 2.0, requires --boundary-nn)\n");
+  std::fprintf(out, "  --boundary-ply=1|2          NN lookahead depth at TB boundary (default: 1, "
+                    "requires --boundary-nn)\n");
+  std::fprintf(out, "  --gamma=F                   Bellman discount factor in [1e-4, 1.0] "
+                    "(default: 1.0)\n");
+  std::fprintf(out, "  --max-v-guard=F             Abort solve if any V exceeds F in [1, 2047] "
+                    "(default: 1000)\n");
   std::fprintf(out, "  --tol=F                     Bellman residual tolerance in [1e-12, 1e-1] "
                     "(default: 1e-7)\n");
   std::fprintf(out, "  --max-iters=N               Max outer MPI iterations in [1,10000] (default: "
@@ -55,10 +71,10 @@ void printUsage(const char *prog, FILE *out) {
   std::fprintf(out,
                "  --inner-sweeps=N            Fixed-policy inner sweeps per outer step in [0,1000] "
                "(default: 50)\n");
-  std::fprintf(out, "  --mc-games=N                Closed-world MC games, 0=skip or [100,1000000] "
-                    "(default: 20000)\n");
-  std::fprintf(out, "  --eval-games=N              Live TB+2-ply fallback games in [0,1000000] "
-                    "(default: 10000)\n");
+  std::fprintf(out, "  --mc-games=N                Closed-world/soft-boundary MC games, 0=skip or "
+                    "[100,1000000] (default: 20000)\n");
+  std::fprintf(out, "  --eval-games=N              Live TB+2-ply heuristic fallback games in "
+                    "[0,1000000] (default: 10000)\n");
   std::fprintf(out, "  --seed=N                    Base RNG seed for MC & live eval (default: "
                     "700000)\n");
   std::fprintf(out, "  --threads=T                 Worker threads in [1,256] (default: hardware "
@@ -125,6 +141,40 @@ bool parseArgs(int argc, char **argv, CliOptions &opts) {
           return false;
         }
         opts.initPath = val;
+      } else if (flag == "--boundary-nn") {
+        if (val.empty()) {
+          std::fprintf(stderr, "Empty path for --boundary-nn=\n");
+          return false;
+        }
+        opts.boundaryNnPath = val;
+      } else if (flag == "--boundary-margin") {
+        if (!tb::cli::parseStrictPositiveDouble(val, 0.0, 1000.0, dVal)) {
+          std::fprintf(stderr, "Invalid --boundary-margin '%s' (expected [0, 1000])\n",
+                       val.c_str());
+          return false;
+        }
+        opts.boundaryMargin = dVal;
+        opts.boundaryMarginSet = true;
+      } else if (flag == "--boundary-ply") {
+        if (!tb::cli::parseStrictU64(val, 1, 2, uVal)) {
+          std::fprintf(stderr, "Invalid --boundary-ply '%s' (expected 1 or 2)\n", val.c_str());
+          return false;
+        }
+        opts.boundaryPly = static_cast<int>(uVal);
+        opts.boundaryPlySet = true;
+      } else if (flag == "--gamma") {
+        if (!tb::cli::parseStrictPositiveDouble(val, 1e-4, 1.0, dVal)) {
+          std::fprintf(stderr, "Invalid --gamma '%s' (expected [1e-4, 1.0])\n", val.c_str());
+          return false;
+        }
+        opts.cfg.gamma = dVal;
+      } else if (flag == "--max-v-guard") {
+        if (!tb::cli::parseStrictPositiveDouble(val, 1.0, tb::NB_TERMINAL_MAX_PAYOFF, dVal)) {
+          std::fprintf(stderr, "Invalid --max-v-guard '%s' (expected [1, %.0f])\n", val.c_str(),
+                       tb::NB_TERMINAL_MAX_PAYOFF);
+          return false;
+        }
+        opts.cfg.maxValueDivergenceGuard = dVal;
       } else if (flag == "--tol") {
         if (!tb::cli::parseStrictPositiveDouble(val, 1e-12, 1e-1, dVal)) {
           std::fprintf(stderr, "Invalid --tol '%s' (expected [1e-12, 1e-1])\n", val.c_str());
@@ -188,7 +238,13 @@ bool parseArgs(int argc, char **argv, CliOptions &opts) {
   }
 
   if (opts.inPath.empty() || opts.outPath.empty()) {
-    std::fprintf(stderr, "Missing required <input.states.bin> and <output.tb.bin> paths.\n");
+    std::fprintf(stderr,
+                 "Missing required <input.states.bin|input.tb.bin> and <output.tb.bin> paths.\n");
+    return false;
+  }
+  if (opts.boundaryNnPath.empty() && (opts.boundaryMarginSet || opts.boundaryPlySet)) {
+    std::fprintf(stderr,
+                 "Error: --boundary-margin and --boundary-ply require --boundary-nn=PATH\n");
     return false;
   }
   if (!opts.evalRngOverridden) {
@@ -197,33 +253,77 @@ bool parseArgs(int argc, char **argv, CliOptions &opts) {
   return true;
 }
 
-bool runClosedWorldCheck(const tb::IndexedNextBoxTablebase &indexedTb, const CliOptions &opts,
-                         double expectedEmptyValue) {
+tb::NnSoftBoundaryEval makeBoundaryEval(const tb::TinyNextBoxNet *boundaryNn,
+                                        const CliOptions &opts) noexcept {
+  return tb::NnSoftBoundaryEval{boundaryNn, opts.boundaryMargin, opts.cfg.rngMode,
+                                opts.boundaryPly == 2};
+}
+
+bool runBellmanMcVerification(const tb::IndexedNextBoxTablebase &indexedTb, const CliOptions &opts,
+                              const tb::TinyNextBoxNet *boundaryNn, double expectedEmptyValue) {
   if (expectedEmptyValue < 0.0) {
-    std::printf("\nSkipping closed-world MC verification (empty board 0ULL absent from set).\n");
+    std::printf("\nSkipping Bellman MC verification (empty board 0ULL absent from set).\n");
     return true;
   }
-  std::printf("\nRunning closed-world MC verification (%d games, rng=%s, seed=%llu, %d "
-              "threads)...\n",
-              opts.mcGames, tb::rngModeName(opts.cfg.rngMode),
-              static_cast<unsigned long long>(opts.evalSeed), opts.cfg.numThreads);
-  const tb::TablebaseEvalStats cw = tb::evaluateNextBoxPolicy(
-      indexedTb, opts.cfg.rngMode, /*closedWorld=*/true, opts.mcGames, opts.evalSeed,
-      opts.cfg.numThreads, tb::EvalWeights{}, tb::DEFAULT_EVAL_MAX_STEPS);
-  const double absDiff = std::abs(cw.meanLines - expectedEmptyValue);
-  const double zScore =
-      tb::computeClosedWorldZScore(cw.meanLines, cw.stdErrLines, expectedEmptyValue);
-  std::printf("  Closed-world MC : mean = %.4f +- %.4f (median=%.1f, p90=%d, max=%d, in-TB=%.2f%%, "
-              "capHits=%d) vs E[V(0)]=%.4f [|diff|=%.4f, %.2f sigma]\n",
-              cw.meanLines, cw.stdErrLines, cw.medianLines, cw.p90Lines, cw.maxLines,
-              cw.inTbMovePct, cw.stepCapHits, expectedEmptyValue, absDiff, zScore);
-  if (cw.stepCapHits > 0) {
-    std::fprintf(stderr, "ERROR: %d closed-world MC rollouts hit DEFAULT_EVAL_MAX_STEPS (%d)\n",
-                 cw.stepCapHits, tb::DEFAULT_EVAL_MAX_STEPS);
+
+  const bool useSoftMc = (boundaryNn != nullptr) || (opts.cfg.gamma < 1.0);
+  const char *label = (boundaryNn != nullptr)  ? "Soft-boundary MC"
+                      : (opts.cfg.gamma < 1.0) ? "Discounted closed-world MC"
+                                               : "Closed-world MC";
+  double meanVal = 0.0;
+  double stdErrVal = 0.0;
+  int capHits = 0;
+
+  if (useSoftMc) {
+    std::printf("\nRunning %s verification (%d games, rng=%s, gamma=%.6f, seed=%llu, %d "
+                "threads)...\n",
+                label, opts.mcGames, tb::rngModeName(opts.cfg.rngMode), opts.cfg.gamma,
+                static_cast<unsigned long long>(opts.evalSeed), opts.cfg.numThreads);
+    const tb::SoftBoundaryMcStats mc =
+        (boundaryNn != nullptr)
+            ? tb::evaluateNextBoxSoftBoundaryMC(
+                  indexedTb, opts.cfg.rngMode, opts.cfg.gamma, makeBoundaryEval(boundaryNn, opts),
+                  opts.mcGames, opts.evalSeed, opts.cfg.numThreads, tb::DEFAULT_EVAL_MAX_STEPS)
+            : tb::evaluateNextBoxSoftBoundaryMC(indexedTb, opts.cfg.rngMode, opts.cfg.gamma,
+                                                tb::NoOpBoundaryEval{}, opts.mcGames, opts.evalSeed,
+                                                opts.cfg.numThreads, tb::DEFAULT_EVAL_MAX_STEPS);
+    meanVal = mc.meanReturn;
+    stdErrVal = mc.stdErr;
+    capHits = mc.stepCapHits;
+    const double absDiff = std::abs(meanVal - expectedEmptyValue);
+    const double zScore = tb::computeClosedWorldZScore(meanVal, stdErrVal, expectedEmptyValue);
+    std::printf("  %s: mean = %.4f +- %.4f (in-TB=%.2f%%, capHits=%d) vs "
+                "E[V(0)]=%.4f [|diff|=%.4f, %.2f sigma]\n",
+                label, meanVal, stdErrVal, mc.inTbMovePct, capHits, expectedEmptyValue, absDiff,
+                zScore);
+  } else {
+    std::printf("\nRunning closed-world MC verification (%d games, rng=%s, seed=%llu, %d "
+                "threads)...\n",
+                opts.mcGames, tb::rngModeName(opts.cfg.rngMode),
+                static_cast<unsigned long long>(opts.evalSeed), opts.cfg.numThreads);
+    const tb::TablebaseEvalStats cw = tb::evaluateNextBoxPolicy(
+        indexedTb, opts.cfg.rngMode, /*closedWorld=*/true, opts.mcGames, opts.evalSeed,
+        opts.cfg.numThreads, tb::EvalWeights{}, tb::DEFAULT_EVAL_MAX_STEPS);
+    meanVal = cw.meanLines;
+    stdErrVal = cw.stdErrLines;
+    capHits = cw.stepCapHits;
+    const double absDiff = std::abs(meanVal - expectedEmptyValue);
+    const double zScore = tb::computeClosedWorldZScore(meanVal, stdErrVal, expectedEmptyValue);
+    std::printf(
+        "  Closed-world MC : mean = %.4f +- %.4f (median=%.1f, p90=%d, max=%d, in-TB=%.2f%%, "
+        "capHits=%d) vs E[V(0)]=%.4f [|diff|=%.4f, %.2f sigma]\n",
+        meanVal, stdErrVal, cw.medianLines, cw.p90Lines, cw.maxLines, cw.inTbMovePct, capHits,
+        expectedEmptyValue, absDiff, zScore);
+  }
+
+  if (capHits > 0) {
+    std::fprintf(stderr, "ERROR: %d %s rollouts hit DEFAULT_EVAL_MAX_STEPS (%d)\n", capHits, label,
+                 tb::DEFAULT_EVAL_MAX_STEPS);
     return false;
   }
+  const double zScore = tb::computeClosedWorldZScore(meanVal, stdErrVal, expectedEmptyValue);
   if (zScore > tb::cli::MAX_PASSING_Z_SCORE) {
-    std::fprintf(stderr, "ERROR: Closed-world MC deviated from E[V(0)] by %.2f sigma!\n", zScore);
+    std::fprintf(stderr, "ERROR: %s deviated from E[V(0)] by %.2f sigma!\n", label, zScore);
     return false;
   }
   return true;
@@ -247,33 +347,36 @@ int main(int argc, char **argv) {
   double solveElapsedSec = 0.0;
   std::string err;
 
+  tb::TinyNextBoxNet boundaryNn;
+  const tb::TinyNextBoxNet *boundaryNnPtr = nullptr;
+  if (!opts.boundaryNnPath.empty()) {
+    if (!boundaryNn.load(opts.boundaryNnPath, &err)) {
+      std::fprintf(stderr, "Error loading --boundary-nn '%s': %s\n", opts.boundaryNnPath.c_str(),
+                   err.c_str());
+      return 1;
+    }
+    if (boundaryNn.rngMode != opts.cfg.rngMode) {
+      std::fprintf(stderr, "Error: --boundary-nn rngMode (%s) does not match --rng=%s\n",
+                   tb::rngModeName(boundaryNn.rngMode), tb::rngModeName(opts.cfg.rngMode));
+      return 1;
+    }
+    boundaryNnPtr = &boundaryNn;
+  }
+
   // Scope solver buffers (boards, FlatBoardIndex, solved.values) so all solver memory is released
   // before building the IndexedNextBoxTablebase for post-solve MC & live evaluation.
   {
     const auto loadT0 = std::chrono::steady_clock::now();
     std::vector<uint64_t> boards;
-    if (!tb::readStatesFile(opts.inPath, boards, &err)) {
-      std::fprintf(stderr, "Error reading states file '%s': %s\n", opts.inPath.c_str(),
-                   err.c_str());
-      return 1;
-    }
-    if (boards.empty()) {
-      std::fprintf(stderr, "Error: states file '%s' contains 0 boards.\n", opts.inPath.c_str());
-      return 1;
-    }
-    if (boards.size() >= static_cast<size_t>(tb::NB_ACTION_OUT_CHILD)) {
-      std::fprintf(stderr, "Error: states file has too many boards (%zu >= %u).\n", boards.size(),
-                   tb::NB_ACTION_OUT_CHILD);
-      return 1;
-    }
-    numBoards = boards.size();
-
     tb::MappedNextBoxTablebase initTb;
     const tb::MappedNextBoxTablebase *initTbPtr = nullptr;
-    if (!opts.initPath.empty()) {
+
+    // When refining the exact same SRTBV002 file (--init == input), open and verify once.
+    const bool sameInitInput = !opts.initPath.empty() && (opts.initPath == opts.inPath);
+    if (sameInitInput) {
       if (!initTb.open(opts.initPath, &err, /*verifySorted=*/true)) {
-        std::fprintf(stderr, "Error opening warm-start tablebase '%s': %s\n", opts.initPath.c_str(),
-                     err.c_str());
+        std::fprintf(stderr, "Error opening input/warm-start tablebase '%s': %s\n",
+                     opts.initPath.c_str(), err.c_str());
         return 1;
       }
       if (initTb.rngMode() != opts.cfg.rngMode) {
@@ -281,8 +384,43 @@ int main(int argc, char **argv) {
                      tb::rngModeName(initTb.rngMode()), tb::rngModeName(opts.cfg.rngMode));
         return 1;
       }
+      const uint64_t n = initTb.size();
+      boards.resize(static_cast<size_t>(n));
+      for (uint64_t i = 0; i < n; ++i) {
+        boards[static_cast<size_t>(i)] = initTb.boardAt(i);
+      }
       initTbPtr = &initTb;
+    } else {
+      if (!tb::loadNextBoxInputBoards(opts.inPath, boards, &err)) {
+        std::fprintf(stderr, "Error reading input boards '%s': %s\n", opts.inPath.c_str(),
+                     err.c_str());
+        return 1;
+      }
+      if (!opts.initPath.empty()) {
+        if (!initTb.open(opts.initPath, &err, /*verifySorted=*/true)) {
+          std::fprintf(stderr, "Error opening warm-start tablebase '%s': %s\n",
+                       opts.initPath.c_str(), err.c_str());
+          return 1;
+        }
+        if (initTb.rngMode() != opts.cfg.rngMode) {
+          std::fprintf(stderr, "Error: --init tablebase rngMode (%s) does not match --rng=%s\n",
+                       tb::rngModeName(initTb.rngMode()), tb::rngModeName(opts.cfg.rngMode));
+          return 1;
+        }
+        initTbPtr = &initTb;
+      }
     }
+
+    if (boards.empty()) {
+      std::fprintf(stderr, "Error: input '%s' contains 0 boards.\n", opts.inPath.c_str());
+      return 1;
+    }
+    if (boards.size() >= static_cast<size_t>(tb::NB_ACTION_OUT_CHILD)) {
+      std::fprintf(stderr, "Error: input has too many boards (%zu >= %u).\n", boards.size(),
+                   tb::NB_ACTION_OUT_CHILD);
+      return 1;
+    }
+    numBoards = boards.size();
 
     std::array<uint64_t, tb::NUM_HOLE_BUCKETS> holeDist{};
     for (uint64_t b : boards) {
@@ -296,12 +434,11 @@ int main(int argc, char **argv) {
     const double idxSec =
         std::chrono::duration<double>(std::chrono::steady_clock::now() - idxT0).count();
 
-    std::printf(
-        "=== Next-Box V(b,c) MPI Solver (%zu boards, rng=%s, cache=%s, %d threads, tol=%.1e, "
-        "inner=%d) ===\n",
-        boards.size(), tb::rngModeName(opts.cfg.rngMode),
-        tb::policyCacheModeName(opts.cfg.policyCacheMode), opts.cfg.numThreads, opts.cfg.tolerance,
-        opts.cfg.innerEvalSweeps);
+    std::printf("=== Next-Box V(b,c) MPI Solver (%zu boards, rng=%s, gamma=%.6f, maxV-guard=%.2f, "
+                "cache=%s, %d threads, tol=%.1e, inner=%d) ===\n",
+                boards.size(), tb::rngModeName(opts.cfg.rngMode), opts.cfg.gamma,
+                opts.cfg.maxValueDivergenceGuard, tb::policyCacheModeName(opts.cfg.policyCacheMode),
+                opts.cfg.numThreads, opts.cfg.tolerance, opts.cfg.innerEvalSweeps);
     std::printf(
         "  Loaded %s in %.2fs | Built FlatBoardIndex in %.2fs | Output %.1f MB (SRTBV002)\n",
         opts.inPath.c_str(), loadSec, idxSec,
@@ -314,9 +451,20 @@ int main(int argc, char **argv) {
       std::printf("  Warm-starting from %s (%llu boards)\n", opts.initPath.c_str(),
                   static_cast<unsigned long long>(initTb.size()));
     }
+    if (boundaryNnPtr != nullptr) {
+      std::printf("  Soft boundary   : %s (%dx%d, margin=%.2f, ply=%d)\n",
+                  opts.boundaryNnPath.c_str(), boundaryNn.h1, boundaryNn.h2, opts.boundaryMargin,
+                  opts.boundaryPly);
+    }
     std::fflush(stdout);
 
-    tb::NextBoxSolveResult solved = tb::solveNextBoxMPI(boards, index, opts.cfg, initTbPtr);
+    tb::NextBoxSolveResult solved{};
+    if (boundaryNnPtr != nullptr) {
+      solved = tb::solveNextBoxMPI(boards, index, opts.cfg, initTbPtr,
+                                   makeBoundaryEval(boundaryNnPtr, opts));
+    } else {
+      solved = tb::solveNextBoxMPI(boards, index, opts.cfg, initTbPtr);
+    }
     // Close --init mapping immediately so in-place refinement (--init == outPath) is safe.
     initTb.close();
     index = tb::FlatBoardIndex{};
@@ -329,10 +477,10 @@ int main(int argc, char **argv) {
     emptyExpectedValue = solved.emptyBoardExpectedValue;
     solveElapsedSec = solved.elapsedSec;
     std::printf("Solved in %.2fs (%d outer MPI steps, %d inner sweeps, policy=%s, warm=%zu) | "
-                "E[V(0)] = %.6f | residual = %.3e\n",
+                "E[V(0)] = %.6f | maxV = %.2f | residual = %.3e\n",
                 solved.elapsedSec, solved.outerIterations, solved.totalInnerSweeps,
                 solved.usedDiskPolicyCache ? "disk" : "ram", solved.warmStartBoardsMatched,
-                solved.emptyBoardExpectedValue, solved.finalBellmanResidual);
+                solved.emptyBoardExpectedValue, solved.maxBoardValue, solved.finalBellmanResidual);
     if (solved.emptyBoardExpectedValue >= 0.0) {
       std::printf("  V(0, c): ");
       for (int c = 0; c < tb::NUM_PIECES; ++c) {
@@ -359,26 +507,27 @@ int main(int argc, char **argv) {
     std::printf("Saved Next-Box tablebase to %s\n", opts.outPath.c_str());
   }
 
-  tb::MappedNextBoxTablebase mapped;
-  if (!mapped.open(opts.outPath, &err, /*verifySorted=*/false)) {
-    std::fprintf(stderr, "Error mmap-reopening tablebase '%s': %s\n", opts.outPath.c_str(),
-                 err.c_str());
-    return 1;
-  }
-
   tb::IndexedNextBoxTablebase indexedTb;
   if (opts.mcGames > 0 || opts.evalGames > 0) {
+    tb::MappedNextBoxTablebase mapped;
+    if (!mapped.open(opts.outPath, &err, /*verifySorted=*/false)) {
+      std::fprintf(stderr, "Error mmap-reopening tablebase '%s': %s\n", opts.outPath.c_str(),
+                   err.c_str());
+      return 1;
+    }
     indexedTb.buildFromMapped(mapped);
+    mapped.close();
   }
 
-  if (opts.mcGames > 0 && !runClosedWorldCheck(indexedTb, opts, emptyExpectedValue)) {
+  if (opts.mcGames > 0
+      && !runBellmanMcVerification(indexedTb, opts, boundaryNnPtr, emptyExpectedValue)) {
     return 1;
   }
 
   tb::TablebaseEvalStats live{};
   if (opts.evalGames > 0) {
-    std::printf("\nRunning live Next-Box TB + 2-ply fallback (%d games, eval-rng=%s, seed=%llu, %d "
-                "threads)...\n",
+    std::printf("\nRunning live Next-Box TB + 2-ply heuristic fallback (%d games, eval-rng=%s, "
+                "seed=%llu, %d threads)...\n",
                 opts.evalGames, tb::rngModeName(opts.evalRngMode),
                 static_cast<unsigned long long>(opts.evalSeed), opts.cfg.numThreads);
     live = tb::evaluateNextBoxPolicy(indexedTb, opts.evalRngMode, /*closedWorld=*/false,

@@ -1114,6 +1114,44 @@ chooseNextBoxHybridFallbackMove(uint64_t board, int curPiece, int nextPiece,
   return {tl[bestIdx], bestQ, bestInTb, false, true};
 }
 
+// Frozen neural soft-boundary evaluator for solveNextBoxMPI: scores out-of-TB child boards with
+// conservative max(0, estCont(b', n) - margin) across all 7 next pieces simultaneously.
+struct NnSoftBoundaryEval {
+  static constexpr bool enabled = true;
+  const TinyNextBoxNet *net = nullptr;
+  double margin = 2.0;
+  RngMode rngMode = RngMode::Nes;
+  bool use2Ply = false;
+
+  void evalRow(uint64_t afterBoard, double outCont[NUM_PIECES]) const noexcept {
+    if (net == nullptr || !net->isLoaded() || !std::isfinite(margin)) {
+      for (int n = 0; n < NUM_PIECES; ++n) {
+        outCont[n] = 0.0;
+      }
+      return;
+    }
+    const double m = std::max(0.0, margin);
+    if (use2Ply) {
+      TransitionList tl2;
+      for (int n = 0; n < NUM_PIECES; ++n) {
+        const double est = detail::bestReplyNn2Ply(afterBoard, n, *net, rngMode, tl2);
+        outCont[n] = (std::isfinite(est) && est > m) ? (est - m) : 0.0;
+      }
+      return;
+    }
+    float v[NUM_PIECES];
+    net->evalAll(afterBoard, v);
+    for (int n = 0; n < NUM_PIECES; ++n) {
+      const double pred = static_cast<double>(v[n]);
+      if (!std::isfinite(pred) || pred <= m || !hasAnyLegalTransition(afterBoard, n)) {
+        outCont[n] = 0.0;
+      } else {
+        outCont[n] = pred - m;
+      }
+    }
+  }
+};
+
 struct NnLossConfig {
   double huberDelta = 2.0;  // Huber threshold in lines for V_hat regression
   double valueWeight = 1.0; // Weight on parent 7-output Huber value loss

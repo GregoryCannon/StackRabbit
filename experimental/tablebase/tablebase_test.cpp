@@ -3996,3 +3996,506 @@ TEST_CASE("TinyNextBoxNet 256x64 fast stack path and pruned Top-K 3-ply search")
   mappedPly3.close();
   std::remove(tmpPly3Tb.c_str());
 }
+
+namespace {
+
+tb::TinyNextBoxNet makeConstNextBoxNet(float outBias, tb::RngMode mode = tb::RngMode::Nes) {
+  tb::TinyNextBoxNet net;
+  REQUIRE(net.initRandom(8, 6, mode, 1ULL, 0.0f));
+  std::fill(net.params.begin(), net.params.end(), 0.0f);
+  for (int p = 0; p < tb::NUM_PIECES; ++p) {
+    net.params[net.offB3() + static_cast<size_t>(p)] = outBias;
+  }
+  return net;
+}
+
+} // namespace
+
+TEST_CASE("Soft-boundary MPI: terminal packing, NnSoftBoundaryEval edge cases, tie-breaking, and "
+          "loadNextBoxInputBoards") {
+  // 1. Terminal fixed-point payoff packing round-trip, clamping, and non-overlap with normal words.
+  const uint32_t wZero = tb::packNextBoxTerminalPayoff(0.0);
+  CHECK(tb::isNextBoxTerminalPayoff(wZero));
+  CHECK(tb::unpackNextBoxTerminalPayoff(wZero) == 0.0);
+  CHECK(tb::unpackNextBoxChild(wZero) == tb::INVALID_BOARD_ID);
+
+  const uint32_t wMid = tb::packNextBoxTerminalPayoff(12.34567);
+  CHECK(tb::isNextBoxTerminalPayoff(wMid));
+  CHECK(tb::unpackNextBoxTerminalPayoff(wMid) == doctest::Approx(12.34567).epsilon(1e-5));
+  CHECK(tb::unpackNextBoxChild(wMid) == tb::INVALID_BOARD_ID);
+
+  const uint32_t wMax = tb::packNextBoxTerminalPayoff(tb::NB_TERMINAL_MAX_PAYOFF);
+  CHECK(tb::isNextBoxTerminalPayoff(wMax));
+  CHECK(tb::unpackNextBoxTerminalPayoff(wMax)
+        == doctest::Approx(tb::NB_TERMINAL_MAX_PAYOFF).epsilon(1e-6));
+
+  CHECK(tb::unpackNextBoxTerminalPayoff(tb::packNextBoxTerminalPayoff(-5.0)) == 0.0);
+  CHECK(tb::unpackNextBoxTerminalPayoff(
+            tb::packNextBoxTerminalPayoff(std::numeric_limits<double>::quiet_NaN()))
+        == 0.0);
+  CHECK(tb::unpackNextBoxTerminalPayoff(
+            tb::packNextBoxTerminalPayoff(std::numeric_limits<double>::infinity()))
+        == 0.0);
+  CHECK(tb::unpackNextBoxTerminalPayoff(tb::packNextBoxTerminalPayoff(9999.0))
+        == doctest::Approx(tb::NB_TERMINAL_MAX_PAYOFF).epsilon(1e-6));
+
+  CHECK_FALSE(tb::isNextBoxTerminalPayoff(tb::packNextBoxAction(0U, 4)));
+  CHECK_FALSE(tb::isNextBoxTerminalPayoff(tb::packNextBoxAction(tb::NB_ACTION_OUT_CHILD - 1U, 4)));
+  CHECK_FALSE(tb::isNextBoxTerminalPayoff(tb::packNextBoxAction(tb::INVALID_BOARD_ID, 4)));
+
+  // 2. Direct NnSoftBoundaryEval::evalRow edge cases: margin=0, negative margin (clamped to 0),
+  //    NaN/inf margin, nullptr/unloaded net, negative NN output, and 1-ply top-out at boundary.
+  {
+    const tb::TinyNextBoxNet posNet = makeConstNextBoxNet(10.0f);
+    const tb::TinyNextBoxNet negNet = makeConstNextBoxNet(-4.0f);
+    const tb::TinyNextBoxNet unloadedNet;
+    double row[tb::NUM_PIECES];
+
+    // margin == 0.0 and negative margin (must NOT inflate prediction above 10.0).
+    tb::NnSoftBoundaryEval{&posNet, 0.0, tb::RngMode::Nes, false}.evalRow(0ULL, row);
+    for (int n = 0; n < tb::NUM_PIECES; ++n) {
+      CHECK(row[n] == doctest::Approx(10.0));
+    }
+    tb::NnSoftBoundaryEval{&posNet, -3.0, tb::RngMode::Nes, false}.evalRow(0ULL, row);
+    for (int n = 0; n < tb::NUM_PIECES; ++n) {
+      CHECK(row[n] == doctest::Approx(10.0));
+    }
+
+    // Non-finite margin, nullptr, unloaded net, and negative NN output all yield 0.0.
+    for (double badM :
+         {std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::infinity()}) {
+      tb::NnSoftBoundaryEval{&posNet, badM, tb::RngMode::Nes, false}.evalRow(0ULL, row);
+      for (int n = 0; n < tb::NUM_PIECES; ++n) {
+        CHECK(row[n] == 0.0);
+      }
+    }
+    tb::NnSoftBoundaryEval{nullptr, 1.0, tb::RngMode::Nes, false}.evalRow(0ULL, row);
+    for (int n = 0; n < tb::NUM_PIECES; ++n) {
+      CHECK(row[n] == 0.0);
+    }
+    tb::NnSoftBoundaryEval{&unloadedNet, 1.0, tb::RngMode::Nes, false}.evalRow(0ULL, row);
+    for (int n = 0; n < tb::NUM_PIECES; ++n) {
+      CHECK(row[n] == 0.0);
+    }
+    tb::NnSoftBoundaryEval{&negNet, 0.0, tb::RngMode::Nes, false}.evalRow(0ULL, row);
+    for (int n = 0; n < tb::NUM_PIECES; ++n) {
+      CHECK(row[n] == 0.0);
+    }
+
+    // 1-ply top-out at boundary: 9-wide full wall allows ONLY vertical I; O/L/J/T/S/Z top out -> 0.
+    const uint64_t oneColGap = mustParse("XXXXXXXXX.\n"
+                                         "XXXXXXXXX.\n"
+                                         "XXXXXXXXX.\n"
+                                         "XXXXXXXXX.");
+    const int pI = tb::parsePieceChar('I');
+    tb::NnSoftBoundaryEval{&posNet, 2.0, tb::RngMode::Nes, false}.evalRow(oneColGap, row);
+    for (int n = 0; n < tb::NUM_PIECES; ++n) {
+      if (n == pI) {
+        CHECK(row[n] == doctest::Approx(8.0));
+      } else {
+        CHECK(row[n] == 0.0);
+      }
+    }
+  }
+
+  // 3. Adversarial tie-breaking: put oMoves.back().afterBoard (index m > 0) in TB so m == 0 is
+  //    out-of-TB at exact Q = 8.0 and a later move is in-TB at exact Q = 8.0. Both Bellman backup
+  //    and evaluateNextBoxSoftBoundaryMC must select the in-TB move!
+  {
+    const tb::TinyNextBoxNet constNet = makeConstNextBoxNet(10.0f);
+    const int curO = tb::parsePieceChar('O');
+    tb::TransitionList oMoves;
+    tb::generateTransitions(0ULL, curO, oMoves);
+    REQUIRE(oMoves.size() == 9);
+    const uint64_t lastOBoard = oMoves[oMoves.size() - 1].afterBoard;
+    const std::vector<uint64_t> singleBoard = {lastOBoard};
+    const tb::FlatBoardIndex singleIdx(singleBoard);
+    const std::vector<double> vCur(tb::NUM_PIECES, 8.0);
+    const auto transProb = tb::detail::buildTransitionProbMatrix(tb::RngMode::Nes);
+    const tb::NnSoftBoundaryEval bEval{&constNet, 2.0, tb::RngMode::Nes, false};
+    tb::TransitionList scratch;
+    uint32_t actions[tb::NUM_PIECES]{};
+    const double val = tb::detail::computeNextBoxBellmanBackup</*RecordActions=*/true>(
+        0ULL, curO, singleIdx, vCur, transProb, 1.0, bEval, nullptr, nullptr, scratch, actions);
+    CHECK(val == doctest::Approx(8.0));
+    for (int n = 0; n < tb::NUM_PIECES; ++n) {
+      CHECK_FALSE(tb::isNextBoxTerminalPayoff(actions[n]));
+      CHECK(tb::unpackNextBoxChild(actions[n]) == 0U);
+    }
+
+    // Verify tie-breaking inside evaluateNextBoxSoftBoundaryMC: put 0ULL and every piece's LAST
+    // legal move from 0ULL in TB with V = 8.0 so step 1 ALWAYS ties in-TB vs out-of-TB (Q = 8.0)
+    // with m == 0 out-of-TB, guaranteeing > 0% in-TB moves (specifically >= 50% since step 1 stays
+    // in-TB).
+    std::vector<uint64_t> mcTieBoards = {0ULL};
+    for (int p = 0; p < tb::NUM_PIECES; ++p) {
+      tb::TransitionList tl;
+      tb::generateTransitions(0ULL, p, tl);
+      REQUIRE(tl.size() >= 2);
+      mcTieBoards.push_back(tl[tl.size() - 1].afterBoard);
+    }
+    std::sort(mcTieBoards.begin(), mcTieBoards.end());
+    mcTieBoards.erase(std::unique(mcTieBoards.begin(), mcTieBoards.end()), mcTieBoards.end());
+    std::vector<float> mcTieVals(mcTieBoards.size() * tb::NUM_PIECES, 8.0f);
+    const std::string tmpTie = "build/test_soft_mc_tie.tb.bin";
+    REQUIRE(tb::writeNextBoxTablebaseFile(tmpTie, mcTieBoards, mcTieVals, tb::RngMode::Nes, 0.0));
+    tb::MappedNextBoxTablebase mTie;
+    REQUIRE(mTie.open(tmpTie));
+    tb::IndexedNextBoxTablebase iTie(mTie);
+    const tb::SoftBoundaryMcStats tieMc =
+        tb::evaluateNextBoxSoftBoundaryMC(iTie, tb::RngMode::Nes, 1.0, bEval, 200, 1234ULL, 2);
+    CHECK(tieMc.inTbMovePct >= 49.0);
+    mTie.close();
+    std::remove(tmpTie.c_str());
+  }
+
+  // 4. loadNextBoxInputBoards: supports SRSTV001 and SRTBV002, explicitly rejects SRTBV001.
+  {
+    const std::vector<uint64_t> sample = {0ULL, 3ULL, 15ULL};
+    const std::string tmpSt = "build/test_load_nb.states.bin";
+    const std::string tmpV2 = "build/test_load_nb_v2.tb.bin";
+    const std::string tmpV1 = "build/test_load_nb_v1.tb.bin";
+    REQUIRE(tb::writeStatesFile(tmpSt, sample));
+    REQUIRE(tb::writeNextBoxTablebaseFile(tmpV2, sample,
+                                          std::vector<float>(sample.size() * tb::NUM_PIECES, 1.0f),
+                                          tb::RngMode::Nes, 0.0));
+    REQUIRE(tb::writeTablebaseFile(tmpV1, sample, std::vector<float>(sample.size(), 1.0f), 0.0));
+
+    std::vector<uint64_t> out;
+    std::string err;
+    REQUIRE(tb::loadNextBoxInputBoards(tmpSt, out, &err));
+    CHECK(out == sample);
+    out.clear();
+    REQUIRE(tb::loadNextBoxInputBoards(tmpV2, out, &err));
+    CHECK(out == sample);
+    CHECK_FALSE(tb::loadNextBoxInputBoards(tmpV1, out, &err));
+    CHECK(err.find("SRTBV001") != std::string::npos);
+
+    std::remove(tmpSt.c_str());
+    std::remove(tmpV2.c_str());
+    std::remove(tmpV1.c_str());
+  }
+}
+
+TEST_CASE("Soft-boundary & discounted MPI: exact VI parity with line clears, validation, and "
+          "outer/inner divergence guards") {
+  // Build a compact 10-column board set that includes real line-clearing transitions (e.g. a
+  // nearly-full bottom row that I/O/L/J/T clear for linesCleared > 0), verifying rew + gamma * V
+  // vs gamma * (rew + V) and rew + gamma * B vs gamma * (rew + B) across all 4 solver modes.
+  std::vector<uint64_t> clearBoards = {
+      0ULL,
+      mustParse("..........\n"
+                "..........\n"
+                "..........\n"
+                "XXXXXX...."),
+      mustParse("..........\n"
+                "..........\n"
+                "..........\n"
+                "XXXXXXXX.."),
+      mustParse("..........\n"
+                "..........\n"
+                "XXXXXXXX..\n"
+                "XXXXXXXX.."),
+      mustParse("..........\n"
+                "..........\n"
+                "XXXXXXX...\n"
+                "XXXXXXXX.."),
+      mustParse("XXXXXXXXX.\n"
+                "XXXXXXXXX.\n"
+                "XXXXXXXXX.\n"
+                "XXXXXXXXX."),
+  };
+  // Add a few 1-step children so interior Bellman recursion + line clears both occur.
+  {
+    const size_t baseCount = clearBoards.size();
+    tb::TransitionList tl;
+    for (size_t i = 0; i < baseCount; ++i) {
+      for (int p : {tb::parsePieceChar('O'), tb::parsePieceChar('I')}) {
+        tb::generateTransitions(clearBoards[i], p, tl);
+        for (int m = 0; m < tl.size() && m < 3; ++m) {
+          clearBoards.push_back(tl[m].afterBoard);
+        }
+      }
+    }
+    std::sort(clearBoards.begin(), clearBoards.end());
+    clearBoards.erase(std::unique(clearBoards.begin(), clearBoards.end()), clearBoards.end());
+  }
+  const tb::FlatBoardIndex idxClear(clearBoards);
+
+  tb::TinyNextBoxNet softNet;
+  REQUIRE(softNet.initRandom(12, 8, tb::RngMode::Nes, 7777ULL, 5.0f));
+
+  const auto runRefVi = [&](double gamma, const tb::NnSoftBoundaryEval *bEval) {
+    std::vector<double> refV(clearBoards.size() * tb::NUM_PIECES, 0.0);
+    std::vector<double> refNext(clearBoards.size() * tb::NUM_PIECES, 0.0);
+    tb::TransitionList tl;
+    std::unordered_map<uint64_t, std::array<double, tb::NUM_PIECES>> bCache;
+    auto lookupBound = [&](uint64_t b) -> const std::array<double, tb::NUM_PIECES> & {
+      auto it = bCache.find(b);
+      if (it == bCache.end()) {
+        std::array<double, tb::NUM_PIECES> row{};
+        bEval->evalRow(b, row.data());
+        it = bCache.emplace(b, row).first;
+      }
+      return it->second;
+    };
+    for (int iter = 0; iter < 500; ++iter) {
+      double maxDiff = 0.0;
+      for (size_t i = 0; i < clearBoards.size(); ++i) {
+        for (int c = 0; c < tb::NUM_PIECES; ++c) {
+          tb::generateTransitions(clearBoards[i], c, tl);
+          double val = 0.0;
+          if (!tl.empty()) {
+            double bestQ[tb::NUM_PIECES];
+            for (int m = 0; m < tl.size(); ++m) {
+              const uint32_t cid = idxClear.find(tl[m].afterBoard);
+              const double rew = static_cast<double>(tl[m].linesCleared);
+              const std::array<double, tb::NUM_PIECES> *bRow =
+                  (cid == tb::INVALID_BOARD_ID && bEval != nullptr) ? &lookupBound(tl[m].afterBoard)
+                                                                    : nullptr;
+              for (int n = 0; n < tb::NUM_PIECES; ++n) {
+                double q = rew;
+                if (cid != tb::INVALID_BOARD_ID) {
+                  q = rew
+                      + gamma
+                            * refV[static_cast<size_t>(cid) * tb::NUM_PIECES
+                                   + static_cast<size_t>(n)];
+                } else if (bRow != nullptr) {
+                  q = tb::unpackNextBoxTerminalPayoff(
+                      tb::packNextBoxTerminalPayoff(rew + gamma * std::max(0.0, (*bRow)[n])));
+                }
+                if (m == 0 || q > bestQ[n]) {
+                  bestQ[n] = q;
+                }
+              }
+            }
+            for (int n = 0; n < tb::NUM_PIECES; ++n) {
+              val += tb::pieceTransitionProb(tb::RngMode::Nes, c, n) * bestQ[n];
+            }
+          }
+          refNext[i * tb::NUM_PIECES + static_cast<size_t>(c)] = val;
+          maxDiff =
+              std::max(maxDiff, std::abs(val - refV[i * tb::NUM_PIECES + static_cast<size_t>(c)]));
+        }
+      }
+      refV.swap(refNext);
+      if (maxDiff <= 1e-11) {
+        break;
+      }
+    }
+    return refV;
+  };
+
+  struct CaseSpec {
+    double gamma;
+    bool useNn;
+    bool use2Ply;
+    double margin;
+  };
+  const CaseSpec cases[] = {
+      {1.0, true, false, 1.5},
+      {1.0, true, true, 1.5},
+      {0.92, true, false, 1.5},
+      {0.92, false, false, 0.0},
+  };
+  for (const auto &cs : cases) {
+    tb::NextBoxSolveConfig cfg{};
+    cfg.rngMode = tb::RngMode::Nes;
+    cfg.policyCacheMode = tb::PolicyCacheMode::Ram;
+    cfg.gamma = cs.gamma;
+    cfg.tolerance = 1e-9;
+    cfg.innerEvalSweeps = 30;
+    cfg.numThreads = 4;
+
+    tb::NnSoftBoundaryEval bEval{&softNet, cs.margin, tb::RngMode::Nes, cs.use2Ply};
+    const std::vector<double> refV = runRefVi(cs.gamma, cs.useNn ? &bEval : nullptr);
+    const tb::NextBoxSolveResult res =
+        cs.useNn ? tb::solveNextBoxMPI(clearBoards, idxClear, cfg, nullptr, bEval)
+                 : tb::solveNextBoxMPI(clearBoards, idxClear, cfg);
+    REQUIRE(res.ok);
+    CHECK(res.finalBellmanResidual <= 1e-9);
+    CHECK(res.maxBoardValue > 0.5);
+    for (size_t k = 0; k < refV.size(); ++k) {
+      CHECK(static_cast<double>(res.values[k]) == doctest::Approx(refV[k]).epsilon(1e-5));
+    }
+  }
+
+  // Validation & outer/inner divergence guard + terminal overflow rejection tests.
+  {
+    tb::NextBoxSolveConfig badCfg{};
+    badCfg.gamma = 0.0;
+    CHECK_FALSE(tb::solveNextBoxMPI(clearBoards, idxClear, badCfg).ok);
+    badCfg.gamma = 1.01;
+    CHECK_FALSE(tb::solveNextBoxMPI(clearBoards, idxClear, badCfg).ok);
+    badCfg.gamma = std::numeric_limits<double>::quiet_NaN();
+    CHECK_FALSE(tb::solveNextBoxMPI(clearBoards, idxClear, badCfg).ok);
+
+    for (double badGuard : {0.0, -1.0, std::numeric_limits<double>::quiet_NaN(),
+                            std::numeric_limits<double>::infinity()}) {
+      badCfg = tb::NextBoxSolveConfig{};
+      badCfg.maxValueDivergenceGuard = badGuard;
+      CHECK_FALSE(tb::solveNextBoxMPI(clearBoards, idxClear, badCfg).ok);
+    }
+
+    badCfg = tb::NextBoxSolveConfig{};
+    badCfg.maxOuterIters = 0;
+    CHECK_FALSE(tb::solveNextBoxMPI(clearBoards, idxClear, badCfg).ok);
+    badCfg = tb::NextBoxSolveConfig{};
+    badCfg.tolerance = -1e-6;
+    CHECK_FALSE(tb::solveNextBoxMPI(clearBoards, idxClear, badCfg).ok);
+    badCfg.tolerance = std::numeric_limits<double>::quiet_NaN();
+    CHECK_FALSE(tb::solveNextBoxMPI(clearBoards, idxClear, badCfg).ok);
+
+    // Mismatched FlatBoardIndex size must fail safely even under -DNDEBUG.
+    const tb::FlatBoardIndex wrongIdx(std::vector<uint64_t>{0ULL});
+    CHECK_FALSE(tb::solveNextBoxMPI(clearBoards, wrongIdx, tb::NextBoxSolveConfig{}).ok);
+
+    // Outer-sweep divergence guard trip.
+    const tb::TinyNextBoxNet hugeNet = makeConstNextBoxNet(50.0f);
+    tb::NextBoxSolveConfig guardCfg{};
+    guardCfg.maxValueDivergenceGuard = 10.0;
+    const tb::NnSoftBoundaryEval hugeEval{&hugeNet, 0.0, tb::RngMode::Nes, false};
+    const tb::NextBoxSolveResult divergedOuter =
+        tb::solveNextBoxMPI(clearBoards, idxClear, guardCfg, nullptr, hugeEval);
+    CHECK_FALSE(divergedOuter.ok);
+    CHECK(divergedOuter.errorMessage.find("maxValueDivergenceGuard") != std::string::npos);
+
+    // Inner-sweep divergence guard trip: with constNet(+3.0) on clearBoards, outer iter 1 starts
+    // from vCur == 0 so tetrisReady -> 0ULL scores 4.0 (<= 4.5) and 0ULL -> out scores 3.0, while
+    // inner sweep 1 propagates 4.0 + V(0ULL) = 7.0 (> 4.5), tripping the inner-sweep guard.
+    const tb::TinyNextBoxNet midNet = makeConstNextBoxNet(3.0f);
+    const tb::NnSoftBoundaryEval midEval{&midNet, 0.0, tb::RngMode::Nes, false};
+    tb::NextBoxSolveConfig innerGuardCfg{};
+    innerGuardCfg.maxValueDivergenceGuard = 4.5;
+    innerGuardCfg.innerEvalSweeps = 50;
+    const tb::NextBoxSolveResult divergedInner =
+        tb::solveNextBoxMPI(clearBoards, idxClear, innerGuardCfg, nullptr, midEval);
+    CHECK_FALSE(divergedInner.ok);
+    CHECK(divergedInner.errorMessage.find("inner eval") != std::string::npos);
+
+    // Terminal payoff overflow above NB_TERMINAL_MAX_PAYOFF (2047.0) must abort rather than clamp.
+    const tb::TinyNextBoxNet overflowNet = makeConstNextBoxNet(3000.0f);
+    tb::NextBoxSolveConfig overflowCfg{};
+    overflowCfg.maxValueDivergenceGuard = tb::NB_TERMINAL_MAX_PAYOFF;
+    const tb::NnSoftBoundaryEval overflowEval{&overflowNet, 0.0, tb::RngMode::Nes, false};
+    const tb::NextBoxSolveResult overflowRes =
+        tb::solveNextBoxMPI(clearBoards, idxClear, overflowCfg, nullptr, overflowEval);
+    CHECK_FALSE(overflowRes.ok);
+    CHECK(overflowRes.errorMessage.find("NB_TERMINAL_MAX_PAYOFF") != std::string::npos);
+  }
+}
+
+TEST_CASE("Soft-boundary & discounted MPI: 1T==4T and Ram==Disk determinism and MC verification") {
+  tb::TinyNextBoxNet softNet;
+  REQUIRE(softNet.initRandom(12, 8, tb::RngMode::Nes, 7777ULL, 5.0f));
+
+  // boards2x8_0 has ~3,281 boards (> 2,048 MIN_PARALLEL_BOARDS) so 4T runs truly parallel.
+  const std::vector<uint64_t> boards2x8_0 = tb::enumerateZeroSealedHoleBoards(0, 4, 2, 8);
+  REQUIRE(boards2x8_0.size() > 2048);
+  const std::string tmpSoftTb = "build/test_nb_soft.tb.bin";
+  for (bool use2Ply : {false, true}) {
+    tb::NnSoftBoundaryEval bEval{&softNet, 2.0, tb::RngMode::Nes, use2Ply};
+    tb::NextBoxSolveConfig cfgRam1{};
+    cfgRam1.rngMode = tb::RngMode::Nes;
+    cfgRam1.policyCacheMode = tb::PolicyCacheMode::Ram;
+    cfgRam1.tolerance = 1e-8;
+    // Cap 2-ply to 2 outer iters to keep unit-test runtime short while exercising iter-1 NN eval,
+    // iter-2 precomputed bestOutStore reuse, disk-cached inner sweeps, and final residual.
+    cfgRam1.innerEvalSweeps = use2Ply ? 5 : 25;
+    cfgRam1.maxOuterIters = use2Ply ? 2 : 250;
+    cfgRam1.numThreads = 1;
+    const tb::NextBoxSolveResult ram1 = tb::solveNextBoxMPI(boards2x8_0, cfgRam1, nullptr, bEval);
+    REQUIRE(ram1.ok);
+    if (!use2Ply) {
+      CHECK(ram1.finalBellmanResidual <= 1e-8);
+    }
+
+    tb::NextBoxSolveConfig cfgDisk4 = cfgRam1;
+    cfgDisk4.policyCacheMode = tb::PolicyCacheMode::Disk;
+    cfgDisk4.numThreads = 4;
+    const tb::NextBoxSolveResult disk4 = tb::solveNextBoxMPI(boards2x8_0, cfgDisk4, nullptr, bEval);
+    REQUIRE(disk4.ok);
+    CHECK(disk4.usedDiskPolicyCache);
+    CHECK(disk4.values == ram1.values);
+    CHECK(disk4.emptyBoardExpectedValue == ram1.emptyBoardExpectedValue);
+    CHECK(disk4.outerIterations == ram1.outerIterations);
+
+    if (!use2Ply) {
+      REQUIRE(tb::writeNextBoxTablebaseFile(tmpSoftTb, boards2x8_0, ram1.values, tb::RngMode::Nes,
+                                            ram1.finalBellmanResidual));
+      tb::MappedNextBoxTablebase mSoft;
+      REQUIRE(mSoft.open(tmpSoftTb));
+      tb::IndexedNextBoxTablebase iSoft(mSoft);
+
+      const tb::SoftBoundaryMcStats mc1 =
+          tb::evaluateNextBoxSoftBoundaryMC(iSoft, tb::RngMode::Nes, 1.0, bEval, 3000, 9991ULL, 1);
+      const tb::SoftBoundaryMcStats mc4 =
+          tb::evaluateNextBoxSoftBoundaryMC(iSoft, tb::RngMode::Nes, 1.0, bEval, 3000, 9991ULL, 4);
+      CHECK(mc1.meanReturn == mc4.meanReturn);
+      CHECK(mc1.stdErr == mc4.stdErr);
+      CHECK(mc1.inTbMovePct == mc4.inTbMovePct);
+      CHECK(mc1.stepCapHits == 0);
+      CHECK(tb::computeClosedWorldZScore(mc1.meanReturn, mc1.stdErr, ram1.emptyBoardExpectedValue)
+            <= 3.5);
+
+      // Invalid gamma / maxSteps guards return empty stats safely.
+      CHECK(
+          tb::evaluateNextBoxSoftBoundaryMC(iSoft, tb::RngMode::Nes, 0.0, bEval, 100, 1ULL, 2).games
+          == 0);
+      CHECK(tb::evaluateNextBoxSoftBoundaryMC(iSoft, tb::RngMode::Nes, 1.0, bEval, 100, 1ULL, 2, 0)
+                .games
+            == 0);
+      mSoft.close();
+    }
+  }
+
+  // Combined gamma = 0.95 + NnSoftBoundaryEval MC check, plus discounted hard-boundary MC check
+  // (gamma = 0.98) on 10-col boards where real line clears happen so E[V(0)] > 0.
+  {
+    const tb::NnSoftBoundaryEval bEval{&softNet, 2.0, tb::RngMode::Nes, false};
+    tb::NextBoxSolveConfig cfgCombo{};
+    cfgCombo.rngMode = tb::RngMode::Nes;
+    cfgCombo.gamma = 0.95;
+    cfgCombo.tolerance = 1e-8;
+    cfgCombo.numThreads = 4;
+    const tb::NextBoxSolveResult comboRes =
+        tb::solveNextBoxMPI(boards2x8_0, cfgCombo, nullptr, bEval);
+    REQUIRE(comboRes.ok);
+    REQUIRE(tb::writeNextBoxTablebaseFile(tmpSoftTb, boards2x8_0, comboRes.values, tb::RngMode::Nes,
+                                          comboRes.finalBellmanResidual));
+    tb::MappedNextBoxTablebase mCombo;
+    REQUIRE(mCombo.open(tmpSoftTb));
+    tb::IndexedNextBoxTablebase iCombo(mCombo);
+    const tb::SoftBoundaryMcStats mcCombo =
+        tb::evaluateNextBoxSoftBoundaryMC(iCombo, tb::RngMode::Nes, 0.95, bEval, 3000, 7771ULL, 4);
+    CHECK(mcCombo.stepCapHits == 0);
+    CHECK(tb::computeClosedWorldZScore(mcCombo.meanReturn, mcCombo.stdErr,
+                                       comboRes.emptyBoardExpectedValue)
+          <= 3.5);
+    mCombo.close();
+  }
+
+  {
+    const std::vector<uint64_t> boards2x10_0 = tb::enumerateZeroSealedHoleBoards(0, 4, 2, 10);
+    tb::NextBoxSolveConfig cfgDisc{};
+    cfgDisc.rngMode = tb::RngMode::Nes;
+    cfgDisc.gamma = 0.98;
+    cfgDisc.tolerance = 1e-8;
+    cfgDisc.numThreads = 4;
+    const tb::NextBoxSolveResult discRes = tb::solveNextBoxMPI(boards2x10_0, cfgDisc);
+    REQUIRE(discRes.ok);
+    CHECK(discRes.emptyBoardExpectedValue > 0.1);
+    REQUIRE(tb::writeNextBoxTablebaseFile(tmpSoftTb, boards2x10_0, discRes.values, tb::RngMode::Nes,
+                                          discRes.finalBellmanResidual));
+    tb::MappedNextBoxTablebase mDisc;
+    REQUIRE(mDisc.open(tmpSoftTb));
+    tb::IndexedNextBoxTablebase iDisc(mDisc);
+    const tb::SoftBoundaryMcStats mc = tb::evaluateNextBoxSoftBoundaryMC(
+        iDisc, tb::RngMode::Nes, 0.98, tb::NoOpBoundaryEval{}, 3000, 8881ULL, 4);
+    CHECK(mc.stepCapHits == 0);
+    CHECK(tb::computeClosedWorldZScore(mc.meanReturn, mc.stdErr, discRes.emptyBoardExpectedValue)
+          <= 3.5);
+    mDisc.close();
+  }
+  std::remove(tmpSoftTb.c_str());
+}

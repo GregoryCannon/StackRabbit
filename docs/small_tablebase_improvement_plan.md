@@ -74,36 +74,27 @@ Isolate how much of the `67.59 → 104.02` gap comes simply from **NN capacity**
 ### Phase S-2: Soft-Boundary (Value-Bootstrapped) MPI Solver (`nextbox_solver.hpp`, `solve_nextbox.cpp`)
 Fix the #1 structural weakness diagnosed in Discovery 4: interior value collapse (`E[V(0)] = 43.07` vs `86.85`) caused by MPI treating every out-of-TB child as `V = 0.0`.
 
-- [ ] **Zero-overhead `PolicyActionStore` encoding for terminal boundary payoffs (`nextbox_solver.hpp`)**:
-  - Repack the 32-bit policy word cleanly with zero RAM/disk increase:
-    - **Bit 31 == `0` (in-TB transition)**: bits `30..28` = `3-bit reward` (`0..4`), bits `27..0` = `28-bit childId` (supports up to `268,435,454` boards; `INVALID_BOARD_ID = 0x0FFFFFFFu`).
-    - **Bit 31 == `1` (terminal out-of-TB boundary payoff)**: bits `30..0` = `uint32_t` fixed-point payoff `round(clamp(q_fixed, 0.0, 32767.0) * 65536.0)` (`1/65536 ≈ 1.5e-5` line precision, exact `0` when `q_fixed == 0`).
-  - Update `packNextBoxAction`, `unpackNextBoxChild`, `unpackNextBoxReward`, plus `packNextBoxTerminalPayoff(double q)` / `isTerminalPayoffWord(uint32_t)` / `unpackNextBoxTerminalPayoff(uint32_t)` with `static_assert` invariants.
-  - Preserve **bit-for-bit identical behavior** when no boundary NN is supplied (`boundaryNn == nullptr`, `gamma == 1.0`).
-- [ ] **Extend `NextBoxSolveConfig` and `solveNextBoxMPI` with Soft-Boundary + Discount options**:
-  - Add fields to `NextBoxSolveConfig`:
-    - `const TinyNextBoxNet *boundaryNn = nullptr;` (frozen throughout the solve!)
-    - `double boundaryMargin = 2.0;` (clamped `>= 0.0`; non-finite disables soft boundary)
-    - `bool boundaryUse2Ply = false;` (default 1-ply `hasAnyLegalTransition ? max(0, V_hat(b', n) - margin) : 0` for fast outer sweeps; optional 2-ply `scoreNextBoxNn2Ply(b', 0, n, *nn, mode) - margin` for higher accuracy!)
-    - `double gamma = 1.0;` (strictly validated `0.0 < gamma <= 1.0`; applied to in-TB continuation `r + gamma * V(b', n)` and boundary continuation `r + gamma * B(b', n)` so optional mild discounting e.g. `0.998` can guarantee contraction if needed).
-    - `double maxValueDivergenceGuard = 1000.0;` (abort with `res.ok = false` if any `V` exceeds guard or becomes non-finite, preventing silent divergence).
-  - **Outer sweep**: For each board `b`, piece `c`, transition `m`:
-    - If `b'` is in-TB (`cid != INVALID_BOARD_ID`), candidate `q(n) = r_m + gamma * vCur[cid * 7 + n]`.
-    - Else if `boundaryNn != nullptr`:
-      - If `!boundaryUse2Ply`: call `boundaryNn->evalAll(b', bVals)` **once per out-of-TB child `b'`** (shared across all 7 next pieces `n = 0..6` — huge 7× speedup!), compute `survives = hasAnyLegalTransition(b', n)`, `B(n) = survives ? max(0.0, bVals[n] - boundaryMargin) : 0.0`, `q(n) = r_m + gamma * B(n)`.
-      - If `boundaryUse2Ply`: compute `est = scoreNextBoxNn2Ply(b', 0, n, *boundaryNn, mode)`, `B(n) = max(0.0, est - boundaryMargin)`, `q(n) = r_m + gamma * B(n)`.
-      - Note: On exact ties (`|q - bestQ| <= 0`), prefer in-TB over out-of-TB!
-  - **Inner evaluation sweeps**: When unpacking a word with `isTerminalPayoffWord(w)`, accumulate `unpackNextBoxTerminalPayoff(w)` directly without touching `vCur` — zero branching overhead on the hot in-TB path and exact contraction!
-  - Expose CLI flags in `solve_nextbox.cpp`: `--boundary-nn=PATH`, `--boundary-margin=M`, `--boundary-ply=1|2`, `--gamma=G`.
-  - **Important closed-world MC check update**: When `--boundary-nn` or `--gamma < 1.0` is active, print a matching **soft-boundary MC verification** (terminating with exact boundary payoff `B(b', n)` on first TB exit and applying `gamma^t` discount) so every soft-boundary solve retains the exact `<= 3.5σ` Bellman self-check!
-- [ ] **Phase S-2 Ablations on Fixed `nb_mid_nes` (`2,487,192` boards) + Multi-Round Inflation Check**:
-  - Sweep `boundaryMargin ∈ {1.0, 2.0, 4.0, 6.0}` (with best S-1 self-NN frozen) and `boundaryPly ∈ {1, 2}`:
-    - Measure: solve time, `E[V(0)]`, **oracle bias** `mean(V_soft - V_oracle)` on `nb_final_nes` (read-only diagnostic!), **live TB (`all-OUT` heur)**, **live TB + calibrated partial-OUT NN**.
-  - **Retrain fresh NN on the best Soft-Boundary `2.49M` TB**: check if removing the `V = 0` interior distortion lifts standalone NN above `56.09` (and lifts `TB + NN` above Phase S-1!).
-  - **3-Round Fixed-Set Stability Test** (`Soft-MPI → Retrain NN → Soft-MPI → Retrain NN → Soft-MPI` on the exact same `2.49M` boards): confirm `E[V(0)]` stabilizes and does NOT suffer runaway value inflation (and identify the minimum safe `boundaryMargin` / `gamma` that guarantees stability).
-- [ ] **Verification & Review**:
-  - Add unit tests in `tablebase_test.cpp`: `packNextBoxAction` / `packNextBoxTerminalPayoff` round-trip & edge bounds (`0.0`, `32767.0`, `INVALID_BOARD_ID`), independent double-precision VI reference matching `solveNextBoxMPI` with `boundaryNn != nullptr` (`1-ply` and `2-ply`, `gamma = 1.0` and `gamma = 0.99`), `1T == 4T` and `Ram == Disk` bit-for-bit equality, divergence guard test, and soft-boundary MC z-score check (`<= 3.5σ`).
-  - Run `format_cpp`, `-Wall -Wextra -Werror`, `-DNDEBUG`, `tablebase_test`, `cpp_test_unit`, `precompute_static_lint`, **3 reviewers** (`logic_reviewer` + `readability_reviewer` + `Performance & Scale` reviewer on `nextbox_solver.hpp` outer/inner hot path), commit `Phase S-2 (soft-boundary value-bootstrapped MPI)`.
+- [x] **Zero-overhead `PolicyActionStore` encoding for terminal boundary payoffs (`nextbox_solver.hpp`)**:
+  - Repacked the 32-bit policy word with zero RAM/disk increase:
+    - **Bit 31 == `0` (in-TB / zero-payoff out-of-TB)**: bits `30..28` = `3-bit reward` (`0..4`), bits `27..0` = `28-bit childId` (`INVALID_BOARD_ID = 0x0FFFFFFFU`, up to `268,435,454` boards).
+    - **Bit 31 == `1` (terminal fixed-point boundary payoff)**: bits `30..0` = `round(clamp(qFixed, 0.0, 2047.0) * 2^20)` (`9.54e-7` line resolution, exact `0` at `0.0`).
+  - Added `packNextBoxTerminalPayoff`, `isNextBoxTerminalPayoff`, `unpackNextBoxTerminalPayoff`, `NoOpBoundaryEval`, `NnSoftBoundaryEval` (`tiny_nn.hpp`), and `loadNextBoxInputBoards` (`tablebase_io.hpp`, accepting `.states.bin` or `SRTBV002` directly).
+- [x] **Extended `NextBoxSolveConfig`, `solveNextBoxMPI`, and `solve_nextbox.cpp` with Soft-Boundary + Discount + Performance optimizations**:
+  - Added `gamma` in `(0, 1]`, `maxValueDivergenceGuard` (`1000.0`, enforced on both outer and inner sweeps), terminal-overflow abort above `NB_TERMINAL_MAX_PAYOFF` (`2047.0`), per-worker `SoftBoundaryCache` (`32,768` slots), iter-1 precomputed `bestOutStore` (evaluates frozen NN boundary **once** on outer iter 1 and reuses exact terminal words on iters `2..K` + final residual), single-pass RAM sweeps, and exact `evaluateNextBoxSoftBoundaryMC` verification (`<= 3.5σ` on every solve!).
+  - Exposed `--boundary-nn=PATH`, `--boundary-margin=F`, `--boundary-ply=1|2`, `--gamma=F`, `--max-v-guard=F` in `solve_nextbox.cpp`.
+- [x] **Phase S-2 Ablations on Fixed `nb_mid_nes` (`2,487,192` boards, zero leakage) + 5-Round Stability Test**:
+  - **Round 1 1-ply margin sweep** (frozen `mid_self_128x64`, `~80s` solve each, all Soft-MC `0.04–0.82σ`):
+    - `m=1.0`: `E[V(0)] = 51.68` | `m=2.0`: `E[V(0)] = 50.94` | `m=4.0`: `E[V(0)] = 49.62` | `m=6.0`: `E[V(0)] = 48.50` (vs hard `43.07`).
+  - **Multi-Round Fixed-Set Bootstrap (`Soft-MPI → Retrain 128×64 NN`, exact same `2.49M` boards, zero runaway inflation)**:
+    - `m=4.0` (3 rounds): `E[V(0)] = 43.07 → 49.62 → 53.27 → 55.85` (oracle OOD MAE `38.52 → 26.67`); held-out 10k NES (`seed=700000`): standalone NN **`67.51 ± 0.65`**, TB+NN 2-ply (`m=2.0`) **`84.62 ± 0.82`**.
+    - `m=2.0` (5 rounds): `E[V(0)] = 43.07 → 50.94 (+7.87) → 55.89 (+4.95) → 59.33 (+3.44) → 61.94 (+2.61) → 63.85 (+1.91)` — clean geometric damping (`~0.72×`/round) with zero inflation; oracle OOD MAE halved **`38.52 → 20.12`**; Soft-MC `0.07–1.62σ`.
+  - **Phase S-2 Held-Out Results (`10,000` NES games, `seed=700000`, `mid_soft5_m2.0` `2.49M` boards)**:
+    - Pure Soft-TB (`all-OUT` heur): `51.12 ± 0.49` (vs `50.97` hard — confirming Soft-TB + NN partial-OUT is a co-designed pair).
+    - Standalone `128×64` 2-ply NN: **`68.28 ± 0.65`** (`+8.88` over S-1 `59.40`, `+12.19` over baseline `56.09`!).
+    - `2.49M` Soft-TB + NN Partial-OUT 2-ply (`m=2.0`): **`89.97 ± 0.88`** (`med=63.0, p90=206, max=820`, `38.2k mv/s`, **`+22.38` lines** over baseline — matching the entire `19.54M` full TB `89.90` on `12.7%` of the boards!).
+    - `2.49M` Soft-TB + NN Partial-OUT **3-ply Top-6 (`m=2.0`)**: **`92.48 ± 0.90`** (`med=65.0, p90=208, max=874`, `21.5k mv/s`, **`+24.89` lines** over baseline `67.59`, beating the full `19.54M` TB by `+2.58` lines!).
+- [x] **Verification & Review**:
+  - `tablebase_test.cpp` (`28/28`, `383,201` assertions): terminal packing bounds, `NnSoftBoundaryEval::evalRow` edge cases (margin `0`/neg/`NaN`, `nullptr`/unloaded, negative NN pred, 1-ply top-out), adversarial non-index-0 tie-breaking in both Bellman backup and soft-boundary MC, `loadNextBoxInputBoards`, 10-column line-clear VI parity oracle across all 4 modes, `1T==4T` & `Ram==Disk` determinism, combined `gamma<1` + soft-NN MC check, outer/inner divergence & terminal-overflow guards. Passed `cpp_test_unit` (`80/80`), `precompute_static_lint`, and all 3 reviews (Logic, Simplicity, Performance & Scale).
 
 ---
 
