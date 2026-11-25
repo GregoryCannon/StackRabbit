@@ -144,19 +144,23 @@ Test how much better a **`2,500,000`-board** state set becomes when we choose *w
 ### Phase S-5: Combined Multi-Round `<= 2.5M` Flywheel, Final Ablation & Retrospective (`docs/small_tablebase_improvement_retrospective.md`)
 Combine every lever that won in Phases S-1–S-4 into a clean, reproducible end-to-end `<= 2.5M` pipeline and measure how close we get to the `19.54M` full tablebase!
 
-- [ ] **Run End-to-End Combined `<= 2.5M` Flywheel (2–3 rounds, strictly zero leakage)**:
-  - Round 0: `nb_small_nes` (`673k`, zero leakage) → Self-NN (`128×64` or `256×64`, whichever won S-1).
-  - Round 1: Expand to `2.5M` using winning S-4 state selection → Solve with winning S-2 **Soft-Boundary MPI** → Retrain NN + apply winning S-3 **RL / ExIt fine-tuning**.
-  - Round 2 (and Round 3 if still gaining): Refine `<= 2.5M` set (evicting low-value boards, adding new high-value frontier states while staying `<= 2,500,000`) → Re-solve with **Soft-Boundary MPI** → Final NN + RL/ExIt fine-tuning.
-  - Evaluate on `10,000` held-out NES games (`seed=700000`):
-    - Pure `2.5M` TB (`all-OUT` heur)
-    - Standalone `<= 2.5M`-trained NN (2-ply & 3-ply)
-    - **`<= 2.5M` TB + Final NN calibrated partial-OUT (`2-ply` & `3-ply`)**
-  - Run **read-only oracle audit** against `nb_final_nes.tb.bin` (value MAE, mean bias/inflation, top-1 agreement across `0h / 1h / 2h / 3+h`) to verify true calibration and zero hidden inflation.
-- [ ] **Write Retrospective Doc (`docs/small_tablebase_improvement_retrospective.md`)**:
-  - Follow `AGENTS.md`'s human-readable retrospective style guide: Core Glossary + per-section Glossaries *before* use, abbreviation count audit (`>= 3` body uses), full "what & why" narrative, full individual-vs-combined ablation table, and concrete recommendations for the 20-row DAS 18/19 architecture.
-  - Link from `docs/tablebase_retrospective.md` and `docs/tablebase_distillation_retrospective.md`.
-  - Commit `Docs (small-tablebase improvement retrospective & ablation results)`.
+- [x] **Ran End-to-End Combined `<= 2.5M` Flywheel (strictly `<= 2,500,000` boards, zero leakage from `> 2.5M` TBs)**:
+  - **Margin-Confounder Control Check (VAL `2,000` NES games, `seed=30000000`)**: Retraining a pure-supervised `128×64` NN (`s5_r1_128x64`) directly on `s4_cap_nnerr_soft` (`2.50M`, OOD MAE `18.44`) matched RL head-to-head once the margin wasn't over-penalized (`95.48` vs `95.09` 2-ply; `100.48` vs `101.43` 3-ply Top-6), proving most of RL's earlier apparent `+6`-line jump was an effective-margin shift from RL's `+2`-line value lift.
+  - **Round 1 → Round 2 Clean Zero-RL Flywheel**:
+    - Solved `s5_r1.tb.bin` (`2.50M`, `E[V(0)] = 67.26`, `1.19σ`), regenerated refined `2.50M` `nn-error` set `s5_r2_nnerr.states.bin` (`eps=0.14, w=2.0, core=500k`; greedy `2h` hit-rate `55.6% → 62.6%`, `3+h` `31.2% → 43.1%`), solved two Soft-Boundary MPI (`m=2.0`) rounds (`s5_r2a` `E[V(0)] = 68.23`, `50k` MC `1.87σ` → **`s5_final.tb.bin`** `E[V(0)] = 70.37`, `30k` Soft-MC `70.26 ± 0.17`, **`0.61σ`** — zero inflation!).
+    - Trained final pure-supervised **`s5_final_128x64.nn.bin`** (`78.6 KB`) and **`s5_final_256x64.nn.bin`** (`155.1 KB`), plus RL comparison **`s5_final_rl_128x64.nn.bin`**, tuned margins strictly on VAL (`seed=30000000`), and evaluated on **`10,000` held-out NES games (`seed=700000`)**:
+      - Pure `s5_final` TB (`all-OUT` heur): `50.23 ± 0.49` (`96.65%` in-TB)
+      - Standalone `s5_final_128x64` (NO RL): 2-ply **`69.89 ± 0.67`**, 3-ply Top-6 (`2k` games) **`86.49 ± 1.85`**
+      - Standalone `s5_final_256x64` (NO RL): 1-ply **`38.02 ± 0.37`**, 2-ply **`73.04 ± 0.70`** (beats the `19.54M`-trained `128×64` NN `71.79`!)
+      - **`s5_final` (`2.50M`) + Pure Supervised `128×64` (`79 KB`)**: 2-ply (`m=1.0`) **`97.00 ± 0.95`** (`48.2k mv/s`), **3-ply Top-6 (`m=0.5`) `102.17 ± 1.01`** (`med=71.0, p90=232, max=903`, `22.4k mv/s` — **`+34.58` over baseline, `+12.27` above full `19.54M` TB `89.90`, `98.2%` of the `19.54M` oracle+NN ceiling `104.02`!!**)
+      - **`s5_final` (`2.50M`) + Pure Supervised `256×64` (`155 KB`)**: 2-ply (`m=0.5`) **`98.88 ± 0.98`** (`23.3k mv/s`), 3-ply Top-6 (`m=1.0`) **`101.20 ± 0.99`** (`13.2k mv/s`)
+      - RL Comparison (`s5_final` + `s5_final_rl_128x64`): standalone 2-ply `69.55 ± 0.67`; TB+NN 2-ply (`m=4.5`) `91.79 ± 0.91` (`-5.21` vs supervised); TB+NN 3-ply Top-6 (`m=3.5`) `103.26 ± 1.01` (`+1.09 ± 1.43`, `0.76σ`, with severe margin fragility) → **RL cut from recommended production pipeline**.
+  - **Read-Only Oracle Audit (`20,000` held-out decisions from `19.54M nb_final_nes.tb.bin`, `seed=91000000`)**:
+    - `s5_final.tb.bin`: `MAE = 16.44` (down from `43.29`), `Bias = -16.44` (zero inflation across `0h/1h/2h/3+h`), `Top1 = 93.75%`.
+    - Hybrid `s5_final` + `128×64` (`m=1.0`): `MAE = 16.63`, `Bias = -16.58`, **`Top1 = 94.62%`** (`0h=94.9%, 1h=92.3%, 2h=91.8%, 3+h=95.7%`); `+ 256×64` (`m=0.5`): **`Top1 = 94.82%`**.
+- [x] **Wrote Retrospective Doc ([docs/small_tablebase_improvement_retrospective.md](small_tablebase_improvement_retrospective.md))**:
+  - Followed `AGENTS.md` human-readable retrospective style guide: Core Glossary + per-section Glossaries before use, verified `>= 3` body-use abbreviation counts, full "what & why" narrative, full individual-vs-combined ablation table, and concrete 20-row DAS 18/19 architectural blueprint.
+  - Linked from [docs/tablebase_retrospective.md](tablebase_retrospective.md) and [docs/tablebase_distillation_retrospective.md](tablebase_distillation_retrospective.md).
 
 ---
 

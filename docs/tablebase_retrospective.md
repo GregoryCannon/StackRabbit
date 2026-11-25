@@ -8,6 +8,7 @@ Companion docs:
 - [docs/tablebase_plan.md](tablebase_plan.md) — v0 No-Next-Box ruleset, oracle checks, and Phases 1–6.
 - [docs/tablebase_nextbox_plan.md](tablebase_nextbox_plan.md) — v1 1-Piece Next-Box format, disk-streamed solver, and Phases NB-1–NB-5.
 - [docs/tablebase_distillation_plan.md](tablebase_distillation_plan.md) & [docs/tablebase_distillation_retrospective.md](tablebase_distillation_retrospective.md) — distilling the `670.9 MB` tablebase into V2 linear heuristics (`48.94` lines), a `78.6 KB` Tiny NN (`71.79` lines), and calibrated partial-OUT fallbacks (`104.02` lines on full TB; `+11–17` lines on partial TBs).
+- [docs/small_tablebase_improvement_plan.md](small_tablebase_improvement_plan.md) & [docs/small_tablebase_improvement_retrospective.md](small_tablebase_improvement_retrospective.md) — pushing a strictly capped `<= 2.5M`-board tablebase (`12.8%` of full size, zero leakage) from `67.59` to **`102.17` lines** (pure supervised, beating the `19.54M` full TB `89.90` by `+12.3` lines) via Soft-Boundary MPI, `nn-error` state selection, and calibrated 3-ply Top-6 fallback.
 
 ---
 

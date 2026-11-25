@@ -4,6 +4,8 @@ This retrospective explains what we learned from using our solved 4×10 **Very L
 
 Everything here was built in pure C++17 inside `experimental/tablebase/` (leaving StackRabbit's production `src/` engine untouched) and measured on the exact same **10,000 held-out NES Tetris games** (`seed=700000`) used in [docs/tablebase_retrospective.md](tablebase_retrospective.md).
 
+For the follow-up project pushing a strictly capped `<= 2.5M`-board tablebase (zero leakage from the `19.54M` TB) from `67.59` to **`102.17` lines**, see [docs/small_tablebase_improvement_retrospective.md](small_tablebase_improvement_retrospective.md).
+
 ---
 
 ## Core Glossary (Used Throughout This Document)
