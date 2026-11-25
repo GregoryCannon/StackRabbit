@@ -124,22 +124,20 @@ Test whether fine-tuning a small-TB-initialized NN directly on **unbiased 2-ply 
 ### Phase S-4: NN-Guided & Value/Error-Targeted State Selection (`<= 2.5M` Cap) (`nextbox_gen.hpp`, `generate_nextbox.cpp`)
 Test how much better a **`2,500,000`-board** state set becomes when we choose *which* 2.5M boards belong in the tablebase using our NN instead of heuristic-seeded raw visit counts.
 
-- [ ] **Implement Value/Error-Weighted Eviction Under `maxBoards <= 2.5M` (`nextbox_gen.hpp`, `generate_nextbox.cpp`)**:
-  - Today, `mergeFilterAndCapBoards` ranks candidate boards purely by `visitCount`. Under a hard `2.5M` cap, add optional priority scoring when `--nn=PATH` and `--priority-mode=` are specified:
-    - `visits` (existing baseline): pure visit count.
-    - `nn-error` (requires prior TB + NN): score `b` by `visitCount(b) * (1.0 + alpha * min(errCap, |E[V_tb(b)] - E[V_nn(b)]|))` for in-TB boards, and `visitCount(b) * (1.0 + frontierBoost)` for newly discovered out-of-TB frontier boards (with a protected core fraction, e.g., top `protectedCore = 500,000` most-visited boards always kept so Bellman paths stay well-connected).
-    - `hole-boost` (works even without prior TB error): boost `1–2`-hole high-visit recovery boards relative to ultra-common `0`-hole boards that the NN already predicts within `~1.5` lines (`visitCount(b) * holeWeight[bucket(b)]`), again with a protected `0`-hole core.
-  - **Important interaction test**: Test `nn-error` / `hole-boost` eviction under **BOTH** hard `V = 0` MPI *and* **Soft-Boundary MPI** (Phase S-2)! Hypothesis: under hard `V = 0`, evicting any frequent 0-hole board creates potholes, whereas under Soft-Boundary MPI the NN smoothly patches easy 0-hole boards so TB slots can focus on hard tactical positions!
-  - Also test **clean NN-bootstrapped `<= 2.5M` generation from scratch** (starting from `nb_small_nes` `673k` → NN-guided expansion up to `2.5M`, zero heuristic-biased round1–2 legacy boards).
-  - Add CLI flags to `generate_nextbox.cpp`: `--priority-mode=visits|nn-error|hole-boost`, `--priority-alpha=A`, `--protected-core=K`.
-- [ ] **Phase S-4 Ablations (`<= 2,500,000` boards strictly enforced, `seed=700000` 10k NES games)**:
-  - Compare 3 `2.5M` board sets (all trained/solved identically):
-    1. Legacy `nb_mid_nes` (`2.49M`, heuristic-seeded).
-    2. Fresh `2.5M` NN-guided `visits` set (built from `673k` via NN flywheel).
-    3. Fresh `2.5M` NN-guided `nn-error` / `hole-boost` priority set (evaluated with hard MPI and Soft-Boundary MPI).
-- [ ] **Verification & Review**:
-  - Add unit tests in `tablebase_test.cpp`: `<= maxBoards` hard cap enforcement, `0ULL` always preserved, protected-core invariant, `nn-error` priority ordering check, and `1T == 4T` bit-for-bit determinism for every priority mode.
-  - Run `format_cpp`, `-Wall -Wextra -Werror`, `-DNDEBUG`, `tablebase_test`, `cpp_test_unit`, `precompute_static_lint`, dual reviews (`logic_reviewer` + `readability_reviewer`), commit `Phase S-4 (NN-guided + error-weighted 2.5M state selection)`.
+- [x] **Implemented Value/Error-Weighted Eviction Under `maxBoards <= 2.5M` (`core.hpp`, `distill_data.hpp`, `state_generator.hpp`, `nextbox_gen.hpp`, `generate_nextbox.cpp`)**:
+  - Moved `expectedValueFromRow` to `core.hpp` and extracted shared `collectMergedBoardCandidates` / `finalizeMergedBoards` in `state_generator.hpp` (tight pre-counted reserve + immediate `rawEntries` release).
+  - Implemented `BoardPriorityMode` (`Visits`, `NnError`, `HoleBoost`) with tightly packed 24-byte `PrioritizedBoard` (`tier` 0=empty `0ULL`, 1=merged `priorBoards`, 2=top `protectedCore` by visits, 3=scored), single-meaning CLI flags `--priority-mode=visits|nn-error|hole-boost`, `--nn-error-weight=F`, `--hole-boost-scale=F`, `--protected-core=K`, strict boundary validation (rejecting `--max-boards=0`, zero priority slots, mismatched mode knobs, or `--tb` == output path), early `indexedTb` cleanup for non-`NnError` modes, and dynamic-chunk parallel scoring (`1T == MT`).
+  - Upgraded `--merge=PATH` to use `loadNextBoxInputBoards` (accepting both `.states.bin` and `SRTBV002` `.tb.bin`).
+- [x] **Phase S-4 Held-Out Ablations (`<= 2,500,000` boards strictly enforced, `10,000` NES games `seed=700000`, zero leakage)**:
+  - **Head-to-Head Eviction Priority & Hard-vs-Soft MPI Interaction (`2,500,000` exact cap, identical `320k`-game Soft-5 rollout `seed=4000020`, `eps=0.16`, `topK=8`, `siblingMin=2`, `protectedCore=500k`)**:
+    - **`visits` (`2.50M`, `0h=628k/1h=868k/2h=526k/3+h=478k`)**: Hard MPI `E[V(0)]=35.27`, live heur `49.72 ± 0.48`. Soft-MPI (`m=2.0`, `mid_soft5_m2.0_128x64`): `E[V(0)]=66.44` (`1.93σ`), TB+NN 2-ply `88.44 ± 0.87`, 3-ply Top-6 `91.65 ± 0.90`, +RL-NN 3-ply Top-6 `96.52 ± 0.94`.
+    - **`hole-boost` (`2.50M`, `holeScale=2.0`, `0h=237k/1h=502k/2h=769k/3+h=992k`)**: Hard MPI `E[V(0)]=22.18`, live heur `35.18 ± 0.33` (**`-14.54` collapse** from 0-hole cliffs!). Soft-MPI (`m=2.0`): `E[V(0)]=64.15` (`0.17σ`), TB+NN 2-ply `88.35 ± 0.85`, 3-ply Top-6 **`93.43 ± 0.91`** (`+1.78` over `visits`!), +RL-NN 3-ply Top-6 **`98.33 ± 0.95`** (`+1.81` over `visits`!) — **full reversal of Hard MPI**, proving Soft-Boundary MPI turns hole-prioritized eviction from catastrophic into a net win!
+    - **`nn-error` (`2.50M`, `errWeight=2.0`, `0h=642k/1h=885k/2h=529k/3+h=445k`) — CLEAR WINNER**: Hard MPI `E[V(0)]=34.83`, live heur `49.41 ± 0.48`. Soft-MPI (`m=2.0`): `E[V(0)]=65.89` (`1.49σ`), TB+NN 2-ply **`90.08 ± 0.87`** (`+1.64` vs `visits`), 3-ply Top-6 **`93.95 ± 0.92`** (`+2.30` vs `visits`, `+1.47` vs legacy `mid_soft5_m2.0`), +RL-NN (`mid_soft5_rl_128x64`) 3-ply Top-6 **`100.29 ± 1.00`** (`med=70.0, p90=230, max=1182`, `20.4k mv/s`, **`+3.77` vs `visits`, `+1.62` vs legacy `mid_soft5_m2.0`, `+10.39` above the entire `19.54M` full TB `89.90`, `96.4%` of the `19.54M` TB + `128×64` NN oracle `104.02`!!**).
+  - **Clean NN-Bootstrapped Sets (zero heuristic-seeded legacy `nb_mid_nes` boards)**:
+    - `s4_fresh_visits` (`2.22M`, from `673k nb_small_nes` + `64×32` self-NN): Hard MPI `E[V(0)]=34.42`, live `48.59 ± 0.47`; Soft-MPI (`m=2.0`) `E[V(0)]=65.47` (`0.25σ`), 2-ply `87.69 ± 0.84`, 3-ply Top-6 `90.83 ± 0.88`.
+    - `s4_soft5_visits` (`2.22M`, `eps=0.12`, `siblingMin=3`): Soft-MPI (`m=2.0`) `E[V(0)]=68.41` (`1.61σ`), live heur `58.42 ± 0.56`, 2-ply **`91.16 ± 0.89`** (`+1.19` vs legacy `mid_soft5_m2.0`), 3-ply Top-6 **`93.99 ± 0.91`** (`+1.51` vs legacy `mid_soft5_m2.0`), +RL-NN 3-ply Top-6 `96.44 ± 0.94`.
+- [x] **Verification & Review**:
+  - `tablebase_test.cpp` (`30/30`, `388,075` assertions): `parseBoardPriorityMode`/`boardPriorityModeName` round-trips, `NnError` `errCap`-decisive eviction, `HoleBoost` all-4-bucket ordering (`2h > 3+h > 1h > 0h`), `protectedCore > maxBoards` + `priorBoards > maxBoards` + sibling rescue + `0ULL` absent, non-tautological `NaN`/`±inf`/negative sanitization with `protectedCore=0` (`evalCalls == 3`), `fastTb == nullptr` frontier fallback, true multi-chunk (`20,001` unique boards, `500` in-TB) parallel `1T == 4T` determinism (`nnCalls1 == nnCalls4 > 400`), and end-to-end `1T == 4T` determinism. Passed `-Wall -Wextra -Werror` & `-DNDEBUG` on all 6 binaries, `cpp_test_unit` (`80/80`), `precompute_static_lint`, and dual reviews (Logic + Simplicity).
 
 ---
 

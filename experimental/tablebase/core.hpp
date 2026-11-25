@@ -77,6 +77,14 @@ constexpr double openingPieceProb(RngMode mode, int piece) noexcept {
                                 : (1.0 / static_cast<double>(NUM_PIECES));
 }
 
+inline double expectedValueFromRow(const float row[NUM_PIECES], RngMode mode) noexcept {
+  double ev = 0.0;
+  for (int c = 0; c < NUM_PIECES; ++c) {
+    ev += openingPieceProb(mode, c) * static_cast<double>(row[c]);
+  }
+  return ev;
+}
+
 constexpr const char *rngModeName(RngMode mode) noexcept {
   return (mode == RngMode::Nes) ? "nes" : "uniform";
 }

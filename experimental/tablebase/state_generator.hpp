@@ -614,10 +614,20 @@ inline CoverageReport runCoverageEval(const std::vector<uint64_t> &sortedBoards,
   return report;
 }
 
-inline void mergeFilterAndCapBoards(std::vector<std::pair<uint64_t, uint32_t>> &rawEntries,
-                                    const std::vector<uint64_t> &siblingCandidates,
-                                    const std::vector<uint64_t> *priorBoards, uint32_t minVisits,
-                                    size_t maxBoards, StateGenResult &result) {
+struct MergedBoardCandidate {
+  uint64_t board;
+  uint32_t visits;
+  bool protectedPrior;
+  bool siblingOnly;
+};
+
+// Performs the 3-way deterministic merge of rawEntries (consumed in-place to release peak RAM),
+// deduplicated sorted siblingCandidates, and optional priorBoards, filtering by minVisits while
+// always retaining 0ULL, priorBoards, and sibling-rescued candidates.
+inline std::vector<MergedBoardCandidate>
+collectMergedBoardCandidates(std::vector<std::pair<uint64_t, uint32_t>> &rawEntries,
+                             const std::vector<uint64_t> &siblingCandidates,
+                             const std::vector<uint64_t> *priorBoards, uint32_t minVisits) {
   std::sort(rawEntries.begin(), rawEntries.end(),
             [](const auto &a, const auto &b) { return a.first < b.first; });
 
@@ -633,15 +643,16 @@ inline void mergeFilterAndCapBoards(std::vector<std::pair<uint64_t, uint32_t>> &
     priorSorted.erase(std::unique(priorSorted.begin(), priorSorted.end()), priorSorted.end());
   }
 
-  struct RankedBoard {
-    uint64_t board;
-    uint32_t visits;
-    bool protectedPrior;
-    bool siblingOnly;
-  };
+  // Pre-count surviving raw entries so reserve() stays tight when minVisits prunes most tails.
+  size_t rawKeepCount = 0;
+  for (const auto &kv : rawEntries) {
+    if (kv.second >= minVisits || kv.first == 0ULL) {
+      ++rawKeepCount;
+    }
+  }
 
-  std::vector<RankedBoard> merged;
-  merged.reserve(rawEntries.size() + priorSorted.size() + siblingCandidates.size() / 4);
+  std::vector<MergedBoardCandidate> merged;
+  merged.reserve(rawKeepCount + priorSorted.size() + siblingCandidates.size() / 4);
 
   size_t iRaw = 0;
   size_t iPrior = 0;
@@ -680,6 +691,42 @@ inline void mergeFilterAndCapBoards(std::vector<std::pair<uint64_t, uint32_t>> &
     }
   }
 
+  std::vector<std::pair<uint64_t, uint32_t>>().swap(rawEntries);
+  return merged;
+}
+
+template <typename Entry, typename IsPriorFn>
+inline void finalizeMergedBoards(const std::vector<Entry> &kept, bool needsResort,
+                                 IsPriorFn &&isPrior, StateGenResult &result) {
+  result.sortedBoards.clear();
+  result.sortedBoards.reserve(kept.size());
+  result.priorBoardsMerged = 0;
+  result.siblingBoardsAdded = 0;
+  result.boardHoleDistribution.fill(0);
+
+  for (const auto &e : kept) {
+    result.sortedBoards.push_back(e.board);
+    if (isPrior(e)) {
+      ++result.priorBoardsMerged;
+    }
+    if (e.siblingOnly) {
+      ++result.siblingBoardsAdded;
+    }
+    ++result.boardHoleDistribution[static_cast<size_t>(
+        HoleStratifiedCounts::bucket(countHoles(e.board)))];
+  }
+  if (needsResort) {
+    std::sort(result.sortedBoards.begin(), result.sortedBoards.end());
+  }
+}
+
+inline void mergeFilterAndCapBoards(std::vector<std::pair<uint64_t, uint32_t>> &rawEntries,
+                                    const std::vector<uint64_t> &siblingCandidates,
+                                    const std::vector<uint64_t> *priorBoards, uint32_t minVisits,
+                                    size_t maxBoards, StateGenResult &result) {
+  std::vector<MergedBoardCandidate> merged =
+      collectMergedBoardCandidates(rawEntries, siblingCandidates, priorBoards, minVisits);
+
   // Enforce maxBoards cap deterministically. Priority order:
   //   1. Board 0ULL (empty start state is never evicted),
   //   2. Protected priorBoards (if priorSorted.size() > maxBoards, ranked by visits then board
@@ -688,7 +735,8 @@ inline void mergeFilterAndCapBoards(std::vector<std::pair<uint64_t, uint32_t>> &
   bool needsResort = false;
   if (maxBoards > 0 && merged.size() > maxBoards) {
     std::nth_element(merged.begin(), merged.begin() + static_cast<std::ptrdiff_t>(maxBoards),
-                     merged.end(), [](const RankedBoard &a, const RankedBoard &b) {
+                     merged.end(),
+                     [](const MergedBoardCandidate &a, const MergedBoardCandidate &b) {
                        const bool aEmpty = (a.board == 0ULL);
                        const bool bEmpty = (b.board == 0ULL);
                        if (aEmpty != bEmpty)
@@ -703,22 +751,9 @@ inline void mergeFilterAndCapBoards(std::vector<std::pair<uint64_t, uint32_t>> &
     needsResort = true;
   }
 
-  result.sortedBoards.reserve(merged.size());
-  for (const auto &rb : merged) {
-    result.sortedBoards.push_back(rb.board);
-    if (rb.protectedPrior)
-      ++result.priorBoardsMerged;
-    if (rb.siblingOnly)
-      ++result.siblingBoardsAdded;
-  }
-  if (needsResort) {
-    std::sort(result.sortedBoards.begin(), result.sortedBoards.end());
-  }
-
-  for (uint64_t b : result.sortedBoards) {
-    const int hBucket = HoleStratifiedCounts::bucket(countHoles(b));
-    ++result.boardHoleDistribution[static_cast<size_t>(hBucket)];
-  }
+  finalizeMergedBoards(
+      merged, needsResort, [](const MergedBoardCandidate &e) noexcept { return e.protectedPrior; },
+      result);
 }
 
 } // namespace detail

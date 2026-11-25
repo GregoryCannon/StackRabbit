@@ -4788,3 +4788,377 @@ TEST_CASE("Self-play RL fine-tuning: TD(lambda) returns, ExIt ply-2 top-out, 1T=
     CHECK(lossAfter < lossBefore * 0.9);
   }
 }
+
+TEST_CASE("Prioritized state selection: hard maxBoards cap, 0ULL & protected-core invariants, "
+          "nn-error and hole-boost ordering, and 1T==4T determinism") {
+  tb::BoardPriorityMode pm = tb::BoardPriorityMode::Visits;
+  CHECK(tb::parseBoardPriorityMode("visits", pm));
+  CHECK(pm == tb::BoardPriorityMode::Visits);
+  CHECK(std::string(tb::boardPriorityModeName(pm)) == "visits");
+  CHECK(tb::parseBoardPriorityMode("nn-error", pm));
+  CHECK(pm == tb::BoardPriorityMode::NnError);
+  CHECK(std::string(tb::boardPriorityModeName(pm)) == "nn-error");
+  CHECK(tb::parseBoardPriorityMode("hole-boost", pm));
+  CHECK(pm == tb::BoardPriorityMode::HoleBoost);
+  CHECK(std::string(tb::boardPriorityModeName(pm)) == "hole-boost");
+  CHECK_FALSE(tb::parseBoardPriorityMode("random", pm));
+
+  // Boards spanning 0, 1, 2, and 3+ hole buckets plus a frontier board outside the TB.
+  const uint64_t bCore = mustParse("..........\n"
+                                   "..........\n"
+                                   "..........\n"
+                                   "XX........"); // 0 holes, high visits -> protected core
+  const uint64_t bLowErr = mustParse("..........\n"
+                                     "..........\n"
+                                     "..........\n"
+                                     "....XX...."); // 0 holes, visits=10, |tb-nn|=0
+  const uint64_t bHighErr = mustParse("..........\n"
+                                      "..........\n"
+                                      "..........\n"
+                                      "........XX"); // 0 holes, |tb-nn|=15 (capped by errCap)
+  const uint64_t bMedErr = mustParse("..........\n"
+                                     "..........\n"
+                                     "..........\n"
+                                     "..XX......"); // 0 holes, |tb-nn|=4
+  const uint64_t bHole1 = mustParse("..........\n"
+                                    "..........\n"
+                                    "X.........\n"
+                                    ".X........"); // 1 hole
+  const uint64_t bHole2 = mustParse("..........\n"
+                                    "..........\n"
+                                    "XX........\n"
+                                    "..X......."); // 2 holes
+  const uint64_t bHole3 = mustParse("..........\n"
+                                    "..........\n"
+                                    "XXX.......\n"
+                                    "...X......"); // 3 holes
+  const uint64_t bFrontier = mustParse("..........\n"
+                                       "..........\n"
+                                       "..........\n"
+                                       "XXXX......"); // out-of-TB frontier board
+  REQUIRE(tb::countHoles(bHole1) == 1);
+  REQUIRE(tb::countHoles(bHole2) == 2);
+  REQUIRE(tb::countHoles(bHole3) == 3);
+
+  std::vector<uint64_t> tbBoards = {0ULL, bCore, bLowErr, bHighErr, bMedErr, bHole1};
+  std::sort(tbBoards.begin(), tbBoards.end());
+  std::vector<float> tbVals(tbBoards.size() * tb::NUM_PIECES, 10.0f);
+  for (size_t i = 0; i < tbBoards.size(); ++i) {
+    if (tbBoards[i] == bHighErr) {
+      for (int p = 0; p < tb::NUM_PIECES; ++p) {
+        tbVals[i * tb::NUM_PIECES + static_cast<size_t>(p)] = 25.0f; // |25 - 10| = 15
+      }
+    } else if (tbBoards[i] == bMedErr) {
+      for (int p = 0; p < tb::NUM_PIECES; ++p) {
+        tbVals[i * tb::NUM_PIECES + static_cast<size_t>(p)] = 14.0f; // |14 - 10| = 4
+      }
+    }
+  }
+  const std::string tmpPrioTb = "build/test_prio_sel.tb.bin";
+  REQUIRE(tb::writeNextBoxTablebaseFile(tmpPrioTb, tbBoards, tbVals, tb::RngMode::Nes, 0.0));
+  tb::MappedNextBoxTablebase mPrio;
+  REQUIRE(mPrio.open(tmpPrioTb));
+  tb::IndexedNextBoxTablebase iPrio(mPrio);
+
+  // 1. NnError ordering + errCap actually deciding an eviction:
+  //    errCap=5, nnErrorWeight=1.0:
+  //      bHighErr (v=3, err=min(5,15)=5) -> score = 3*(1+5) = 18 (without cap would be 3*16=48!)
+  //      bMedErr  (v=4, err=min(5,4)=4)  -> score = 4*(1+4) = 20 > 18 -> bMedErr beats bHighErr!
+  //      bFrontier(v=7, out-of-TB)       -> score = 7*(1+2) = 21 > 20 -> bFrontier wins!
+  //      bLowErr  (v=10, err=0)          -> score = 10*1    = 10 -> evicted
+  {
+    std::vector<std::pair<uint64_t, uint32_t>> raw = {
+        {0ULL, 0U}, {bCore, 50U}, {bLowErr, 10U}, {bMedErr, 4U}, {bHighErr, 3U}, {bFrontier, 7U},
+    };
+    tb::NextBoxGenConfig cfg{};
+    cfg.priorityMode = tb::BoardPriorityMode::NnError;
+    cfg.nnErrorWeight = 1.0;
+    cfg.priorityErrCap = 5.0;
+    cfg.frontierBoost = 2.0;
+    cfg.protectedCore = 1;
+    cfg.minVisits = 1;
+    cfg.maxBoards = 4;
+    cfg.numThreads = 2;
+    tb::StateGenResult res{};
+    tb::detail::mergeFilterAndCapBoardsPrioritized(
+        raw, {}, nullptr, cfg, &iPrio, [](uint64_t) noexcept { return 10.0; }, res);
+    REQUIRE(res.sortedBoards.size() == 4);
+    CHECK(res.sortedBoards.front() == 0ULL);
+    CHECK(std::is_sorted(res.sortedBoards.begin(), res.sortedBoards.end()));
+    CHECK(std::binary_search(res.sortedBoards.begin(), res.sortedBoards.end(), bCore));
+    CHECK(std::binary_search(res.sortedBoards.begin(), res.sortedBoards.end(), bFrontier));
+    CHECK(std::binary_search(res.sortedBoards.begin(), res.sortedBoards.end(), bMedErr));
+    CHECK_FALSE(std::binary_search(res.sortedBoards.begin(), res.sortedBoards.end(), bHighErr));
+    CHECK_FALSE(std::binary_search(res.sortedBoards.begin(), res.sortedBoards.end(), bLowErr));
+  }
+
+  // 2. HoleBoost ordering across ALL 4 hole buckets (equal visits -> 2h > 3+h > 1h > 0h):
+  //    Weights at holeBoostScale=2.0: 0h=1.0, 1h=3.0, 2h=5.0, 3+h=4.0.
+  {
+    std::vector<std::pair<uint64_t, uint32_t>> raw = {
+        {0ULL, 0U}, {bCore, 50U}, {bLowErr, 10U}, {bHole1, 10U}, {bHole2, 10U}, {bHole3, 10U},
+    };
+    tb::NextBoxGenConfig cfg{};
+    cfg.priorityMode = tb::BoardPriorityMode::HoleBoost;
+    cfg.holeBoostScale = 2.0;
+    cfg.protectedCore = 1;
+    cfg.minVisits = 1;
+    cfg.maxBoards = 4; // Keeps {0ULL, bCore, bHole2 (50), bHole3 (40)}; evicts bHole1 (30), bLowErr
+    cfg.numThreads = 2;
+    tb::StateGenResult res{};
+    tb::detail::mergeFilterAndCapBoardsPrioritized(
+        raw, {}, nullptr, cfg, nullptr, [](uint64_t) noexcept { return 0.0; }, res);
+    REQUIRE(res.sortedBoards.size() == 4);
+    CHECK(res.sortedBoards.front() == 0ULL);
+    CHECK(std::binary_search(res.sortedBoards.begin(), res.sortedBoards.end(), bCore));
+    CHECK(std::binary_search(res.sortedBoards.begin(), res.sortedBoards.end(), bHole2));
+    CHECK(std::binary_search(res.sortedBoards.begin(), res.sortedBoards.end(), bHole3));
+    CHECK_FALSE(std::binary_search(res.sortedBoards.begin(), res.sortedBoards.end(), bHole1));
+    CHECK_FALSE(std::binary_search(res.sortedBoards.begin(), res.sortedBoards.end(), bLowErr));
+  }
+
+  // 3. Protected-core >= maxBoards, priorBoards > maxBoards (with duplicates), sibling rescue,
+  //    and 0ULL absent from inputs.
+  {
+    std::vector<std::pair<uint64_t, uint32_t>> raw = {
+        {0ULL, 0U},
+        {bCore, 50U},
+        {bLowErr, 10U},
+        {bHighErr, 6U},
+    };
+    const std::vector<uint64_t> prior = {bLowErr, bHole1, bHole1, bCore}; // 3 unique priors
+    const std::vector<uint64_t> sibs = {bFrontier};
+    tb::NextBoxGenConfig cfg{};
+    cfg.priorityMode = tb::BoardPriorityMode::NnError;
+    cfg.protectedCore = 10;
+    cfg.minVisits = 5;
+    cfg.maxBoards = 3; // Keeps {0ULL, bCore(50), bLowErr(10)} from prior; evicts bHole1(0) & sib
+    cfg.numThreads = 2;
+    int evalCalls = 0;
+    tb::StateGenResult res{};
+    tb::detail::mergeFilterAndCapBoardsPrioritized(
+        raw, sibs, &prior, cfg, &iPrio,
+        [&](uint64_t) noexcept {
+          ++evalCalls;
+          return 10.0;
+        },
+        res);
+    REQUIRE(res.sortedBoards.size() == 3);
+    CHECK(res.sortedBoards.front() == 0ULL);
+    CHECK(std::binary_search(res.sortedBoards.begin(), res.sortedBoards.end(), bCore));
+    CHECK(std::binary_search(res.sortedBoards.begin(), res.sortedBoards.end(), bLowErr));
+    CHECK(res.priorBoardsMerged == 2);
+    CHECK(res.siblingBoardsAdded == 0);
+    CHECK(evalCalls == 0); // Scoring skipped cleanly when 0 prioritized slots remain!
+    uint64_t hSum = 0;
+    for (uint64_t c : res.boardHoleDistribution)
+      hSum += c;
+    CHECK(hSum == res.sortedBoards.size());
+  }
+  {
+    // 0ULL absent + sibling rescue counted when retained.
+    std::vector<std::pair<uint64_t, uint32_t>> raw = {{bCore, 50U}, {bLowErr, 10U}};
+    const std::vector<uint64_t> sibs = {bHole2}; // rescued with effectiveVisits=minVisits=5
+    tb::NextBoxGenConfig cfg{};
+    cfg.priorityMode = tb::BoardPriorityMode::HoleBoost;
+    cfg.holeBoostScale = 2.0; // bHole2 score = 5 * 5 = 25 > bLowErr 10 * 1 = 10
+    cfg.protectedCore = 1;
+    cfg.minVisits = 5;
+    cfg.maxBoards = 2;
+    cfg.numThreads = 1;
+    tb::StateGenResult res{};
+    tb::detail::mergeFilterAndCapBoardsPrioritized(
+        raw, sibs, nullptr, cfg, nullptr, [](uint64_t) noexcept { return 0.0; }, res);
+    REQUIRE(res.sortedBoards.size() == 2);
+    CHECK(std::binary_search(res.sortedBoards.begin(), res.sortedBoards.end(), bCore));
+    CHECK(std::binary_search(res.sortedBoards.begin(), res.sortedBoards.end(), bHole2));
+    CHECK(res.siblingBoardsAdded == 1);
+  }
+
+  // 4. Adversarial NaN / +-inf / negative sanitization with protectedCore=0 so evalNnExpected
+  //    and nth_element scoring ACTUALLY execute, plus NnError with fastTb == nullptr.
+  {
+    std::vector<std::pair<uint64_t, uint32_t>> raw = {
+        {0ULL, 1U}, {bCore, 10U}, {bLowErr, 8U}, {bHighErr, 6U}, {bFrontier, 5U},
+    };
+    tb::NextBoxGenConfig cfg{};
+    cfg.priorityMode = tb::BoardPriorityMode::NnError;
+    cfg.nnErrorWeight = std::numeric_limits<double>::quiet_NaN();
+    cfg.priorityErrCap = -5.0;
+    cfg.frontierBoost = std::numeric_limits<double>::infinity(); // sanitized to 0.0
+    cfg.protectedCore = 0;
+    cfg.minVisits = 1;
+    cfg.maxBoards = 3;
+    cfg.numThreads = 2;
+    int evalCalls = 0;
+    tb::StateGenResult res{};
+    tb::detail::mergeFilterAndCapBoardsPrioritized(
+        raw, {}, nullptr, cfg, &iPrio,
+        [&](uint64_t b) noexcept {
+          ++evalCalls;
+          return (b == bCore) ? std::numeric_limits<double>::quiet_NaN()
+                              : std::numeric_limits<double>::infinity();
+        },
+        res);
+    CHECK(evalCalls == 3); // bCore, bLowErr, bHighErr all hit TB and called evalNnExpected!
+    REQUIRE(res.sortedBoards.size() == 3);
+    CHECK(res.sortedBoards.front() == 0ULL);
+    // All multipliers sanitized to 0 -> pure visits fallback keeps {0ULL, bCore(10), bLowErr(8)}.
+    CHECK(std::binary_search(res.sortedBoards.begin(), res.sortedBoards.end(), bCore));
+    CHECK(std::binary_search(res.sortedBoards.begin(), res.sortedBoards.end(), bLowErr));
+  }
+  {
+    std::vector<std::pair<uint64_t, uint32_t>> raw = {
+        {0ULL, 1U},
+        {bCore, 10U},
+        {bLowErr, 8U},
+        {bHighErr, 6U},
+    };
+    tb::NextBoxGenConfig cfg{};
+    cfg.priorityMode = tb::BoardPriorityMode::NnError;
+    cfg.frontierBoost = 2.0;
+    cfg.protectedCore = 0;
+    cfg.minVisits = 1;
+    cfg.maxBoards = 2;
+    cfg.numThreads = 1;
+    int evalCalls = 0;
+    tb::StateGenResult res{};
+    tb::detail::mergeFilterAndCapBoardsPrioritized(
+        raw, {}, nullptr, cfg, nullptr,
+        [&](uint64_t) noexcept {
+          ++evalCalls;
+          return 0.0;
+        },
+        res);
+    CHECK(evalCalls == 0); // fastTb == nullptr -> frontier branch only
+    REQUIRE(res.sortedBoards.size() == 2);
+    CHECK(res.sortedBoards.front() == 0ULL);
+    CHECK(std::binary_search(res.sortedBoards.begin(), res.sortedBoards.end(), bCore));
+  }
+
+  // 5. True multi-chunk (> 16,384 unique boards, 5 chunks across 4 threads) 1T == 4T determinism
+  //    with 500 boards inside the TB so parallel NnError hits BOTH TB-hit (evalNnExpected) and
+  //    frontier-miss paths concurrently.
+  {
+    std::vector<std::pair<uint64_t, uint32_t>> bigRaw;
+    bigRaw.reserve(20001);
+    bigRaw.push_back({0ULL, 100U});
+    for (uint64_t i = 1; i <= 20000; ++i) {
+      const uint64_t b =
+          ((i & 0x3FFULL) << 20) | (((i >> 10) & 0x3FFULL) << 10) | ((i * 7ULL) & 0x3FFULL);
+      bigRaw.push_back({b, static_cast<uint32_t>(1U + (i % 19U))});
+    }
+    std::sort(bigRaw.begin(), bigRaw.end(),
+              [](const auto &a, const auto &b) { return a.first < b.first; });
+    bigRaw.erase(std::unique(bigRaw.begin(), bigRaw.end(),
+                             [](const auto &a, const auto &b) { return a.first == b.first; }),
+                 bigRaw.end());
+    REQUIRE(bigRaw.size() == 20001);
+
+    std::vector<uint64_t> bigTbBoards;
+    bigTbBoards.reserve(501);
+    bigTbBoards.push_back(0ULL);
+    for (size_t k = 1; k <= 500; ++k) {
+      bigTbBoards.push_back(bigRaw[k * 37].first);
+    }
+    std::sort(bigTbBoards.begin(), bigTbBoards.end());
+    std::vector<float> bigTbVals(bigTbBoards.size() * tb::NUM_PIECES, 12.0f);
+    const std::string tmpBigTb = "build/test_prio_big.tb.bin";
+    REQUIRE(tb::writeNextBoxTablebaseFile(tmpBigTb, bigTbBoards, bigTbVals, tb::RngMode::Nes, 0.0));
+    tb::MappedNextBoxTablebase mBig;
+    REQUIRE(mBig.open(tmpBigTb));
+    tb::IndexedNextBoxTablebase iBig(mBig);
+
+    for (tb::BoardPriorityMode mode :
+         {tb::BoardPriorityMode::NnError, tb::BoardPriorityMode::HoleBoost}) {
+      tb::NextBoxGenConfig cfg{};
+      cfg.priorityMode = mode;
+      cfg.nnErrorWeight = 1.5;
+      cfg.holeBoostScale = 1.5;
+      cfg.protectedCore = 200;
+      cfg.minVisits = 1;
+      cfg.maxBoards = 4000;
+      auto raw1 = bigRaw;
+      auto raw4 = bigRaw;
+      tb::StateGenResult r1{};
+      tb::StateGenResult r4{};
+      std::atomic<int> nnCalls1{0};
+      std::atomic<int> nnCalls4{0};
+      cfg.numThreads = 1;
+      tb::detail::mergeFilterAndCapBoardsPrioritized(
+          raw1, {}, nullptr, cfg, &iBig,
+          [&](uint64_t b) noexcept {
+            nnCalls1.fetch_add(1, std::memory_order_relaxed);
+            return static_cast<double>(b % 17ULL);
+          },
+          r1);
+      cfg.numThreads = 4;
+      tb::detail::mergeFilterAndCapBoardsPrioritized(
+          raw4, {}, nullptr, cfg, &iBig,
+          [&](uint64_t b) noexcept {
+            nnCalls4.fetch_add(1, std::memory_order_relaxed);
+            return static_cast<double>(b % 17ULL);
+          },
+          r4);
+      CHECK(r1.sortedBoards.size() == 4000);
+      CHECK(r1.sortedBoards == r4.sortedBoards);
+      CHECK(r1.sortedBoards.front() == 0ULL);
+      if (mode == tb::BoardPriorityMode::NnError) {
+        CHECK(nnCalls1.load() > 400);
+        CHECK(nnCalls1.load() == nnCalls4.load());
+      }
+    }
+    mBig.close();
+    std::remove(tmpBigTb.c_str());
+  }
+
+  // 6. End-to-end 1T == 4T determinism & <= maxBoards enforcement for Visits, NnError, HoleBoost.
+  tb::TinyNextBoxNet prioNet;
+  REQUIRE(prioNet.initRandom(12, 8, tb::RngMode::Nes, 13579ULL, 8.0f));
+  auto evalNnExp = [&](uint64_t b) noexcept {
+    float row[tb::NUM_PIECES];
+    prioNet.evalAll(b, row);
+    return tb::expectedValueFromRow(row, tb::RngMode::Nes);
+  };
+  for (tb::BoardPriorityMode mode : {tb::BoardPriorityMode::Visits, tb::BoardPriorityMode::NnError,
+                                     tb::BoardPriorityMode::HoleBoost}) {
+    tb::NextBoxGenConfig gCfg{};
+    gCfg.rngMode = tb::RngMode::Nes;
+    gCfg.numGames = 40;
+    gCfg.baseSeed = 81818ULL;
+    gCfg.epsilon = 0.08;
+    gCfg.minVisits = 1;
+    gCfg.maxBoards = 150;
+    gCfg.siblingMinVisits = 3;
+    gCfg.priorityMode = mode;
+    gCfg.nnErrorWeight = 1.5;
+    gCfg.holeBoostScale = 1.5;
+    gCfg.protectedCore = 30;
+    gCfg.numThreads = 1;
+    const auto r1 = tb::generateNextBoxStateSpaceWithPolicy(
+        gCfg, &mPrio, nullptr,
+        [&](uint64_t b, int c, int n, tb::Rng &rng, const tb::IndexedNextBoxTablebase *ft) {
+          return tb::selectNextBoxRolloutTransition(b, c, n, rng, ft, gCfg.epsilon,
+                                                    gCfg.exploreTopK, gCfg.weights);
+        },
+        evalNnExp);
+    gCfg.numThreads = 4;
+    const auto r4 = tb::generateNextBoxStateSpaceWithPolicy(
+        gCfg, &mPrio, nullptr,
+        [&](uint64_t b, int c, int n, tb::Rng &rng, const tb::IndexedNextBoxTablebase *ft) {
+          return tb::selectNextBoxRolloutTransition(b, c, n, rng, ft, gCfg.epsilon,
+                                                    gCfg.exploreTopK, gCfg.weights);
+        },
+        evalNnExp);
+    CHECK(r1.sortedBoards == r4.sortedBoards);
+    CHECK(r1.sortedBoards.size() <= gCfg.maxBoards);
+    REQUIRE_FALSE(r1.sortedBoards.empty());
+    CHECK(r1.sortedBoards.front() == 0ULL);
+    CHECK(std::is_sorted(r1.sortedBoards.begin(), r1.sortedBoards.end()));
+    CHECK(std::adjacent_find(r1.sortedBoards.begin(), r1.sortedBoards.end())
+          == r1.sortedBoards.end());
+  }
+
+  mPrio.close();
+  std::remove(tmpPrioTb.c_str());
+}

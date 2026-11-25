@@ -9,15 +9,57 @@
 #include "vi_solver.hpp"
 
 #include <algorithm>
+#include <array>
+#include <atomic>
 #include <cassert>
 #include <chrono>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <string_view>
 #include <utility>
 #include <vector>
 
 namespace tb {
+
+enum class BoardPriorityMode {
+  Visits,
+  NnError,
+  HoleBoost,
+};
+
+inline constexpr double DEFAULT_PRIORITY_ERR_CAP = 10.0;
+inline constexpr std::array<double, NUM_HOLE_BUCKETS> HOLE_BOOST_WEIGHTS = {0.0, 1.0, 2.0, 1.5};
+static_assert(NUM_HOLE_BUCKETS == 4, "HOLE_BOOST_WEIGHTS expects 4 hole buckets (0, 1, 2, 3+)");
+
+constexpr bool parseBoardPriorityMode(std::string_view s, BoardPriorityMode &out) noexcept {
+  if (s == "visits") {
+    out = BoardPriorityMode::Visits;
+    return true;
+  }
+  if (s == "nn-error") {
+    out = BoardPriorityMode::NnError;
+    return true;
+  }
+  if (s == "hole-boost") {
+    out = BoardPriorityMode::HoleBoost;
+    return true;
+  }
+  return false;
+}
+
+constexpr const char *boardPriorityModeName(BoardPriorityMode mode) noexcept {
+  switch (mode) {
+  case BoardPriorityMode::Visits:
+    return "visits";
+  case BoardPriorityMode::NnError:
+    return "nn-error";
+  case BoardPriorityMode::HoleBoost:
+    return "hole-boost";
+  }
+  return "visits";
+}
 
 struct NextBoxGenConfig {
   RngMode rngMode = RngMode::Nes;
@@ -29,6 +71,12 @@ struct NextBoxGenConfig {
   uint32_t minVisits = 2;        // Prune rare one-off tail states below this visit count
   size_t maxBoards = 20000000;   // Maximum output state-set size (0 = unlimited)
   uint32_t siblingMinVisits = 5; // Expand greedy replies on >= M-visit core boards (0 = off)
+  BoardPriorityMode priorityMode = BoardPriorityMode::Visits;
+  double nnErrorWeight = 1.0;                       // Error weight (1/lines) in nn-error mode
+  double priorityErrCap = DEFAULT_PRIORITY_ERR_CAP; // Max |E[V_tb] - E[V_nn]| counted in nn-error
+  double frontierBoost = 2.0;    // Multiplier bonus for out-of-TB frontier boards
+  double holeBoostScale = 1.0;   // Dimensionless hole-bucket boost scale
+  size_t protectedCore = 500000; // Top-K most-visited boards always kept in prioritized modes
   int numThreads = 1;
   int progressInterval = 25000;
   bool verbose = false;
@@ -117,6 +165,189 @@ expandNextBoxCoreSiblings(const std::vector<std::pair<uint64_t, uint32_t>> &rawE
       });
 }
 
+struct PrioritizedBoard {
+  static constexpr uint8_t TIER_EMPTY = 0;
+  static constexpr uint8_t TIER_PRIOR = 1;
+  static constexpr uint8_t TIER_CORE = 2;
+  static constexpr uint8_t TIER_SCORED = 3;
+
+  uint64_t board;
+  double score;
+  uint32_t visits;
+  uint8_t tier;
+  bool siblingOnly;
+};
+static_assert(sizeof(PrioritizedBoard) == 24, "PrioritizedBoard must stay tightly packed at 24B");
+
+// Promotes up to coreBudget of the highest-visit unprotected boards into TIER_CORE, returning how
+// many boards were promoted. Uses (visits desc, board asc) for thread-independent determinism.
+inline size_t markProtectedCore(std::vector<PrioritizedBoard> &items, size_t coreBudget) {
+  if (coreBudget == 0) {
+    return 0;
+  }
+  assert(items.size() <= static_cast<size_t>(UINT32_MAX));
+  std::vector<uint32_t> eligible;
+  eligible.reserve(items.size());
+  for (size_t i = 0; i < items.size(); ++i) {
+    if (items[i].tier == PrioritizedBoard::TIER_SCORED) {
+      eligible.push_back(static_cast<uint32_t>(i));
+    }
+  }
+  const size_t kCore = std::min(coreBudget, eligible.size());
+  if (kCore == 0) {
+    return 0;
+  }
+  auto byVisitsDesc = [&](uint32_t a, uint32_t b) noexcept {
+    if (items[a].visits != items[b].visits) {
+      return items[a].visits > items[b].visits;
+    }
+    return items[a].board < items[b].board;
+  };
+  if (kCore < eligible.size()) {
+    std::nth_element(eligible.begin(), eligible.begin() + static_cast<std::ptrdiff_t>(kCore),
+                     eligible.end(), byVisitsDesc);
+  }
+  for (size_t i = 0; i < kCore; ++i) {
+    items[eligible[i]].tier = PrioritizedBoard::TIER_CORE;
+  }
+  return kCore;
+}
+
+template <typename EvalNnExpectedFn>
+inline double scorePrioritizedBoard(const PrioritizedBoard &pb, const NextBoxGenConfig &cfg,
+                                    const IndexedNextBoxTablebase *fastTb, bool tbActive,
+                                    double errWeight, double errCap, double fBoost,
+                                    double holeScale, EvalNnExpectedFn &&evalNnExpected) {
+  const double vCount = static_cast<double>(std::max<uint32_t>(1U, pb.visits));
+  if (cfg.priorityMode == BoardPriorityMode::NnError) {
+    float tbRow[NUM_PIECES];
+    if (tbActive && fastTb->lookup(pb.board, tbRow)) {
+      const double tbExp = expectedValueFromRow(tbRow, cfg.rngMode);
+      const double nnExp = evalNnExpected(pb.board);
+      const double err = (std::isfinite(tbExp) && std::isfinite(nnExp))
+                             ? std::min(errCap, std::abs(tbExp - nnExp))
+                             : 0.0;
+      return vCount * (1.0 + errWeight * err);
+    }
+    return vCount * (1.0 + fBoost);
+  }
+  // HoleBoost: emphasize salvageable 1-2 hole tactical recovery boards over easy 0-hole boards
+  // that the neural fallback already evaluates accurately.
+  const int hb = HoleStratifiedCounts::bucket(countHoles(pb.board));
+  return vCount * (1.0 + holeScale * HOLE_BOOST_WEIGHTS[static_cast<size_t>(hb)]);
+}
+
+// Deterministic prioritized merge, filter, and cap under maxBoards (consumes rawEntries in-place):
+//   - PriorityMode::Visits delegates directly to mergeFilterAndCapBoards (bit-for-bit identical).
+//   - PriorityMode::NnError and PriorityMode::HoleBoost preserve:
+//       Tier 0: Empty board 0ULL,
+//       Tier 1: Protected priorBoards (when merged),
+//       Tier 2: Top protectedCore most-visited remaining boards (by visits desc, board asc),
+//       Tier 3: Remaining slots by priorityScore desc, visits desc, board asc.
+//   - Produces bit-for-bit identical sortedBoards across thread counts.
+template <typename EvalNnExpectedFn>
+inline void mergeFilterAndCapBoardsPrioritized(
+    std::vector<std::pair<uint64_t, uint32_t>> &rawEntries,
+    const std::vector<uint64_t> &siblingCandidates, const std::vector<uint64_t> *priorBoards,
+    const NextBoxGenConfig &cfg, const IndexedNextBoxTablebase *fastTb,
+    EvalNnExpectedFn &&evalNnExpected, StateGenResult &result) {
+  if (cfg.priorityMode == BoardPriorityMode::Visits) {
+    mergeFilterAndCapBoards(rawEntries, siblingCandidates, priorBoards, cfg.minVisits,
+                            cfg.maxBoards, result);
+    return;
+  }
+
+  std::vector<MergedBoardCandidate> merged =
+      collectMergedBoardCandidates(rawEntries, siblingCandidates, priorBoards, cfg.minVisits);
+
+  // If no capping is needed, finalize directly from compact 16B MergedBoardCandidate records.
+  if (cfg.maxBoards == 0 || merged.size() <= cfg.maxBoards) {
+    finalizeMergedBoards(
+        merged, /*needsResort=*/false,
+        [](const MergedBoardCandidate &e) noexcept { return e.protectedPrior; }, result);
+    return;
+  }
+
+  std::vector<PrioritizedBoard> items;
+  items.reserve(merged.size());
+  size_t fixedProtected = 0;
+  for (const auto &c : merged) {
+    uint8_t tier = PrioritizedBoard::TIER_SCORED;
+    if (c.board == 0ULL) {
+      tier = PrioritizedBoard::TIER_EMPTY;
+      ++fixedProtected;
+    } else if (c.protectedPrior) {
+      tier = PrioritizedBoard::TIER_PRIOR;
+      ++fixedProtected;
+    }
+    items.push_back({c.board, 0.0, c.visits, tier, c.siblingOnly});
+  }
+  std::vector<MergedBoardCandidate>().swap(merged);
+
+  size_t kCore = 0;
+  if (fixedProtected < cfg.maxBoards && cfg.protectedCore > 0) {
+    const size_t coreBudget = std::min(cfg.protectedCore, cfg.maxBoards - fixedProtected);
+    kCore = markProtectedCore(items, coreBudget);
+  }
+
+  // Only score unprotected candidates when at least one prioritized slot remains after fixed &
+  // protected-core reservations.
+  if (fixedProtected + kCore < cfg.maxBoards) {
+    const double errWeight =
+        std::isfinite(cfg.nnErrorWeight) ? std::max(0.0, cfg.nnErrorWeight) : 0.0;
+    const double errCap = std::isfinite(cfg.priorityErrCap) ? std::max(0.0, cfg.priorityErrCap)
+                                                            : DEFAULT_PRIORITY_ERR_CAP;
+    const double fBoost = std::isfinite(cfg.frontierBoost) ? std::max(0.0, cfg.frontierBoost) : 0.0;
+    const double holeScale =
+        std::isfinite(cfg.holeBoostScale) ? std::max(0.0, cfg.holeBoostScale) : 0.0;
+    const bool tbActive = (fastTb != nullptr && fastTb->isLoaded());
+
+    const size_t total = items.size();
+    constexpr size_t SCORE_CHUNK = 4096;
+    const size_t numChunks = (total + SCORE_CHUNK - 1) / SCORE_CHUNK;
+    const int threads = static_cast<int>(std::min<size_t>(
+        static_cast<size_t>(std::max(1, cfg.numThreads)), std::max<size_t>(1, numChunks)));
+    std::atomic<size_t> nextIdx{0};
+    runWorkerPool(threads, total, /*minParallelWork=*/SCORE_CHUNK + 1, [&](int /*tid*/) {
+      while (true) {
+        const size_t s = nextIdx.fetch_add(SCORE_CHUNK, std::memory_order_relaxed);
+        if (s >= total) {
+          break;
+        }
+        const size_t e = std::min(total, s + SCORE_CHUNK);
+        for (size_t i = s; i < e; ++i) {
+          PrioritizedBoard &pb = items[i];
+          if (pb.tier != PrioritizedBoard::TIER_SCORED) {
+            continue;
+          }
+          pb.score = scorePrioritizedBoard(pb, cfg, fastTb, tbActive, errWeight, errCap, fBoost,
+                                           holeScale, evalNnExpected);
+        }
+      }
+    });
+  }
+
+  std::nth_element(items.begin(), items.begin() + static_cast<std::ptrdiff_t>(cfg.maxBoards),
+                   items.end(), [](const PrioritizedBoard &a, const PrioritizedBoard &b) noexcept {
+                     if (a.tier != b.tier) {
+                       return a.tier < b.tier;
+                     }
+                     if (a.tier == PrioritizedBoard::TIER_SCORED && a.score != b.score) {
+                       return a.score > b.score;
+                     }
+                     if (a.visits != b.visits) {
+                       return a.visits > b.visits;
+                     }
+                     return a.board < b.board;
+                   });
+  items.resize(cfg.maxBoards);
+
+  finalizeMergedBoards(
+      items, /*needsResort=*/true,
+      [](const PrioritizedBoard &e) noexcept { return e.tier == PrioritizedBoard::TIER_PRIOR; },
+      result);
+}
+
 } // namespace detail
 
 // Picks a Next-Box rollout move using caller-supplied greedy and exploration-score callbacks.
@@ -170,11 +401,12 @@ inline ChosenTransition selectNextBoxRolloutTransition(uint64_t board, int curPi
 // rolloutMoveFn(board, curPiece, nextPiece, rng, fastTb), merges optional priorBoards, applies
 // optional core sibling expansion, filters by minVisits and maxBoards, and returns strictly sorted
 // 40-bit boards. Produces identical sortedBoards across thread counts.
-template <typename RolloutMoveFn>
+template <typename RolloutMoveFn, typename EvalNnExpectedFn>
 inline StateGenResult generateNextBoxStateSpaceWithPolicy(const NextBoxGenConfig &cfg,
                                                           const MappedNextBoxTablebase *tb,
                                                           const std::vector<uint64_t> *priorBoards,
-                                                          RolloutMoveFn &&rolloutMoveFn) {
+                                                          RolloutMoveFn &&rolloutMoveFn,
+                                                          EvalNnExpectedFn &&evalNnExpected) {
   assert(cfg.numGames >= 0);
   const auto t0 = std::chrono::steady_clock::now();
 
@@ -212,12 +444,28 @@ inline StateGenResult generateNextBoxStateSpaceWithPolicy(const NextBoxGenConfig
 
   const std::vector<uint64_t> siblingCandidates =
       detail::expandNextBoxCoreSiblings(rawEntries, cfg, fastTb);
+  if (cfg.priorityMode != BoardPriorityMode::NnError) {
+    indexedTb.clear();
+    fastTb = nullptr;
+  }
+  detail::mergeFilterAndCapBoardsPrioritized(rawEntries, siblingCandidates, priorBoards, cfg,
+                                             fastTb, evalNnExpected, result);
   indexedTb.clear();
-  detail::mergeFilterAndCapBoards(rawEntries, siblingCandidates, priorBoards, cfg.minVisits,
-                                  cfg.maxBoards, result);
 
   result.elapsedSec = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
   return result;
+}
+
+template <typename RolloutMoveFn>
+inline StateGenResult generateNextBoxStateSpaceWithPolicy(const NextBoxGenConfig &cfg,
+                                                          const MappedNextBoxTablebase *tb,
+                                                          const std::vector<uint64_t> *priorBoards,
+                                                          RolloutMoveFn &&rolloutMoveFn) {
+  assert(cfg.priorityMode != BoardPriorityMode::NnError
+         && "NnError priority mode requires the 5-arg overload with an NN expectation callback");
+  return generateNextBoxStateSpaceWithPolicy(cfg, tb, priorBoards,
+                                             std::forward<RolloutMoveFn>(rolloutMoveFn),
+                                             [](uint64_t) noexcept { return 0.0; });
 }
 
 inline StateGenResult
@@ -235,12 +483,10 @@ generateNextBoxStateSpace(const NextBoxGenConfig &cfg, const MappedNextBoxTableb
 // Measures held-out greedy Next-Box rollout coverage against sortedBoards using a thread-safe
 // policy callback greedyMoveFn(board, curPiece, nextPiece, fastTb), stratified by hole count.
 template <typename GreedyMoveFn>
-inline CoverageReport
-measureNextBoxCoverageWithPolicy(const std::vector<uint64_t> &sortedBoards, int numGames,
-                                 uint64_t baseSeed, RngMode rngMode,
-                                 const MappedNextBoxTablebase *tb, int numThreads,
-                                 GreedyMoveFn &&greedyMoveFn,
-                                 int maxPiecesPerGame = DEFAULT_MAX_PIECES_PER_GAME) {
+inline CoverageReport measureNextBoxCoverageWithPolicy(
+    const std::vector<uint64_t> &sortedBoards, int numGames, uint64_t baseSeed, RngMode rngMode,
+    const MappedNextBoxTablebase *tb, int numThreads, GreedyMoveFn &&greedyMoveFn,
+    int maxPiecesPerGame = DEFAULT_MAX_PIECES_PER_GAME) {
   IndexedNextBoxTablebase indexedTb;
   const IndexedNextBoxTablebase *fastTb = nullptr;
   if (tb != nullptr && tb->isLoaded()) {

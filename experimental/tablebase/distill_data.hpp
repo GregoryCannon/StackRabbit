@@ -71,14 +71,6 @@ struct RankingEvalMetrics {
   std::array<uint64_t, NUM_HOLE_BUCKETS> countByHoles{};
 };
 
-inline double expectedValueFromRow(const float row[NUM_PIECES], RngMode mode) noexcept {
-  double ev = 0.0;
-  for (int c = 0; c < NUM_PIECES; ++c) {
-    ev += openingPieceProb(mode, c) * static_cast<double>(row[c]);
-  }
-  return ev;
-}
-
 // Fast early-exit check equivalent to !generateTransitions(board, pieceIdx, tmp).empty().
 // Checks straight drops first (returning immediately on the first ceiling-fitting lock), and
 // falls back to full generateTransitions only on the rare tuck-only / top-out boards.

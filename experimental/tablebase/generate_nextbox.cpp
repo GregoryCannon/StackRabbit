@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
+#include <filesystem>
 #include <limits>
 #include <set>
 #include <string>
@@ -30,6 +31,9 @@ struct CliOptions {
   std::string nnPath;
   double outMargin = 2.0;
   bool outMarginSet = false;
+  bool nnErrorWeightSet = false;
+  bool holeBoostScaleSet = false;
+  bool protectedCoreSet = false;
   std::string mergePath;
   tb::NextBoxGenConfig cfg{};
   int coverageGames = 5000;
@@ -47,11 +51,21 @@ void printUsage(const char *prog, FILE *out) {
   std::fprintf(out, "  --max-boards=M         Max boards cap, 0=unlimited (default: 20000000)\n");
   std::fprintf(out,
                "  --sibling-min=S        Core sibling expansion threshold, 0=off (default: 5)\n");
+  std::fprintf(out, "  --priority-mode=M      Eviction priority under --max-boards: visits | "
+                    "nn-error | hole-boost (default: visits)\n");
+  std::fprintf(out, "  --nn-error-weight=F    Error weight (1/lines) for nn-error in [0,100] "
+                    "(default: 1.0)\n");
+  std::fprintf(out, "  --hole-boost-scale=F   Hole-bucket scale for hole-boost in [0,100] "
+                    "(default: 1.0)\n");
+  std::fprintf(out, "  --protected-core=K     Top-K visited boards always kept in prioritized "
+                    "modes, 0=off (default: 500000)\n");
   std::fprintf(out, "  --tb=PATH              Optional SRTBV002 Next-Box *.tb.bin policy\n");
   std::fprintf(out, "  --nn=PATH              Optional SRNNV001 TinyNextBoxNet frontier probe\n");
   std::fprintf(out, "  --out-margin=F|inf     Partial-OUT margin when both --tb= & --nn= are set "
                     "(default: 2.0)\n");
-  std::fprintf(out, "  --merge=PATH           Optional existing *.states.bin to merge\n");
+  std::fprintf(out,
+               "  --merge=PATH           Optional existing *.states.bin or SRTBV002 *.tb.bin to "
+               "merge\n");
   std::fprintf(out, "  --seed=N               Base RNG seed (default: 1000000)\n");
   std::fprintf(out, "  --coverage-games=N     Held-out greedy coverage games (default: 5000)\n");
   std::fprintf(out, "  --threads=T            Worker threads (default: hardware concurrency)\n");
@@ -132,6 +146,38 @@ bool parseArgs(int argc, char **argv, CliOptions &opts) {
           return false;
         }
         opts.cfg.siblingMinVisits = static_cast<uint32_t>(uVal);
+      } else if (flag == "--priority-mode") {
+        if (!tb::parseBoardPriorityMode(val, opts.cfg.priorityMode)) {
+          std::fprintf(stderr,
+                       "Invalid --priority-mode value '%s' (expected visits, nn-error, or "
+                       "hole-boost)\n",
+                       val.c_str());
+          return false;
+        }
+      } else if (flag == "--nn-error-weight") {
+        if (!tb::cli::parseStrictPositiveDouble(val, 0.0, 100.0, dVal)) {
+          std::fprintf(stderr, "Invalid --nn-error-weight value '%s' (expected 0..100)\n",
+                       val.c_str());
+          return false;
+        }
+        opts.cfg.nnErrorWeight = dVal;
+        opts.nnErrorWeightSet = true;
+      } else if (flag == "--hole-boost-scale") {
+        if (!tb::cli::parseStrictPositiveDouble(val, 0.0, 100.0, dVal)) {
+          std::fprintf(stderr, "Invalid --hole-boost-scale value '%s' (expected 0..100)\n",
+                       val.c_str());
+          return false;
+        }
+        opts.cfg.holeBoostScale = dVal;
+        opts.holeBoostScaleSet = true;
+      } else if (flag == "--protected-core") {
+        if (!tb::cli::parseStrictU64(val, 0, 500000000ULL, uVal)) {
+          std::fprintf(stderr, "Invalid --protected-core value '%s' (expected 0..500000000)\n",
+                       val.c_str());
+          return false;
+        }
+        opts.cfg.protectedCore = static_cast<size_t>(uVal);
+        opts.protectedCoreSet = true;
       } else if (flag == "--tb") {
         if (val.empty()) {
           std::fprintf(stderr, "Empty path for --tb=\n");
@@ -199,6 +245,49 @@ bool parseArgs(int argc, char **argv, CliOptions &opts) {
                  "--out-margin= requires both --tb=<path.tb.bin> and --nn=<model.nn.bin>.\n");
     return false;
   }
+  if (opts.cfg.priorityMode == tb::BoardPriorityMode::NnError
+      && (opts.nnPath.empty() || opts.tbPath.empty())) {
+    std::fprintf(stderr, "--priority-mode=nn-error requires both --tb=<path.tb.bin> and "
+                         "--nn=<model.nn.bin>.\n");
+    return false;
+  }
+  if (opts.nnErrorWeightSet && opts.cfg.priorityMode != tb::BoardPriorityMode::NnError) {
+    std::fprintf(stderr, "--nn-error-weight requires --priority-mode=nn-error.\n");
+    return false;
+  }
+  if (opts.holeBoostScaleSet && opts.cfg.priorityMode != tb::BoardPriorityMode::HoleBoost) {
+    std::fprintf(stderr, "--hole-boost-scale requires --priority-mode=hole-boost.\n");
+    return false;
+  }
+  if (opts.cfg.priorityMode == tb::BoardPriorityMode::Visits && opts.protectedCoreSet) {
+    std::fprintf(stderr, "--protected-core requires --priority-mode=nn-error or hole-boost.\n");
+    return false;
+  }
+  if (opts.cfg.priorityMode != tb::BoardPriorityMode::Visits && opts.cfg.maxBoards == 0) {
+    std::fprintf(stderr, "--priority-mode=%s requires a finite --max-boards > 0.\n",
+                 tb::boardPriorityModeName(opts.cfg.priorityMode));
+    return false;
+  }
+  if (opts.cfg.priorityMode != tb::BoardPriorityMode::Visits
+      && opts.cfg.protectedCore + 1 >= opts.cfg.maxBoards) {
+    std::fprintf(stderr,
+                 "--protected-core=%zu leaves 0 prioritized slots under --max-boards=%zu "
+                 "(accounting for empty board 0); lower --protected-core or raise --max-boards.\n",
+                 opts.cfg.protectedCore, opts.cfg.maxBoards);
+    return false;
+  }
+  if (!opts.tbPath.empty()) {
+    std::error_code ec;
+    const bool samePath = (opts.outPath == opts.tbPath)
+                          || (std::filesystem::exists(opts.outPath, ec)
+                              && std::filesystem::exists(opts.tbPath, ec)
+                              && std::filesystem::equivalent(opts.outPath, opts.tbPath, ec));
+    if (samePath) {
+      std::fprintf(stderr, "Error: output path '%s' cannot match actively mapped --tb path '%s'.\n",
+                   opts.outPath.c_str(), opts.tbPath.c_str());
+      return false;
+    }
+  }
   opts.cfg.progressInterval = std::max(1, opts.cfg.numGames / 8);
   return true;
 }
@@ -252,13 +341,14 @@ int main(int argc, char **argv) {
 
   std::vector<uint64_t> priorBoards;
   const std::vector<uint64_t> *priorPtr = nullptr;
+  size_t minNeeded = 1; // empty board 0ULL
   if (!opts.mergePath.empty()) {
-    if (!tb::readStatesFile(opts.mergePath, priorBoards, &err)) {
-      std::fprintf(stderr, "Error reading merge states '%s': %s\n", opts.mergePath.c_str(),
+    if (!tb::loadNextBoxInputBoards(opts.mergePath, priorBoards, &err)) {
+      std::fprintf(stderr, "Error reading merge boards '%s': %s\n", opts.mergePath.c_str(),
                    err.c_str());
       return 1;
     }
-    const size_t minNeeded =
+    minNeeded =
         priorBoards.size() + ((!priorBoards.empty() && priorBoards.front() == 0ULL) ? 0U : 1U);
     if (opts.cfg.maxBoards > 0 && minNeeded > opts.cfg.maxBoards) {
       std::fprintf(stderr,
@@ -267,15 +357,37 @@ int main(int argc, char **argv) {
                    minNeeded, opts.cfg.maxBoards);
       return 1;
     }
+    if (opts.cfg.priorityMode != tb::BoardPriorityMode::Visits
+        && minNeeded + opts.cfg.protectedCore >= opts.cfg.maxBoards) {
+      std::fprintf(stderr,
+                   "Error: --merge (%zu slots) + --protected-core=%zu leaves 0 prioritized slots "
+                   "under --max-boards=%zu; lower --protected-core or drop --merge.\n",
+                   minNeeded, opts.cfg.protectedCore, opts.cfg.maxBoards);
+      return 1;
+    }
     priorPtr = &priorBoards;
   }
 
   std::printf(
       "=== Next-Box State-Space Generator (rng=%s, %d games, %d threads, seed=%llu, eps=%.3f "
-      "topK=%d, minVisits=%u, maxBoards=%zu, siblingMin=%u) ===\n",
+      "topK=%d, minVisits=%u, maxBoards=%zu, siblingMin=%u, priority=%s) ===\n",
       tb::rngModeName(opts.cfg.rngMode), opts.cfg.numGames, opts.cfg.numThreads,
       static_cast<unsigned long long>(opts.cfg.baseSeed), opts.cfg.epsilon, opts.cfg.exploreTopK,
-      opts.cfg.minVisits, opts.cfg.maxBoards, opts.cfg.siblingMinVisits);
+      opts.cfg.minVisits, opts.cfg.maxBoards, opts.cfg.siblingMinVisits,
+      tb::boardPriorityModeName(opts.cfg.priorityMode));
+  if (opts.cfg.priorityMode == tb::BoardPriorityMode::NnError) {
+    const size_t availSlots = opts.cfg.maxBoards - minNeeded - opts.cfg.protectedCore;
+    std::printf(
+        "  Priority cfg  : mode=nn-error | errWeight=%.2f | errCap=%.1f | frontierBoost=%.1f | "
+        "protectedCore=%zu | prioritySlots=%zu\n",
+        opts.cfg.nnErrorWeight, opts.cfg.priorityErrCap, opts.cfg.frontierBoost,
+        opts.cfg.protectedCore, availSlots);
+  } else if (opts.cfg.priorityMode == tb::BoardPriorityMode::HoleBoost) {
+    const size_t availSlots = opts.cfg.maxBoards - minNeeded - opts.cfg.protectedCore;
+    std::printf("  Priority cfg  : mode=hole-boost | holeScale=%.2f | protectedCore=%zu | "
+                "prioritySlots=%zu\n",
+                opts.cfg.holeBoostScale, opts.cfg.protectedCore, availSlots);
+  }
   if (tbPtr && nnPtr) {
     std::printf("  Rollout policy: Next-Box TB (%zu boards) + TinyNextBoxNet (%s, margin=%.1f)\n",
                 static_cast<size_t>(mappedTb.size()), opts.nnPath.c_str(), opts.outMargin);
@@ -304,6 +416,15 @@ int main(int argc, char **argv) {
     return tb::chooseNextBoxNnMove2Ply(board, curPiece, nextPiece, *nnPtr, opts.cfg.rngMode);
   };
 
+  auto evalNnExpected = [&](uint64_t board) noexcept -> double {
+    if (nnPtr == nullptr) {
+      return 0.0;
+    }
+    float row[tb::NUM_PIECES];
+    nnPtr->evalAll(board, row);
+    return tb::expectedValueFromRow(row, opts.cfg.rngMode);
+  };
+
   const tb::StateGenResult gen =
       (nnPtr != nullptr)
           ? tb::generateNextBoxStateSpaceWithPolicy(
@@ -316,7 +437,8 @@ int main(int argc, char **argv) {
                         return tb::scoreNextBoxNn2Ply(t.afterBoard, t.linesCleared, nextPiece,
                                                       *nnPtr, opts.cfg.rngMode);
                       });
-                })
+                },
+                evalNnExpected)
           : tb::generateNextBoxStateSpace(opts.cfg, tbPtr, priorPtr);
   std::vector<uint64_t>().swap(priorBoards);
 
