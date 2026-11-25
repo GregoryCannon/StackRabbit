@@ -55,97 +55,6 @@ struct TrainOptions {
   bool showHelp = false;
 };
 
-// Persistent barrier-style worker pool avoiding per-mini-batch pthread creation overhead.
-class PersistentWorkerPool {
-public:
-  explicit PersistentWorkerPool(int numWorkers) : numWorkers_(std::max(1, numWorkers)) {
-    if (numWorkers_ <= 1) {
-      return;
-    }
-    threads_.reserve(static_cast<size_t>(numWorkers_ - 1));
-    for (int tid = 1; tid < numWorkers_; ++tid) {
-      threads_.emplace_back([this, tid]() { workerLoop(tid); });
-    }
-  }
-
-  ~PersistentWorkerPool() {
-    if (threads_.empty()) {
-      return;
-    }
-    {
-      std::lock_guard<std::mutex> lk(mu_);
-      stop_ = true;
-      ++generation_;
-    }
-    cvStart_.notify_all();
-    for (auto &t : threads_) {
-      t.join();
-    }
-  }
-
-  PersistentWorkerPool(const PersistentWorkerPool &) = delete;
-  PersistentWorkerPool &operator=(const PersistentWorkerPool &) = delete;
-
-  template <typename Fn> void run(int activeWorkers, Fn &&fn) {
-    const int n = std::clamp(activeWorkers, 1, numWorkers_);
-    if (n <= 1) {
-      fn(0);
-      return;
-    }
-    {
-      std::lock_guard<std::mutex> lk(mu_);
-      task_ = [&](int tid) { fn(tid); };
-      active_ = n;
-      remaining_ = n - 1;
-      ++generation_;
-    }
-    cvStart_.notify_all();
-    fn(0);
-    std::unique_lock<std::mutex> lk(mu_);
-    cvDone_.wait(lk, [&]() { return remaining_ == 0; });
-    task_ = nullptr;
-  }
-
-private:
-  void workerLoop(int tid) {
-    uint64_t seenGen = 0;
-    while (true) {
-      std::function<void(int)> localTask;
-      bool shouldRun = false;
-      {
-        std::unique_lock<std::mutex> lk(mu_);
-        cvStart_.wait(lk, [&]() { return generation_ != seenGen; });
-        seenGen = generation_;
-        if (stop_) {
-          return;
-        }
-        if (tid < active_) {
-          localTask = task_;
-          shouldRun = true;
-        }
-      }
-      if (shouldRun) {
-        localTask(tid);
-        std::lock_guard<std::mutex> lk(mu_);
-        if (--remaining_ == 0) {
-          cvDone_.notify_one();
-        }
-      }
-    }
-  }
-
-  int numWorkers_ = 1;
-  std::vector<std::thread> threads_;
-  std::mutex mu_;
-  std::condition_variable cvStart_;
-  std::condition_variable cvDone_;
-  std::function<void(int)> task_;
-  uint64_t generation_ = 0;
-  int active_ = 0;
-  int remaining_ = 0;
-  bool stop_ = false;
-};
-
 // Cache-line-aligned per-worker training/validation state preventing 128 B Apple Silicon false
 // sharing between threads.
 struct alignas(128) WorkerState {
@@ -172,7 +81,7 @@ struct alignas(128) ValWorkerResult {
 
 void evaluateValidationParallel(const tb::TinyNextBoxNet &net,
                                 const std::vector<tb::LabeledDecisionSample> &valDecisions,
-                                PersistentWorkerPool &pool, int workers,
+                                tb::PersistentWorkerPool &pool, int workers,
                                 tb::NnValueEvalMetrics &outValV, tb::RankingEvalMetrics &outValR) {
   outValV = tb::NnValueEvalMetrics{};
   outValR = tb::RankingEvalMetrics{};
@@ -613,7 +522,7 @@ int main(int argc, char **argv) {
   std::vector<double> gradAccum(nParams, 0.0);
 
   const int workers = std::max(1, opts.numThreads);
-  PersistentWorkerPool pool(workers);
+  tb::PersistentWorkerPool pool(workers);
   std::vector<WorkerState> workerStates(static_cast<size_t>(workers));
   for (auto &ws : workerStates) {
     ws.scratch.ensureCapacity(tb::MAX_TRANSITIONS, net.h1, net.h2);

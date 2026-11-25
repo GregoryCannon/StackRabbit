@@ -113,7 +113,8 @@ inline bool hasAnyLegalTransition(uint64_t board, int pieceIdx) noexcept {
 // training reflects true strong-play visitation while still covering 1..3+-hole recoveries.
 // Out-of-TB moves are excluded so ranking labels have zero V=0 boundary bias (except optional
 // exact terminal moves where nextPiece tops out when includeTerminalOutMoves is enabled).
-inline DistillDataset sampleDistillDataset(const IndexedNextBoxTablebase &tb,
+template <typename NextBoxTbType>
+inline DistillDataset sampleDistillDataset(const NextBoxTbType &tb,
                                            const DistillSampleConfig &cfg) {
   assert(tb.isLoaded());
   assert(cfg.numGames >= 0);

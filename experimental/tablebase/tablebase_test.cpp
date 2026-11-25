@@ -7,6 +7,7 @@
 #include "heuristic.hpp"
 #include "nextbox_gen.hpp"
 #include "nextbox_solver.hpp"
+#include "rl_finetune.hpp"
 #include "server_routes.hpp"
 #include "state_generator.hpp"
 #include "tablebase_io.hpp"
@@ -4498,4 +4499,292 @@ TEST_CASE("Soft-boundary & discounted MPI: 1T==4T and Ram==Disk determinism and 
     mDisc.close();
   }
   std::remove(tmpSoftTb.c_str());
+}
+
+TEST_CASE("Self-play RL fine-tuning: TD(lambda) returns, ExIt ply-2 top-out, 1T==4T rollout "
+          "determinism, gradient check, and loss descent") {
+  // 1. Exact TD(lambda) backward recurrence for lambda = 0.0, 0.5, 1.0, real top-out vs step-cap
+  //    truncation, and negative/NaN bootstrap clamping.
+  {
+    std::vector<tb::RlTrajectoryStep> steps(3);
+    steps[0].linesCleared = 1;
+    steps[0].bootstrapNextV = 10.0;
+    steps[1].linesCleared = 2;
+    steps[1].bootstrapNextV = 8.0;
+    steps[2].linesCleared = 3;
+    steps[2].bootstrapNextV = 99.0; // Ignored at terminal top-out
+
+    std::vector<double> g;
+    // lambda = 1.0 (unbiased MC suffix sums): [1+2+3=6, 2+3=5, 3]
+    tb::computeTdLambdaReturns(steps, 1.0, /*truncatedAtCap=*/false, 50.0, g);
+    REQUIRE(g.size() == 3);
+    CHECK(g[2] == doctest::Approx(3.0));
+    CHECK(g[1] == doctest::Approx(5.0));
+    CHECK(g[0] == doctest::Approx(6.0));
+
+    // lambda = 0.0 (1-step TD(0)): g[2] = 3.0 (real top-out), g[1] = 2 + 8 = 10, g[0] = 1 + 10 = 11
+    tb::computeTdLambdaReturns(steps, 0.0, /*truncatedAtCap=*/false, 50.0, g);
+    CHECK(g[2] == doctest::Approx(3.0));
+    CHECK(g[1] == doctest::Approx(10.0));
+    CHECK(g[0] == doctest::Approx(11.0));
+
+    // lambda = 0.5:
+    //   g[2] = 3.0
+    //   g[1] = 2 + 0.5 * 8 + 0.5 * 3 = 7.5
+    //   g[0] = 1 + 0.5 * 10 + 0.5 * 7.5 = 9.75
+    tb::computeTdLambdaReturns(steps, 0.5, /*truncatedAtCap=*/false, 50.0, g);
+    CHECK(g[2] == doctest::Approx(3.0));
+    CHECK(g[1] == doctest::Approx(7.5));
+    CHECK(g[0] == doctest::Approx(9.75));
+
+    // Step-cap truncation bootstraps terminal step at lambda = 0.0, 0.5, and 1.0.
+    tb::computeTdLambdaReturns(steps, 1.0, /*truncatedAtCap=*/true, 20.0, g);
+    CHECK(g[2] == doctest::Approx(23.0));
+    CHECK(g[1] == doctest::Approx(25.0));
+    CHECK(g[0] == doctest::Approx(26.0));
+    tb::computeTdLambdaReturns(steps, 0.0, /*truncatedAtCap=*/true, 20.0, g);
+    CHECK(g[2] == doctest::Approx(23.0));
+    CHECK(g[1] == doctest::Approx(10.0));
+    CHECK(g[0] == doctest::Approx(11.0));
+    tb::computeTdLambdaReturns(steps, 0.5, /*truncatedAtCap=*/true, 20.0, g);
+    CHECK(g[2] == doctest::Approx(23.0));
+    CHECK(g[1] == doctest::Approx(17.5));
+    CHECK(g[0] == doctest::Approx(14.75));
+
+    // Single-step trajectory & NaN lambda fallback to 1.0.
+    std::vector<tb::RlTrajectoryStep> oneStep(1);
+    oneStep[0].linesCleared = 4;
+    tb::computeTdLambdaReturns(oneStep, std::numeric_limits<double>::quiet_NaN(), false, 15.0, g);
+    REQUIRE(g.size() == 1);
+    CHECK(g[0] == doctest::Approx(4.0));
+
+    // Negative / NaN / +inf bootstrap values clamp cleanly to 0.0.
+    steps[0].bootstrapNextV = -5.0;
+    steps[1].bootstrapNextV = std::numeric_limits<double>::quiet_NaN();
+    tb::computeTdLambdaReturns(steps, 0.0, /*truncatedAtCap=*/true,
+                               std::numeric_limits<double>::infinity(), g);
+    CHECK(g[2] == doctest::Approx(3.0));
+    CHECK(g[1] == doctest::Approx(2.0));
+    CHECK(g[0] == doctest::Approx(1.0));
+
+    // Empty trajectory yields empty output.
+    std::vector<tb::RlTrajectoryStep> emptySteps;
+    tb::computeTdLambdaReturns(emptySteps, 0.9, false, 0.0, g);
+    CHECK(g.empty());
+  }
+
+  // 2. ExIt 2-ply top-out target check: placing I on a 9-wide near-full wall where ply-2 O tops out
+  //    must produce exact q2Ply == linesCleared + 0.0 (NOT +20.0 from constNet).
+  {
+    const tb::TinyNextBoxNet constNet = makeConstNextBoxNet(20.0f);
+    const uint64_t oneColGap = mustParse("XXXXXXXXX.\n"
+                                         "XXXXXXXXX.\n"
+                                         "XXXXXXXXX.\n"
+                                         "XXXXXXXXX.");
+    const int pO = tb::parsePieceChar('O');
+    tb::TransitionList tl2;
+    const double contO =
+        tb::detail::bestReplyNn2Ply(oneColGap, pO, constNet, tb::RngMode::Nes, tl2);
+    CHECK(contO == 0.0);
+    // Placing I vertically into oneColGap clears 4 lines -> 0ULL where O survives (+20.0).
+    const int pI = tb::parsePieceChar('I');
+    const double contI =
+        tb::detail::bestReplyNn2Ply(oneColGap, pI, constNet, tb::RngMode::Nes, tl2);
+    CHECK(contI == doctest::Approx(24.0));
+  }
+
+  // 3. Multi-threaded rollout determinism (1T == 4T) and Polyak EMA target update.
+  tb::TinyNextBoxNet rlNet;
+  REQUIRE(rlNet.initRandom(12, 8, tb::RngMode::Nes, 424242ULL, 6.0f));
+  tb::RlRolloutConfig rCfg{};
+  rCfg.rngMode = tb::RngMode::Nes;
+  rCfg.numGames = 16;
+  rCfg.baseSeed = 41000000ULL;
+  rCfg.epsilon = 0.08;
+  rCfg.lambda = 0.9;
+  rCfg.collectMoveTargets = true;
+  rCfg.maxDecisions = 5000;
+  rCfg.numThreads = 1;
+  tb::RlRolloutStats st1{};
+  const auto dec1 = tb::collectRlSelfPlayDecisions(rlNet, rCfg, &st1);
+  rCfg.numThreads = 4;
+  tb::RlRolloutStats st4{};
+  const auto dec4 = tb::collectRlSelfPlayDecisions(rlNet, rCfg, &st4);
+
+  REQUIRE(!dec1.empty());
+  CHECK(dec1.size() == dec4.size());
+  CHECK(st1.meanLines == st4.meanLines);
+  CHECK(st1.stdErrLines == st4.stdErrLines);
+  CHECK(st1.stepCapHits == st4.stepCapHits);
+  CHECK(st1.decisionsByHoles == st4.decisionsByHoles);
+  for (size_t i = 0; i < dec1.size(); ++i) {
+    CHECK(dec1[i].board == dec4[i].board);
+    CHECK(dec1[i].curPiece == dec4[i].curPiece);
+    CHECK(dec1[i].nextPiece == dec4[i].nextPiece);
+    CHECK(dec1[i].tdReturn == dec4[i].tdReturn);
+    REQUIRE(dec1[i].moves.size() == dec4[i].moves.size());
+    for (size_t m = 0; m < dec1[i].moves.size(); ++m) {
+      CHECK(dec1[i].moves[m].afterBoard == dec4[i].moves[m].afterBoard);
+      CHECK(dec1[i].moves[m].q2Ply == dec4[i].moves[m].q2Ply);
+    }
+  }
+
+  // Rollout truncation (maxDecisions cap), collectMoveTargets=false, maxStepsPerGame=1 cap-hit,
+  // Eval2PlyCache exactness vs uncached bestReplyNn2Ply, and invalid rollout config guards.
+  {
+    tb::RlRolloutConfig capCfg = rCfg;
+    capCfg.maxDecisions = 12;
+    tb::RlRolloutStats capSt{};
+    const auto capDec = tb::collectRlSelfPlayDecisions(rlNet, capCfg, &capSt);
+    CHECK(capDec.size() == 12);
+    CHECK(capSt.totalDecisionsCollected == 12);
+    const uint64_t holeSum = capSt.decisionsByHoles[0]
+                             + capSt.decisionsByHoles[1]
+                             + capSt.decisionsByHoles[2]
+                             + capSt.decisionsByHoles[3];
+    CHECK(holeSum == 12);
+
+    tb::RlRolloutConfig noMvCfg = capCfg;
+    noMvCfg.collectMoveTargets = false;
+    const auto noMvDec = tb::collectRlSelfPlayDecisions(rlNet, noMvCfg);
+    REQUIRE(noMvDec.size() == 12);
+    for (const auto &d : noMvDec) {
+      CHECK(d.moves.empty());
+    }
+
+    tb::RlRolloutConfig step1Cfg = capCfg;
+    step1Cfg.numGames = 4;
+    step1Cfg.maxStepsPerGame = 1;
+    tb::RlRolloutStats step1St{};
+    const auto step1Dec = tb::collectRlSelfPlayDecisions(rlNet, step1Cfg, &step1St);
+    CHECK(step1St.stepCapHits == 4);
+    CHECK(step1Dec.size() == 4);
+
+    // Eval2PlyCache must match uncached detail::bestReplyNn2Ply bit-for-bit.
+    tb::Eval2PlyCache cache;
+    cache.init();
+    tb::TransitionList tlA, tlB;
+    for (int p = 0; p < tb::NUM_PIECES; ++p) {
+      const double uncached = tb::detail::bestReplyNn2Ply(0ULL, p, rlNet, tb::RngMode::Nes, tlA);
+      const double cached1 = cache.bestReply(0ULL, p, rlNet, tb::RngMode::Nes, tlB);
+      const double cached2 = cache.bestReply(0ULL, p, rlNet, tb::RngMode::Nes, tlB);
+      CHECK(cached1 == uncached);
+      CHECK(cached2 == uncached);
+    }
+
+    tb::TinyNextBoxNet emptyNet;
+    CHECK(tb::collectRlSelfPlayDecisions(emptyNet, capCfg).empty());
+    tb::RlRolloutConfig badCfg = capCfg;
+    badCfg.numGames = 0;
+    CHECK(tb::collectRlSelfPlayDecisions(rlNet, badCfg).empty());
+  }
+
+  // Polyak EMA check + adversarial guards (tau <= 0, tau > 1, NaN, mismatched sizes) +
+  // PersistentWorkerPool varying activeWorkers test.
+  {
+    tb::TinyNextBoxNet tgt = makeConstNextBoxNet(10.0f);
+    const tb::TinyNextBoxNet onl = makeConstNextBoxNet(20.0f);
+    tb::updateTargetNetEma(tgt, onl, 0.25);
+    CHECK(tgt.params[tgt.offB3()] == doctest::Approx(12.5f));
+    // Invalid tau values must be no-ops (must NOT corrupt params with NaN!).
+    tb::updateTargetNetEma(tgt, onl, 0.0);
+    tb::updateTargetNetEma(tgt, onl, -0.5);
+    tb::updateTargetNetEma(tgt, onl, std::numeric_limits<double>::quiet_NaN());
+    CHECK(tgt.params[tgt.offB3()] == doctest::Approx(12.5f));
+    // Mismatched sizes must be a safe no-op even under -DNDEBUG.
+    tb::updateTargetNetEma(tgt, rlNet, 0.5);
+    CHECK(tgt.params[tgt.offB3()] == doctest::Approx(12.5f));
+    tb::updateTargetNetEma(tgt, onl, 1.5);
+    CHECK(tgt.params[tgt.offB3()] == doctest::Approx(20.0f));
+
+    tb::PersistentWorkerPool pool(4);
+    for (int active : {1, 2, 4, 3}) {
+      std::array<int, 4> hits{};
+      pool.run(active, [&](int tid) { hits[static_cast<size_t>(tid)] = tid + 1; });
+      for (int t = 0; t < 4; ++t) {
+        CHECK(hits[static_cast<size_t>(t)] == ((t < active) ? (t + 1) : 0));
+      }
+    }
+  }
+
+  // 4. Finite-difference gradient verification, invalid config guards, and gradient descent loss
+  //    reduction on RL slice.
+  {
+    const size_t nCheck = std::min<size_t>(dec1.size(), 8);
+    std::vector<size_t> idxs(nCheck);
+    std::iota(idxs.begin(), idxs.end(), 0);
+    tb::RlLossConfig lCfg{};
+    lCfg.huberDelta = 2.0;
+    lCfg.mcWeight = 1.0;
+    lCfg.exitChildWeight = 1.0;
+    lCfg.exitRankWeight = 3.0;
+    lCfg.temperature = 1.2;
+    lCfg.weightDecay = 1e-3;
+
+    tb::NnBatchScratch scratch;
+    std::vector<float> grad;
+
+    // Invalid config guards return zero loss and zero grad cleanly.
+    CHECK(tb::computeRlSliceLossAndGrad(rlNet, dec1, idxs, 2, 2, lCfg, grad, scratch).totalLoss
+          == 0.0);
+    CHECK(tb::computeRlSliceLossAndGrad(rlNet, dec1, idxs, 0, nCheck + 1, lCfg, grad, scratch)
+              .totalLoss
+          == 0.0);
+    tb::RlLossConfig badLossCfg = lCfg;
+    badLossCfg.huberDelta = 0.0;
+    CHECK(tb::computeRlSliceLossAndGrad(rlNet, dec1, idxs, 0, nCheck, badLossCfg, grad, scratch)
+              .totalLoss
+          == 0.0);
+    badLossCfg = lCfg;
+    badLossCfg.mcWeight = -1.0;
+    CHECK(tb::computeRlSliceLossAndGrad(rlNet, dec1, idxs, 0, nCheck, badLossCfg, grad, scratch)
+              .totalLoss
+          == 0.0);
+
+    // Non-finite q2Ply in a sample must not poison gradients with NaN.
+    std::vector<tb::RlDecisionSample> nanDec(1, dec1[0]);
+    nanDec[0].moves[0].q2Ply = std::numeric_limits<double>::quiet_NaN();
+    std::vector<size_t> oneIdx = {0};
+    tb::computeRlSliceLossAndGrad(rlNet, nanDec, oneIdx, 0, 1, lCfg, grad, scratch);
+    for (float g : grad) {
+      CHECK(std::isfinite(g));
+    }
+    const tb::RlLossBreakdown baseLoss =
+        tb::computeRlSliceLossAndGrad(rlNet, dec1, idxs, 0, nCheck, lCfg, grad, scratch);
+    CHECK(baseLoss.totalLoss > 0.0);
+
+    // Check 25 strided parameters against central finite differences.
+    const float eps = 1e-3f;
+    const size_t step = std::max<size_t>(1, rlNet.paramCount() / 25);
+    std::vector<float> tmpGrad;
+    for (size_t p = 0; p < rlNet.paramCount(); p += step) {
+      const float orig = rlNet.params[p];
+      rlNet.params[p] = orig + eps;
+      const double lp =
+          tb::computeRlSliceLossAndGrad(rlNet, dec1, idxs, 0, nCheck, lCfg, tmpGrad, scratch)
+              .totalLoss;
+      rlNet.params[p] = orig - eps;
+      const double lm =
+          tb::computeRlSliceLossAndGrad(rlNet, dec1, idxs, 0, nCheck, lCfg, tmpGrad, scratch)
+              .totalLoss;
+      rlNet.params[p] = orig;
+      const double numGrad = (lp - lm) / (2.0 * static_cast<double>(eps));
+      const double err = std::abs(static_cast<double>(grad[p]) - numGrad);
+      const double scale = std::max(1.0, std::abs(numGrad));
+      CHECK(err <= 5e-2 * scale);
+    }
+
+    // 40 SGD steps must strictly reduce the total RL loss.
+    tb::TinyNextBoxNet optNet = rlNet;
+    const double lossBefore = baseLoss.totalLoss;
+    for (int s = 0; s < 40; ++s) {
+      tb::computeRlSliceLossAndGrad(optNet, dec1, idxs, 0, nCheck, lCfg, grad, scratch);
+      for (size_t p = 0; p < optNet.paramCount(); ++p) {
+        optNet.params[p] -= 0.02f * grad[p];
+      }
+    }
+    const double lossAfter =
+        tb::computeRlSliceLossAndGrad(optNet, dec1, idxs, 0, nCheck, lCfg, grad, scratch).totalLoss;
+    CHECK(lossAfter < lossBefore * 0.9);
+  }
 }

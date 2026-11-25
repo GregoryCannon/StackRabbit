@@ -9,12 +9,16 @@
 #include <array>
 #include <cassert>
 #include <cmath>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <fstream>
+#include <functional>
 #include <limits>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace tb {
@@ -1198,6 +1202,221 @@ struct NnBatchScratch {
   }
 };
 
+// Persistent barrier-style worker pool avoiding per-mini-batch OS thread creation overhead.
+class PersistentWorkerPool {
+public:
+  explicit PersistentWorkerPool(int numWorkers) : numWorkers_(std::max(1, numWorkers)) {
+    if (numWorkers_ <= 1) {
+      return;
+    }
+    threads_.reserve(static_cast<size_t>(numWorkers_ - 1));
+    for (int tid = 1; tid < numWorkers_; ++tid) {
+      threads_.emplace_back([this, tid]() { workerLoop(tid); });
+    }
+  }
+
+  ~PersistentWorkerPool() {
+    if (threads_.empty()) {
+      return;
+    }
+    {
+      std::lock_guard<std::mutex> lk(mu_);
+      stop_ = true;
+      ++generation_;
+    }
+    cvStart_.notify_all();
+    for (auto &t : threads_) {
+      t.join();
+    }
+  }
+
+  PersistentWorkerPool(const PersistentWorkerPool &) = delete;
+  PersistentWorkerPool &operator=(const PersistentWorkerPool &) = delete;
+
+  template <typename Fn> void run(int activeWorkers, Fn &&fn) {
+    const int n = std::clamp(activeWorkers, 1, numWorkers_);
+    if (n <= 1) {
+      fn(0);
+      return;
+    }
+    {
+      std::lock_guard<std::mutex> lk(mu_);
+      task_ = [&](int tid) { fn(tid); };
+      active_ = n;
+      remaining_ = n - 1;
+      ++generation_;
+    }
+    cvStart_.notify_all();
+    try {
+      fn(0);
+    } catch (...) {
+      std::unique_lock<std::mutex> lk(mu_);
+      cvDone_.wait(lk, [&]() { return remaining_ == 0; });
+      task_ = nullptr;
+      throw;
+    }
+    std::unique_lock<std::mutex> lk(mu_);
+    cvDone_.wait(lk, [&]() { return remaining_ == 0; });
+    task_ = nullptr;
+  }
+
+private:
+  void workerLoop(int tid) {
+    uint64_t seenGen = 0;
+    while (true) {
+      std::function<void(int)> localTask;
+      bool shouldRun = false;
+      {
+        std::unique_lock<std::mutex> lk(mu_);
+        cvStart_.wait(lk, [&]() { return generation_ != seenGen; });
+        seenGen = generation_;
+        if (stop_) {
+          return;
+        }
+        if (tid < active_) {
+          localTask = task_;
+          shouldRun = true;
+        }
+      }
+      if (shouldRun) {
+        try {
+          localTask(tid);
+        } catch (...) {
+          std::lock_guard<std::mutex> lk(mu_);
+          if (--remaining_ == 0) {
+            cvDone_.notify_one();
+          }
+          continue;
+        }
+        std::lock_guard<std::mutex> lk(mu_);
+        if (--remaining_ == 0) {
+          cvDone_.notify_one();
+        }
+      }
+    }
+  }
+
+  int numWorkers_ = 1;
+  std::vector<std::thread> threads_;
+  std::mutex mu_;
+  std::condition_variable cvStart_;
+  std::condition_variable cvDone_;
+  std::function<void(int)> task_;
+  uint64_t generation_ = 0;
+  int active_ = 0;
+  int remaining_ = 0;
+  bool stop_ = false;
+};
+
+namespace detail {
+
+// Shared candidate-move Huber value + Boltzmann ranking CE loss and gradient accumulator used by
+// both supervised TB distillation and self-play RL Expert Iteration.
+template <typename MoveVec, typename GetTargetQFn>
+inline void accumulateCandidateMoveLossAndGrad(const TinyNextBoxNet &net, const MoveVec &moves,
+                                               int nxt, double invCount, double invTemp,
+                                               double delta, double childValWeight,
+                                               double rankWeight, NnBatchScratch &scratch,
+                                               std::vector<float> &outGrad, double &childValLossSum,
+                                               double &rankLossSum, GetTargetQFn &&getTargetQ) {
+  const size_t mCount = moves.size();
+  const bool doRank = (rankWeight > 0.0 && mCount >= 2);
+  const bool doChildVal = (childValWeight > 0.0 && mCount >= 1);
+  if (!(doRank || doChildVal) || nxt < 0 || nxt >= NUM_PIECES) {
+    return;
+  }
+  for (size_t m = 0; m < mCount; ++m) {
+    if (!std::isfinite(getTargetQ(moves[m]))) {
+      return;
+    }
+  }
+
+  const int h1 = net.h1;
+  const int h2 = net.h2;
+  scratch.ensureCapacity(mCount, h1, h2);
+
+  double maxQ = -std::numeric_limits<double>::infinity();
+  double maxScore = -std::numeric_limits<double>::infinity();
+  for (size_t m = 0; m < mCount; ++m) {
+    float *xf = &scratch.childFeats[m * static_cast<size_t>(NN_INPUT_DIM)];
+    float *a1 = &scratch.childA1[m * static_cast<size_t>(h1)];
+    float *a2 = &scratch.childA2[m * static_cast<size_t>(h2)];
+    extractNnFeatures(moves[m].afterBoard, xf);
+    net.forwardToH2(xf, a1, a2);
+    const float vPred = net.dotOutputRow(nxt, a2);
+    const double sc = static_cast<double>(moves[m].linesCleared) + static_cast<double>(vPred);
+    scratch.scores[m] = sc;
+    if (sc > maxScore) {
+      maxScore = sc;
+    }
+    const double tq = getTargetQ(moves[m]);
+    if (tq > maxQ) {
+      maxQ = tq;
+    }
+  }
+
+  double sumExpQ = 0.0;
+  double sumExpS = 0.0;
+  double logSumExpS = 0.0;
+  if (doRank) {
+    for (size_t m = 0; m < mCount; ++m) {
+      const double eq = std::exp((getTargetQ(moves[m]) - maxQ) * invTemp);
+      scratch.targetProbs[m] = eq;
+      sumExpQ += eq;
+      const double es = std::exp((scratch.scores[m] - maxScore) * invTemp);
+      scratch.predProbs[m] = es;
+      sumExpS += es;
+    }
+    logSumExpS = std::log(sumExpS);
+  }
+
+  const double rankScale = rankWeight * invCount * invTemp;
+  const double childValScale = (childValWeight * invCount) / static_cast<double>(mCount);
+  double sampleChildValLoss = 0.0;
+  for (size_t m = 0; m < mCount; ++m) {
+    double gradNxt = 0.0;
+    if (doRank) {
+      const double tProb = scratch.targetProbs[m] / sumExpQ;
+      const double pProb = scratch.predProbs[m] / sumExpS;
+      const double logP = (scratch.scores[m] - maxScore) * invTemp - logSumExpS;
+      rankLossSum -= tProb * logP;
+      gradNxt += rankScale * (pProb - tProb);
+    }
+    if (doChildVal) {
+      // scores[m] - targetQ == V_hat(b'_m, nxt) - V_target(b'_m, nxt) (linesCleared cancels).
+      const double err = scratch.scores[m] - getTargetQ(moves[m]);
+      double deriv = 0.0;
+      sampleChildValLoss += huberLossAndGrad(err, delta, deriv);
+      gradNxt += childValScale * deriv;
+    }
+    net.accumulateBackwardSingleOutput(&scratch.childFeats[m * static_cast<size_t>(NN_INPUT_DIM)],
+                                       &scratch.childA1[m * static_cast<size_t>(h1)],
+                                       &scratch.childA2[m * static_cast<size_t>(h2)], nxt,
+                                       static_cast<float>(gradNxt), outGrad.data());
+  }
+  if (doChildVal) {
+    childValLossSum += sampleChildValLoss / static_cast<double>(mCount);
+  }
+}
+
+inline double addL2WeightDecay(const TinyNextBoxNet &net, double weightDecay,
+                               std::vector<float> &outGrad) {
+  if (weightDecay <= 0.0) {
+    return 0.0;
+  }
+  double regSum = 0.0;
+  net.forEachWeightMatrix([&](size_t offset, size_t len) {
+    for (size_t i = 0; i < len; ++i) {
+      const double w = static_cast<double>(net.params[offset + i]);
+      regSum += w * w;
+      outGrad[offset + i] += static_cast<float>(weightDecay * w);
+    }
+  });
+  return 0.5 * weightDecay * regSum;
+}
+
+} // namespace detail
+
 // Computes exact joint multi-task loss & parameter gradients over indices[start..end):
 //   L = valueWeight      * mean_p Huber(V_hat(b, p) - V*(b, p))
 //     + childValueWeight * mean_m Huber(V_hat(b'_m, n) - V*(b'_m, n))
@@ -1232,8 +1451,6 @@ inline NnLossBreakdown computeNnSliceLossAndGrad(
   const double invCount = 1.0 / static_cast<double>(count);
   const double invTemp = 1.0 / cfg.temperature;
   const double delta = cfg.huberDelta;
-  const int h1 = net.h1;
-  const int h2 = net.h2;
 
   float xParent[NN_INPUT_DIM];
   float a1Parent[NN_MAX_HIDDEN_DIM];
@@ -1270,76 +1487,10 @@ inline NnLossBreakdown computeNnSliceLossAndGrad(
     }
 
     // 2. Candidate-child Huber value supervision + Boltzmann move-ranking CE on Q*(b, c, n, m).
-    const size_t mCount = d.moves.size();
-    const bool doRank = (cfg.rankWeight > 0.0 && mCount >= 2);
-    const bool doChildVal = (cfg.childValueWeight > 0.0 && mCount >= 1);
-    if ((doRank || doChildVal) && d.nextPiece >= 0 && d.nextPiece < NUM_PIECES) {
-      scratch.ensureCapacity(mCount, h1, h2);
-      const int nxt = d.nextPiece;
-
-      double maxQ = -std::numeric_limits<double>::infinity();
-      double maxScore = -std::numeric_limits<double>::infinity();
-      for (size_t m = 0; m < mCount; ++m) {
-        float *xf = &scratch.childFeats[m * static_cast<size_t>(NN_INPUT_DIM)];
-        float *a1 = &scratch.childA1[m * static_cast<size_t>(h1)];
-        float *a2 = &scratch.childA2[m * static_cast<size_t>(h2)];
-        extractNnFeatures(d.moves[m].afterBoard, xf);
-        net.forwardToH2(xf, a1, a2);
-        const float vPred = net.dotOutputRow(nxt, a2);
-        const double sc = static_cast<double>(d.moves[m].linesCleared) + static_cast<double>(vPred);
-        scratch.scores[m] = sc;
-        if (sc > maxScore) {
-          maxScore = sc;
-        }
-        if (d.moves[m].qStar > maxQ) {
-          maxQ = d.moves[m].qStar;
-        }
-      }
-
-      double sumExpQ = 0.0;
-      double sumExpS = 0.0;
-      double logSumExpS = 0.0;
-      if (doRank) {
-        for (size_t m = 0; m < mCount; ++m) {
-          const double eq = std::exp((d.moves[m].qStar - maxQ) * invTemp);
-          scratch.targetProbs[m] = eq;
-          sumExpQ += eq;
-          const double es = std::exp((scratch.scores[m] - maxScore) * invTemp);
-          scratch.predProbs[m] = es;
-          sumExpS += es;
-        }
-        logSumExpS = std::log(sumExpS);
-      }
-
-      const double rankScale = cfg.rankWeight * invCount * invTemp;
-      const double childValScale = (cfg.childValueWeight * invCount) / static_cast<double>(mCount);
-      double sampleChildValLoss = 0.0;
-      for (size_t m = 0; m < mCount; ++m) {
-        double gradNxt = 0.0;
-        if (doRank) {
-          const double tProb = scratch.targetProbs[m] / sumExpQ;
-          const double pProb = scratch.predProbs[m] / sumExpS;
-          const double logP = (scratch.scores[m] - maxScore) * invTemp - logSumExpS;
-          rankLossSum -= tProb * logP;
-          gradNxt += rankScale * (pProb - tProb);
-        }
-        if (doChildVal) {
-          // scores[m] - qStar == V_hat(b'_m, nxt) - V*(b'_m, nxt) (linesCleared cancels exactly).
-          const double err = scratch.scores[m] - d.moves[m].qStar;
-          double deriv = 0.0;
-          sampleChildValLoss += detail::huberLossAndGrad(err, delta, deriv);
-          gradNxt += childValScale * deriv;
-        }
-        net.accumulateBackwardSingleOutput(
-            &scratch.childFeats[m * static_cast<size_t>(NN_INPUT_DIM)],
-            &scratch.childA1[m * static_cast<size_t>(h1)],
-            &scratch.childA2[m * static_cast<size_t>(h2)], nxt, static_cast<float>(gradNxt),
-            outGrad.data());
-      }
-      if (doChildVal) {
-        childValLossSum += sampleChildValLoss / static_cast<double>(mCount);
-      }
-    }
+    detail::accumulateCandidateMoveLossAndGrad(
+        net, d.moves, d.nextPiece, invCount, invTemp, delta, cfg.childValueWeight, cfg.rankWeight,
+        scratch, outGrad, childValLossSum, rankLossSum,
+        [](const LabeledMoveCandidate &mv) noexcept { return mv.qStar; });
   }
 
   out.valueLoss = valLossSum * invCount;
@@ -1349,16 +1500,8 @@ inline NnLossBreakdown computeNnSliceLossAndGrad(
                   + cfg.childValueWeight * out.childValueLoss
                   + cfg.rankWeight * out.rankLoss;
 
-  if (includeWeightDecay && cfg.weightDecay > 0.0) {
-    double regSum = 0.0;
-    net.forEachWeightMatrix([&](size_t offset, size_t len) {
-      for (size_t i = 0; i < len; ++i) {
-        const double w = static_cast<double>(net.params[offset + i]);
-        regSum += w * w;
-        outGrad[offset + i] += static_cast<float>(cfg.weightDecay * w);
-      }
-    });
-    out.totalLoss += 0.5 * cfg.weightDecay * regSum;
+  if (includeWeightDecay) {
+    out.totalLoss += detail::addL2WeightDecay(net, cfg.weightDecay, outGrad);
   }
   return out;
 }

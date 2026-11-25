@@ -98,29 +98,26 @@ Fix the #1 structural weakness diagnosed in Discovery 4: interior value collapse
 
 ---
 
-### Phase S-3: Self-Play Reinforcement Learning & Expert-Iteration Fine-Tuning (`rl_finetune_nn.cpp`, `tiny_nn.hpp`)
+### Phase S-3: Self-Play Reinforcement Learning & Expert-Iteration Fine-Tuning (`rl_finetune.hpp`, `rl_finetune_nn.cpp`, `tiny_nn.hpp`)
 Test whether fine-tuning a small-TB-initialized NN directly on **unbiased 2-ply self-play rollouts** (zero `V = 0` TB boundary!) improves out-of-TB survival and recovers the remaining gap on messy digs.
 
-- [ ] **Design Hybrid Expert-Iteration + `TD(λ)` Self-Play Fine-Tuner (`experimental/tablebase/rl_finetune_nn.cpp`)**:
-  - Start from a self-distilled NN (strictly from `<= 2.5M` TB). Maintain a **lagged target network** `targetNet` (updated every iteration or via Polyak EMA `tau`) so value targets remain stationary during each gradient round.
-  - **Self-play rollout collector** (multi-threaded, deterministic per-game seeds `40,000,000+`, zero overlap with train/val/test):
-    - Play `N` full NES games to real top-out using **2-ply NN** (or `2.49M TB + calibrated NN partial-OUT`) with mild `ε`-exploration (`ε = 0.05`–`0.08`, 50% runner-up / 50% random top-4) to cover messy digs.
-    - For each game trajectory `(b_0, c_0, n_0, r_0), ..., (b_{T-1}, c_{T-1}, n_{T-1}, r_{T-1})`:
-      - Compute **exact `TD(λ)` return targets** $G_t^{(\lambda)}$ backward from terminal top-out ($V_T = 0$):
-        $$G_t^{(\lambda)} = r_t + (1 - \lambda)\,\hat{V}_{\text{target}}(b_{t+1}, n_t) + \lambda\,G_{t+1}^{(\lambda)}$$
-        (supports pure unbiased Monte Carlo at `λ = 1.0` and low-variance bootstrapped `TD(λ)` at `λ = 0.85–0.95`).
-      - Compute **2-ply Expert-Iteration move Q-targets** $Q_{\text{2ply}}(b_t, c_t, n_t, m) = r_m + \max_{m_2}(r_{m_2} + \mathbb{E}_{p_3|n_t}[\max(0, \hat{V}_{\text{target}}(b''_{m_2}, p_3))])$ for all legal moves `m` (with exact `0.0` for ply-2 top-outs!). This directly distills **2-ply tactical search** back into the 1-ply NN values and rankings on *every* state visited — including messy out-of-TB boards!
-  - **Anti-forgetting TB anchor**: Mix `20–30%` labeled decisions sampled from the `<= 2.5M` TB alongside `70–80%` self-play decisions in each iteration, using a low cosine learning rate (`1e-4 → 1e-5`) and AdamW so the NN never drifts off-scale or forgets sharp core geometry.
-  - **CLI flags**: `--init-nn=PATH`, `--anchor-tb=PATH` (optional, enforces `<= 2.5M` check!), `--out=PATH`, `--iters=I`, `--games-per-iter=G`, `--lambda=L`, `--mc-weight=W`, `--exit-rank-weight=W`, `--exit-child-weight=W`, `--anchor-frac=F`, `--lr=LR`, `--threads=T`, `--seed=S`, `--ood-tb=PATH` (read-only diagnostic only).
-- [ ] **Phase S-3 Ablations (`seed=30000000` val → `seed=700000` 10k NES games)**:
-  - Compare on the `nb_mid_nes` (`2.49M`) starting point:
-    1. Pure **Expert Iteration** (2-ply search distillation on self-play trajectories, `mc-weight=0`).
-    2. Pure **`TD(λ)` / MC return** fine-tuning (`λ ∈ {0.9, 1.0}`).
-    3. **Combined ExIt + `TD(λ)` + TB anchor** across 5–10 outer iterations.
-  - Evaluate both **standalone 2-ply NN** (can it beat `56.09` and approach `71.79` without ever seeing the `19.54M` TB?) and **`2.49M` TB + RL-NN calibrated partial-OUT**.
-- [ ] **Verification & Review**:
-  - Add unit tests in `tablebase_test.cpp`: exact `TD(λ)` backward recurrence for `λ = 0.0`, `λ = 0.5`, `λ = 1.0` (verifying `λ = 1.0` equals exact suffix sum of lines cleared!), 2-ply ExIt target terminal top-out = `0.0`, `1T == 4T` rollout determinism, and gradient descent smoke test reducing loss cleanly.
-  - Run `format_cpp`, `-Wall -Wextra -Werror`, `-DNDEBUG`, `tablebase_test`, `cpp_test_unit`, `precompute_static_lint`, **3 reviewers** (`logic_reviewer` + `readability_reviewer` + `Performance & Scale` reviewer on `rl_finetune_nn.cpp`), commit `Phase S-3 (self-play RL + Expert Iteration fine-tuning)`.
+- [x] **Implemented Hybrid Expert-Iteration + `TD(λ)` Self-Play Fine-Tuner (`rl_finetune.hpp`, `rl_finetune_nn.cpp`)**:
+  - Shared `tb::PersistentWorkerPool`, `tb::detail::accumulateCandidateMoveLossAndGrad`, and `tb::detail::addL2WeightDecay` in `tiny_nn.hpp`; templated `sampleDistillDataset` (`distill_data.hpp`) on `NextBoxTbType` so read-only `--ood-tb` samples directly from `MappedNextBoxTablebase` (saving `1.35 GB` peak RAM).
+  - Implemented `Eval2PlyCache` (`32,768` slots, exact IEEE-754 `double` 2-ply memoization, `10×` faster rollouts with bit-for-bit `1T == MT` determinism), chunked bounded-RAM deterministic rollout collector (`collectRlSelfPlayDecisions`), exact backward `computeTdLambdaReturns`, single-head `mcWeight` + 2-ply ExIt `exitChildWeight` + `exitRankWeight` loss (`computeRlSliceLossAndGrad`), Polyak EMA `updateTargetNetEma`, optional `<= 2.5M` TB replay anchor (`RL_MAX_ANCHOR_TB_BOARDS = 2,500,000` enforced!), exact per-iter cosine LR, and validation checkpointing.
+- [x] **Phase S-3 Held-Out Ablations (`10,000` NES games, `seed=700000`, zero leakage)**:
+  - **Isolated on hard `nb_mid_nes` (`mid_self_128x64` baseline: standalone 2-ply `59.40 ± 0.58`, TB+NN 2-ply `69.00 ± 0.67`, oracle OOD MAE `42.43`)**:
+    - Pure Expert Iteration (`mcW=0`, `ε=0.06`): standalone 2-ply **`63.12 ± 0.61`** (`+3.72` lines!).
+    - Pure `TD(0.9)` (`exitW=0`, `ε=0.06`): standalone 2-ply **`61.30 ± 0.60`** (`+1.90` lines).
+    - Pure MC `TD(1.0)`: at `ε=0.06` collapsed (`5.19` val) because exploration cut rollout survival to `21.4` lines; at `ε=0.0` stayed flat (`58.72` val, `V(0) = 38.20`) because Huber loss (`δ=2.0`) on heavy-tailed exponential survival times targets the **median (~40)** instead of the **mean (~59)**!
+    - Combined ExIt + `TD(0.9)` + rank-only `2.49M` TB anchor (`ε=0.06`): standalone 2-ply **`63.21 ± 0.60`** (`+3.81` lines); paired with un-updated hard `nb_mid_nes` TB (`m=2.0`): `65.47 ± 0.62`.
+    - Combined ExIt + `TD(0.95)` + rank-only `2.49M` TB anchor (`ε=0.0`, `τ=0.5`): lifted `E[V_hat(0)]` `43.05 → 55.02`, cut oracle OOD MAE **`42.43 → 30.65`**, standalone 2-ply **`62.87 ± 0.62`** (`+3.47` lines; `62.57` without anchor). **Key law discovered**: pairing this scale-lifted NN (`55.02`) directly with the un-updated hard `V=0` TB (`43.07`) at `m=1.0–2.0` crashed to `12.30–13.74` (`in-TB = 43.7%`) due to `+12`-line scale mismatch — proving RL value lifting MUST be paired with Soft-Boundary MPI (Phase S-2)!
+  - **S-2 + S-3 Synergy (`mid_soft5_rl_128x64` fine-tuned from `mid_soft5_m2.0_128x64` with `mid_soft5_m2.0.tb.bin` anchor, `2.49M` boards, zero leakage)**:
+    - Oracle OOD MAE dropped below 20 (`22.17 → 19.88`, bias `-19.37`), `E[V_hat(0)] = 65.88`.
+    - Standalone 2-ply NN: **`68.26 ± 0.67`** (`med=48.0, p90=156, max=738`).
+    - `2.49M` Soft-TB + RL-NN 2-ply (`m=2.0`): `88.41 ± 0.85` (`in-TB=92.49%`, slightly under-margined due to `+2.0` RL scale lift).
+    - **`2.49M` Soft-TB + RL-NN 3-ply Top-6 (`m=2.0`)**: **`98.67 ± 0.95`** (`med=70.0, p90=224, max=740`, `12.7k mv/s`) — **`+31.08` lines over baseline `67.59`, `+8.77` lines above the full `19.54M` TB (`89.90`), and `94.9%` of the `19.54M` TB + `128×64` NN oracle (`104.02`) using only `12.7%` of the boards!**
+- [x] **Verification & Review**:
+  - `tablebase_test.cpp` (`29/29`, `387,986` assertions): exact `TD(λ)` backward recurrence (`λ = 0, 0.5, 1.0`, top-out vs truncation, negative/`NaN`/`+inf` clamps), ExIt ply-2 top-out = `0.0`, `1T == 4T` rollout determinism, `Eval2PlyCache` exactness, `maxDecisions` cap & `collectMoveTargets=false` & `maxStepsPerGame=1`, `updateTargetNetEma` safety guards (`tau<=0`/`NaN`/size mismatch), `PersistentWorkerPool`, 25-param finite-difference gradient check, `NaN` target guard, and SGD loss descent. Passed `cpp_test_unit` (`80/80`), `precompute_static_lint`, and all 3 reviews (Logic, Simplicity, Performance & Scale).
 
 ---
 
