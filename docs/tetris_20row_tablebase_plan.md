@@ -95,46 +95,62 @@ Measure real 20-row revisit rates, encoding coverage, and move-gen speed BEFORE 
 ### Phase 1: Isolated 20-Row Core, Fast Move Gen, Parity Tests & Baseline Harness
 Build the rock-solid, zero-allocation 20-row engine primitives and record exact production StackRabbit baselines.
 
-- [ ] **Core primitives (`experimental/das_tablebase/core_20row.hpp`, `board_key.hpp`)**:
-  - Implement locked `BoardKey` encode/decode, sentinel `EMPTY_KEY`, strong uncorrelated hash/mixers (for both `FlatBoardIndex` slots and `ShardedVisitCounter` shard bits), and exact 7×7 NES RNG (`NES_TRANSITION_NUM`, `NES_STATIONARY_PROB`, `Rng` splitmix64).
-  - Implement allocation-free stack `TransitionList` + fast 10 Hz `"X....."` move generator (supporting Level 18 `gravity = 3` and Level 19 `gravity = 2`, including tucks matching `CAN_TUCK = 1`), plus pre-reaction adjustment-zone helper (`PreAdj` / `Adj` for 18-frame `V_RT(b, c)` readiness).
-  - Thin read-only `eval_adapter.hpp` bridging `BoardKey` ↔ `src/backend/eval.cpp` strictly for Round 0 seeding and baseline benchmarking.
-- [ ] **Fixed-seed benchmark CLI (`experimental/das_tablebase/benchmark_20row.cpp`)**:
-  - Supports Stationary Level 19 (normalized score & survival), Stationary Level 18, and full **NTSC 18 → 29** games (both 0-frame fast mode and **exact 18-frame reaction time + `fullMoveSearch` + `dasPenaltyLookupMap`** via `src/backend/precompute.cpp` harness).
-  - Record official production StackRabbit baselines on validation (`seed=30000000`) and held-out test (`seed=700000`):
-    - `eval.cpp` 2-ply (0-frame & 18-frame RT),
-    - `precompute` with production playouts (`160×8`, `300×6`, and tournament `-2` real-time frame deadline at 100% emulation speed).
-- [ ] **Verification & Review (Logic + Simplicity + Perf/Scale)**:
-  - Unit tests (`experimental/das_tablebase/das_tb_test.cpp`): bit-exact encode/decode round-trips + sentinel non-collision, bit-exact parity of fast move gen + line clears against `src/backend/move_search.cpp` & `move_result.cpp` over `10,000` random/live boards, NES RNG table parity against `src/backend/piece_rng.cpp`, `1T == 4T` benchmark determinism.
-  - Compile `-Wall -Wextra -Werror` and `-DNDEBUG -fsyntax-only`; run 3 subagent reviewers.
+- [x] **Core primitives (`experimental/das_tablebase/core_20row.hpp`, `board_key.hpp`, `eval_adapter.hpp`)**:
+  - Implemented locked `K16-Opt2c` `BoardKey` encode/decode (stackless branchless encode, Prefix-OR decode with defensive clamping, strict `isValidBoardKey`, sentinel `EMPTY_KEY`, 2-round 128-bit `wymix` uncorrelated shard/slot hashes) and exact 7×7 NES RNG (`NES_TRANSITION_NUM`, `NES_STATIONARY_PROB`, `Rng` splitmix64).
+  - Implemented allocation-free `PlacementList` (`MAX_PLACEMENTS = 256`), `TransitionList`, padded `alignas(64)` `Board20` + 64-bit `PIECE_MASK_64`, SWAR `applyPlacement20`, `uint64_t seenTuck[20]`, 6-frame-cycle `findPlacements10Hz` (**`133 ns/call`** uncontended 1T — 3.5× faster than Phase 0 `461 ns/call`; `generateTransitions10Hz` = `1,101 ns/call`), and O(1) `predictAdjState10Hz`.
+  - Built thin read-only `eval_adapter.hpp` bridging `Board20` ↔ `src/backend/` strictly for parity tests, Round 0 seeding, and baseline benchmarking.
+- [x] **Fixed-seed benchmark CLI (`experimental/das_tablebase/benchmark_20row.cpp`)**:
+  - Supports Stationary Level 19, Stationary Level 18, and Full NTSC **18 → 29** across `eval2ply`, production `precompute`, 0-frame `tbnn`, and exact 18-frame `tbnn-precompute` (`tbnn_precompute_adapter.hpp`).
+  - Recorded production StackRabbit baselines (`seed=30000000` val, `seed=700000` held-out test, 10 Hz `"X....."`, `AGGRO`):
+    - **`eval2ply` (0-frame)**:
+      - `l19` (`100l` goal): Val (`500g`) **`244,031 ± 5,774`** (`10.168` normT, `71.63l`, `45.8%` goal) | Test (`1000g`) **`248,574 ± 4,080`** (`10.357` normT, `73.31l`, `48.2%` goal)
+      - `l18` (`130l` goal): Val (`500g`) **`442,124 ± 6,889`** (`19.391` normT, `114.72l`, `75.2%` goal) | Test (`1000g`) **`460,804 ± 4,518`** (`20.211` normT, `118.31l`, `80.0%` goal)
+      - `full18` (`230l` ks): Val (`500g`) **`640,950 ± 13,570`** (`162.64l`, `72.6%` trans, `27.6%` ks, `11.8%` maxout) | Test (`1000g`) **`666,482 ± 9,134`** (`168.53l`, `78.2%` trans, `27.0%` ks, `12.7%` maxout)
+    - **Production `precompute` (`rt=18, das=1`, `seed=30000000` val)**:
+      - `l19` `0×0 b=12` (`200g`): **`248,760 ± 10,496`** (`10.365` normT, `63.77l`, `36.0%` goal, `3.89 ms/mv`)
+      - `l19` `50ms b=-2` (`50g`, `1T`, *uncalibrated — predates `calibratePrecomputeSpeed7T`, overshot to `264.0 ms/mv`*): **`265,680 ± 18,160`** (`11.070` normT, `75.38l`, `54.0%` goal, `50.8%` TRT, `avgMaxH=6.87`)
+      - `l19` `49×2 b=20` (`100g`): **`343,228 ± 13,114`** (`14.301` normT, `82.91l`, `66.0%` goal, `13.62 ms/mv`)
+      - `l19` `160×8 b=20` (`50g`): **`345,656 ± 18,217`** (`14.402` normT, `88.16l`, `80.0%` goal, `58.6%` TRT, `avgMaxH=6.87`, `125.96 ms/mv`)
+      - `l19` **`200ms b=-2`** (`80g`, `1T`, calibrated `131.0 mv/ms` 7T): **`338,305 ± 12,534`** (`med=374,200`, `p90=440,040`, `max=483,600`, `14.096` normT, `90.49l`, `238.0` pcs, **`81.2%`** goal, `55.1%` TRT, `avgMaxH=6.66`, **`195.5 ms/mv`**)
+      - `full18` `49×2 b=20` (`50g`, capped at `230l`): **`1,042,307 ± 29,312`** (`41.204` normT, `216.32l`, `98.0%` trans, `76.0%` ks, `74.0%` maxout, `71.5%` TRT, `9.34 ms/mv`)
+      - `full18 → topout` **`200ms b=-2`** (`40g`, `1T`, `--max-lines=uncapped`, calibrated `131.8 mv/ms` 7T): **`1,074,642 ± 13,120`** (`med=1,078,730`, `p90=1,165,416`, `max=1,272,000`, **`scoreAt230=1,071,786`**, `42.293` normT, `231.60l`, `599.3` pcs, **`100.0%`** trans, **`95.0%`** ks, **`82.5%`** maxout, `67.8%` TRT, `avgMaxH=7.15`, **`214.3 ms/mv`**)
+- [x] **Verification & Review (Logic + Simplicity + Perf/Scale)**:
+  - `das_tb_test`: `6/6` Phase 1 suites (`11,415,688` assertions): 5,000 random round-trips + 9 hostile-key invariants, uncorrelated hash test (incl. `k.hi == 0`), exact NES RNG & `getLevelAfterLineClears` parity, 10,500+ live & random board move-gen/tuck/apply/adj parity across all 3 gravities (`1, 2, 3`) + `c==8` vertical I-tuck, precompute adapter + topout test, and `1T == 4T` determinism.
+  - Compiled `-O3 -Wall -Wextra -Werror` and `-DNDEBUG -fsyntax-only`; addressed all findings from all 3 subagent reviewers (`logic_reviewer`, `readability_reviewer`, `perf_scale_reviewer`).
 
 ---
 
 ### Phase 2: Stationary Level 19 Flywheel (Sampler, Soft-Boundary MPI, NNUE, Inspector & RT Check)
 Prove the full 4-pillar flywheel on Stationary Level 19 (`gravity = 2`, 10 Hz) and verify 18-frame reaction-time calibration (`V(b, c)` vs. `V_RT(b, c)`).
 
-- [ ] **Binary formats & shared I/O (`tablebase_io_20row.hpp`)**:
-  - Implement `SRSTV002` (header with `keyEncoding`, `keyBytes`, `maxRows`, `maxHoles`, `numBoards`), `SRTBV003` (header adding `gamma`, `rewardMode`, `level`, `lineCount`, `reactionTimeFrames`), and reuse `SRNNV001` (`featureVersion = 2`, transactional load).
-  - Port all strict I/O guards: `uint64_t` byte-size overflow check, unsorted/duplicate key rejection, non-finite/negative value rejection, `--init == outPath` / `--tb == outPath` active-`mmap` truncation guard.
-- [ ] **State sampler (`state_gen_20row.hpp`, `generate_20row.cpp`)**:
-  - Port `ShardedVisitCounter` (verifying uncorrelated shard vs. slot hash bits), `collectCoreSiblings` (bounded per-worker dedup), `collectMergedBoardCandidates`, `PrioritizedBoard` with `visits` / `nn-error` eviction, `protectedCore`, 50/50 exploration split, and Round 0 `eval.cpp` seeding (`--seed-eval`).
-- [ ] **Soft-Boundary MPI solver (`solver_20row.hpp`, `solve_20row.cpp`)**:
-  - Port `FlatBoardIndex`, disk-streamed `PolicyActionStore` (32-bit packed word with retuned fixed-point terminal shift + explicit overflow abort), iter-1 `bestOutStore`, `double` `vCur`/`vNext`, adaptive inner early-stop, warm-start `--init`, `maxValueDivergenceGuard`, and automatic `evaluateSoftBoundaryMC` (`<= 3.5σ`).
-  - Run a 10-second micro-benchmark on `250k–500k` boards before launching multi-million-board solves.
-- [ ] **20-Row Multi-Task NNUE (`nnue_20row.hpp`, `train_nn_20row.cpp`)**:
-  - Implement `featureVersion = 2` extractor (~265–275 floats: raw binary cells up to `H_feat` + 10 col heights + 10 col holes + row fills + V2 residual-mined burial/holeRows/coverRowMissing/transitions/wells/parity + Level 19 accessibility features `inaccessibleLeft/Right`, `col9WellDepth`, `tetrisReadyRows`, `builtOutLeft`; reserve 3 horizon slots zeroed in stationary mode).
-  - Sparse `[inDim × h1]` / `[h1 × h2]` / `[7 × h2]` NEON-friendly MLP (`NN_FAST_STACK_SUM` `< 4 KB`), `alignas(128)` `PersistentWorkerPool`, 4-part multi-task loss (parent Huber + candidate-child Huber + explicit ply-2 top-out `0.0` + Boltzmann move-ranking CE), on-policy `70/30` trajectory sampler, calibrated partial-OUT 2-ply (and optional selective 3-ply Top-K with pre-screen slack).
-- [ ] **20×10 Browser Inspector (`inspector_server.cpp`, `inspector.html`)**:
-  - Port `experimental/tablebase/server.cpp` & `index.html` to 20×10 (`V_tb` vs `V_nn` side-by-side, `Step to Disagreement`, transactional `/reload`, visual comparison against `eval.cpp`).
-- [ ] **Execute Stationary Level 19 Flywheel (3–5 Rounds, `5M` iteration → `20M+` final)**:
-  - Round 0: Seed states from `eval.cpp` (10 Hz L19), solve Hard/Soft initial TB, train initial `128×64` NNUE.
-  - Rounds 1–3 (`5M` cap for fast ~5 min/solve iteration): **Drop `eval.cpp`**; iterate `Generate (nn-error) → Soft-Boundary MPI (m ≈ 0.5–1.0, γ ≈ 0.995) → Retrain 128×64 NNUE`. Tune `γ` and runtime `m` strictly on validation (`seed=30000000`).
-  - Final expansion (`20M+` cap once 18-frame `V(b, c)` vs. `V_RT(b, c)` is settled): Warm-start expand to `20M+` boards (`~3.4 GB` RAM, ~20–30 min solve) and train final `256×64` NNUE.
-- [ ] **18-Frame Reaction-Time Calibration Check (`V(b, c)` vs. `V_RT(b, c)`)**:
-  - Benchmark the converged Level 19 TB+NNUE inside the exact **18-frame reaction-time** harness against production StackRabbit on validation Level 19 games, and inspect disagreements in the 20×10 browser inspector.
-  - **Conditional upgrade**: If 0-frame `V(b, c)` stacks too aggressively under 18-frame reaction time, implement exact `V_RT(b, c)` Bellman backup (`max_{a ∈ PreAdj} E_n[max_{m ∈ Adj(a)} (r + γ C(b'_m, n))]` — same `7` floats/board, zero TB bloat!) and A/B test on validation Level 19 18-frame games. Lock `V(b, c)` vs. `V_RT(b, c)` before Phase 3.
-- [ ] **Verification & Review (Logic + Simplicity + Perf/Scale)**:
-  - Unit tests: `1T == 4T` determinism (sampler, solver, NN trainer/inference), `Ram == Disk` & `Warm == Cold` MPI parity, small-board brute-force VI parity (Hard, Discounted, Soft-Boundary, and `V_RT` if enabled), 6-block central finite-difference gradient check (`< 1e-4`), hostile-input & overflow tests, Soft-MC `<= 3.5σ` on every solve. Run all 3 subagent reviewers.
+- [x] **Binary formats & shared I/O (`tablebase_io_20row.hpp`)**:
+  - Implemented `SRSTV002` (32 B header), `SRTBV003` (80 B header + 44 B `PackedDasRecord`), `SRNNV001` (`featureVersion = 2`, transactional load), shared `PersistentWorkerPool`, and cache-line-aligned 6-slot AoS `FlatBoardIndex` with Lemire `fastrange` (`32.8 B/board` → `1.64 GB` at `50M`, single cache-line fetch on hits).
+  - Enforced strict I/O guards: `uint64_t`/`size_t` overflow checks, pre-truncation validation in `writeTablebaseV3`, transactional `MappedDasTablebase` & `IndexedDasTablebase` (zero temp `keys` vector), `adviseDontNeed()` on warm-start, and `isSameFilePath` aliasing guards across all CLIs.
+- [x] **State sampler (`state_gen_20row.hpp`, `generate_20row.cpp`)**:
+  - Implemented `ShardedVisitCounter20` (64 `alignas(128)` shards, 70% `FlatVisitMap20`, hoisted `ShardBuckets`), `expandCoreSiblings20` (geometric dedup watermark + pairwise `set_union`), exact-count 3-way `mergeFilterAndCap20`, `visits`/`nn-error` eviction, `protectedCore`, 50/50 exploration split with lazy `nn->evalPiece`, and Round 0 `--seed-eval`.
+- [x] **Soft-Boundary MPI solver (`solver_20row.hpp`, `solve_20row.cpp`)**:
+  - Implemented disk-streamed `PolicyActionStore20` (auto-unlinked 64-bit `pread`/`pwrite` above `6M` boards), exact `double` `SoftBoundaryCache20` (`65K` slots, freed after iter 1), iter-1 `bestOutStore` (`~20–30×` faster iters 2+), zero-sentinel `vCur`/`vNext`, `PersistentWorkerPool`, adaptive inner early-stop, warm-start `--init`, `maxValueDivergenceGuard`, terminal overflow abort, and `MappedDasTablebase` Soft-MC (`<= 3.5σ` on every solve).
+  - Ran `250k`-board micro-benchmark before `5M` runs (`7.86s` Hard MPI, `0.71s/outer`, `z=0.42`; `21.1s` Soft iter-1 → `0.61–0.79s` iters 2–7, `z=0.01`; `0.08–0.11s/epoch` NNUE).
+- [x] **20-Row Multi-Task NNUE (`nnue_20row.hpp`, `train_nn_20row.cpp`)**:
+  - Implemented `featureVersion = 2` (`NN_INPUT_DIM = 272`, fused single bit-scan), specialized branchless `(128, 64)` & `(256, 64)` Layer 2 NEON (`alignas(16)` `< 2 KB` stack), top-3-rows fast path in `NnSoftBoundaryEval20`, cached `(x, a1, a2)` + branchless backprop + parallel Adam & validation in `trainTinyDasNet` (`~3.5s/epoch` for `300k` decisions `128×64`!), 4-part multi-task loss, `70/30` on-policy sampler, and Calibrated Partial-OUT (`1/2/3`-ply Top-K).
+- [x] **20×10 Browser Inspector (`inspector_routes.hpp`, `inspector_server.cpp`, `inspector.html`)**:
+  - Built and live-verified zero-dep POSIX HTTP server (`/`, `/ping`, `/state-info`, `/moves`, `/step-disagreement`, transactional `/reload`) with 20×10 interactive canvas, `V_tb` vs `V_nn` error table, `eval.cpp` comparison, autoplay, and monotonic sequence / `autoplayRunId` race guards.
+- [x] **Execute Stationary Level 19 `5M` Flywheel (Rounds 0–5, `seed=30000000` val `500g`, 0-frame `tbnn`)**:
+  - **Round 0** (`eval.cpp` seed, `5.0M` Hard MPI): `E[V(0)] = 2.557` (`z=0.73`), `r0_128x64` (`MAE=0.228`, `top1=78.6%`) → Hybrid **`155,505 ± 5,462`** (`13.2%` goal, `82.6%` hit).
+  - **Round 1** (`eval.cpp` dropped; `5.0M` Soft MPI `m=0.6`): `E[V(0)] = 3.497` (`z=0.06`), `r1_128x64` (`MAE=0.202`, `top1=80.5%`) → Hybrid **`223,825 ± 5,996`** (`35.4%` goal), NN-only **`241,489 ± 6,295`** (`47.2%` goal).
+  - **Round 2** (`518k` Soft MPI `m=0.45`, `eps=0.14` high-churn): `E[V(0)] = 3.547` (`z=0.79`), `r2_128x64` (`MAE=0.108`, `top1=82.1%`) → Hybrid **`292,943 ± 4,330`** (`74.6%` goal), NN-only **`295,141 ± 4,490`** (`77.0%` goal).
+  - **Round 3** (`2.75M` `nn-error` `eps=0.05`, Soft MPI `m=0.25`): `E[V(0)] = 5.115` (`z=0.29`), `r3_128x64` (`MAE=0.176`, `top1=81.4%`) → Hybrid **`327,724 ± 3,833`** (`84.2%` goal, `90.5%` hit), NN-only **`329,159 ± 3,465`** (`88.4%` goal).
+  - **Round 4** (`3.51M` `nn-error` `eps=0.08`, Soft MPI `m=0.25`): `E[V(0)] = 6.581` (`z=0.34`), `r4_128x64` (`MAE=0.185`, `top1=80.6%`) → Hybrid **`347,786 ± 3,323`** (`92.0%` goal, `94.2%` hit), NN-only **`339,474 ± 3,360`** (`90.0%` goal).
+  - **Round 5** (full **`5.0M`** `nn-error` `eps=0.10`, Soft MPI `m=0.25`): `E[V(0)] = 6.950` (`z=0.33`), `r5_128x64` (`MAE=0.152`, `top1=82.0%`, `regret=0.0347`) → Hybrid **`356,715 ± 3,049`** (`14.863` normT, **`93.4%` goal**, `53.3%` TRT, **`94.0%` TB hit**, **`0.214 ms/mv`**; `m=0.35..0.50` = `354.4k–355.0k`, `93.6%` goal); NN-only **`346,682 ± 3,095`** (`92.2%` goal); cold 30-ep `r5_256x64` (`339 KB`, `MAE=0.162`, `top1=81.2%`) → Hybrid `349,727 ± 3,445` (`m=0.50`, `90.0%` goal).
+  - [ ] *Pending user decision*: Final expansion (`20M+` cap once `V_RT(b, c)` decision is approved) + warm-trained `256×64` NNUE.
+- [x] **18-Frame Reaction-Time Calibration Check (`V(b, c)` vs. `V_RT(b, c)`, `seed=30000000`, `200g` `tbnn-precompute` 2×2 ablation on `r5.tb.bin + r5_128x64.nn.bin`, `m=0.40`, `ply=2`)**:
+  - `rt=0, das=0`: **`356,570 ± 4,432`** (`95.5%` goal, `52.5%` TRT, `94.65%` hit, `0.77 ms/mv`) — exact parity with 0-frame `tbnn`.
+  - `rt=0, das=1`: **`355,628 ± 4,421`** (`95.5%` goal, `52.4%` TRT, `94.24%` hit, `0.91 ms/mv`) — DAS charge physics costs only `-0.9k` (`-0.3%`).
+  - `rt=18, das=0`: **`325,538 ± 5,496`** (`84.0%` goal, `49.1%` TRT, `91.41%` hit, `0.93 ms/mv`) — `-31.0k` from 18-frame reaction-time blindness alone.
+  - `rt=18, das=1`: **`305,110 ± 6,756`** (`82.0%` goal, `47.1%` TRT, `89.07%` hit, **`2.81 ms/mv`**) — `-50.5k` (`-14.2%`) total drop vs `rt=0, das=1`; beats `precompute 0×0` (`248.8k`, `36.0%`) by `+56.4k` / `+46%` survival, beats `precompute 49×2` (`343.2k`, `66.0%`) by `+16%` survival and `4.8×` speed, but trails `49×2` score by `-38.1k` due to both 0-frame `V(b, c)` RT sensitivity and low stationary TRT (`47–53%`). Standalone NNUE (`rt=18, das=1`): `301,696 ± 6,818` (`77.5%` goal, `32.75 ms/mv`).
+  - [ ] *STOPPED before implementing `V_RT(b, c)` or scaling to `20M` boards — awaiting user go-ahead.*
+- [x] **Verification & Review (Logic + Simplicity + Perf/Scale)**:
+  - `das_tb_test`: `10/10` suites (`11,424,416 / 11,424,416` assertions), `cpp_test_unit` (`80/80`), `precompute_static_lint` (0 warnings), `format_cpp`, `-O3 -Wall -Wextra -Werror`, `-DNDEBUG -fsyntax-only`, `git diff --stat -- src/` & `experimental/tablebase/` empty, and all 3 Phase 2 subagent reviews completed and addressed.
 
 ---
 

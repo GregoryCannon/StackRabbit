@@ -145,12 +145,12 @@ inline uint64_t hashRawBoard20Slot(const RawBoard20 &k) noexcept {
 
 // Structural summary of a 20x10 board for encoding coverage & stratification.
 struct BoardStats {
-  int maxHeight;          // 0..20
-  int totalHoles;         // exact empty cells strictly below column surface (sealed + overhangs)
-  int rightWellBottomB;   // consecutive bottom rows == 0b1111111110 (0x3FE), capped at 15
-  int rightWellActive;    // active rows above rightWellBottomB (0..20)
-  int anyWellBottomB;     // consecutive bottom rows with same single empty col, capped at 15
-  int anyWellActive;      // active rows above anyWellBottomB (0..20)
+  int maxHeight;        // 0..20
+  int totalHoles;       // exact empty cells strictly below column surface (sealed + overhangs)
+  int rightWellBottomB; // consecutive bottom rows == 0b1111111110 (0x3FE), capped at 15
+  int rightWellActive;  // active rows above rightWellBottomB (0..20)
+  int anyWellBottomB;   // consecutive bottom rows with same single empty col, capped at 15
+  int anyWellActive;    // active rows above anyWellBottomB (0..20)
 
   bool fitsK8Opt2a() const noexcept { return maxHeight <= 15 && totalHoles <= 4; }
   bool fitsK8Opt2b() const noexcept { return maxHeight <= 16 && totalHoles <= 3; }
@@ -188,7 +188,8 @@ inline BoardStats analyzeBoard(const unsigned int board[20]) noexcept {
   s.rightWellBottomB = rwB;
   s.rightWellActive = std::max(0, s.maxHeight - rwB);
 
-  // Option 1b: consecutive bottom rows sharing any identical single-column open well (popcount == 9).
+  // Option 1b: consecutive bottom rows sharing any identical single-column open well (popcount ==
+  // 9).
   int awB = 0;
   uint32_t bottomRow = board[19] & 0x3FFU;
   if (__builtin_popcount(bottomRow) == 9) {
@@ -206,16 +207,22 @@ inline BoardStats analyzeBoard(const unsigned int board[20]) noexcept {
 }
 
 inline int heightBucket(int h) noexcept {
-  if (h <= 8) return 0;
-  if (h <= 12) return 1;
-  if (h <= 15) return 2;
-  if (h == 16) return 3;
+  if (h <= 8)
+    return 0;
+  if (h <= 12)
+    return 1;
+  if (h <= 15)
+    return 2;
+  if (h == 16)
+    return 3;
   return 4;
 }
 
 inline int holeBucket(int holes) noexcept {
-  if (holes <= 4) return holes;
-  if (holes <= 9) return 5;
+  if (holes <= 4)
+    return holes;
+  if (holes <= 9)
+    return 5;
   return 6;
 }
 
@@ -352,7 +359,8 @@ struct ShardedRankIndex {
   }
 };
 
-// Choose 2-ply eval.cpp move (10 Hz "X.....", no playouts, exact StackRabbit fastEval + fastMoveSearch).
+// Choose 2-ply eval.cpp move (10 Hz "X.....", no playouts, exact StackRabbit fastEval +
+// fastMoveSearch).
 bool chooseEval2PlyMove(const GameState &state, int curPieceIdx, int nextPieceIdx,
                         const PieceRangeContext pieceRangeLookup[4], AggressionLevel aggro,
                         bool stationaryLevel, std::vector<LockPlacement> &firstMoves,
@@ -445,16 +453,17 @@ struct TestAgg {
   uint64_t holeHitAll[7] = {};
 
   // Encoding coverage on ALL test moves and on REVISITED (in-train-set) test moves
-  uint64_t encAll[5] = {};      // K8-Opt2a, K8-Opt2b, K8-Opt1a, K16-Opt2c, K16-Opt1b
-  uint64_t encHitAll[5] = {};   // among test moves hitting ANY train board
-  uint64_t encHit25M[5] = {};   // among test moves hitting top 2.5M train boards
+  uint64_t encAll[5] = {};    // K8-Opt2a, K8-Opt2b, K8-Opt1a, K16-Opt2c, K16-Opt1b
+  uint64_t encHitAll[5] = {}; // among test moves hitting ANY train board
+  uint64_t encHit25M[5] = {}; // among test moves hitting top 2.5M train boards
 
   void merge(const TestAgg &o) {
     games += o.games;
     totalMoves += o.totalMoves;
     totalLines += o.totalLines;
     totalScore += o.totalScore;
-    for (size_t i = 0; i < NUM_CAPS; ++i) capHits[i] += o.capHits[i];
+    for (size_t i = 0; i < NUM_CAPS; ++i)
+      capHits[i] += o.capHits[i];
     for (int i = 0; i < 5; ++i) {
       hTotal[i] += o.hTotal[i];
       hHit25M[i] += o.hHit25M[i];
@@ -489,16 +498,22 @@ struct Config {
 };
 
 void recordEncodingFlags(const BoardStats &s, uint64_t enc[5]) noexcept {
-  if (s.fitsK8Opt2a()) enc[0]++;
-  if (s.fitsK8Opt2b()) enc[1]++;
-  if (s.fitsK8Opt1a()) enc[2]++;
-  if (s.fitsK16Opt2c()) enc[3]++;
-  if (s.fitsK16Opt1b()) enc[4]++;
+  if (s.fitsK8Opt2a())
+    enc[0]++;
+  if (s.fitsK8Opt2b())
+    enc[1]++;
+  if (s.fitsK8Opt1a())
+    enc[2]++;
+  if (s.fitsK16Opt2c())
+    enc[3]++;
+  if (s.fitsK16Opt1b())
+    enc[4]++;
 }
 
 void runExperiment(const Config &cfg) {
-  const int numThreads =
-      cfg.threads > 0 ? cfg.threads : std::max(1, static_cast<int>(std::thread::hardware_concurrency()));
+  const int numThreads = cfg.threads > 0
+                             ? cfg.threads
+                             : std::max(1, static_cast<int>(std::thread::hardware_concurrency()));
   const char *timeline = "X.....";
   const PieceRangeContext pieceRangeLookup[4] = {
       getPieceRangeContext(timeline, 1, true),
@@ -581,7 +596,8 @@ void runExperiment(const Config &cfg) {
         trainScore.fetch_add(localScore, std::memory_order_relaxed);
       });
     }
-    for (auto &w : workers) w.join();
+    for (auto &w : workers)
+      w.join();
   }
   auto t1 = std::chrono::steady_clock::now();
   double trainSec = std::chrono::duration<double>(t1 - t0).count();
@@ -614,19 +630,21 @@ void runExperiment(const Config &cfg) {
     // Free shard memory immediately
     std::vector<FlatBoardMap::Slot>().swap(counter.shards[sh].map.slots);
   }
-  std::sort(uniqueBoards.begin(), uniqueBoards.end(),
-            [](const auto &a, const auto &b) {
-              if (a.second != b.second) return a.second > b.second;
-              return a.first < b.first;
-            });
+  std::sort(uniqueBoards.begin(), uniqueBoards.end(), [](const auto &a, const auto &b) {
+    if (a.second != b.second)
+      return a.second > b.second;
+    return a.first < b.first;
+  });
 
   const uint64_t tm = trainMoves.load();
-  printf("Train: %llu moves in %.2fs (%.1fk mv/s) | avg %.1f pieces/game, %.1f lines/game, avg score %.0f\n",
+  printf("Train: %llu moves in %.2fs (%.1fk mv/s) | avg %.1f pieces/game, %.1f lines/game, avg "
+         "score %.0f\n",
          static_cast<unsigned long long>(tm), trainSec, tm / std::max(1e-6, trainSec) / 1e3,
          static_cast<double>(tm) / cfg.trainGames,
          static_cast<double>(trainLines.load()) / cfg.trainGames,
          static_cast<double>(trainScore.load()) / cfg.trainGames);
-  printf("Unique boards: %zu (%.2f%% of moves) | in-sample revisit (v>=2): %.2f%% of moves (%llu boards), (v>=5): %.2f%% (%llu boards)\n",
+  printf("Unique boards: %zu (%.2f%% of moves) | in-sample revisit (v>=2): %.2f%% of moves (%llu "
+         "boards), (v>=5): %.2f%% (%llu boards)\n",
          totalUnique, 100.0 * totalUnique / std::max<uint64_t>(1, tm),
          100.0 * visitsGe2Moves / std::max<uint64_t>(1, tm),
          static_cast<unsigned long long>(visitsGe2Boards),
@@ -733,13 +751,15 @@ void runExperiment(const Config &cfg) {
         }
       });
     }
-    for (auto &w : workers) w.join();
+    for (auto &w : workers)
+      w.join();
   }
   auto t3 = std::chrono::steady_clock::now();
   double testSec = std::chrono::duration<double>(t3 - t2).count();
 
   TestAgg agg;
-  for (const auto &p : perThread) agg.merge(p);
+  for (const auto &p : perThread)
+    agg.merge(p);
 
   const double invMoves = 100.0 / std::max<uint64_t>(1, agg.totalMoves);
   const double invHitAll = 100.0 / std::max<uint64_t>(1, agg.capHits[TestAgg::NUM_CAPS - 1]);
@@ -767,32 +787,30 @@ void runExperiment(const Config &cfg) {
     double share = agg.hTotal[i] * invMoves;
     double hit25 = agg.hTotal[i] ? (100.0 * agg.hHit25M[i] / agg.hTotal[i]) : 0.0;
     double hitAll = agg.hTotal[i] ? (100.0 * agg.hHitAll[i] / agg.hTotal[i]) : 0.0;
-    printf("    H=%s : %6.2f%% of moves | hit@2.5M=%6.2f%% | hit@ALL=%6.2f%%\n",
-           H_NAMES[i], share, hit25, hitAll);
+    printf("    H=%s : %6.2f%% of moves | hit@2.5M=%6.2f%% | hit@ALL=%6.2f%%\n", H_NAMES[i], share,
+           hit25, hitAll);
   }
 
   printf("\n  Stratified by totalHoles (sealed + overhangs):\n");
-  static constexpr const char *HOLE_NAMES[7] = {"0   ", "1   ", "2   ", "3   ", "4   ", "5..9", "10+ "};
+  static constexpr const char *HOLE_NAMES[7] = {"0   ", "1   ", "2   ", "3   ",
+                                                "4   ", "5..9", "10+ "};
   for (int i = 0; i < 7; ++i) {
     double share = agg.holeTotal[i] * invMoves;
     double hit25 = agg.holeTotal[i] ? (100.0 * agg.holeHit25M[i] / agg.holeTotal[i]) : 0.0;
     double hitAll = agg.holeTotal[i] ? (100.0 * agg.holeHitAll[i] / agg.holeTotal[i]) : 0.0;
-    printf("    holes=%s : %6.2f%% of moves | hit@2.5M=%6.2f%% | hit@ALL=%6.2f%%\n",
-           HOLE_NAMES[i], share, hit25, hitAll);
+    printf("    holes=%s : %6.2f%% of moves | hit@2.5M=%6.2f%% | hit@ALL=%6.2f%%\n", HOLE_NAMES[i],
+           share, hit25, hitAll);
   }
 
   printf("\n  Candidate Key-Encoding Coverage:\n");
   static constexpr const char *ENC_NAMES[5] = {
-      "K8-Opt2a  (8B: H<=15, <=4 holes)    ",
-      "K8-Opt2b  (8B: H<=16, <=3 holes)    ",
-      "K8-Opt1a  (8B: right-well + <=6 act)",
-      "K16-Opt2c (16B: H<=20, <=9 holes)   ",
+      "K8-Opt2a  (8B: H<=15, <=4 holes)    ", "K8-Opt2b  (8B: H<=16, <=3 holes)    ",
+      "K8-Opt1a  (8B: right-well + <=6 act)", "K16-Opt2c (16B: H<=20, <=9 holes)   ",
       "K16-Opt1b (16B: any-well + <=12 act)",
   };
   for (int i = 0; i < 5; ++i) {
-    printf("    %s : ALL moves=%6.2f%% | Hit@ALL=%6.2f%% | Hit@2.5M=%6.2f%%\n",
-           ENC_NAMES[i], agg.encAll[i] * invMoves, agg.encHitAll[i] * invHitAll,
-           agg.encHit25M[i] * invHit25M);
+    printf("    %s : ALL moves=%6.2f%% | Hit@ALL=%6.2f%% | Hit@2.5M=%6.2f%%\n", ENC_NAMES[i],
+           agg.encAll[i] * invMoves, agg.encHitAll[i] * invHitAll, agg.encHit25M[i] * invHit25M);
   }
 
   // --- Stage 3: Move-Gen Throughput Micro-Benchmark ---
@@ -824,7 +842,8 @@ void runExperiment(const Config &cfg) {
     printf("\n  Move-Gen Micro-Benchmark (%zu live boards x 7 pieces x %d reps, 1T):\n",
            sampleBoards.size(), reps);
     printf("    fastMoveSearch (10Hz): %.0f ns/call (avg %.1f moves/call)\n", nsPerCall, avgBranch);
-    printf("    Projected T_outer (%dT, 85%% eff): 2.5M=%.1fs | 5M=%.1fs | 10M=%.1fs (move-gen only)\n",
+    printf("    Projected T_outer (%dT, 85%% eff): 2.5M=%.1fs | 5M=%.1fs | 10M=%.1fs (move-gen "
+           "only)\n",
            numThreads, tOuter25M, tOuter5M, tOuter10M);
   }
 }
@@ -843,19 +862,44 @@ int main(int argc, char **argv) {
       }
       return false;
     };
-    if (parseVal("--level=", cfg.startLevel)) continue;
-    if (parseVal("--start-lines=", cfg.startLines)) continue;
-    if (parseVal("--max-lines=", cfg.maxLinesGain)) continue;
-    if (parseVal("--max-pieces=", cfg.maxPieces)) continue;
-    if (parseVal("--train-games=", cfg.trainGames)) continue;
-    if (parseVal("--test-games=", cfg.testGames)) continue;
-    if (parseVal("--threads=", cfg.threads)) continue;
-    if (arg == "--stationary=0") { cfg.stationaryLevel = false; continue; }
-    if (arg == "--stationary=1") { cfg.stationaryLevel = true; continue; }
-    if (arg == "--no-bench") { cfg.runMicroBench = false; continue; }
-    if (arg == "--aggro=safe") { cfg.aggro = SAFE; continue; }
-    if (arg == "--aggro=aggro") { cfg.aggro = AGGRO; continue; }
-    if (arg == "--aggro=hyper") { cfg.aggro = HYPER; continue; }
+    if (parseVal("--level=", cfg.startLevel))
+      continue;
+    if (parseVal("--start-lines=", cfg.startLines))
+      continue;
+    if (parseVal("--max-lines=", cfg.maxLinesGain))
+      continue;
+    if (parseVal("--max-pieces=", cfg.maxPieces))
+      continue;
+    if (parseVal("--train-games=", cfg.trainGames))
+      continue;
+    if (parseVal("--test-games=", cfg.testGames))
+      continue;
+    if (parseVal("--threads=", cfg.threads))
+      continue;
+    if (arg == "--stationary=0") {
+      cfg.stationaryLevel = false;
+      continue;
+    }
+    if (arg == "--stationary=1") {
+      cfg.stationaryLevel = true;
+      continue;
+    }
+    if (arg == "--no-bench") {
+      cfg.runMicroBench = false;
+      continue;
+    }
+    if (arg == "--aggro=safe") {
+      cfg.aggro = SAFE;
+      continue;
+    }
+    if (arg == "--aggro=aggro") {
+      cfg.aggro = AGGRO;
+      continue;
+    }
+    if (arg == "--aggro=hyper") {
+      cfg.aggro = HYPER;
+      continue;
+    }
     fprintf(stderr, "Unknown arg: %s\n", arg.c_str());
     return 1;
   }

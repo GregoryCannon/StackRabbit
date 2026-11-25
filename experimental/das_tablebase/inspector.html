@@ -1,0 +1,839 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>StackRabbit 20x10 DAS Tablebase + NNUE Inspector</title>
+<style>
+  :root {
+    --bg: #0f131a; --panel: #171d27; --border: #2a3342;
+    --text: #e6edf3; --muted: #8b949e; --accent: #58a6ff;
+    --good: #3fb950; --warn: #d29922; --bad: #f85149; --purple: #bc8cff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 14px; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 13px;
+  }
+  header {
+    display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+    padding: 10px 14px; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; margin-bottom: 12px;
+  }
+  header h1 { margin: 0; font-size: 16px; color: var(--accent); margin-right: 10px; }
+  .pill {
+    padding: 3px 8px; border-radius: 999px; font-size: 11px;
+    background: #212836; border: 1px solid var(--border); color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .pill.on { color: var(--good); border-color: #2c5b37; background: #14281b; }
+  .layout {
+    display: grid;
+    grid-template-columns: 378px 268px minmax(460px, 1fr);
+    gap: 12px;
+    align-items: start;
+  }
+  @media (max-width: 1180px) {
+    .layout { grid-template-columns: 378px 1fr; }
+    .col-moves { grid-column: 1 / -1; }
+  }
+  @media (max-width: 720px) {
+    .layout { grid-template-columns: 1fr; }
+  }
+  .col-stack { display: flex; flex-direction: column; gap: 12px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 8px; padding: 12px;
+  }
+  .card h2 {
+    margin: 0 0 8px 0; font-size: 13px; text-transform: uppercase;
+    letter-spacing: 0.5px; color: var(--muted);
+  }
+  .board-stage {
+    display: flex; align-items: flex-start; justify-content: center; gap: 10px;
+  }
+  canvas#boardCanvas {
+    display: block; background: #090c10;
+    border: 2px solid var(--border); border-radius: 4px; cursor: crosshair;
+    flex-shrink: 0;
+  }
+  .piece-sidebar {
+    width: 96px; display: flex; flex-direction: column; gap: 10px;
+    padding-top: 26px; flex-shrink: 0;
+  }
+  .nes-box {
+    background: #090c10; border: 2px solid var(--border); border-radius: 6px;
+    padding: 6px 5px 7px 5px; text-align: center;
+  }
+  .nes-box.next-box { border-color: #38465e; }
+  .nes-box-label {
+    font-size: 10px; font-weight: 700; letter-spacing: 0.9px;
+    color: var(--muted); text-transform: uppercase; margin-bottom: 4px;
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 0 3px;
+  }
+  .nes-box-letter {
+    color: var(--text); font-size: 11px; font-weight: 800;
+  }
+  canvas.piece-preview {
+    display: block; margin: 0 auto; background: #090c10; border: none;
+  }
+  .btn-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; align-items: center; }
+  .btn-row:first-of-type { margin-top: 0; }
+  .btn-row.fill > button { flex: 1; }
+  button, select, input {
+    background: #212836; color: var(--text); border: 1px solid var(--border);
+    border-radius: 5px; padding: 5px 9px; font-size: 12px; cursor: pointer;
+  }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.primary { background: #1f6feb; border-color: #388bfd; color: #fff; }
+  button.active { background: #238636; border-color: #3fb950; color: #fff; }
+  button.danger { background: #5a1d1d; border-color: var(--bad); }
+  .piece-bar { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin: 4px 0 6px 0; }
+  .piece-btn { text-align: center; font-weight: 700; padding: 5px 0; }
+  .piece-btn.sel { background: #1f6feb; border-color: #58a6ff; color: #fff; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td {
+    padding: 4px 6px; border-bottom: 1px solid var(--border);
+    text-align: right; font-variant-numeric: tabular-nums;
+  }
+  th { color: var(--muted); font-weight: 600; background: #131822; position: sticky; top: 0; }
+  td:first-child, th:first-child { text-align: left; }
+  .scroll { max-height: 560px; overflow-y: auto; }
+  tr.move-row { cursor: pointer; }
+  tr.move-row:hover { background: #202a3c; }
+  .badge {
+    display: inline-block; padding: 1px 5px; border-radius: 4px;
+    font-size: 10px; font-weight: 700; margin-left: 3px;
+  }
+  .b-hyb { background: #143622; color: var(--good); border: 1px solid #2c5b37; }
+  .b-nn { background: #291d3f; color: var(--purple); border: 1px solid #593b8a; }
+  .b-eval { background: #3b2a10; color: var(--warn); border: 1px solid #6b4b1a; }
+  .b-out { background: #36191a; color: var(--bad); border: 1px solid #6a2a2c; }
+  .b-tb2 { background: #13323b; color: #39c5cf; border: 1px solid #24687a; }
+  .err-pos { color: #58a6ff; }
+  .err-neg { color: #f85149; }
+  .err-ok { color: var(--good); }
+  .meta-line { font-size: 12px; color: var(--muted); margin: 4px 0; }
+  .controls-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px; }
+  label { font-size: 11px; color: var(--muted); display: flex; flex-direction: column; gap: 3px; }
+  .divider { border: none; border-top: 1px solid var(--border); margin: 10px 0; }
+  details.card.collapsible { padding: 0; overflow: hidden; }
+  details.card.collapsible > summary {
+    list-style: none; cursor: pointer; padding: 10px 12px;
+    display: flex; align-items: center; justify-content: space-between;
+    user-select: none; font-size: 12px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted);
+  }
+  details.card.collapsible > summary::-webkit-details-marker { display: none; }
+  details.card.collapsible > summary:hover { color: var(--text); background: #1c2432; }
+  details.card.collapsible > summary::after {
+    content: '▸'; font-size: 12px; color: var(--muted); transition: transform 0.15s ease;
+  }
+  details.card.collapsible[open] > summary::after { content: '▾'; }
+  details.card.collapsible .details-body {
+    padding: 0 12px 12px 12px; border-top: 1px solid var(--border);
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>20×10 DAS Tablebase + NNUE Inspector</h1>
+  <span id="pillTb" class="pill">TB: loading...</span>
+  <span id="pillNn" class="pill">NN: loading...</span>
+  <span id="pillMeta" class="pill">L19</span>
+  <button id="btnReload">Reload TB/NN</button>
+  <span id="statusMsg" class="meta-line" style="margin-left:auto"></span>
+</header>
+
+<div class="layout">
+  <!-- Column 1: 20x10 Board Canvas + NES-style Current/Next Piece Display -->
+  <div class="card">
+    <h2>20×10 Board (Click/Drag to Edit)</h2>
+    <div class="board-stage">
+      <canvas id="boardCanvas" width="240" height="480"></canvas>
+      <div class="piece-sidebar">
+        <div class="nes-box">
+          <div class="nes-box-label"><span>CUR</span><span id="curPieceLetter" class="nes-box-letter">I</span></div>
+          <canvas id="curPieceCanvas" class="piece-preview" width="80" height="52"></canvas>
+        </div>
+        <div class="nes-box next-box">
+          <div class="nes-box-label"><span>NEXT</span><span id="nextPieceLetter" class="nes-box-letter">T</span></div>
+          <canvas id="nextPieceCanvas" class="piece-preview" width="80" height="52"></canvas>
+        </div>
+      </div>
+    </div>
+    <div id="boardStats" class="meta-line" style="text-align:center;margin-top:8px;">H=0 | Holes=0 | In TB: —</div>
+    <div id="hoverInfo" class="meta-line" style="text-align:center;min-height:30px;line-height:1.35;"></div>
+
+    <div style="margin-top:8px;">
+      <div class="meta-line">Current Piece</div>
+      <div id="curPieceBar" class="piece-bar"></div>
+      <div class="meta-line">Next Piece</div>
+      <div id="nextPieceBar" class="piece-bar"></div>
+    </div>
+  </div>
+
+  <!-- Column 2: Play / History / Disagreement Controls + Collapsed Next-Box Values -->
+  <div class="col-stack">
+    <div class="card">
+      <h2>Controls</h2>
+      <div class="btn-row fill">
+        <button id="btnStepHyb" class="primary">Play Hybrid</button>
+        <button id="btnAutoplay">Autoplay</button>
+      </div>
+      <div class="btn-row">
+        <button id="btnUndo" title="Undo (Ctrl/Cmd+Z)" style="flex:1" disabled>◀ Back</button>
+        <button id="btnRedo" title="Redo (Ctrl/Cmd+Shift+Z)" style="flex:1" disabled>Forward ▶</button>
+        <span id="historyPos" class="pill">1/1</span>
+      </div>
+      <div class="btn-row fill">
+        <button id="btnClear" class="danger">Clear Board</button>
+      </div>
+
+      <hr class="divider">
+
+      <div class="meta-line" style="margin-top:0;">Disagreement Finder</div>
+      <div class="btn-row" style="margin-top:4px;">
+        <select id="selDisagreeMode" style="width:100%">
+          <option value="tb-vs-eval">TB+NN vs eval.cpp</option>
+          <option value="tb-vs-nn">TB+NN vs NN-only</option>
+          <option value="nn-vs-eval">NN-only vs eval.cpp</option>
+        </select>
+      </div>
+      <div class="btn-row fill">
+        <button id="btnStepDisagree">Step Disagreement</button>
+      </div>
+
+      <hr class="divider">
+
+      <div class="controls-grid" style="margin-top:0;">
+        <label>Out Margin
+          <input id="inpMargin" type="number" step="0.05" min="0" value="0.25">
+        </label>
+        <label>Out Ply
+          <select id="selPly">
+            <option value="2" selected>2-ply</option>
+            <option value="1">1-ply</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="meta-line" style="margin-top:10px;">
+        Hover a move to preview (<span style="color:#58a6ff;">cyan</span> = 1st piece, <span style="color:#d2a8ff;">purple</span> = Hybrid 2nd, <span style="color:#f0b942;">amber</span> = eval.cpp 2nd). Click to play.
+      </div>
+    </div>
+
+    <details id="nbValuesDetails" class="card collapsible">
+      <summary>Next-Box Values V(b, c)</summary>
+      <div class="details-body">
+        <div id="expectedSummary" class="meta-line" style="margin:8px 0;">E[V_tb]=— | E[V_nn]=— | Err=—</div>
+        <table>
+          <thead>
+            <tr><th>Piece</th><th>V_tb</th><th>V_nn</th><th>Err</th><th>Diff</th></tr>
+          </thead>
+          <tbody id="valTableBody"></tbody>
+        </table>
+      </div>
+    </details>
+  </div>
+
+  <!-- Column 3: Legal Moves Comparison -->
+  <div class="card col-moves">
+    <h2 id="movesHeader">Legal 10 Hz Moves</h2>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Move</th>
+            <th>LC</th>
+            <th>TB Q</th>
+            <th>Hybrid Q</th>
+            <th>NN 2p Q</th>
+            <th>NN 1p Q</th>
+            <th>eval.cpp</th>
+            <th>H / Hol</th>
+          </tr>
+        </thead>
+        <tbody id="movesTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+const PIECES = ['I', 'O', 'L', 'J', 'T', 'S', 'Z'];
+// NES spawn-orientation (rot=0) tetromino cell coordinates [col, row] and distinct colors:
+const PIECE_SHAPES = [
+  [[0, 0], [1, 0], [2, 0], [3, 0]], // I
+  [[0, 0], [1, 0], [0, 1], [1, 1]], // O
+  [[0, 0], [1, 0], [2, 0], [0, 1]], // L (NES spawn: flat top, left leg down)
+  [[0, 0], [1, 0], [2, 0], [2, 1]], // J (NES spawn: flat top, right leg down)
+  [[0, 0], [1, 0], [2, 0], [1, 1]], // T (NES spawn: flat top, stem down)
+  [[1, 0], [2, 0], [0, 1], [1, 1]], // S
+  [[0, 0], [1, 0], [1, 1], [2, 1]], // Z
+];
+const PIECE_COLORS = [
+  '#39c5cf', // I - cyan
+  '#e3b341', // O - gold
+  '#f0883e', // L - orange
+  '#58a6ff', // J - blue
+  '#bc8cff', // T - purple
+  '#3fb950', // S - green
+  '#f85149', // Z - red
+];
+
+// Exact NES transition weights in I,O,L,J,T,S,Z order (each row sums to 64):
+const NES_W = [
+  [2,10,10,10,10,12,10],
+  [10,4,10,10,10,10,10],
+  [10,10,2,10,12,10,10],
+  [10,10,10,2,12,10,10],
+  [10,10,10,10,2,10,12],
+  [10,10,10,10,10,4,10],
+  [10,10,10,12,10,10,2],
+];
+
+const MAX_HISTORY = 500;
+let history = [];
+let historyIdx = -1;
+
+let board = new Uint8Array(200);
+let curPiece = 0;
+let nextPiece = 4;
+let previewMove = null;
+let lastMoves = [];
+let autoplayTimer = null;
+let autoplayRunId = 0;
+let reqSeq = 0;
+let disagreeSeed = 30000000;
+let serverRngMode = 'nes';
+
+const canvas = document.getElementById('boardCanvas');
+const ctx2d = canvas.getContext('2d');
+const CELL = 24;
+
+function boardToStr(arr) {
+  let s = '';
+  for (let i = 0; i < 200; i++) s += arr[i] ? '1' : '0';
+  return s;
+}
+
+function strToBoard(s) {
+  const arr = new Uint8Array(200);
+  for (let i = 0; i < 200 && i < s.length; i++) arr[i] = (s[i] === '1') ? 1 : 0;
+  return arr;
+}
+
+function boardsEqual(a, b) {
+  for (let i = 0; i < 200; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+function updateUndoRedoButtons() {
+  document.getElementById('btnUndo').disabled = historyIdx <= 0;
+  document.getElementById('btnRedo').disabled = historyIdx < 0 || historyIdx >= history.length - 1;
+  document.getElementById('historyPos').textContent =
+    history.length > 0 ? `${historyIdx + 1}/${history.length}` : '0/0';
+}
+
+function pushHistory() {
+  if (historyIdx >= 0) {
+    const cur = history[historyIdx];
+    if (cur.curPiece === curPiece && cur.nextPiece === nextPiece && boardsEqual(cur.board, board)) {
+      updateUndoRedoButtons();
+      return;
+    }
+  }
+  history.length = historyIdx + 1;
+  history.push({ board: new Uint8Array(board), curPiece, nextPiece });
+  if (history.length > MAX_HISTORY) {
+    history.shift();
+  }
+  historyIdx = history.length - 1;
+  updateUndoRedoButtons();
+}
+
+function restoreHistoryAt(idx) {
+  if (idx < 0 || idx >= history.length) return;
+  stopAutoplay();
+  historyIdx = idx;
+  const snap = history[historyIdx];
+  board = new Uint8Array(snap.board);
+  curPiece = snap.curPiece;
+  nextPiece = snap.nextPiece;
+  renderPieceBars();
+  updateUndoRedoButtons();
+  refreshAll();
+}
+
+function sampleNesNext(prev) {
+  if (serverRngMode === 'uniform') {
+    return Math.floor(Math.random() * 7);
+  }
+  const row = NES_W[prev];
+  let r = Math.floor(Math.random() * 64);
+  for (let i = 0; i < 7; i++) {
+    if (r < row[i]) return i;
+    r -= row[i];
+  }
+  return 6;
+}
+
+function stopAutoplay() {
+  autoplayRunId++;
+  if (autoplayTimer !== null) {
+    clearTimeout(autoplayTimer);
+    autoplayTimer = null;
+  }
+  const btn = document.getElementById('btnAutoplay');
+  btn.classList.remove('active');
+  btn.textContent = 'Autoplay';
+}
+
+function drawPieceBox(canvasId, letterId, pieceIdx) {
+  const pCanvas = document.getElementById(canvasId);
+  const pCtx = pCanvas.getContext('2d');
+  document.getElementById(letterId).textContent = PIECES[pieceIdx];
+  pCtx.clearRect(0, 0, pCanvas.width, pCanvas.height);
+
+  const cells = PIECE_SHAPES[pieceIdx];
+  const color = PIECE_COLORS[pieceIdx];
+  const sz = 18;
+  let maxC = 0, maxR = 0;
+  for (const [c, r] of cells) {
+    if (c > maxC) maxC = c;
+    if (r > maxR) maxR = r;
+  }
+  const wPx = (maxC + 1) * sz;
+  const hPx = (maxR + 1) * sz;
+  const ox = Math.floor((pCanvas.width - wPx) / 2);
+  const oy = Math.floor((pCanvas.height - hPx) / 2);
+
+  for (const [c, r] of cells) {
+    const x = ox + c * sz;
+    const y = oy + r * sz;
+    pCtx.fillStyle = color;
+    pCtx.fillRect(x + 1, y + 1, sz - 2, sz - 2);
+    // Subtle NES-style inner highlight/bevel
+    pCtx.fillStyle = 'rgba(255, 255, 255, 0.32)';
+    pCtx.fillRect(x + 2, y + 2, sz - 4, 3);
+    pCtx.fillRect(x + 2, y + 2, 3, sz - 4);
+    pCtx.fillStyle = 'rgba(0, 0, 0, 0.25)';
+    pCtx.fillRect(x + 2, y + sz - 4, sz - 4, 2);
+    pCtx.strokeStyle = '#090c10';
+    pCtx.lineWidth = 1;
+    pCtx.strokeRect(x + 0.5, y + 0.5, sz - 1, sz - 1);
+  }
+}
+
+function drawPiecePreviews() {
+  drawPieceBox('curPieceCanvas', 'curPieceLetter', curPiece);
+  drawPieceBox('nextPieceCanvas', 'nextPieceLetter', nextPiece);
+}
+
+function samePly2Placement(a, b) {
+  return Boolean(a && b && a.rot === b.rot && a.x === b.x && a.y === b.y);
+}
+
+function fmtPly2Desc(p2) {
+  const tuck = (p2.tuckInput && p2.tuckInput !== '.' && p2.tuckInput !== 'N') ? ` ${p2.tuckInput}` : '';
+  const lcStr = p2.lc > 0 ? ` LC=${p2.lc}` : '';
+  return `${PIECES[nextPiece]} r${p2.rot} (${p2.x},${p2.y})${tuck}${lcStr}`;
+}
+
+function updateHoverInfo() {
+  const el = document.getElementById('hoverInfo');
+  if (!previewMove) {
+    el.innerHTML = '';
+    return;
+  }
+  const hp2 = previewMove.ply2Move;
+  const ep2 = previewMove.evalPly2Move;
+  const lines = [];
+  if (hp2) {
+    const dst = hp2.inTb ? '→ TB2' : '→ NN';
+    const sameNote = samePly2Placement(hp2, ep2) ? ' (= eval)' : '';
+    lines.push(`<div style="color:#d2a8ff;">Hybrid 2nd: ${fmtPly2Desc(hp2)} ${dst}${sameNote}</div>`);
+  }
+  if (ep2 && !samePly2Placement(hp2, ep2)) {
+    lines.push(`<div style="color:#f0b942;">eval.cpp 2nd: ${fmtPly2Desc(ep2)}</div>`);
+  }
+  el.innerHTML = lines.join('');
+}
+
+function drawBoard() {
+  ctx2d.clearRect(0, 0, canvas.width, canvas.height);
+  const src = previewMove ? strToBoard(previewMove.afterBoard) : board;
+  for (let r = 0; r < 20; r++) {
+    for (let c = 0; c < 10; c++) {
+      const idx = r * 10 + c;
+      const filled = src[idx] === 1;
+      const origFilled = board[idx] === 1;
+      ctx2d.fillStyle = (c === 9) ? '#11161f' : '#0b0f16';
+      ctx2d.fillRect(c * CELL, r * CELL, CELL, CELL);
+      if (filled) {
+        if (previewMove && !origFilled) {
+          ctx2d.fillStyle = '#58a6ff';
+        } else {
+          ctx2d.fillStyle = (r < 6) ? '#d29922' : '#3fb950';
+        }
+        ctx2d.fillRect(c * CELL + 1, r * CELL + 1, CELL - 2, CELL - 2);
+      }
+      ctx2d.strokeStyle = '#1d2533';
+      ctx2d.lineWidth = 1;
+      ctx2d.strokeRect(c * CELL + 0.5, r * CELL + 0.5, CELL - 1, CELL - 1);
+    }
+  }
+  if (!previewMove) return;
+  const hp2 = previewMove.ply2Move;
+  const ep2 = previewMove.evalPly2Move;
+  // Overlay Hybrid implied 2nd piece (purple, teal outline for TB2)
+  if (hp2 && Array.isArray(hp2.cells)) {
+    for (const [r, c] of hp2.cells) {
+      if (r < 0 || r >= 20 || c < 0 || c >= 10) continue;
+      const x = c * CELL;
+      const y = r * CELL;
+      ctx2d.fillStyle = hp2.inTb ? 'rgba(188, 140, 255, 0.85)' : 'rgba(188, 140, 255, 0.68)';
+      ctx2d.fillRect(x + 2, y + 2, CELL - 4, CELL - 4);
+      ctx2d.strokeStyle = hp2.inTb ? '#39c5cf' : '#e2c5ff';
+      ctx2d.lineWidth = 2;
+      ctx2d.strokeRect(x + 2, y + 2, CELL - 4, CELL - 4);
+    }
+  }
+  // Overlay eval.cpp implied 2nd piece (amber outline/tint; dashed if overlapping Hybrid 2nd)
+  if (ep2 && Array.isArray(ep2.cells) && !samePly2Placement(hp2, ep2)) {
+    ctx2d.save();
+    for (const [r, c] of ep2.cells) {
+      if (r < 0 || r >= 20 || c < 0 || c >= 10) continue;
+      const x = c * CELL;
+      const y = r * CELL;
+      ctx2d.fillStyle = hp2 ? 'rgba(240, 185, 66, 0.28)' : 'rgba(240, 185, 66, 0.50)';
+      ctx2d.fillRect(x + 3, y + 3, CELL - 6, CELL - 6);
+      ctx2d.strokeStyle = '#f0b942';
+      ctx2d.lineWidth = 2;
+      if (hp2) ctx2d.setLineDash([4, 2]);
+      ctx2d.strokeRect(x + 3, y + 3, CELL - 6, CELL - 6);
+    }
+    ctx2d.restore();
+  }
+}
+
+function renderPieceBars() {
+  const curBar = document.getElementById('curPieceBar');
+  const nextBar = document.getElementById('nextPieceBar');
+  curBar.innerHTML = '';
+  nextBar.innerHTML = '';
+  PIECES.forEach((ch, idx) => {
+    const b1 = document.createElement('button');
+    b1.className = 'piece-btn' + (idx === curPiece ? ' sel' : '');
+    b1.textContent = ch;
+    b1.onclick = () => {
+      stopAutoplay();
+      curPiece = idx;
+      pushHistory();
+      renderPieceBars();
+      refreshAll();
+    };
+    curBar.appendChild(b1);
+
+    const b2 = document.createElement('button');
+    b2.className = 'piece-btn' + (idx === nextPiece ? ' sel' : '');
+    b2.textContent = ch;
+    b2.onclick = () => {
+      stopAutoplay();
+      nextPiece = idx;
+      pushHistory();
+      renderPieceBars();
+      refreshAll();
+    };
+    nextBar.appendChild(b2);
+  });
+  drawPiecePreviews();
+}
+
+function fmt(v, digits = 3) {
+  return (v === null || v === undefined || Number.isNaN(v)) ? '—' : Number(v).toFixed(digits);
+}
+
+async function fetchPing() {
+  try {
+    const res = await fetch('/ping');
+    const d = await res.json();
+    const pTb = document.getElementById('pillTb');
+    const pNn = document.getElementById('pillNn');
+    const pMeta = document.getElementById('pillMeta');
+    pTb.textContent = d.tbLoaded
+      ? `TB: ${(d.boardCount/1e6).toFixed(2)}M | E[V(0)]=${fmt(d.emptyBoardValue, 4)}`
+      : 'TB: none';
+    pTb.className = 'pill' + (d.tbLoaded ? ' on' : '');
+    pNn.textContent = d.nnLoaded
+      ? `NN: ${d.nnHidden[0]}x${d.nnHidden[1]} (${(d.nnParamCount*4/1024).toFixed(0)} KB)`
+      : 'NN: none';
+    pNn.className = 'pill' + (d.nnLoaded ? ' on' : '');
+    pMeta.textContent = `L${d.level} | γ=${d.gamma} | ${d.rngMode}`;
+    if (d.rngMode) serverRngMode = d.rngMode;
+  } catch (e) {
+    document.getElementById('statusMsg').textContent = 'Ping error: ' + e.message;
+  }
+}
+
+async function refreshAll() {
+  const mySeq = ++reqSeq;
+  previewMove = null;
+  updateHoverInfo();
+  drawBoard();
+  const bStr = boardToStr(board);
+  const margin = document.getElementById('inpMargin').value || '0.25';
+  const ply = document.getElementById('selPly').value || '2';
+
+  try {
+    const [infoRes, movesRes] = await Promise.all([
+      fetch(`/state-info?board=${bStr}&next=${nextPiece}&margin=${encodeURIComponent(margin)}&ply=${ply}`),
+      fetch(`/moves?board=${bStr}&piece=${curPiece}&next=${nextPiece}&margin=${encodeURIComponent(margin)}&ply=${ply}`)
+    ]);
+    if (mySeq !== reqSeq) return; // Discard stale response
+    const info = await infoRes.json();
+    const mvData = await movesRes.json();
+    if (mySeq !== reqSeq) return; // Discard stale response after JSON parse
+    if (info.error) throw new Error(info.error);
+    if (mvData.error) throw new Error(mvData.error);
+
+    document.getElementById('boardStats').textContent =
+      `MaxH=${info.maxHeight} | Holes=${info.holes} | K16=${info.fitsKey ? 'yes' : 'no'} | In TB=${info.inTablebase ? 'YES' : 'OUT'}`;
+    document.getElementById('expectedSummary').textContent =
+      `E[V_tb]=${fmt(info.expectedTb, 4)} | E[V_nn]=${fmt(info.expectedNn, 4)} | Err=${fmt(info.expectedErr, 4)}`;
+
+    const vtBody = document.getElementById('valTableBody');
+    vtBody.innerHTML = '';
+    for (let c = 0; c < 7; c++) {
+      const tbV = info.tbValues ? info.tbValues[c] : null;
+      const nnV = info.nnValues ? info.nnValues[c] : null;
+      const err = (tbV !== null && nnV !== null) ? (nnV - tbV) : null;
+      const ps = info.pieceSummary ? info.pieceSummary[c] : null;
+      const errCls = err === null ? '' : (Math.abs(err) < 0.15 ? 'err-ok' : (err > 0 ? 'err-pos' : 'err-neg'));
+      const badges = [];
+      if (ps && ps.diffEval) badges.push('<span class="badge b-eval">≠EVAL</span>');
+      if (ps && ps.diffNn) badges.push('<span class="badge b-nn">≠NN</span>');
+      const tr = document.createElement('tr');
+      tr.style.cursor = 'pointer';
+      if (c === curPiece) tr.style.background = '#1e2736';
+      tr.innerHTML = `<td><b>${PIECES[c]}</b></td><td>${fmt(tbV, 3)}</td><td>${fmt(nnV, 3)}</td><td class="${errCls}">${err === null ? '—' : (err >= 0 ? '+' : '') + fmt(err, 3)}</td><td>${badges.join('')}</td>`;
+      tr.onclick = () => {
+        stopAutoplay();
+        curPiece = c;
+        pushHistory();
+        renderPieceBars();
+        refreshAll();
+      };
+      vtBody.appendChild(tr);
+    }
+
+    lastMoves = mvData.moves || [];
+    lastMoves.sort((a, b) => b.hybridQ - a.hybridQ);
+    document.getElementById('movesHeader').textContent =
+      `Legal 10 Hz Moves (${lastMoves.length}) — ${PIECES[curPiece]} → ${PIECES[nextPiece]}`;
+
+    const mtBody = document.getElementById('movesTableBody');
+    mtBody.innerHTML = '';
+    lastMoves.forEach((m) => {
+      const tr = document.createElement('tr');
+      tr.className = 'move-row';
+      let bHtml = '';
+      if (m.isHybridBest) bHtml += '<span class="badge b-hyb">HYB</span>';
+      if (m.isNnBest) bHtml += '<span class="badge b-nn">NN</span>';
+      if (m.isEvalBest) bHtml += '<span class="badge b-eval">EVAL</span>';
+      if (!m.afterInTb) {
+        bHtml += m.ply2ReenteredTb
+          ? '<span class="badge b-tb2" title="Ply-1 is out of TB, but best ply-2 reply re-enters TB with exact V_tb">OUT→TB2</span>'
+          : '<span class="badge b-out">OUT</span>';
+      }
+      const tuck = (m.tuckInput && m.tuckInput !== '.' && m.tuckInput !== 'N') ? ` ${m.tuckInput}` : '';
+      tr.innerHTML =
+        `<td>r${m.rot} (${m.x},${m.y})${tuck}${bHtml}</td>` +
+        `<td>${m.linesCleared}</td>` +
+        `<td>${fmt(m.tbQ, 3)}</td>` +
+        `<td><b>${fmt(m.hybridQ, 3)}</b></td>` +
+        `<td>${fmt(m.nnQ2, 3)}</td>` +
+        `<td>${fmt(m.nnQ1, 3)}</td>` +
+        `<td>${fmt(m.evalQ, 1)}</td>` +
+        `<td>${m.afterMaxHeight}/${m.afterHoles}</td>`;
+      tr.onmouseenter = () => { previewMove = m; drawBoard(); updateHoverInfo(); };
+      tr.onmouseleave = () => { previewMove = null; drawBoard(); updateHoverInfo(); };
+      tr.onclick = () => {
+        stopAutoplay();
+        board = strToBoard(m.afterBoard);
+        curPiece = nextPiece;
+        nextPiece = sampleNesNext(curPiece);
+        pushHistory();
+        renderPieceBars();
+        refreshAll();
+      };
+      mtBody.appendChild(tr);
+    });
+    document.getElementById('statusMsg').textContent = '';
+  } catch (e) {
+    if (mySeq === reqSeq) {
+      document.getElementById('statusMsg').textContent = 'Error: ' + e.message;
+    }
+  }
+}
+
+function playHybridOnce() {
+  const best = lastMoves.find(m => m.isHybridBest) || lastMoves[0];
+  if (!best) {
+    stopAutoplay();
+    return false;
+  }
+  board = strToBoard(best.afterBoard);
+  curPiece = nextPiece;
+  nextPiece = sampleNesNext(curPiece);
+  pushHistory();
+  renderPieceBars();
+  return true;
+}
+
+async function autoplayTick(runId) {
+  if (runId !== autoplayRunId) return;
+  if (!playHybridOnce()) return;
+  await refreshAll();
+  if (runId === autoplayRunId) {
+    autoplayTimer = setTimeout(() => autoplayTick(runId), 220);
+  }
+}
+
+// Canvas cell painting (each drag stroke records a single undo snapshot on mouseup)
+let isPainting = false;
+let paintVal = 1;
+let paintDirty = false;
+function cellFromEvent(ev) {
+  const rect = canvas.getBoundingClientRect();
+  const c = Math.floor((ev.clientX - rect.left) / CELL);
+  const r = Math.floor((ev.clientY - rect.top) / CELL);
+  if (r < 0 || r >= 20 || c < 0 || c >= 10) return -1;
+  return r * 10 + c;
+}
+canvas.addEventListener('mousedown', (ev) => {
+  stopAutoplay();
+  const idx = cellFromEvent(ev);
+  if (idx < 0) return;
+  isPainting = true;
+  paintVal = board[idx] ? 0 : 1;
+  board[idx] = paintVal;
+  paintDirty = true;
+  previewMove = null;
+  updateHoverInfo();
+  drawBoard();
+});
+canvas.addEventListener('mousemove', (ev) => {
+  if (!isPainting) return;
+  const idx = cellFromEvent(ev);
+  if (idx >= 0 && board[idx] !== paintVal) {
+    board[idx] = paintVal;
+    paintDirty = true;
+    drawBoard();
+  }
+});
+window.addEventListener('mouseup', () => {
+  if (isPainting) {
+    isPainting = false;
+    if (paintDirty) {
+      paintDirty = false;
+      pushHistory();
+    }
+    refreshAll();
+  }
+});
+
+document.getElementById('btnUndo').onclick = () => restoreHistoryAt(historyIdx - 1);
+document.getElementById('btnRedo').onclick = () => restoreHistoryAt(historyIdx + 1);
+window.addEventListener('keydown', (ev) => {
+  const tag = (document.activeElement && document.activeElement.tagName) || '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+  const mod = ev.metaKey || ev.ctrlKey;
+  if (mod && ev.key.toLowerCase() === 'z' && !ev.shiftKey) {
+    ev.preventDefault();
+    restoreHistoryAt(historyIdx - 1);
+  } else if ((mod && ev.key.toLowerCase() === 'z' && ev.shiftKey) || (ev.ctrlKey && ev.key.toLowerCase() === 'y')) {
+    ev.preventDefault();
+    restoreHistoryAt(historyIdx + 1);
+  }
+});
+
+document.getElementById('btnClear').onclick = () => {
+  stopAutoplay();
+  board.fill(0);
+  pushHistory();
+  refreshAll();
+};
+document.getElementById('btnStepHyb').onclick = () => {
+  stopAutoplay();
+  if (playHybridOnce()) refreshAll();
+};
+document.getElementById('btnAutoplay').onclick = () => {
+  if (autoplayTimer !== null) {
+    stopAutoplay();
+  } else {
+    const runId = ++autoplayRunId;
+    const btn = document.getElementById('btnAutoplay');
+    btn.classList.add('active');
+    btn.textContent = 'Stop';
+    autoplayTimer = setTimeout(() => autoplayTick(runId), 50);
+  }
+};
+document.getElementById('inpMargin').onchange = () => { stopAutoplay(); refreshAll(); };
+document.getElementById('selPly').onchange = () => { stopAutoplay(); refreshAll(); };
+document.getElementById('btnReload').onclick = async () => {
+  stopAutoplay();
+  document.getElementById('statusMsg').textContent = 'Reloading...';
+  try {
+    const res = await fetch('/reload');
+    const d = await res.json();
+    if (d.error) throw new Error(d.error);
+    await fetchPing();
+    await refreshAll();
+    document.getElementById('statusMsg').textContent = 'Reloaded cleanly.';
+  } catch (e) {
+    document.getElementById('statusMsg').textContent = 'Reload failed (live state preserved): ' + e.message;
+  }
+};
+document.getElementById('btnStepDisagree').onclick = async () => {
+  stopAutoplay();
+  const mySeq = ++reqSeq;
+  const mode = document.getElementById('selDisagreeMode').value;
+  const margin = document.getElementById('inpMargin').value || '0.25';
+  const ply = document.getElementById('selPly').value || '2';
+  document.getElementById('statusMsg').textContent = `Searching (${mode})...`;
+  try {
+    const res = await fetch(`/step-disagreement?board=${boardToStr(board)}&piece=${curPiece}&next=${nextPiece}&mode=${mode}&seed=${disagreeSeed}&margin=${encodeURIComponent(margin)}&ply=${ply}`);
+    if (mySeq !== reqSeq) return;
+    const d = await res.json();
+    if (mySeq !== reqSeq) return;
+    if (d.error) throw new Error(d.error);
+    board = strToBoard(d.board);
+    curPiece = d.piece;
+    nextPiece = d.next;
+    disagreeSeed = d.nextSeed || (disagreeSeed + 1);
+    pushHistory();
+    renderPieceBars();
+    await refreshAll();
+    const afterRefreshSeq = reqSeq;
+    if (afterRefreshSeq !== mySeq + 1) return;
+    document.getElementById('statusMsg').textContent = d.found
+      ? `Found ${mode} disagreement in ${d.stepsTaken} steps`
+      : `No ${mode} disagreement in ${d.stepsTaken} steps`;
+  } catch (e) {
+    if (mySeq === reqSeq) document.getElementById('statusMsg').textContent = 'Error: ' + e.message;
+  }
+};
+
+pushHistory();
+renderPieceBars();
+fetchPing();
+refreshAll();
+</script>
+</body>
+</html>
