@@ -39,13 +39,13 @@ TIMELINE_30_HZ = "X.";
 
 -- Config constants
 SHOULD_ADJUST = true
-REACTION_TIME_FRAMES = 60
+REACTION_TIME_FRAMES = 18
 -- The first piece's precompute (reaction time 0) is queried this many frames
 -- after the kick -- much later than the usual reaction window, since there are
 -- ~90 frames of startup and the result only needs to be ready before the first
 -- placement starts.
 FIRST_PIECE_RESULT_FRAMES = 20
-INPUT_TIMELINE = TIMELINE_10_HZ;
+INPUT_TIMELINE = TIMELINE_20_HZ;
 PLAYOUT_COUNT = 160
 PLAYOUT_LENGTH = 8
 PRUNING_BREADTH = -2
