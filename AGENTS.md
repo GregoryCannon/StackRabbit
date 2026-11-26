@@ -51,6 +51,13 @@ rebuilding on disk does not update it. Rebuild and restart `live_game_server`
 - Design APIs so parameters mean one thing. If a call site needs different semantics,
   add a clearly-named parameter rather than overloading an existing one, and make
   mutually exclusive modes explicit (error out when both are passed).
+- **Mandatory reviewer subagent gate on non-trivial code changes.** Before relying on
+  new or modified solver, sampler, NNUE, or adapter logic for multi-round training or
+  benchmarks — and before closing out any phase or iteration — launch independent
+  read-only reviewer subagents (**Logic**, **Perf & Scale**, **Readability**) against
+  the diff. Launch them *in parallel* while smoke tests or long training/solve jobs run
+  so review adds zero wall-clock delay, fix HIGH/MEDIUM findings before launching the
+  next iteration, and record review sign-off explicitly in the plan doc checklist.
 - **Code comments describe end-state behavior, not process.** Never reference
   migration phases/steps or retired implementations in code comments — that
   context belongs in the docs (`TESTING.md`, `docs/*.md`). Unintuitive temporary
