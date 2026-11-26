@@ -105,6 +105,65 @@ inline constexpr double REWARD_NORM_TETRIS[5] = {
     0.0, 40.0 / 1200.0, 100.0 / 1200.0, 300.0 / 1200.0, 1.0,
 };
 
+// Stationary Bellman discount semantics:
+//   - PerPiece: factor(lc) = gamma (classic infinite-horizon per-piece discount).
+//   - PerLine:  factor(lc) = PER_LINE_STEP_TIEBREAK * gamma^lc (models an expected
+//               1/(1-gamma) line horizon where clearing lines consumes line budget and
+//               waiting for a Tetris carries negligible 0.01% per-piece tie-break decay).
+enum class DiscountMode : uint32_t {
+  PerPiece = 0U,
+  PerLine = 1U,
+};
+
+inline constexpr double PER_LINE_STEP_TIEBREAK = 0.9999;
+
+constexpr const char *discountModeName(DiscountMode mode) noexcept {
+  return (mode == DiscountMode::PerLine) ? "line" : "piece";
+}
+
+constexpr bool parseDiscountMode(std::string_view s, DiscountMode &out) noexcept {
+  if (s == "piece") {
+    out = DiscountMode::PerPiece;
+    return true;
+  }
+  if (s == "line") {
+    out = DiscountMode::PerLine;
+    return true;
+  }
+  return false;
+}
+
+struct StepDiscountTable20 {
+  double f[5] = {1.0, 1.0, 1.0, 1.0, 1.0};
+
+  static StepDiscountTable20 make(double gamma, DiscountMode mode) noexcept {
+    StepDiscountTable20 t{};
+    if (mode == DiscountMode::PerPiece) {
+      for (int lc = 0; lc <= 4; ++lc) {
+        t.f[lc] = gamma;
+      }
+    } else {
+      double g = PER_LINE_STEP_TIEBREAK;
+      for (int lc = 0; lc <= 4; ++lc) {
+        t.f[lc] = g;
+        g *= gamma;
+      }
+    }
+    return t;
+  }
+};
+
+inline double stepDiscount20(double gamma, DiscountMode mode, uint8_t linesCleared) noexcept {
+  if (mode == DiscountMode::PerPiece) {
+    return gamma;
+  }
+  double g = PER_LINE_STEP_TIEBREAK;
+  for (uint8_t i = 0; i < linesCleared; ++i) {
+    g *= gamma;
+  }
+  return g;
+}
+
 inline constexpr int NES_LINE_BASE_POINTS[5] = {0, 40, 100, 300, 1200};
 
 inline constexpr int nesRawScore(int linesCleared, int levelAfter) noexcept {

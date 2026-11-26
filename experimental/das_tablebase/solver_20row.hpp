@@ -410,7 +410,7 @@ template <bool RecordActions, typename BoundaryFn>
 inline double
 computeBellmanBackup20(const Board20 &board, const TuckSetupInfo &tucks, int curPiece, int gravity,
                        const FlatBoardIndex &index, const std::vector<double> &vCur,
-                       const TransitionProbMatrix &transProb, double gamma,
+                       const TransitionProbMatrix &transProb, const StepDiscountTable20 &disc,
                        const BoundaryFn &boundaryFn, SoftBoundaryCache20 *cache,
                        const uint32_t *bestOutRead, PlacementList &pl,
                        uint32_t *outActions = nullptr, uint32_t *bestOutWrite = nullptr,
@@ -479,8 +479,9 @@ computeBellmanBackup20(const Board20 &board, const TuckSetupInfo &tucks, int cur
     if (cid != INVALID_BOARD_ID) {
       const double *childRow = &vCur[static_cast<size_t>(cid) * STATES_PER_BOARD];
       const uint32_t packed = packPolicyAction(cid, lc);
+      const double dFac = disc.f[lc];
       for (int n = 0; n < NUM_PIECES; ++n) {
-        const double q = rew + gamma * childRow[n];
+        const double q = rew + dFac * childRow[n];
         // Strict '>' ensures precomputed best-OUT ties stay consistent across iter 1 and iter 2+.
         if (!haveBest[n] || q > bestQ[n]) {
           bestQ[n] = q;
@@ -494,34 +495,55 @@ computeBellmanBackup20(const Board20 &board, const TuckSetupInfo &tucks, int cur
           // Out-of-TB moves were already maximized into bestOutRead on iter 1.
           continue;
         }
-        bool cacheHit = false;
-        if (cache != nullptr && fitsKey) {
-          cacheHit = cache->lookup(afterKey, boundCont);
-        }
-        if (!cacheHit) {
-          boundaryFn.evalRow(afterRows, boundCont);
-          if (cache != nullptr && fitsKey) {
-            cache->store(afterKey, boundCont);
+        if (fitsKey) {
+          bool cacheHit = false;
+          if (cache != nullptr) {
+            cacheHit = cache->lookup(afterKey, boundCont);
           }
-        }
-        for (int n = 0; n < NUM_PIECES; ++n) {
-          const double cont =
-              (std::isfinite(boundCont[n]) && boundCont[n] > 0.0) ? boundCont[n] : 0.0;
-          const double qRaw = rew + gamma * cont;
-          if (qRaw > TERMINAL_MAX_PAYOFF && sawOverflow != nullptr) {
-            *sawOverflow = true;
+          if (!cacheHit) {
+            boundaryFn.evalRow(afterRows, boundCont);
+            if (cache != nullptr) {
+              cache->store(afterKey, boundCont);
+            }
           }
-          const uint32_t termWord = packTerminalPayoff(qRaw);
+          const double dFac = disc.f[lc];
+          for (int n = 0; n < NUM_PIECES; ++n) {
+            const double cont =
+                (std::isfinite(boundCont[n]) && boundCont[n] > 0.0) ? boundCont[n] : 0.0;
+            const double qRaw = rew + dFac * cont;
+            if (qRaw > TERMINAL_MAX_PAYOFF && sawOverflow != nullptr) {
+              *sawOverflow = true;
+            }
+            const uint32_t termWord = packTerminalPayoff(qRaw);
+            const double qQuant = unpackTerminalPayoff(termWord);
+            if (!haveBestOut[n] || qQuant > bestOutQ[n]) {
+              bestOutQ[n] = qQuant;
+              bestOutAct[n] = termWord;
+              haveBestOut[n] = true;
+            }
+            if (!haveBest[n] || qQuant > bestQ[n]) {
+              bestQ[n] = qQuant;
+              bestAct[n] = termWord;
+              haveBest[n] = true;
+            }
+          }
+        } else {
+          // Unrepresentable boards (!fitsKey, e.g. >= 10 holes) can never enter the tablebase,
+          // so gating Soft-Boundary NN continuation to 0.0 prevents uncorrectable OOD reward
+          // hacking. Pack as terminal payoff so iter-1 bestOutStore matches iter-2+ bit-for-bit.
+          const uint32_t termWord = packTerminalPayoff(rew);
           const double qQuant = unpackTerminalPayoff(termWord);
-          if (!haveBestOut[n] || qQuant > bestOutQ[n]) {
-            bestOutQ[n] = qQuant;
-            bestOutAct[n] = termWord;
-            haveBestOut[n] = true;
-          }
-          if (!haveBest[n] || qQuant > bestQ[n]) {
-            bestQ[n] = qQuant;
-            bestAct[n] = termWord;
-            haveBest[n] = true;
+          for (int n = 0; n < NUM_PIECES; ++n) {
+            if (!haveBestOut[n] || qQuant > bestOutQ[n]) {
+              bestOutQ[n] = qQuant;
+              bestOutAct[n] = termWord;
+              haveBestOut[n] = true;
+            }
+            if (!haveBest[n] || qQuant > bestQ[n]) {
+              bestQ[n] = qQuant;
+              bestAct[n] = termWord;
+              haveBest[n] = true;
+            }
           }
         }
       } else {
@@ -616,11 +638,11 @@ inline bool initializeValuesFromWarmStart(const std::vector<BoardKey> &sortedKey
 template <typename BoundaryFn>
 inline bool runPolicyImprovementSweep20(
     const std::vector<BoardKey> &sortedKeys, int gravity, const FlatBoardIndex &index,
-    const TransitionProbMatrix &transProb, double gamma, const BoundaryFn &boundaryFn,
-    std::vector<SoftBoundaryCache20> *threadCaches, PolicyActionStore20 *bestOutStore,
-    bool writeBestOut, PersistentWorkerPool &pool, size_t minParallelBoards,
-    const std::vector<double> &vCur, std::vector<double> &vNext, PolicyActionStore20 &policyStore,
-    double &outMaxDiff, double &outMaxVal, std::string &errOut) {
+    const TransitionProbMatrix &transProb, const StepDiscountTable20 &disc,
+    const BoundaryFn &boundaryFn, std::vector<SoftBoundaryCache20> *threadCaches,
+    PolicyActionStore20 *bestOutStore, bool writeBestOut, PersistentWorkerPool &pool,
+    size_t minParallelBoards, const std::vector<double> &vCur, std::vector<double> &vNext,
+    PolicyActionStore20 &policyStore, double &outMaxDiff, double &outMaxVal, std::string &errOut) {
   const size_t n = sortedKeys.size();
   const int threads = pool.numThreads();
   const size_t chunkStride =
@@ -678,7 +700,7 @@ inline bool runPolicyImprovementSweep20(
             for (int c = 0; c < NUM_PIECES; ++c) {
               const size_t cOff = static_cast<size_t>(c) * STATES_PER_BOARD;
               const double updatedV = computeBellmanBackup20</*RecordActions=*/true>(
-                  board, tucks, c, gravity, index, vCur, transProb, gamma, boundaryFn, cache,
+                  board, tucks, c, gravity, index, vCur, transProb, disc, boundaryFn, cache,
                   (boardBestOutRead != nullptr) ? &boardBestOutRead[cOff] : nullptr, pl,
                   &boardActions[cOff],
                   (boardBestOutWrite != nullptr) ? &boardBestOutWrite[cOff] : nullptr,
@@ -733,10 +755,10 @@ inline bool runPolicyImprovementSweep20(
 }
 
 inline bool runPolicyEvalSweep20(size_t numBoards, const TransitionProbMatrix &transProb,
-                                 double gamma, PersistentWorkerPool &pool, size_t minParallelBoards,
-                                 const std::vector<double> &vCur, std::vector<double> &vNext,
-                                 PolicyActionStore20 &policyStore, double &outMaxDiff,
-                                 double &outMaxVal, std::string &errOut) {
+                                 const StepDiscountTable20 &disc, PersistentWorkerPool &pool,
+                                 size_t minParallelBoards, const std::vector<double> &vCur,
+                                 std::vector<double> &vNext, PolicyActionStore20 &policyStore,
+                                 double &outMaxDiff, double &outMaxVal, std::string &errOut) {
   const int threads = pool.numThreads();
   const size_t chunkStride =
       policyStore.isDisk() ? PolicyActionStore20::CHUNK_BOARDS : std::max<size_t>(1, numBoards);
@@ -760,12 +782,13 @@ inline bool runPolicyEvalSweep20(size_t numBoards, const TransitionProbMatrix &t
         chunkBegin, chunkEnd, minParallelBoards, [&](int tid, size_t subBegin, size_t subEnd) {
           double localMaxDiff = 0.0;
           double localMaxVal = 0.0;
-          const double *vCurPtr = vCur.data();
+          const StepDiscountTable20 localDisc = disc;
+          const double *__restrict__ vCurPtr = vCur.data();
           const size_t zeroRowBase = numBoards * STATES_PER_BOARD;
           for (size_t i = subBegin; i < subEnd; ++i) {
             const uint32_t *boardActions = &chunkActions[(i - chunkBegin) * ACTIONS_PER_BOARD];
             const double *oldRow = &vCurPtr[i * STATES_PER_BOARD];
-            double *newRow = &vNext[i * STATES_PER_BOARD];
+            double *__restrict__ newRow = &vNext[i * STATES_PER_BOARD];
 
             for (int c = 0; c < NUM_PIECES; ++c) {
               const uint32_t *cActions = &boardActions[static_cast<size_t>(c) * STATES_PER_BOARD];
@@ -777,12 +800,13 @@ inline bool runPolicyEvalSweep20(size_t numBoards, const TransitionProbMatrix &t
                 if (isTerminalPayoff(packed)) {
                   q = unpackTerminalPayoff(packed);
                 } else {
-                  q = REWARD_NORM_TETRIS[unpackPolicyLines(packed)];
+                  const uint8_t lc = unpackPolicyLines(packed);
+                  q = REWARD_NORM_TETRIS[lc];
                   const uint32_t rawChild = packed & ACTION_CHILD_MASK;
                   const size_t rowBase = (rawChild == ACTION_OUT_CHILD)
                                              ? zeroRowBase
                                              : (static_cast<size_t>(rawChild) * STATES_PER_BOARD);
-                  q += gamma * vCurPtr[rowBase + static_cast<size_t>(n)];
+                  q += localDisc.f[lc] * vCurPtr[rowBase + static_cast<size_t>(n)];
                 }
                 updatedV += probs[static_cast<size_t>(n)] * q;
               }
@@ -819,8 +843,8 @@ inline bool runPolicyEvalSweep20(size_t numBoards, const TransitionProbMatrix &t
 template <typename BoundaryFn>
 inline bool computeBellmanResidual20(const std::vector<BoardKey> &sortedKeys, int gravity,
                                      const FlatBoardIndex &index,
-                                     const TransitionProbMatrix &transProb, double gamma,
-                                     const BoundaryFn &boundaryFn,
+                                     const TransitionProbMatrix &transProb,
+                                     const StepDiscountTable20 &disc, const BoundaryFn &boundaryFn,
                                      PolicyActionStore20 *bestOutStore, PersistentWorkerPool &pool,
                                      size_t minParallelBoards, const std::vector<double> &vCur,
                                      double &outResidual, std::string &errOut) {
@@ -863,7 +887,7 @@ inline bool computeBellmanResidual20(const std::vector<BoardKey> &sortedKeys, in
                                    ? &boardBestOutRead[static_cast<size_t>(c) * STATES_PER_BOARD]
                                    : nullptr;
                            const double backup = computeBellmanBackup20</*RecordActions=*/false>(
-                               board, tucks, c, gravity, index, vCur, transProb, gamma, boundaryFn,
+                               board, tucks, c, gravity, index, vCur, transProb, disc, boundaryFn,
                                nullptr, cBestOut, pl);
                            const double diff = std::abs(backup - curRow[c]);
                            if (diff > localMax)
@@ -886,6 +910,7 @@ struct SolveConfig20 {
   RngMode rngMode = RngMode::Nes;
   int level = 19;
   double gamma = 0.995;
+  DiscountMode discountMode = DiscountMode::PerPiece;
   PolicyCacheMode policyCacheMode = PolicyCacheMode::Auto;
   size_t autoDiskThresholdBoards = 6000000; // >6M boards (~1.18 GB policy) streams via SSD
   double tolerance = 1e-5;
@@ -973,9 +998,10 @@ inline SolveResult20 solve20MPI(const std::vector<BoardKey> &sortedKeys, const S
     initTb->adviseDontNeed();
   }
 
-  const bool useDisk =
-      (cfg.policyCacheMode == PolicyCacheMode::Disk)
-      || (cfg.policyCacheMode == PolicyCacheMode::Auto && n > cfg.autoDiskThresholdBoards);
+  const size_t storeCount = BoundaryFn::enabled ? 2 : 1;
+  const bool useDisk = (cfg.policyCacheMode == PolicyCacheMode::Disk)
+                       || (cfg.policyCacheMode == PolicyCacheMode::Auto
+                           && n > cfg.autoDiskThresholdBoards / storeCount);
   res.usedDiskPolicyCache = useDisk;
 
   detail::PolicyActionStore20 policyStore;
@@ -994,6 +1020,7 @@ inline SolveResult20 solve20MPI(const std::vector<BoardKey> &sortedKeys, const S
   detail::PersistentWorkerPool pool(threads);
   const int gravity = getGravity20(cfg.level);
   const auto transProb = detail::buildTransitionProbMatrix(cfg.rngMode);
+  const StepDiscountTable20 disc = StepDiscountTable20::make(cfg.gamma, cfg.discountMode);
   const uint32_t emptyBoardId = index.find(EMPTY_BOARD_KEY);
 
   std::vector<detail::SoftBoundaryCache20> threadCaches;
@@ -1008,7 +1035,7 @@ inline SolveResult20 solve20MPI(const std::vector<BoardKey> &sortedKeys, const S
     double outerMaxV = 0.0;
 
     if (!detail::runPolicyImprovementSweep20(
-            sortedKeys, gravity, index, transProb, cfg.gamma, boundaryFn,
+            sortedKeys, gravity, index, transProb, disc, boundaryFn,
             BoundaryFn::enabled && writeBestOut ? &threadCaches : nullptr,
             BoundaryFn::enabled ? &bestOutStore : nullptr, writeBestOut, pool,
             cfg.minParallelBoards, vCur, vNext, policyStore, outerDiff, outerMaxV, res.error)) {
@@ -1040,9 +1067,8 @@ inline SolveResult20 solve20MPI(const std::vector<BoardKey> &sortedKeys, const S
     double innerMaxV = outerMaxV;
     if (outerDiff > cfg.tolerance && cfg.innerEvalSweeps > 0) {
       for (int k = 0; k < cfg.innerEvalSweeps; ++k) {
-        if (!detail::runPolicyEvalSweep20(n, transProb, cfg.gamma, pool, cfg.minParallelBoards,
-                                          vCur, vNext, policyStore, innerDiff, innerMaxV,
-                                          res.error)) {
+        if (!detail::runPolicyEvalSweep20(n, transProb, disc, pool, cfg.minParallelBoards, vCur,
+                                          vNext, policyStore, innerDiff, innerMaxV, res.error)) {
           return res;
         }
         vCur.swap(vNext);
@@ -1078,10 +1104,14 @@ inline SolveResult20 solve20MPI(const std::vector<BoardKey> &sortedKeys, const S
     }
   }
 
+  // Release vNext and policyStore before exact residual check to lower peak RAM at 20M-50M scale.
+  std::vector<double>().swap(vNext);
+  policyStore.close();
+
   // Exact Bellman residual check on converged vCur.
-  if (!detail::computeBellmanResidual20(sortedKeys, gravity, index, transProb, cfg.gamma,
-                                        boundaryFn, BoundaryFn::enabled ? &bestOutStore : nullptr,
-                                        pool, cfg.minParallelBoards, vCur, res.bellmanResidual,
+  if (!detail::computeBellmanResidual20(sortedKeys, gravity, index, transProb, disc, boundaryFn,
+                                        BoundaryFn::enabled ? &bestOutStore : nullptr, pool,
+                                        cfg.minParallelBoards, vCur, res.bellmanResidual,
                                         res.error)) {
     return res;
   }
@@ -1107,18 +1137,18 @@ struct SoftMcResult20 {
 };
 
 // Exact Soft-Boundary Monte Carlo verification matching the Bellman equation solved by solve20MPI.
-// Uses the exact same quantized terminal payoffs when exiting the TB and discount factor gamma.
+// Uses the exact same quantized terminal payoffs when exiting the TB and step discount schedule.
 template <typename TbType, typename BoundaryFn = NoOpBoundaryEval20>
 inline SoftMcResult20
 evaluateSoftBoundaryMC20(const TbType &tb, int numGames, uint64_t seed, int numThreads,
-                         const BoundaryFn &boundaryFn = BoundaryFn{}, int maxSteps = 5000) {
+                         const BoundaryFn &boundaryFn = BoundaryFn{}, int maxSteps = 25000) {
   SoftMcResult20 out{};
   if (!tb.isLoaded() || numGames <= 0) {
     return out;
   }
   const int threads = std::max(1, std::min(numThreads, numGames));
   const int gravity = tb.gravity();
-  const double gamma = tb.gamma();
+  const StepDiscountTable20 disc = StepDiscountTable20::make(tb.gamma(), tb.discountMode());
   const RngMode rngMode = tb.rngMode();
 
   std::vector<double> gameReturns(static_cast<size_t>(numGames), 0.0);
@@ -1175,7 +1205,7 @@ evaluateSoftBoundaryMC20(const TbType &tb, int numGames, uint64_t seed, int numT
           const bool inTb = fitsKey && tb.lookupPiece(afterKey, nextP, vNextPiece);
 
           if (inTb) {
-            const double q = rew + gamma * static_cast<double>(vNextPiece);
+            const double q = rew + disc.f[lc] * static_cast<double>(vNextPiece);
             if (!haveBest || q > bestQ) {
               bestQ = q;
               bestIsInTb = true;
@@ -1184,11 +1214,16 @@ evaluateSoftBoundaryMC20(const TbType &tb, int numGames, uint64_t seed, int numT
               haveBest = true;
             }
           } else if constexpr (BoundaryFn::enabled) {
-            boundaryFn.evalRow(afterRows, boundCont);
-            const double cont = (std::isfinite(boundCont[nextP]) && boundCont[nextP] > 0.0)
-                                    ? boundCont[nextP]
-                                    : 0.0;
-            const double qQuant = unpackTerminalPayoff(packTerminalPayoff(rew + gamma * cont));
+            double qQuant = 0.0;
+            if (fitsKey) {
+              boundaryFn.evalRow(afterRows, boundCont);
+              const double cont = (std::isfinite(boundCont[nextP]) && boundCont[nextP] > 0.0)
+                                      ? boundCont[nextP]
+                                      : 0.0;
+              qQuant = unpackTerminalPayoff(packTerminalPayoff(rew + disc.f[lc] * cont));
+            } else {
+              qQuant = unpackTerminalPayoff(packTerminalPayoff(rew));
+            }
             if (!haveBest || qQuant > bestQ) {
               bestQ = qQuant;
               bestIsInTb = false;
@@ -1211,7 +1246,7 @@ evaluateSoftBoundaryMC20(const TbType &tb, int numGames, uint64_t seed, int numT
         steps++;
         if (bestIsInTb) {
           total += discount * REWARD_NORM_TETRIS[bestLc];
-          discount *= gamma;
+          discount *= disc.f[bestLc];
           curKey = bestNextKey;
           curP = nextP;
           nextP = rng.sampleNextPiece(rngMode, curP);

@@ -687,19 +687,21 @@ namespace detail {
 // Returns 0.0 on immediate top-out.
 inline double bestReplyNn2Ply20(const uint16_t rows[BOARD_ROWS], int piece, int gravity,
                                 double gamma, const TinyDasNet &net, RngMode mode,
-                                PlacementList &pl) noexcept {
+                                PlacementList &pl,
+                                DiscountMode discountMode = DiscountMode::PerPiece) noexcept {
   const Board20 b20 = Board20::fromRows(rows);
   findPlacements10Hz(b20, piece, gravity, pl);
   if (pl.count == 0) {
     return 0.0;
   }
+  const StepDiscountTable20 disc = StepDiscountTable20::make(gamma, discountMode);
   uint16_t after2[BOARD_ROWS];
   double best = -std::numeric_limits<double>::infinity();
   for (int i = 0; i < pl.count; ++i) {
     const CompactPlacement &p = pl.data[i];
     const uint8_t lc = applyPlacement20(b20, piece, p.rot, p.x, p.y, after2);
     const double sc =
-        REWARD_NORM_TETRIS[lc] + gamma * net.evalNextPieceExpected(after2, mode, piece);
+        REWARD_NORM_TETRIS[lc] + disc.f[lc] * net.evalNextPieceExpected(after2, mode, piece);
     if (sc > best) {
       best = sc;
     }
@@ -724,16 +726,16 @@ struct Ply2HybridEval20 {
 // zero NN safety-margin penalty; leaves that remain out-of-TB apply safetyMargin only when at
 // least one TB-grounded move (ply-1 or ply-2) is available.
 template <typename TbType>
-inline Ply2HybridEval20 bestReplyHybrid2Ply20(const uint16_t rows[BOARD_ROWS], int nextPiece,
-                                              int gravity, double gamma, const TbType *tb,
-                                              const TinyDasNet *nn, double safetyMargin,
-                                              RngMode mode, PlacementList &pl) noexcept {
+inline Ply2HybridEval20
+bestReplyHybrid2Ply20(const Board20 &b20, const TuckSetupInfo &tucks, int nextPiece, int gravity,
+                      const StepDiscountTable20 &disc, const TbType *tb, const TinyDasNet *nn,
+                      double safetyMargin, RngMode mode, PlacementList &pl,
+                      bool alreadyGrounded = false) noexcept {
   Ply2HybridEval20 res{};
   if (nextPiece < 0 || nextPiece >= NUM_PIECES) {
     return res;
   }
-  const Board20 b20 = Board20::fromRows(rows);
-  findPlacements10Hz(b20, nextPiece, gravity, pl);
+  findPlacements10Hz(b20, tucks, nextPiece, gravity, pl);
   if (pl.count == 0) {
     return res;
   }
@@ -743,6 +745,7 @@ inline Ply2HybridEval20 bestReplyHybrid2Ply20(const uint16_t rows[BOARD_ROWS], i
   const bool hasNn = (nn != nullptr && nn->isLoaded());
   const bool finiteMargin = std::isfinite(safetyMargin);
   const double clampedMargin = finiteMargin ? std::max(0.0, safetyMargin) : 0.0;
+  const bool needOutNn = hasNn && (!alreadyGrounded || finiteMargin);
   const double tieEps = 1e-12;
 
   uint16_t after2[BOARD_ROWS];
@@ -759,6 +762,7 @@ inline Ply2HybridEval20 bestReplyHybrid2Ply20(const uint16_t rows[BOARD_ROWS], i
     const CompactPlacement &p = pl.data[i];
     const uint8_t lc2 = applyPlacement20(b20, nextPiece, p.rot, p.x, p.y, after2);
     const double rew2 = REWARD_NORM_TETRIS[lc2];
+    const double dFac2 = disc.f[lc2];
     const int sr =
         (lc2 == 0)
             ? std::max(0, std::min(static_cast<int>(b20.topNonEmptyRow), static_cast<int>(p.y)))
@@ -775,12 +779,12 @@ inline Ply2HybridEval20 bestReplyHybrid2Ply20(const uint16_t rows[BOARD_ROWS], i
       }
       hitTb = true;
       res.anyInTb = true;
-      qGrounded = rew2 + gamma * evTb;
+      qGrounded = rew2 + dFac2 * evTb;
       qAllOut = qGrounded;
-    } else if (hasNn) {
+    } else if (needOutNn) {
       const double evNn = nn->evalNextPieceExpected(after2, mode, nextPiece);
-      qAllOut = rew2 + gamma * evNn;
-      qGrounded = finiteMargin ? (rew2 + gamma * std::max(0.0, evNn - clampedMargin)) : rew2;
+      qAllOut = rew2 + dFac2 * evNn;
+      qGrounded = finiteMargin ? (rew2 + dFac2 * std::max(0.0, evNn - clampedMargin)) : rew2;
     }
 
     if (i == 0 || qGrounded > bestGrounded + tieEps) {
@@ -811,9 +815,26 @@ inline Ply2HybridEval20 bestReplyHybrid2Ply20(const uint16_t rows[BOARD_ROWS], i
   return res;
 }
 
+template <typename TbType>
+inline Ply2HybridEval20
+bestReplyHybrid2Ply20(const uint16_t rows[BOARD_ROWS], int nextPiece, int gravity, double gamma,
+                      const TbType *tb, const TinyDasNet *nn, double safetyMargin, RngMode mode,
+                      PlacementList &pl, DiscountMode discountMode = DiscountMode::PerPiece,
+                      bool alreadyGrounded = false) noexcept {
+  if (nextPiece < 0 || nextPiece >= NUM_PIECES) {
+    return Ply2HybridEval20{};
+  }
+  const Board20 b20 = Board20::fromRows(rows);
+  const TuckSetupInfo tucks = computeTuckSetupInfo(b20);
+  const StepDiscountTable20 disc = StepDiscountTable20::make(gamma, discountMode);
+  return bestReplyHybrid2Ply20(b20, tucks, nextPiece, gravity, disc, tb, nn, safetyMargin, mode, pl,
+                               alreadyGrounded);
+}
+
 inline double bestReplyNn3PlyTopK20(const uint16_t afterRows[BOARD_ROWS], int nextPiece,
                                     int gravity, double gamma, const TinyDasNet &net, RngMode mode,
-                                    int topK = NN_DEFAULT_3PLY_TOPK) noexcept {
+                                    int topK = NN_DEFAULT_3PLY_TOPK,
+                                    DiscountMode discountMode = DiscountMode::PerPiece) noexcept {
   if (!net.isLoaded() || nextPiece < 0 || nextPiece >= NUM_PIECES) {
     return 0.0;
   }
@@ -824,8 +845,9 @@ inline double bestReplyNn3PlyTopK20(const uint16_t afterRows[BOARD_ROWS], int ne
     return 0.0;
   }
   if (topK <= 0) {
-    return bestReplyNn2Ply20(afterRows, nextPiece, gravity, gamma, net, mode, pl2);
+    return bestReplyNn2Ply20(afterRows, nextPiece, gravity, gamma, net, mode, pl2, discountMode);
   }
+  const StepDiscountTable20 disc = StepDiscountTable20::make(gamma, discountMode);
 
   struct Ply2Cand {
     double sc;
@@ -833,19 +855,17 @@ inline double bestReplyNn3PlyTopK20(const uint16_t afterRows[BOARD_ROWS], int ne
     uint8_t lc;
     uint16_t rows[BOARD_ROWS];
   };
-  std::vector<Ply2Cand> cands(static_cast<size_t>(pl2.count));
+  Ply2Cand cands[MAX_PLACEMENTS];
   for (int i = 0; i < pl2.count; ++i) {
     const CompactPlacement &p = pl2.data[i];
-    cands[static_cast<size_t>(i)].idx = i;
-    cands[static_cast<size_t>(i)].lc =
-        applyPlacement20(b2, nextPiece, p.rot, p.x, p.y, cands[static_cast<size_t>(i)].rows);
-    cands[static_cast<size_t>(i)].sc =
-        REWARD_NORM_TETRIS[cands[static_cast<size_t>(i)].lc]
-        + gamma * net.evalNextPieceExpected(cands[static_cast<size_t>(i)].rows, mode, nextPiece);
+    cands[i].idx = i;
+    cands[i].lc = applyPlacement20(b2, nextPiece, p.rot, p.x, p.y, cands[i].rows);
+    cands[i].sc = REWARD_NORM_TETRIS[cands[i].lc]
+                  + disc.f[cands[i].lc] * net.evalNextPieceExpected(cands[i].rows, mode, nextPiece);
   }
   const int keep = std::min(pl2.count, topK);
   if (keep < pl2.count) {
-    std::partial_sort(cands.begin(), cands.begin() + keep, cands.end(),
+    std::partial_sort(cands, cands + keep, cands + pl2.count,
                       [](const Ply2Cand &a, const Ply2Cand &b) {
                         return (a.sc != b.sc) ? (a.sc > b.sc) : (a.idx < b.idx);
                       });
@@ -857,10 +877,10 @@ inline double bestReplyNn3PlyTopK20(const uint16_t afterRows[BOARD_ROWS], int ne
     double expPly3 = 0.0;
     for (int p3 = 0; p3 < NUM_PIECES; ++p3) {
       const double b3 =
-          bestReplyNn2Ply20(cands[static_cast<size_t>(k)].rows, p3, gravity, gamma, net, mode, pl3);
+          bestReplyNn2Ply20(cands[k].rows, p3, gravity, gamma, net, mode, pl3, discountMode);
       expPly3 += pieceTransitionProb(mode, nextPiece, p3) * b3;
     }
-    const double sc2 = REWARD_NORM_TETRIS[cands[static_cast<size_t>(k)].lc] + gamma * expPly3;
+    const double sc2 = REWARD_NORM_TETRIS[cands[k].lc] + disc.f[cands[k].lc] * expPly3;
     if (sc2 > best2) {
       best2 = sc2;
     }
@@ -871,8 +891,8 @@ inline double bestReplyNn3PlyTopK20(const uint16_t afterRows[BOARD_ROWS], int ne
 } // namespace detail
 
 inline double scoreMoveNn1Ply20(const uint16_t afterRows[BOARD_ROWS], uint8_t linesCleared,
-                                int nextPiece, int gravity, double gamma,
-                                const TinyDasNet &net) noexcept {
+                                int nextPiece, int gravity, double gamma, const TinyDasNet &net,
+                                DiscountMode discountMode = DiscountMode::PerPiece) noexcept {
   const double r1 = REWARD_NORM_TETRIS[linesCleared];
   if (!net.isLoaded() || nextPiece < 0 || nextPiece >= NUM_PIECES) {
     return r1;
@@ -881,45 +901,54 @@ inline double scoreMoveNn1Ply20(const uint16_t afterRows[BOARD_ROWS], uint8_t li
   if (!hasAnyLegalMove10Hz(b20, nextPiece, gravity)) {
     return r1;
   }
-  return r1 + gamma * std::max(0.0, static_cast<double>(net.evalPiece(afterRows, nextPiece)));
+  const double dFac = stepDiscount20(gamma, discountMode, linesCleared);
+  return r1 + dFac * std::max(0.0, static_cast<double>(net.evalPiece(afterRows, nextPiece)));
 }
 
 inline double scoreMoveNn2Ply20(const uint16_t afterRows[BOARD_ROWS], uint8_t linesCleared,
                                 int nextPiece, int gravity, double gamma, const TinyDasNet &net,
-                                RngMode mode) noexcept {
+                                RngMode mode,
+                                DiscountMode discountMode = DiscountMode::PerPiece) noexcept {
   const double r1 = REWARD_NORM_TETRIS[linesCleared];
   if (!net.isLoaded() || nextPiece < 0 || nextPiece >= NUM_PIECES) {
     return r1;
   }
   PlacementList pl2;
+  const double dFac = stepDiscount20(gamma, discountMode, linesCleared);
   return r1
-         + gamma * detail::bestReplyNn2Ply20(afterRows, nextPiece, gravity, gamma, net, mode, pl2);
+         + dFac
+               * detail::bestReplyNn2Ply20(afterRows, nextPiece, gravity, gamma, net, mode, pl2,
+                                           discountMode);
 }
 
 inline double scoreMoveNn3PlyTopK20(const uint16_t afterRows[BOARD_ROWS], uint8_t linesCleared,
                                     int nextPiece, int gravity, double gamma, const TinyDasNet &net,
-                                    RngMode mode, int topK = NN_DEFAULT_3PLY_TOPK) noexcept {
+                                    RngMode mode, int topK = NN_DEFAULT_3PLY_TOPK,
+                                    DiscountMode discountMode = DiscountMode::PerPiece) noexcept {
   const double r1 = REWARD_NORM_TETRIS[linesCleared];
   if (!net.isLoaded() || nextPiece < 0 || nextPiece >= NUM_PIECES) {
     return r1;
   }
+  const double dFac = stepDiscount20(gamma, discountMode, linesCleared);
   return r1
-         + gamma
+         + dFac
                * detail::bestReplyNn3PlyTopK20(afterRows, nextPiece, gravity, gamma, net, mode,
-                                               topK);
+                                               topK, discountMode);
 }
 
 inline double scoreMoveNn20(const uint16_t afterRows[BOARD_ROWS], uint8_t linesCleared,
                             int nextPiece, int gravity, double gamma, const TinyDasNet &net,
-                            RngMode mode, NnSearchConfig20 cfg = {}) noexcept {
+                            RngMode mode, NnSearchConfig20 cfg = {},
+                            DiscountMode discountMode = DiscountMode::PerPiece) noexcept {
   if (cfg.ply >= 3) {
     return scoreMoveNn3PlyTopK20(afterRows, linesCleared, nextPiece, gravity, gamma, net, mode,
-                                 cfg.topK);
+                                 cfg.topK, discountMode);
   }
   if (cfg.ply == 2) {
-    return scoreMoveNn2Ply20(afterRows, linesCleared, nextPiece, gravity, gamma, net, mode);
+    return scoreMoveNn2Ply20(afterRows, linesCleared, nextPiece, gravity, gamma, net, mode,
+                             discountMode);
   }
-  return scoreMoveNn1Ply20(afterRows, linesCleared, nextPiece, gravity, gamma, net);
+  return scoreMoveNn1Ply20(afterRows, linesCleared, nextPiece, gravity, gamma, net, discountMode);
 }
 
 struct HybridMoveChoice20 {
@@ -943,7 +972,8 @@ template <typename TbType>
 inline HybridMoveChoice20
 chooseHybridMove20(const Board20 &board, int curPiece, int nextPiece, int gravity, double gamma,
                    const TbType *tb, const TinyDasNet *nn, double safetyMargin, RngMode rngMode,
-                   NnSearchConfig20 outCfg = {}) noexcept {
+                   NnSearchConfig20 outCfg = {},
+                   DiscountMode discountMode = DiscountMode::PerPiece) noexcept {
   HybridMoveChoice20 out{};
   if (curPiece < 0 || curPiece >= NUM_PIECES || nextPiece < 0 || nextPiece >= NUM_PIECES) {
     return out;
@@ -958,6 +988,7 @@ chooseHybridMove20(const Board20 &board, int curPiece, int nextPiece, int gravit
   const bool hasNn = (nn != nullptr && nn->isLoaded());
   const bool allowPartialOut = hasNn && std::isfinite(safetyMargin);
   const double clampedMargin = allowPartialOut ? std::max(0.0, safetyMargin) : 0.0;
+  const StepDiscountTable20 disc = StepDiscountTable20::make(gamma, discountMode);
 
   struct CandMeta {
     uint8_t lc;
@@ -968,13 +999,13 @@ chooseHybridMove20(const Board20 &board, int curPiece, int nextPiece, int gravit
     uint16_t rows[BOARD_ROWS];
     detail::Ply2HybridEval20 ply2;
   };
-  std::vector<CandMeta> metas(static_cast<size_t>(pl.count));
+  CandMeta metas[MAX_PLACEMENTS];
   bool anyInTb = false;
   double bestInTbQ = -std::numeric_limits<double>::infinity();
 
   for (int i = 0; i < pl.count; ++i) {
     const CompactPlacement &p = pl.data[i];
-    auto &cm = metas[static_cast<size_t>(i)];
+    auto &cm = metas[i];
     cm.lc = applyPlacement20(board, curPiece, p.rot, p.x, p.y, cm.rows);
     const int startRow =
         (cm.lc == 0)
@@ -989,7 +1020,7 @@ chooseHybridMove20(const Board20 &board, int curPiece, int nextPiece, int gravit
         cm.inTb = 1;
         cm.tbVal = v;
         anyInTb = true;
-        const double q = REWARD_NORM_TETRIS[cm.lc] + gamma * static_cast<double>(v);
+        const double q = REWARD_NORM_TETRIS[cm.lc] + disc.f[cm.lc] * static_cast<double>(v);
         if (q > bestInTbQ)
           bestInTbQ = q;
       }
@@ -1002,10 +1033,11 @@ chooseHybridMove20(const Board20 &board, int curPiece, int nextPiece, int gravit
     bool anyTbGrounded = anyInTb;
     PlacementList pl2;
     for (int i = 0; i < pl.count; ++i) {
-      auto &cm = metas[static_cast<size_t>(i)];
+      auto &cm = metas[i];
       if (!cm.inTb) {
-        cm.ply2 = detail::bestReplyHybrid2Ply20(cm.rows, nextPiece, gravity, gamma, tb, nn,
-                                                safetyMargin, rngMode, pl2);
+        cm.ply2 =
+            detail::bestReplyHybrid2Ply20(cm.rows, nextPiece, gravity, gamma, tb, nn, safetyMargin,
+                                          rngMode, pl2, discountMode, anyTbGrounded);
         if (cm.ply2.anyInTb) {
           anyTbGrounded = true;
         }
@@ -1019,17 +1051,18 @@ chooseHybridMove20(const Board20 &board, int curPiece, int nextPiece, int gravit
     bool bestDirectTb = false;
 
     for (int i = 0; i < pl.count; ++i) {
-      const auto &cm = metas[static_cast<size_t>(i)];
+      const auto &cm = metas[i];
       const double rew = REWARD_NORM_TETRIS[cm.lc];
+      const double dFac = disc.f[cm.lc];
       double q = rew;
       bool grounded = false;
       bool directTb = false;
       if (cm.inTb) {
-        q += gamma * static_cast<double>(cm.tbVal);
+        q += dFac * static_cast<double>(cm.tbVal);
         grounded = true;
         directTb = true;
       } else {
-        q += gamma * (anyTbGrounded ? cm.ply2.bestIfTbGrounded : cm.ply2.bestIfAllOut);
+        q += dFac * (anyTbGrounded ? cm.ply2.bestIfTbGrounded : cm.ply2.bestIfAllOut);
         grounded = anyTbGrounded && cm.ply2.bestGroundedFromTb;
       }
 
@@ -1046,7 +1079,7 @@ chooseHybridMove20(const Board20 &board, int curPiece, int nextPiece, int gravit
       }
     }
 
-    const auto &cm = metas[static_cast<size_t>(bestIdx)];
+    const auto &cm = metas[bestIdx];
     out.found = true;
     out.placement = pl.data[bestIdx];
     out.linesCleared = cm.lc;
@@ -1063,16 +1096,16 @@ chooseHybridMove20(const Board20 &board, int curPiece, int nextPiece, int gravit
     int bestIdx = 0;
     double bestSc = -std::numeric_limits<double>::infinity();
     for (int i = 0; i < pl.count; ++i) {
-      const auto &cm = metas[static_cast<size_t>(i)];
-      const double sc =
-          hasNn ? scoreMoveNn20(cm.rows, cm.lc, nextPiece, gravity, gamma, *nn, rngMode, outCfg)
-                : REWARD_NORM_TETRIS[cm.lc];
+      const auto &cm = metas[i];
+      const double sc = hasNn ? scoreMoveNn20(cm.rows, cm.lc, nextPiece, gravity, gamma, *nn,
+                                              rngMode, outCfg, discountMode)
+                              : REWARD_NORM_TETRIS[cm.lc];
       if (i == 0 || sc > bestSc) {
         bestSc = sc;
         bestIdx = i;
       }
     }
-    const auto &cm = metas[static_cast<size_t>(bestIdx)];
+    const auto &cm = metas[bestIdx];
     out.found = true;
     out.placement = pl.data[bestIdx];
     out.linesCleared = cm.lc;
@@ -1091,34 +1124,32 @@ chooseHybridMove20(const Board20 &board, int curPiece, int nextPiece, int gravit
   bool bestInTb = false;
 
   for (int i = 0; i < pl.count; ++i) {
-    const auto &cm = metas[static_cast<size_t>(i)];
+    const auto &cm = metas[i];
     const double rew = REWARD_NORM_TETRIS[cm.lc];
+    const double dFac = disc.f[cm.lc];
     double q = rew;
     if (cm.inTb) {
-      q += gamma * static_cast<double>(cm.tbVal);
+      q += dFac * static_cast<double>(cm.tbVal);
     } else if (allowPartialOut) {
       double estCont = 0.0;
       if (outCfg.ply >= 3) {
         PlacementList pl2;
-        const double est2 =
-            detail::bestReplyNn2Ply20(cm.rows, nextPiece, gravity, gamma, *nn, rngMode, pl2);
-        if (rew + gamma * std::max(0.0, est2 - clampedMargin) + NN_3PLY_PRESCREEN_SLACK
+        const double est2 = detail::bestReplyNn2Ply20(cm.rows, nextPiece, gravity, gamma, *nn,
+                                                      rngMode, pl2, discountMode);
+        if (rew + dFac * std::max(0.0, est2 - clampedMargin) + NN_3PLY_PRESCREEN_SLACK
             < bestInTbQ) {
           estCont = est2;
         } else {
           estCont = detail::bestReplyNn3PlyTopK20(cm.rows, nextPiece, gravity, gamma, *nn, rngMode,
-                                                  outCfg.topK);
+                                                  outCfg.topK, discountMode);
         }
-      } else if (outCfg.ply == 2) {
-        PlacementList pl2;
-        estCont = detail::bestReplyNn2Ply20(cm.rows, nextPiece, gravity, gamma, *nn, rngMode, pl2);
       } else {
         const Board20 bAfter = Board20::fromRows(cm.rows);
         if (hasAnyLegalMove10Hz(bAfter, nextPiece, gravity)) {
           estCont = std::max(0.0, static_cast<double>(nn->evalPiece(cm.rows, nextPiece)));
         }
       }
-      q += gamma * std::max(0.0, estCont - clampedMargin);
+      q += dFac * std::max(0.0, estCont - clampedMargin);
     }
 
     if (i == 0 || q > bestQ + tieEps) {
@@ -1132,7 +1163,7 @@ chooseHybridMove20(const Board20 &board, int curPiece, int nextPiece, int gravit
     }
   }
 
-  const auto &cm = metas[static_cast<size_t>(bestIdx)];
+  const auto &cm = metas[bestIdx];
   out.found = true;
   out.placement = pl.data[bestIdx];
   out.linesCleared = cm.lc;
@@ -1153,6 +1184,7 @@ struct NnSoftBoundaryEval20 {
   double margin = 0.6;
   int gravity = GRAVITY_L19;
   double gamma = 0.995;
+  DiscountMode discountMode = DiscountMode::PerPiece;
   RngMode rngMode = RngMode::Nes;
   bool use2Ply = false;
 
@@ -1166,8 +1198,8 @@ struct NnSoftBoundaryEval20 {
     if (use2Ply) {
       PlacementList pl2;
       for (int n = 0; n < NUM_PIECES; ++n) {
-        const double est =
-            detail::bestReplyNn2Ply20(afterRows, n, gravity, gamma, *net, rngMode, pl2);
+        const double est = detail::bestReplyNn2Ply20(afterRows, n, gravity, gamma, *net, rngMode,
+                                                     pl2, discountMode);
         outCont[n] = (std::isfinite(est) && est > m) ? (est - m) : 0.0;
       }
       return;
@@ -1210,6 +1242,7 @@ struct LabeledDecision20 {
   int curPiece = 0;
   int nextPiece = 0;
   bool boardInTb = false;
+  bool hasRankingSignal = true; // False for pure-terminal top-out supervision (childVal loss only)
   std::array<float, NUM_PIECES> vStar{};
   double bestQStar = 0.0;
   std::vector<LabeledMoveCand20> moves;
@@ -1219,8 +1252,11 @@ struct DistillSampleConfig20 {
   int numGames = 4000;
   int maxDecisions = 300000;
   int maxPiecesPerGame = 600;
-  double recoverFrac = 0.30; // 70% greedy TB+NN + 30% epsilon-recovery rollouts
+  double recoverFrac = 0.25; // Mild epsilon-recovery rollouts (top-K perturbations)
   double recoverEpsilon = 0.08;
+  double dangerFrac =
+      0.12; // High-stack/top-out exploration rollouts (uniform random perturbations)
+  double dangerEpsilon = 0.35;
   int exploreTopK = 4;
   double rolloutMargin = 0.6; // Margin used when guiding out-of-TB rollout steps with prior NN
   bool includeTerminalOutMoves = true;
@@ -1244,9 +1280,11 @@ inline DistillDataset20 sampleDistillDataset20(const TbType &tb, const TinyDasNe
   }
   const RngMode rngMode = tb.rngMode();
   const int gravity = tb.gravity();
-  const double gamma = tb.gamma();
+  const StepDiscountTable20 disc = StepDiscountTable20::make(tb.gamma(), tb.discountMode());
   const int threads = std::max(1, cfg.numThreads);
-  const int recoverMod = std::clamp(static_cast<int>(std::lround(cfg.recoverFrac * 100.0)), 0, 100);
+  const int dangerMod = std::clamp(static_cast<int>(std::lround(cfg.dangerFrac * 100.0)), 0, 100);
+  const int recoverMod =
+      std::clamp(static_cast<int>(std::lround(cfg.recoverFrac * 100.0)), 0, 100 - dangerMod);
   const int chunkGames = std::max(32, threads * 4);
   const bool hasGuide = (guideNn != nullptr && guideNn->isLoaded());
 
@@ -1254,6 +1292,13 @@ inline DistillDataset20 sampleDistillDataset20(const TbType &tb, const TinyDasNe
   std::vector<std::vector<LabeledDecision20>> perGame(static_cast<size_t>(chunkGames));
   std::vector<uint64_t> perSteps(static_cast<size_t>(chunkGames), 0);
   std::vector<uint64_t> perSkipped(static_cast<size_t>(chunkGames), 0);
+  detail::PersistentWorkerPool pool(threads);
+
+  struct RolloutCand {
+    double inTbScore;
+    double rawNnScore;
+    uint16_t rows[BOARD_ROWS];
+  };
 
   for (int baseG = 0;
        baseG < cfg.numGames && static_cast<int>(out.decisions.size()) < cfg.maxDecisions;
@@ -1266,17 +1311,27 @@ inline DistillDataset20 sampleDistillDataset20(const TbType &tb, const TinyDasNe
     }
 
     std::atomic<int> nextLocal{0};
-    detail::runWorkerPool(threads, static_cast<size_t>(batchCount), 8, [&](int /*tid*/) {
+    pool.run([&](int /*tid*/) {
       PlacementList pl;
       uint16_t afterRows[BOARD_ROWS];
       float parentRow[NUM_PIECES];
+      std::vector<LabeledMoveCand20> candsBuf;
+      candsBuf.reserve(MAX_PLACEMENTS);
+      std::vector<RolloutCand> rCands;
+      rCands.reserve(MAX_PLACEMENTS);
+      int order[MAX_PLACEMENTS];
+
       while (true) {
         const int local = nextLocal.fetch_add(1, std::memory_order_relaxed);
         if (local >= batchCount)
           break;
         const int g = baseG + local;
-        const bool isRecover = ((g % 100) < recoverMod);
-        const double eps = isRecover ? cfg.recoverEpsilon : 0.0;
+        // Bijective interleave (gcd(37, 100) == 1) ensures even small validation prefixes
+        // sample the exact configured greedy / recovery / danger mix.
+        const int gMod = static_cast<int>((static_cast<uint64_t>(g) * 37ULL) % 100ULL);
+        const bool isDanger = (gMod < dangerMod);
+        const bool isRecover = (!isDanger && gMod < dangerMod + recoverMod);
+        const double eps = isDanger ? cfg.dangerEpsilon : (isRecover ? cfg.recoverEpsilon : 0.0);
 
         Rng rng(cfg.baseSeed + static_cast<uint64_t>(g) * 1009ULL);
         int curP = rng.sampleOpeningPiece(rngMode);
@@ -1294,16 +1349,9 @@ inline DistillDataset20 sampleDistillDataset20(const TbType &tb, const TinyDasNe
           // Collect labeled candidate moves (all in-TB moves + exact ply-2 top-out moves).
           double bestQ = -std::numeric_limits<double>::infinity();
           double minQ = std::numeric_limits<double>::infinity();
-          std::vector<LabeledMoveCand20> cands;
-          cands.reserve(static_cast<size_t>(pl.count));
-
-          struct RolloutCand {
-            double inTbScore;
-            double rawNnScore;
-            uint16_t rows[BOARD_ROWS];
-          };
-          std::vector<RolloutCand> rCands;
-          rCands.reserve(static_cast<size_t>(pl.count));
+          bool hasTerminalCand = false;
+          candsBuf.clear();
+          rCands.clear();
           bool anyInTb = false;
 
           for (int m = 0; m < pl.count; ++m) {
@@ -1319,11 +1367,12 @@ inline DistillDataset20 sampleDistillDataset20(const TbType &tb, const TinyDasNe
             float vNext = 0.0f;
             const bool inTb = fitsKey && tb.lookupPiece(afterKey, nextP, vNext);
 
+            const double dFac = disc.f[lc];
             double inTbSc = rew;
             double rawNnSc = rew;
             if (inTb) {
               anyInTb = true;
-              const double q = rew + gamma * static_cast<double>(vNext);
+              const double q = rew + dFac * static_cast<double>(vNext);
               inTbSc = q;
               rawNnSc = q;
               LabeledMoveCand20 cand{};
@@ -1331,32 +1380,35 @@ inline DistillDataset20 sampleDistillDataset20(const TbType &tb, const TinyDasNe
               cand.linesCleared = lc;
               cand.qStar = q;
               cand.childValTarget = static_cast<double>(vNext);
-              cands.push_back(cand);
+              candsBuf.push_back(cand);
               if (q > bestQ)
                 bestQ = q;
               if (q < minQ)
                 minQ = q;
             } else {
-              const Board20 bAfter = Board20::fromRows(afterRows);
-              const bool nextCanPlay = hasAnyLegalMove10Hz(bAfter, nextP, gravity);
+              const bool topClear =
+                  ((afterRows[0] | afterRows[1] | afterRows[2]) & FULL_ROW_MASK) == 0U;
+              const bool nextCanPlay =
+                  topClear || hasAnyLegalMove10Hz(Board20::fromRows(afterRows), nextP, gravity);
               if (!nextCanPlay) {
                 if (cfg.includeTerminalOutMoves) {
+                  hasTerminalCand = true;
                   LabeledMoveCand20 cand{};
                   std::memcpy(cand.afterRows.data(), afterRows, sizeof(afterRows));
                   cand.linesCleared = lc;
                   cand.qStar = rew;
                   cand.childValTarget = 0.0;
-                  cands.push_back(cand);
+                  candsBuf.push_back(cand);
                   if (rew > bestQ)
                     bestQ = rew;
                   if (rew < minQ)
                     minQ = rew;
                 }
-              } else if (hasGuide) {
+              } else if (hasGuide && fitsKey) {
                 const double est =
                     std::max(0.0, static_cast<double>(guideNn->evalPiece(afterRows, nextP)));
-                rawNnSc = rew + gamma * est;
-                inTbSc = rew + gamma * std::max(0.0, est - cfg.rolloutMargin);
+                rawNnSc = rew + dFac * est;
+                inTbSc = rew + dFac * std::max(0.0, est - cfg.rolloutMargin);
               }
             }
 
@@ -1367,13 +1419,15 @@ inline DistillDataset20 sampleDistillDataset20(const TbType &tb, const TinyDasNe
             rCands.push_back(rc);
           }
 
-          if (cands.size() < 2) {
+          const bool hasRank = (candsBuf.size() >= 2 && bestQ > minQ + 1e-9);
+          if (!hasRank && !hasTerminalCand) {
             skipped++;
-          } else if (bestQ > minQ + 1e-9) {
+          } else {
             LabeledDecision20 sample{};
             std::memcpy(sample.rows.data(), board.rows(), sizeof(uint16_t) * BOARD_ROWS);
             sample.curPiece = curP;
             sample.nextPiece = nextP;
+            sample.hasRankingSignal = hasRank;
             BoardKey parentKey;
             if (encodeBoardKey(board.rows(), parentKey, board.topNonEmptyRow)
                 && tb.lookup(parentKey, parentRow)) {
@@ -1383,20 +1437,41 @@ inline DistillDataset20 sampleDistillDataset20(const TbType &tb, const TinyDasNe
               }
             }
             sample.bestQStar = bestQ;
-            sample.moves = std::move(cands);
+            sample.moves.assign(candsBuf.begin(), candsBuf.end());
             gameVec.push_back(std::move(sample));
           }
 
           // Advance rollout state (all-OUT skips rolloutMargin clamping, matching Partial-OUT).
-          std::stable_sort(
-              rCands.begin(), rCands.end(), [&](const RolloutCand &a, const RolloutCand &b) {
-                return anyInTb ? (a.inTbScore > b.inTbScore) : (a.rawNnScore > b.rawNnScore);
-              });
+          const int nCands = static_cast<int>(rCands.size());
           int pick = 0;
-          if (eps > 0.0 && rCands.size() > 1 && rng.nextUniform01() < eps) {
-            const int hi =
-                std::min<int>(static_cast<int>(rCands.size()), std::max(2, cfg.exploreTopK));
-            pick = 1 + rng.nextInt(hi - 1);
+          if (eps > 0.0 && nCands > 1 && rng.nextUniform01() < eps) {
+            if (isDanger) {
+              // Uniform random move in danger-zone games so rollouts climb into H >= 12 and
+              // encounter genuine ply-2 top-outs to anchor high-stack NNUE extrapolation.
+              pick = rng.nextInt(nCands);
+            } else {
+              for (int i = 0; i < nCands; ++i)
+                order[i] = i;
+              const int hi = std::min(nCands, std::max(2, cfg.exploreTopK));
+              std::partial_sort(order, order + hi, order + nCands, [&](int a, int b) {
+                const double sa = anyInTb ? rCands[static_cast<size_t>(a)].inTbScore
+                                          : rCands[static_cast<size_t>(a)].rawNnScore;
+                const double sb = anyInTb ? rCands[static_cast<size_t>(b)].inTbScore
+                                          : rCands[static_cast<size_t>(b)].rawNnScore;
+                return (sa != sb) ? (sa > sb) : (a < b);
+              });
+              pick = order[1 + rng.nextInt(hi - 1)];
+            }
+          } else {
+            double bestSc = anyInTb ? rCands[0].inTbScore : rCands[0].rawNnScore;
+            for (int i = 1; i < nCands; ++i) {
+              const double sc = anyInTb ? rCands[static_cast<size_t>(i)].inTbScore
+                                        : rCands[static_cast<size_t>(i)].rawNnScore;
+              if (sc > bestSc) {
+                bestSc = sc;
+                pick = i;
+              }
+            }
           }
           board = Board20::fromRows(rCands[static_cast<size_t>(pick)].rows);
           steps++;
@@ -1438,6 +1513,7 @@ struct NnTrainConfig20 {
   double huberDelta = 0.5;   // Scaled for normalized Tetris-equivalents
   double temperature = 0.35; // Boltzmann move-ranking temperature
   double gamma = 0.995;
+  DiscountMode discountMode = DiscountMode::PerPiece;
   uint64_t seed = 42ULL;
   int numThreads = 1;
   bool verbose = true;
@@ -1610,6 +1686,8 @@ inline double computeBatchSliceLossAndGrad(const TinyDasNet &net,
 
   double totalLoss = 0.0;
   float parentX[NN_INPUT_DIM];
+  const StepDiscountTable20 disc = StepDiscountTable20::make(cfg.gamma, cfg.discountMode);
+  const double invT = 1.0 / std::max(1e-6, cfg.temperature);
 
   for (int idx = 0; idx < count; ++idx) {
     const LabeledDecision20 &d = data[static_cast<size_t>(indices[idx])];
@@ -1635,7 +1713,9 @@ inline double computeBatchSliceLossAndGrad(const TinyDasNet &net,
 
     // 2 & 3 & 4. Candidate-child Huber + Terminal ply-2 top-out + Boltzmann move-ranking CE
     const size_t mCnt = d.moves.size();
-    if (mCnt >= 2 && (cfg.childValWeight > 0.0 || cfg.rankWeight > 0.0)) {
+    const bool doRank = (d.hasRankingSignal && mCnt >= 2 && cfg.rankWeight > 0.0);
+    const bool doChildVal = (mCnt >= 1 && cfg.childValWeight > 0.0);
+    if (doChildVal || doRank) {
       sc.ensureCands(mCnt, h1, h2);
       const int np = d.nextPiece;
       const float *__restrict__ w3Np = w3 + static_cast<size_t>(np) * static_cast<size_t>(h2);
@@ -1652,27 +1732,30 @@ inline double computeBatchSliceLossAndGrad(const TinyDasNet &net,
         forwardHidden(mx, ma1, ma2);
         const double vPred = static_cast<double>(b3Np + dotProduct4(w3Np, ma2, h2));
         sc.predV[m] = vPred;
-        sc.predQ[m] = REWARD_NORM_TETRIS[mv.linesCleared] + cfg.gamma * vPred;
-        sc.trueQ[m] = mv.qStar;
-        if (sc.trueQ[m] > maxTrue)
-          maxTrue = sc.trueQ[m];
-        if (sc.predQ[m] > maxPred)
-          maxPred = sc.predQ[m];
+        if (doRank) {
+          sc.predQ[m] = REWARD_NORM_TETRIS[mv.linesCleared] + disc.f[mv.linesCleared] * vPred;
+          sc.trueQ[m] = mv.qStar;
+          if (sc.trueQ[m] > maxTrue)
+            maxTrue = sc.trueQ[m];
+          if (sc.predQ[m] > maxPred)
+            maxPred = sc.predQ[m];
+        }
       }
 
-      const double invT = 1.0 / std::max(1e-6, cfg.temperature);
-      double sumTrue = 0.0, sumPred = 0.0;
-      for (size_t m = 0; m < mCnt; ++m) {
-        sc.probP[m] = std::exp((sc.trueQ[m] - maxTrue) * invT);
-        sc.probQ[m] = std::exp((sc.predQ[m] - maxPred) * invT);
-        sumTrue += sc.probP[m];
-        sumPred += sc.probQ[m];
-      }
-      for (size_t m = 0; m < mCnt; ++m) {
-        sc.probP[m] /= sumTrue;
-        sc.probQ[m] /= sumPred;
-        if (cfg.rankWeight > 0.0 && sc.probP[m] > 1e-15) {
-          totalLoss -= cfg.rankWeight * sc.probP[m] * std::log(std::max(1e-15, sc.probQ[m]));
+      if (doRank) {
+        double sumTrue = 0.0, sumPred = 0.0;
+        for (size_t m = 0; m < mCnt; ++m) {
+          sc.probP[m] = std::exp((sc.trueQ[m] - maxTrue) * invT);
+          sc.probQ[m] = std::exp((sc.predQ[m] - maxPred) * invT);
+          sumTrue += sc.probP[m];
+          sumPred += sc.probQ[m];
+        }
+        for (size_t m = 0; m < mCnt; ++m) {
+          sc.probP[m] /= sumTrue;
+          sc.probQ[m] /= sumPred;
+          if (sc.probP[m] > 1e-15) {
+            totalLoss -= cfg.rankWeight * sc.probP[m] * std::log(std::max(1e-15, sc.probQ[m]));
+          }
         }
       }
 
@@ -1680,14 +1763,14 @@ inline double computeBatchSliceLossAndGrad(const TinyDasNet &net,
       for (size_t m = 0; m < mCnt; ++m) {
         const auto &mv = d.moves[m];
         double dPiece = 0.0;
-        if (cfg.childValWeight > 0.0) {
+        if (doChildVal) {
           double deriv = 0.0;
           totalLoss +=
               childScale * huberLossAndGrad(sc.predV[m] - mv.childValTarget, cfg.huberDelta, deriv);
           dPiece += childScale * deriv;
         }
-        if (cfg.rankWeight > 0.0) {
-          dPiece += cfg.rankWeight * (sc.probQ[m] - sc.probP[m]) * invT * cfg.gamma;
+        if (doRank) {
+          dPiece += cfg.rankWeight * (sc.probQ[m] - sc.probP[m]) * invT * disc.f[mv.linesCleared];
         }
         if (dPiece != 0.0) {
           double dOut[NUM_PIECES] = {};
@@ -1715,11 +1798,13 @@ inline double computeBatchSliceLossAndGrad(const TinyDasNet &net,
 
 inline NnEvalMetrics20
 evaluateNnOnDecisions20(const TinyDasNet &net, const std::vector<LabeledDecision20> &valData,
-                        double gamma, detail::PersistentWorkerPool *pool = nullptr) noexcept {
+                        double gamma, detail::PersistentWorkerPool *pool = nullptr,
+                        DiscountMode discountMode = DiscountMode::PerPiece) noexcept {
   NnEvalMetrics20 m{};
   if (!net.isLoaded() || valData.empty())
     return m;
   const int threads = (pool != nullptr) ? pool->numThreads() : 1;
+  const StepDiscountTable20 disc = StepDiscountTable20::make(gamma, discountMode);
 
   struct alignas(128) EvalAccum {
     double maeSum = 0.0;
@@ -1743,13 +1828,13 @@ evaluateNnOnDecisions20(const TinyDasNet &net, const std::vector<LabeledDecision
           a.maeCnt++;
         }
       }
-      if (d.moves.size() >= 2) {
+      if (d.hasRankingSignal && d.moves.size() >= 2) {
         int bestIdx = 0;
         double bestSc = -std::numeric_limits<double>::infinity();
         for (size_t i = 0; i < d.moves.size(); ++i) {
           const double sc =
               REWARD_NORM_TETRIS[d.moves[i].linesCleared]
-              + gamma
+              + disc.f[d.moves[i].linesCleared]
                     * static_cast<double>(net.evalPiece(d.moves[i].afterRows.data(), d.nextPiece));
           if (i == 0 || sc > bestSc) {
             bestSc = sc;
@@ -1908,7 +1993,8 @@ inline TinyDasNet trainTinyDasNet(const std::vector<LabeledDecision20> &trainDat
 
     const double epSec =
         std::chrono::duration<double>(std::chrono::steady_clock::now() - epStart).count();
-    const NnEvalMetrics20 vm = evaluateNnOnDecisions20(net, valData, cfg.gamma, &pool);
+    const NnEvalMetrics20 vm =
+        evaluateNnOnDecisions20(net, valData, cfg.gamma, &pool, cfg.discountMode);
     const double valScore = vm.top1ExactPct - 10.0 * vm.meanRegret - 0.5 * vm.valMae;
     if (valData.empty() || valScore > bestValScore) {
       bestValScore = valScore;

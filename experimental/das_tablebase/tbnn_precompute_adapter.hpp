@@ -29,11 +29,13 @@ struct TbNnPrecomputeOptions {
   int dasCharge = DAS_CHARGE_MAX; // -1 = tap mode, 0..16 = DAS mode
   int reactionTime = 18;          // 0..60 frames
   double gamma = 0.995;
+  DiscountMode discountMode = DiscountMode::PerPiece;
   double outMargin = 0.25;
   NnSearchConfig20 outCfg = NnSearchConfig20::ply2();
   RngMode rngMode = RngMode::Nes;
   AggressionLevel aggro = AGGRO;
   bool stationaryLevel = true;
+  bool applyDasPenalties = true;
 };
 
 struct TbNnPrecomputeResult {
@@ -103,15 +105,54 @@ struct CachedSecondMoveScore {
   double rawScore = 0.0;
 };
 
+// Generation-stamped flat lookup table indexed by (rot, x, y) for O(1) zero-allocation
+// per-(afterBoard, nextPiece) caching across DAS buckets (15, 10, 5).
+struct FlatSecondMoveCache {
+  static constexpr int ROT_COUNT = 4;
+  static constexpr int X_OFFSET = 4;
+  static constexpr int X_COUNT = 18; // covers x in [-4 .. 13]
+  static constexpr int Y_OFFSET = 4;
+  static constexpr int Y_COUNT = 26; // covers y in [-4 .. 21]
+  static constexpr int SIZE = ROT_COUNT * X_COUNT * Y_COUNT;
+
+  struct Entry {
+    uint32_t gen = 0;
+    CachedSecondMoveScore score{};
+  };
+  Entry entries[SIZE] = {};
+  uint32_t curGen = 1;
+
+  void clear() noexcept {
+    if (++curGen == 0) {
+      for (int i = 0; i < SIZE; ++i)
+        entries[i].gen = 0;
+      curGen = 1;
+    }
+  }
+
+  static int index(int rot, int x, int y) noexcept {
+    const int xi = x + X_OFFSET;
+    const int yi = y + Y_OFFSET;
+    if (xi < 0 || xi >= X_COUNT || yi < 0 || yi >= Y_COUNT)
+      return -1;
+    return ((rot & 3) * X_COUNT + xi) * Y_COUNT + yi;
+  }
+};
+
 // Evaluates best 2nd-piece continuation under a prescribed starting DAS charge (15, 10, or 5)
-// using fast 1-ply TB + NNUE expectation over the 3rd piece, with per-(afterBoard, nextPiece)
-// caching across DAS buckets and zero heap allocations per call.
+// using fast 1-ply TB + NNUE expectation over the 3rd piece, with zero-allocation flat caching
+// across DAS buckets. When `forceGrounded` is true (because full DAS had an in-TB move), partial
+// and min DAS stay in the margined regime so losing in-TB reach never underestimates DAS loss.
 template <typename TbType>
 inline double
 bestSecondPieceScoreForDas(const GameState &after1, const Board20 &bAfter1, int nextPieceIdx,
-                           int dasBucket, double gamma, const TbType *tb, const TinyDasNet *nn,
-                           double outMargin, RngMode rngMode, std::vector<FullMovePossibility> &buf,
-                           std::unordered_map<uint32_t, CachedSecondMoveScore> &cache) {
+                           int dasBucket, const StepDiscountTable20 &disc, const TbType *tb,
+                           const TinyDasNet *nn, double outMargin, RngMode rngMode,
+                           std::vector<FullMovePossibility> &buf, FlatSecondMoveCache &cache,
+                           bool forceGrounded = false, bool *outAnyInTb = nullptr) {
+  if (outAnyInTb != nullptr) {
+    *outAnyInTb = false;
+  }
   buf.clear();
   fullMoveSearch(after1, &PIECE_LIST[nextPieceIdx], TIMELINE_10HZ_STR, dasBucket,
                  /* trackInputSequences= */ false, buf);
@@ -131,15 +172,15 @@ bestSecondPieceScoreForDas(const GameState &after1, const Board20 &bAfter1, int 
   double bestRaw = -std::numeric_limits<double>::infinity();
 
   for (const FullMovePossibility &m2 : buf) {
-    const uint32_t mKey = packLockCellKey(m2.rotationIndex, m2.x, m2.y);
+    const int slot = FlatSecondMoveCache::index(m2.rotationIndex, m2.x, m2.y);
     CachedSecondMoveScore cs{};
-    const auto cit = cache.find(mKey);
-    if (cit != cache.end()) {
-      cs = cit->second;
+    if (slot >= 0 && cache.entries[slot].gen == cache.curGen) {
+      cs = cache.entries[slot].score;
     } else {
       const uint8_t lc2 =
           applyPlacement20(bAfter1, nextPieceIdx, m2.rotationIndex, m2.x, m2.y, after2Rows);
       const double rew2 = REWARD_NORM_TETRIS[lc2];
+      const double dFac2 = disc.f[lc2];
       const int startRow =
           (lc2 == 0) ? std::max(0, std::min(static_cast<int>(bAfter1.topNonEmptyRow), m2.y)) : 0;
       BoardKey key2;
@@ -151,18 +192,21 @@ bestSecondPieceScoreForDas(const GameState &after1, const Board20 &bAfter1, int 
           ev += pieceTransitionProb(rngMode, nextPieceIdx, p3) * static_cast<double>(tbRow[p3]);
         }
         cs.inTb = 1;
-        cs.inScore = rew2 + gamma * ev;
+        cs.inScore = rew2 + dFac2 * ev;
         cs.rawScore = cs.inScore;
       } else {
         const double est =
             hasNn ? nn->evalNextPieceExpected(after2Rows, rngMode, nextPieceIdx) : 0.0;
         cs.inTb = 0;
-        cs.rawScore = rew2 + gamma * est;
+        cs.rawScore = rew2 + dFac2 * est;
         // When margin is +inf, out-of-TB moves receive zero continuation if any in-TB move exists.
         cs.inScore =
-            (hasNn && finiteMargin) ? (rew2 + gamma * std::max(0.0, est - clampedMargin)) : rew2;
+            (hasNn && finiteMargin) ? (rew2 + dFac2 * std::max(0.0, est - clampedMargin)) : rew2;
       }
-      cache.emplace(mKey, cs);
+      if (slot >= 0) {
+        cache.entries[slot].gen = cache.curGen;
+        cache.entries[slot].score = cs;
+      }
     }
     if (cs.inTb)
       anyInTb = true;
@@ -172,7 +216,10 @@ bestSecondPieceScoreForDas(const GameState &after1, const Board20 &bAfter1, int 
       bestRaw = cs.rawScore;
   }
 
-  return anyInTb ? bestIn : bestRaw;
+  if (outAnyInTb != nullptr) {
+    *outAnyInTb = anyInTb;
+  }
+  return (anyInTb || forceGrounded) ? bestIn : bestRaw;
 }
 
 } // namespace detail
@@ -339,6 +386,8 @@ chooseTbNnPrecomputeMove(const GameState &state, int curPieceIdx, int nextPieceI
     }
   }
 
+  const StepDiscountTable20 disc = StepDiscountTable20::make(opts.gamma, opts.discountMode);
+
   bool anyTbGroundedForPiece[NUM_PIECES];
   for (int n = 0; n < NUM_PIECES; ++n) {
     anyTbGroundedForPiece[n] = anyInTbOverall;
@@ -348,9 +397,12 @@ chooseTbNnPrecomputeMove(const GameState &state, int curPieceIdx, int nextPieceI
     for (UniqueCell &u : cells) {
       if (u.inTb)
         continue;
+      const Board20 bAfter = Board20::fromRows(u.afterRows);
+      const TuckSetupInfo tucks = computeTuckSetupInfo(bAfter);
       for (int n = 0; n < NUM_PIECES; ++n) {
-        u.ply2[n] = detail::bestReplyHybrid2Ply20(u.afterRows, n, gravity, opts.gamma, tb, nn,
-                                                  opts.outMargin, opts.rngMode, pl2);
+        u.ply2[n] =
+            detail::bestReplyHybrid2Ply20(bAfter, tucks, n, gravity, disc, tb, nn, opts.outMargin,
+                                          opts.rngMode, pl2, anyTbGroundedForPiece[n]);
         if (u.ply2[n].anyInTb) {
           anyTbGroundedForPiece[n] = true;
         }
@@ -358,14 +410,16 @@ chooseTbNnPrecomputeMove(const GameState &state, int curPieceIdx, int nextPieceI
     }
   }
 
+  for (int n = 0; n < NUM_PIECES; ++n) {
+    pState.lockValues[n].reserve(cells.size());
+  }
+
   std::vector<FullMovePossibility> dasBuf;
   dasBuf.reserve(64);
-  std::unordered_map<uint32_t, detail::CachedSecondMoveScore> dasScoreCache;
-  dasScoreCache.reserve(64);
+  detail::FlatSecondMoveCache dasScoreCache;
 
   for (UniqueCell &u : cells) {
     const double rew = REWARD_NORM_TETRIS[u.lc];
-    const Board20 bAfter = Board20::fromRows(u.afterRows);
     const bool topClear =
         ((u.afterRows[0] | u.afterRows[1] | u.afterRows[2]) & FULL_ROW_MASK) == 0U;
 
@@ -378,7 +432,10 @@ chooseTbNnPrecomputeMove(const GameState &state, int curPieceIdx, int nextPieceI
     }
 
     GameState afterGs{};
-    const bool computeDas = pState.useDAS && (u.needsPartialDas || u.needsMinDas);
+    const bool computeDas =
+        opts.applyDasPenalties && pState.useDAS && (u.needsPartialDas || u.needsMinDas);
+    const bool needBoardAfter = computeDas || (needNn1 && !topClear);
+    const Board20 bAfter = needBoardAfter ? Board20::fromRows(u.afterRows) : Board20::empty();
     if (computeDas) {
       afterGs.level = opts.stationaryLevel
                           ? state.level
@@ -389,13 +446,14 @@ chooseTbNnPrecomputeMove(const GameState &state, int curPieceIdx, int nextPieceI
       }
     }
 
+    const double dFac = disc.f[u.lc];
     for (int n = 0; n < NUM_PIECES; ++n) {
       double qFull = rew;
       if (u.inTb) {
-        qFull = rew + opts.gamma * static_cast<double>(u.tbRow[n]);
+        qFull = rew + dFac * static_cast<double>(u.tbRow[n]);
       } else if (opts.outCfg.ply == 2) {
         qFull = rew
-                + opts.gamma
+                + dFac
                       * (anyTbGroundedForPiece[n] ? u.ply2[n].bestIfTbGrounded
                                                   : u.ply2[n].bestIfAllOut);
       } else if (hasNn) {
@@ -403,17 +461,18 @@ chooseTbNnPrecomputeMove(const GameState &state, int curPieceIdx, int nextPieceI
         if (!anyInTbOverall || finiteMargin) {
           double estCont = 0.0;
           if (opts.outCfg.ply >= 3) {
-            estCont = detail::bestReplyNn3PlyTopK20(u.afterRows, n, gravity, opts.gamma, *nn,
-                                                    opts.rngMode, opts.outCfg.topK);
+            estCont =
+                detail::bestReplyNn3PlyTopK20(u.afterRows, n, gravity, opts.gamma, *nn,
+                                              opts.rngMode, opts.outCfg.topK, opts.discountMode);
           } else {
             if (topClear || hasAnyLegalMove10Hz(bAfter, n, gravity)) {
               estCont = std::max(0.0, static_cast<double>(nnAllRow[n]));
             }
           }
           if (anyInTbOverall) {
-            qFull = rew + opts.gamma * std::max(0.0, estCont - clampedMargin);
+            qFull = rew + dFac * std::max(0.0, estCont - clampedMargin);
           } else {
-            qFull = rew + opts.gamma * estCont;
+            qFull = rew + dFac * estCont;
           }
         }
       }
@@ -421,25 +480,26 @@ chooseTbNnPrecomputeMove(const GameState &state, int curPieceIdx, int nextPieceI
 
       if (computeDas) {
         dasScoreCache.clear();
-        const double bestFull =
-            detail::bestSecondPieceScoreForDas(afterGs, bAfter, n, 15, opts.gamma, tb, nn,
-                                               opts.outMargin, opts.rngMode, dasBuf, dasScoreCache);
+        bool fullAnyInTb = false;
+        const double bestFull = detail::bestSecondPieceScoreForDas(
+            afterGs, bAfter, n, 15, disc, tb, nn, opts.outMargin, opts.rngMode, dasBuf,
+            dasScoreCache, /*forceGrounded=*/false, &fullAnyInTb);
         double partPen = 0.0;
         double minPen = 0.0;
         if (u.needsPartialDas) {
           const double bestPart = detail::bestSecondPieceScoreForDas(
-              afterGs, bAfter, n, 10, opts.gamma, tb, nn, opts.outMargin, opts.rngMode, dasBuf,
-              dasScoreCache);
+              afterGs, bAfter, n, 10, disc, tb, nn, opts.outMargin, opts.rngMode, dasBuf,
+              dasScoreCache, /*forceGrounded=*/fullAnyInTb);
           partPen = std::min(0.0, bestPart - bestFull);
         }
         if (u.needsMinDas) {
           const double bestMin = detail::bestSecondPieceScoreForDas(
-              afterGs, bAfter, n, 5, opts.gamma, tb, nn, opts.outMargin, opts.rngMode, dasBuf,
-              dasScoreCache);
+              afterGs, bAfter, n, 5, disc, tb, nn, opts.outMargin, opts.rngMode, dasBuf,
+              dasScoreCache, /*forceGrounded=*/fullAnyInTb);
           minPen = std::min(0.0, bestMin - bestFull);
         }
-        pState.partialPenalties[n][u.keyStr] = partPen * TBNN_PRECOMPUTE_SCALE;
-        pState.minPenalties[n][u.keyStr] = minPen * TBNN_PRECOMPUTE_SCALE;
+        pState.partialPenalties[n][u.keyStr] = dFac * partPen * TBNN_PRECOMPUTE_SCALE;
+        pState.minPenalties[n][u.keyStr] = dFac * minPen * TBNN_PRECOMPUTE_SCALE;
       }
     }
   }
@@ -473,7 +533,8 @@ chooseTbNnPrecomputeMove(const GameState &state, int curPieceIdx, int nextPieceI
   if (cit != cellToIdx.end()) {
     res.chosenInTb = cells[cit->second].inTb;
   }
-  res.usedAllOutFallback = !anyInTbOverall;
+  res.usedAllOutFallback =
+      !(opts.outCfg.ply == 2 ? anyTbGroundedForPiece[nextPieceIdx] : anyInTbOverall);
 
   const EvalContext ctx = getEvalContext(state, bc.lookup, false, opts.aggro);
   LockPlacement lp = {chosenX, chosenY, chosenRot, -1, NO_TUCK_NOTATION, curPiece};

@@ -681,15 +681,25 @@ std::vector<double> bruteForceValueIteration20(const std::vector<das::BoardKey> 
                 }
               }
             } else if constexpr (BoundaryFn::enabled) {
-              boundaryFn.evalRow(afterRows, boundCont);
-              for (int np = 0; np < das::NUM_PIECES; ++np) {
-                const double cont =
-                    (std::isfinite(boundCont[np]) && boundCont[np] > 0.0) ? boundCont[np] : 0.0;
-                const double qQuant =
-                    das::unpackTerminalPayoff(das::packTerminalPayoff(rew + gamma * cont));
-                if (!have[np] || qQuant > bestQ[np]) {
-                  bestQ[np] = qQuant;
-                  have[np] = true;
+              if (fits) {
+                boundaryFn.evalRow(afterRows, boundCont);
+                for (int np = 0; np < das::NUM_PIECES; ++np) {
+                  const double cont =
+                      (std::isfinite(boundCont[np]) && boundCont[np] > 0.0) ? boundCont[np] : 0.0;
+                  const double qQuant =
+                      das::unpackTerminalPayoff(das::packTerminalPayoff(rew + gamma * cont));
+                  if (!have[np] || qQuant > bestQ[np]) {
+                    bestQ[np] = qQuant;
+                    have[np] = true;
+                  }
+                }
+              } else {
+                const double qQuant = das::unpackTerminalPayoff(das::packTerminalPayoff(rew));
+                for (int np = 0; np < das::NUM_PIECES; ++np) {
+                  if (!have[np] || qQuant > bestQ[np]) {
+                    bestQ[np] = qQuant;
+                    have[np] = true;
+                  }
                 }
               }
             } else {
@@ -758,6 +768,22 @@ struct OverflowBoundTest {
   void evalRow(const uint16_t[das::BOARD_ROWS], double out[das::NUM_PIECES]) const noexcept {
     for (int p = 0; p < das::NUM_PIECES; ++p)
       out[p] = 5000.0;
+  }
+};
+
+struct NonFitGuardCheckBound {
+  static constexpr bool enabled = true;
+  mutable std::atomic<int> nonFitCalls{0};
+  void evalRow(const uint16_t rows[das::BOARD_ROWS], double out[das::NUM_PIECES]) const noexcept {
+    das::BoardKey tmp{};
+    if (!das::encodeBoardKey(rows, tmp)) {
+      nonFitCalls.fetch_add(1, std::memory_order_relaxed);
+      for (int p = 0; p < das::NUM_PIECES; ++p)
+        out[p] = 100.0;
+      return;
+    }
+    for (int p = 0; p < das::NUM_PIECES; ++p)
+      out[p] = 1.0;
   }
 };
 
@@ -1297,7 +1323,174 @@ TEST_CASE("Ply-2 TB re-entry: OUT ply-1 resolving back into TB uses exact V_tb w
   CHECK(rMoves.body.find("\"inTb\":true,\"cells\":[[18,8],[18,9],[19,8],[19,9]]")
         != std::string::npos);
   CHECK(rMoves.body.find("\"evalPly2Move\":{") != std::string::npos);
+  // Ensure "ply2Move" is serialized exactly once per move (no duplicate JSON keys).
+  {
+    const size_t firstPly2 = rMoves.body.find("\"ply2Move\":");
+    const size_t firstEval = rMoves.body.find("\"evalPly2Move\":", firstPly2);
+    REQUIRE(firstPly2 != std::string::npos);
+    REQUIRE(firstEval != std::string::npos);
+    CHECK(rMoves.body.find("\"ply2Move\":", firstPly2 + 1) > firstEval);
+  }
+  const auto rPing = das::inspector::handleApiRequest("/ping", "", ictx);
+  CHECK(rPing.status == 200);
+  CHECK(rPing.body.find("\"discountMode\":\"piece\"") != std::string::npos);
 
   ictx.tb.close();
+  fs::remove_all(tmpDir);
+}
+
+TEST_CASE("Per-line discounting: SRTBV003 flag round-trip, 1T == 4T, and Soft-MC <= 3.5 sigma") {
+  const std::vector<das::BoardKey> keys = makeSmallTestSubset(160);
+  REQUIRE(keys.size() >= 80);
+
+  das::SolveConfig20 cfg;
+  cfg.rngMode = das::RngMode::Nes;
+  cfg.level = 19;
+  cfg.gamma = 0.90;
+  cfg.discountMode = das::DiscountMode::PerLine;
+  cfg.tolerance = 1e-8;
+  cfg.maxOuterIterations = 120;
+  cfg.innerEvalSweeps = 80;
+  cfg.numThreads = 1;
+
+  const auto s1 = das::solve20MPI(keys, cfg);
+  REQUIRE(s1.ok);
+  REQUIRE(s1.converged);
+  CHECK(s1.bellmanResidual < 1e-7);
+
+  das::SolveConfig20 cfg4 = cfg;
+  cfg4.numThreads = 4;
+  const auto s4 = das::solve20MPI(keys, cfg4);
+  REQUIRE(s4.ok);
+  CHECK(s4.values == s1.values);
+
+  namespace fs = std::filesystem;
+  const fs::path tmpDir = fs::temp_directory_path() / "sr_das_tb_test_perline";
+  fs::create_directories(tmpDir);
+  const std::string tbPath = (tmpDir / "perline.tb.bin").string();
+  das::TablebaseHeaderV3 hdr{};
+  hdr.rngMode = static_cast<uint32_t>(das::RngMode::Nes);
+  hdr.rewardMode = das::REWARD_MODE_NORM_TETRIS;
+  hdr.level = 19;
+  hdr.flags = das::TB_FLAG_DISCOUNT_PER_LINE;
+  hdr.gamma = cfg.gamma;
+  hdr.emptyBoardValue = s1.emptyBoardValue;
+  hdr.bellmanResidual = s1.bellmanResidual;
+  REQUIRE(das::writeTablebaseV3(tbPath, keys, s1.values, hdr));
+
+  das::IndexedDasTablebase tb;
+  REQUIRE(tb.open(tbPath));
+  CHECK(tb.discountMode() == das::DiscountMode::PerLine);
+  das::MappedDasTablebase mappedTb;
+  REQUIRE(mappedTb.open(tbPath));
+  CHECK(mappedTb.discountMode() == das::DiscountMode::PerLine);
+  mappedTb.close();
+
+  // Unknown flag bits must be rejected on write.
+  das::TablebaseHeaderV3 badHdr = hdr;
+  badHdr.flags = 2U;
+  CHECK(!das::writeTablebaseV3((tmpDir / "badflags.tb.bin").string(), keys, s1.values, badHdr));
+
+  const auto mc = das::evaluateSoftBoundaryMC20(tb, 4000, 91000000ULL, 4);
+  CHECK(mc.zScore <= 3.5);
+
+  // Verify PerLine 3-ply NN scoring differs from PerPiece and respects discountMode, and verify
+  // sampleDistillDataset20 interleaving produces valid decisions on a small prefix.
+  das::TinyDasNet net;
+  net.initRandom(16, 8, das::RngMode::Nes, 555ULL);
+  uint16_t rows[das::BOARD_ROWS] = {};
+  rows[19] = 0x3FEU;
+  const double scPiece3 = das::scoreMoveNn3PlyTopK20(
+      rows, 1, 0, das::GRAVITY_L19, 0.90, net, das::RngMode::Nes, 4, das::DiscountMode::PerPiece);
+  const double scLine3 = das::scoreMoveNn3PlyTopK20(
+      rows, 1, 0, das::GRAVITY_L19, 0.90, net, das::RngMode::Nes, 4, das::DiscountMode::PerLine);
+  CHECK(std::isfinite(scPiece3));
+  CHECK(std::isfinite(scLine3));
+  CHECK(std::fabs(scPiece3 - scLine3) > 1e-6);
+
+  das::DistillSampleConfig20 scfg;
+  scfg.numGames = 60;
+  scfg.maxDecisions = 300;
+  scfg.numThreads = 2;
+  const auto ds = das::sampleDistillDataset20(tb, nullptr, scfg);
+  CHECK(ds.decisions.size() > 50);
+
+  fs::remove_all(tmpDir);
+}
+
+TEST_CASE("Soft-Boundary !fitsKey guard: >=10-hole children receive 0.0 continuation and never "
+          "query BoundaryFn") {
+  // Construct a valid 9-hole board (fitsKey == true): row 18 filled in cols 0..8, row 19 empty.
+  // Any placement covering col 9 creates >= 10 holes (!fitsKey).
+  uint16_t nineHoleRows[das::BOARD_ROWS] = {};
+  nineHoleRows[18] = 0x3FEU;
+  das::BoardKey nineHoleKey{};
+  REQUIRE(das::encodeBoardKey(nineHoleRows, nineHoleKey));
+
+  // Verify at least one legal placement produces a !fitsKey (>= 10-hole) child.
+  das::PlacementList pl;
+  const das::Board20 nineBoard = das::Board20::fromKey(nineHoleKey);
+  das::findPlacements10Hz(nineBoard, /*Z=*/6, das::GRAVITY_L19, pl);
+  int nonFitChildren = 0;
+  uint16_t afterRows[das::BOARD_ROWS];
+  for (int m = 0; m < pl.count; ++m) {
+    das::applyPlacement20(nineBoard, 6, pl.data[m].rot, pl.data[m].x, pl.data[m].y, afterRows);
+    das::BoardKey ak{};
+    if (!das::encodeBoardKey(afterRows, ak)) {
+      nonFitChildren++;
+    }
+  }
+  REQUIRE(nonFitChildren > 0);
+
+  std::vector<das::BoardKey> keys = {das::EMPTY_BOARD_KEY, nineHoleKey};
+  std::sort(keys.begin(), keys.end());
+  keys.erase(std::unique(keys.begin(), keys.end()), keys.end());
+
+  das::SolveConfig20 cfg;
+  cfg.rngMode = das::RngMode::Nes;
+  cfg.level = 19;
+  cfg.gamma = 0.90;
+  cfg.discountMode = das::DiscountMode::PerLine;
+  cfg.tolerance = 1e-8;
+  cfg.maxOuterIterations = 80;
+  cfg.innerEvalSweeps = 80;
+  cfg.numThreads = 1;
+
+  NonFitGuardCheckBound bound;
+  const auto res1 = das::solve20MPI(keys, cfg, nullptr, bound);
+  REQUIRE(res1.ok);
+  REQUIRE(res1.converged);
+  CHECK(bound.nonFitCalls.load() == 0);
+  for (double v : res1.values) {
+    CHECK(v < 10.0);
+  }
+
+  das::SolveConfig20 cfg4 = cfg;
+  cfg4.numThreads = 4;
+  const auto res4 = das::solve20MPI(keys, cfg4, nullptr, bound);
+  REQUIRE(res4.ok);
+  CHECK(res4.values == res1.values);
+  CHECK(bound.nonFitCalls.load() == 0);
+
+  namespace fs = std::filesystem;
+  const fs::path tmpDir = fs::temp_directory_path() / "sr_das_tb_test_nonfit_guard";
+  fs::create_directories(tmpDir);
+  const std::string tbPath = (tmpDir / "nonfit.tb.bin").string();
+  das::TablebaseHeaderV3 hdr{};
+  hdr.rngMode = static_cast<uint32_t>(das::RngMode::Nes);
+  hdr.rewardMode = das::REWARD_MODE_NORM_TETRIS;
+  hdr.level = 19;
+  hdr.flags = das::TB_FLAG_DISCOUNT_PER_LINE;
+  hdr.gamma = cfg.gamma;
+  hdr.emptyBoardValue = res1.emptyBoardValue;
+  hdr.bellmanResidual = res1.bellmanResidual;
+  REQUIRE(das::writeTablebaseV3(tbPath, keys, res1.values, hdr));
+
+  das::IndexedDasTablebase tb;
+  REQUIRE(tb.open(tbPath));
+  const auto mc = das::evaluateSoftBoundaryMC20(tb, 4000, 92000000ULL, 4, bound);
+  CHECK(bound.nonFitCalls.load() == 0);
+  CHECK(mc.zScore <= 3.5);
+
   fs::remove_all(tmpDir);
 }

@@ -64,11 +64,13 @@ struct BenchConfig {
   std::string tbPath;
   std::string nnPath;
   double gamma = 0.995;
+  das::DiscountMode discountMode = das::DiscountMode::PerPiece;
   double outMargin = 0.25;
   int outPly = 2;
   int outTopK = das::NN_DEFAULT_3PLY_TOPK;
   bool hasTbNnFlag = false;
   bool gammaSet = false;
+  bool discountModeSet = false;
 };
 
 struct GameOutcome {
@@ -229,8 +231,9 @@ GameOutcome runSingleGame(const BenchConfig &cfg, const das::BackendContexts &bc
     } else if (cfg.agent == AgentKind::TbNn) {
       out.sumMaxHeight += static_cast<uint64_t>(boardMaxHeight(b20));
       const int gravity = das::getGravity20(curLevel);
-      das::HybridMoveChoice20 ch = das::chooseHybridMove20(b20, curP, nextP, gravity, cfg.gamma, tb,
-                                                           nn, cfg.outMargin, cfg.rngMode, outCfg);
+      das::HybridMoveChoice20 ch =
+          das::chooseHybridMove20(b20, curP, nextP, gravity, cfg.gamma, tb, nn, cfg.outMargin,
+                                  cfg.rngMode, outCfg, cfg.discountMode);
       if (!ch.found)
         break;
       cleared = ch.linesCleared;
@@ -248,6 +251,7 @@ GameOutcome runSingleGame(const BenchConfig &cfg, const das::BackendContexts &bc
       opts.dasCharge = dasCharge;
       opts.reactionTime = (out.pieces == 0) ? 0 : cfg.reactionTime;
       opts.gamma = cfg.gamma;
+      opts.discountMode = cfg.discountMode;
       opts.outMargin = cfg.outMargin;
       opts.outCfg = outCfg;
       opts.rngMode = cfg.rngMode;
@@ -315,7 +319,8 @@ int main(int argc, char **argv) {
              "[options]\n"
              "  --games=N --seed=U64 --threads=N --rng=nes|uniform --max-lines=N|uncapped\n"
              "  --rt=0..60 --das=0|1 --playouts=N --playout-len=N --breadth=-2..1156\n"
-             "  --tb=PATH --nn=PATH --gamma=F --out-margin=F|inf --out-ply=1|2|3 --out-topk=N\n",
+             "  --tb=PATH --nn=PATH --gamma=F --discount-mode=piece|line --out-margin=F|inf "
+             "--out-ply=1|2|3 --out-topk=N\n",
              argv[0]);
       return 0;
     }
@@ -493,6 +498,15 @@ int main(int argc, char **argv) {
       cfg.gammaSet = true;
       continue;
     }
+    if (tryPrefix("--discount-mode=", val)) {
+      if (!das::parseDiscountMode(val, cfg.discountMode)) {
+        fprintf(stderr, "Error: invalid --discount-mode (expected piece or line)\n");
+        return 1;
+      }
+      cfg.hasTbNnFlag = true;
+      cfg.discountModeSet = true;
+      continue;
+    }
     if (tryPrefix("--out-margin=", val)) {
       if (val == "inf") {
         cfg.outMargin = std::numeric_limits<double>::infinity();
@@ -533,8 +547,8 @@ int main(int argc, char **argv) {
     return 1;
   }
   if (!isTbNnAgent && cfg.hasTbNnFlag) {
-    fprintf(stderr, "Error: --tb/--nn/--gamma/--out-margin/--out-ply/--out-topk require tbnn or "
-                    "tbnn-precompute\n");
+    fprintf(stderr, "Error: --tb/--nn/--gamma/--discount-mode/--out-margin/--out-ply/--out-topk "
+                    "require tbnn or tbnn-precompute\n");
     return 1;
   }
   if (cfg.agent == AgentKind::TbNnPrecompute && cfg.hasPlayoutFlag) {
@@ -584,7 +598,13 @@ int main(int argc, char **argv) {
               tb.gamma());
       return 1;
     }
+    if (cfg.discountModeSet && tb.discountMode() != cfg.discountMode) {
+      fprintf(stderr, "Error: --discount-mode (%s) does not match --tb (%s)\n",
+              das::discountModeName(cfg.discountMode), das::discountModeName(tb.discountMode()));
+      return 1;
+    }
     cfg.gamma = tb.gamma();
+    cfg.discountMode = tb.discountMode();
   }
   das::TinyDasNet nn;
   if (!cfg.nnPath.empty()) {
@@ -726,19 +746,20 @@ int main(int argc, char **argv) {
            aggroName(cfg.aggro), lineGoal, cfg.reactionTime, cfg.useDas, cfg.playoutCount,
            cfg.playoutLength, cfg.pruningBreadth, numThreads);
   } else if (cfg.agent == AgentKind::TbNn) {
-    printf("BENCH mode=%s agent=%s games=%d seed=%llu rng=%s goal=%d m=%.2f ply=%d gamma=%.4f "
-           "tb=%s nn=%s threads=%d\n",
+    printf("BENCH mode=%s agent=%s games=%d seed=%llu rng=%s goal=%d m=%.2f ply=%d "
+           "gamma=%.4f[%s] tb=%s nn=%s threads=%d\n",
            modeName(cfg.mode), agentName(cfg.agent), cfg.games,
            static_cast<unsigned long long>(cfg.seed), das::rngModeName(cfg.rngMode), lineGoal,
-           cfg.outMargin, cfg.outPly, cfg.gamma, tb.isLoaded() ? "on" : "off",
-           nn.isLoaded() ? "on" : "off", numThreads);
+           cfg.outMargin, cfg.outPly, cfg.gamma, das::discountModeName(cfg.discountMode),
+           tb.isLoaded() ? "on" : "off", nn.isLoaded() ? "on" : "off", numThreads);
   } else {
     printf("BENCH mode=%s agent=%s games=%d seed=%llu rng=%s goal=%d rt=%d das=%d m=%.2f ply=%d "
-           "gamma=%.4f tb=%s nn=%s threads=%d\n",
+           "gamma=%.4f[%s] tb=%s nn=%s threads=%d\n",
            modeName(cfg.mode), agentName(cfg.agent), cfg.games,
            static_cast<unsigned long long>(cfg.seed), das::rngModeName(cfg.rngMode), lineGoal,
            cfg.reactionTime, cfg.useDas, cfg.outMargin, cfg.outPly, cfg.gamma,
-           tb.isLoaded() ? "on" : "off", nn.isLoaded() ? "on" : "off", numThreads);
+           das::discountModeName(cfg.discountMode), tb.isLoaded() ? "on" : "off",
+           nn.isLoaded() ? "on" : "off", numThreads);
   }
   printf("  Score:      %.0f +/- %.0f | med=%.0f p90=%.0f max=%.0f\n", meanScore, seScore, medScore,
          p90Score, maxScore);

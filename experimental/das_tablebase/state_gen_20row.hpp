@@ -232,7 +232,8 @@ expandCoreSiblings20(const std::vector<std::pair<BoardKey, uint32_t>> &rawEntrie
 
   const int threads = std::max(1, cfg.numThreads);
   const int gravity = getGravity20(cfg.level);
-  const double gamma = cfg.gamma;
+  const StepDiscountTable20 disc = StepDiscountTable20::make(
+      cfg.gamma, tbActive ? fastTb->discountMode() : DiscountMode::PerPiece);
   constexpr size_t LOCAL_DEDUP_STEP = 1000000;
 
   std::vector<std::vector<BoardKey>> perThread(static_cast<size_t>(threads));
@@ -283,10 +284,11 @@ expandCoreSiblings20(const std::vector<std::pair<BoardKey, uint32_t>> &rawEntrie
               continue;
             }
             const double rew = REWARD_NORM_TETRIS[lc];
+            const double dFac = disc.f[lc];
             if (tbActive && fastTb->lookup(childKey, childRow)) {
               anyInTb = true;
               for (int n = 0; n < NUM_PIECES; ++n) {
-                const double q = rew + gamma * static_cast<double>(childRow[n]);
+                const double q = rew + dFac * static_cast<double>(childRow[n]);
                 if (bestTbKey[n] == EMPTY_KEY || q > bestTbQ[n]) {
                   bestTbQ[n] = q;
                   bestTbKey[n] = childKey;
@@ -294,7 +296,7 @@ expandCoreSiblings20(const std::vector<std::pair<BoardKey, uint32_t>> &rawEntrie
               }
             }
             if (nnActive) {
-              const double qNn = rew + gamma * nn->evalNextPieceExpected(afterRows, cfg.rngMode, c);
+              const double qNn = rew + dFac * nn->evalNextPieceExpected(afterRows, cfg.rngMode, c);
               if (!haveNnBest || qNn > bestNnQ) {
                 haveNnBest = true;
                 bestNnQ = qNn;
@@ -575,7 +577,8 @@ inline std::vector<BoardKey> generateStateSetTbNn20(const StateGenConfig20 &cfg,
   const bool nnActive = (nn != nullptr && nn->isLoaded());
   const int threads = std::max(1, cfg.numThreads);
   const int gravity = getGravity20(cfg.level);
-  const double gamma = cfg.gamma;
+  const StepDiscountTable20 disc = StepDiscountTable20::make(
+      cfg.gamma, tbActive ? fastTb->discountMode() : DiscountMode::PerPiece);
 
   ShardedVisitCounter20 counter;
   std::atomic<int> nextGame{0};
@@ -647,13 +650,14 @@ inline std::vector<BoardKey> generateStateSetTbNn20(const StateGenConfig20 &cfg,
           if (topClear || hasAnyLegalMove10Hz(Board20::fromRows(rows), nextP, gravity)) {
             outCont = std::max(0.0, static_cast<double>(nn->evalPiece(rows, nextP)));
           }
-          return rew + gamma * outCont;
+          return rew + disc.f[lc] * outCont;
         };
 
         for (int m = 0; m < pl.count; ++m) {
           const CompactPlacement &p = pl.data[m];
           const uint8_t lc = applyPlacement20(board, curP, p.rot, p.x, p.y, afterRows);
           const double rew = REWARD_NORM_TETRIS[lc];
+          const double dFac = disc.f[lc];
           const int startRow = (lc == 0)
                                    ? std::max(0, std::min(static_cast<int>(board.topNonEmptyRow),
                                                           static_cast<int>(p.y)))
@@ -668,14 +672,20 @@ inline std::vector<BoardKey> generateStateSetTbNn20(const StateGenConfig20 &cfg,
           std::memcpy(mc.rows, afterRows, sizeof(afterRows));
           if (inTb) {
             anyInTb = true;
-            mc.hybridScore = rew + gamma * static_cast<double>(vTb);
+            mc.hybridScore = rew + dFac * static_cast<double>(vTb);
             mc.nnScore = 0.0;
             mc.hasNnScore = false; // Lazily evaluated only on NN frontier-probe steps.
-          } else {
+          } else if (fitsKey) {
             double nnCont = 0.0;
             mc.nnScore = computeNnScore(afterRows, lc, nnCont);
             mc.hasNnScore = true;
-            mc.hybridScore = nnActive ? (rew + gamma * std::max(0.0, nnCont - cfg.outMargin)) : rew;
+            mc.hybridScore = nnActive ? (rew + dFac * std::max(0.0, nnCont - cfg.outMargin)) : rew;
+          } else {
+            // Unrepresentable (!fitsKey, >= 10 holes) boards cannot enter the state set or TB,
+            // so zero NN continuation keeps state generation from chasing OOD multi-hole sinks.
+            mc.nnScore = rew;
+            mc.hasNnScore = true;
+            mc.hybridScore = rew;
           }
           cands.push_back(mc);
         }
@@ -707,19 +717,21 @@ inline std::vector<BoardKey> generateStateSetTbNn20(const StateGenConfig20 &cfg,
               }
             }
             order.erase(std::remove(order.begin(), order.end(), greedyIdx), order.end());
-            std::stable_sort(order.begin(), order.end(), [&](int a, int b) {
-              return cands[static_cast<size_t>(a)].nnScore > cands[static_cast<size_t>(b)].nnScore;
+            std::sort(order.begin(), order.end(), [&](int a, int b) {
+              const double sa = cands[static_cast<size_t>(a)].nnScore;
+              const double sb = cands[static_cast<size_t>(b)].nnScore;
+              return (sa != sb) ? (sa > sb) : (a < b);
             });
             const int hi =
                 std::min<int>(static_cast<int>(order.size()), std::max(1, cfg.exploreTopK));
             chosen = order[static_cast<size_t>(rng.nextInt(hi))];
           } else {
-            std::stable_sort(order.begin(), order.end(), [&](int a, int b) {
+            std::sort(order.begin(), order.end(), [&](int a, int b) {
               const double sa = anyInTb ? cands[static_cast<size_t>(a)].hybridScore
                                         : cands[static_cast<size_t>(a)].nnScore;
               const double sb = anyInTb ? cands[static_cast<size_t>(b)].hybridScore
                                         : cands[static_cast<size_t>(b)].nnScore;
-              return sa > sb;
+              return (sa != sb) ? (sa > sb) : (a < b);
             });
             const int hi =
                 std::min<int>(static_cast<int>(order.size()), std::max(2, cfg.exploreTopK));

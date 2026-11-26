@@ -1,6 +1,6 @@
 # 20-Row NES Tetris (Level 18 / 19 DAS) Tablebase + Neural Network Retrospective
 
-*Status: Living retrospective covering **Phases 0, 1, and 2** (through the 5-million-board Stationary Level 19 flywheel, production `200 ms` baselines, ply-2 tablebase re-entry, and the 18-frame reaction-time ablation). Sections for Phases 3–6 will be appended as those stages complete.*
+*Status: Living retrospective covering **Phases 0, 1, and 2** (through the 5-million-board Stationary Level 19 flywheel, production `200 ms` baselines, ply-2 tablebase re-entry, the 6-way reaction-time & DAS diagnostic, and the per-line discounting & burn-penalty investigation). Sections for Phases 3–6 will be appended as those stages complete.*
 
 This retrospective documents how we transferred our Hybrid Tablebase + Neural Network architecture from a 4-row survival testbed (`4×10` Very Low Lineout) onto a **full 20-row Nintendo Entertainment System (NES) Tetris board** under pure **10 Hz Delayed Auto Shift (DAS)** rules (no quicktaps, 18-frame reaction time), with the long-term goal of beating production StackRabbit on average score in full **Level 18 → Level 29 killscreen** games.
 
@@ -38,8 +38,9 @@ Companion documents:
 1. **A 20-row DAS tablebase is genuinely viable — boards revisit far more often than intuition suggests.** On real 20-row Level 19 and Level 18 play (Phase 0), a `5M`-board tablebase already hits **~60%–64%** of out-of-sample positions from an independent policy, and **93%–94%** of positions under its own on-policy flywheel (and **83%+** on clean 0-hole boards).
 2. **Five rounds of our `5M`-board Stationary Level 19 flywheel climbed smoothly from `155,505` to `361,994` average score (0-frame) — beating `eval2ply` by `+118,000` points and reaching `94.0%` 100-line survival at `0.102 ms/move`.** That is roughly **1,900× faster** than production StackRabbit's `200 ms` tournament search while cutting 100-line topouts by more than two-thirds (`18.8% → 6.0%`).
 3. **Ply-2 TB re-entry (`OUT → TB2`) delivered a free win in both score and speed.** When a temporary tuck or overhang steps outside the TB on ply 1 (`b' ∉ TB`) but the visible `nextPiece` resolves it back into the TB on ply 2 (`b'' ∈ TB`), scoring `b''` with exact `V_tb` (and zero NN safety margin) added **`+5,279` points** (`356.7k → 362.0k`) while cutting 0-frame latency in **half** (`0.214 → 0.102 ms/move`), and added **`+8,228` points** (`305.1k → 313.3k`) under live 18-frame reaction time + DAS physics.
-4. **The 18-frame reaction-time ablation pinpointed the exact remaining gap on Level 19.** Plugging our 0-frame `5M` TB into StackRabbit's real 18-frame mid-air adjustment + DAS precompute collapse drops score by **`-50.5k` (`-14.2%`, `355.6k → 305.1k`, recovered to `313.3k` with ply-2 TB re-entry)** — and the 2×2 ablation proves that **DAS charge physics alone costs almost nothing (`-0.9k`, `-0.3%`)**, while **18-frame reaction-time blindness** accounts for almost the entire drop (`-31.0k` alone, `-50.5k` combined with DAS). Even before fixing reaction time or finite-horizon scoring, our `5M` prototype already matches production `200 ms` StackRabbit's 100-line survival (`81%–82%` vs. `81.2%`) at **`~77×` faster speed (`2.53 ms/move` vs. `195.5 ms/move`)**.
-5. **Production `200 ms` baselines give us crisp targets and validate our Phase 4 endgame assumption.** On full uncapped **Level 18 → agent topout** (`10 Hz` pure DAS, `18`-frame reaction time, `200 ms`), production StackRabbit averages **`1,074,642 ± 13,120`** (`100.0%` transition, `95.0%` killscreen, `82.5%` maxout) — and **`1,071,786`** of that score (`99.73%`) is already earned upon entering Level 29 at line 230 (`+2,856` average on killscreen). Treating `L >= 230` as terminal `0.0` in Phase 4 backward induction is therefore virtually exact.
+4. **The 6-way reaction-time and DAS diagnostic decomposed the exact `-48.4k` Level 19 gap.** Plugging our 0-frame `5M` TB (`361.7k` with `OUT → TB2`) into StackRabbit's live 18-frame reaction time + DAS physics drops score to `313.3k` (`-48.4k`, `-13.4%`). While DAS charge physics alone costs almost nothing at `0`-frame reaction time (`-0.9k`), under live `18`-frame reaction time the drop splits cleanly into three pieces: **pure 18-frame reaction time without DAS (`-21.4k`, `44%`)**, **mid-air DAS reversal reachability (`-9.1k`, `19%`)**, and **cross-piece DAS charge carryover (`-17.9k`, `37%`)** — with runtime DAS penalties already saving `+97.9k` points. Even before fixing reaction time, DAS carryover, or burn incentives, our `5M` prototype already matches production `200 ms` StackRabbit's 100-line survival (`81.0%` vs. `81.2%`) at **`~77×` faster speed (`2.53 ms/move` vs. `195.5 ms/move`)**.
+5. **Debugging per-line discounting uncovered two critical flywheel traps — and unlocked a `+29.3k` breakthrough (`391,326` 0-frame, `60.8%` TRT) with zero extra knobs.** Switching from `PerPiece` (`γ = 0.995`, `54.0%` TRT) to `PerLine` initially crashed until we found and fixed (a) a high-stack / topout NNUE training blind spot (`+123.8k` NN-only), (b) a permanent **uncorrectable reward-hacking sink on `>= 10`-hole (`!fitsKey`) boards** that can never enter `K16-Opt2c` (eliminated by gating Soft-Boundary continuation on `fitsKey == true`), and (c) slow `V(0)` warm-up at `γ = 0.99`. Warm-starting **`PerLine γ = 0.98`** from `r5` (`E[V(0)] = 6.95`, already `~90%` of `γ = 0.98` equilibrium!) immediately jumped 0-frame Hybrid from **`362.0k → 391.3k` (`60.8%` TRT)**, standalone `170 KB` NNUE to **`364.6k`** (beating `r5` Hybrid!), and live 18-frame DAS from **`313.3k → 323.2k` (`54.2%` TRT)** — within **`-15.1k`** of production `200 ms b = -2` (`338.3k`) at **`63×` faster speed**, even before on-policy `PerLine` states or DAS buckets!
+6. **Production `200 ms` baselines give us crisp targets and validate our Phase 4 endgame assumption.** On full uncapped **Level 18 → agent topout** (`10 Hz` pure DAS, `18`-frame reaction time, `200 ms`), production StackRabbit averages **`1,074,642 ± 13,120`** (`100.0%` transition, `95.0%` killscreen, `82.5%` maxout) — and **`1,071,786`** of that score (`99.73%`) is already earned upon entering Level 29 at line 230 (`+2,856` average on killscreen). Treating `L >= 230` as terminal `0.0` in Phase 4 backward induction is therefore virtually exact.
 
 ### Headline Comparison Table (Validation Split, `seed = 30,000,000`, Pure 10 Hz DAS)
 
@@ -51,10 +52,11 @@ Companion documents:
 | Production `precompute 160×8 b=20` | L19 (`100` lines) | `18` frames / DAS | 50 | `345,656 ± 18,217` | `80.0%` goal | `58.6%` | `125.96 ms/move` |
 | **Production `precompute 200ms b=-2`** | **L19 (`100` lines)** | **`18` frames / DAS** | **80** | **`338,305 ± 12,534`** | **`81.2%` goal** | **`55.1%`** | **`195.50 ms/move`** |
 | Our `5M` Round 5 TB + `128×64` NNUE (before `OUT→TB2`) | L19 (`100` lines) | `0` frames / no DAS | 500 | `356,715 ± 3,049` | `93.4%` goal | `53.3%` | `0.214 ms/move` |
-| **Our `5M` Round 5 TB + `128×64` NNUE (`OUT→TB2`)** | **L19 (`100` lines)** | **`0` frames / no DAS** | **500** | **`361,994 ± 2,877`** | **`94.0%` goal** | **`54.0%`** | **`0.102 ms/move`** |
-| Our `5M` Round 5 Standalone `128×64` NNUE (no TB) | L19 (`100` lines) | `0` frames / no DAS | 500 | `346,682 ± 3,095` | `92.2%` goal | — | fast |
-| Our `5M` Round 5 TB + `128×64` NNUE (before `OUT→TB2`) | L19 (`100` lines) | `18` frames / DAS | 200 | `305,110 ± 6,756` | `82.0%` goal | `47.1%` | `2.81 ms/move` |
-| **Our `5M` Round 5 TB + `128×64` NNUE (`OUT→TB2`)** | **L19 (`100` lines)** | **`18` frames / DAS** | **200** | **`313,338 ± 5,816`** | **`81.0%` goal** | **`47.6%`** | **`2.53 ms/move`** |
+| **Our `5M` Round 5 TB + `128×64` NNUE (`OUT→TB2`, `PerPiece`)** | **L19 (`100` lines)** | **`0` frames / no DAS** | **500** | **`361,994 ± 2,877`** | **`94.0%` goal** | **`54.0%`** | **`0.102 ms/move`** |
+| **Our `5M` `PerLine γ=0.98` Round 1 TB + `128×64` NNUE (`OUT→TB2`)** | **L19 (`100` lines)** | **`0` frames / no DAS** | **500** | **`391,326 ± 3,268`** | **`90.2%` goal** | **`60.8%`** | **`0.148 ms/move`** |
+| Our `5M` `PerLine γ=0.98` Round 1 Standalone `128×64` NNUE (no TB) | L19 (`100` lines) | `0` frames / no DAS | 200 | `364,626 ± 6,940` | `86.5%` goal | `58.6%` | `0.162 ms/move` |
+| Our `5M` Round 5 TB + `128×64` NNUE (`OUT→TB2`, `PerPiece`) | L19 (`100` lines) | `18` frames / DAS | 200 | `313,338 ± 5,816` | `81.0%` goal | `47.6%` | `2.53 ms/move` |
+| **Our `5M` `PerLine γ=0.98` Round 1 TB + `128×64` NNUE (`OUT→TB2`)** | **L19 (`100` lines)** | **`18` frames / DAS** | **200** | **`323,186 ± 7,840`** | **`74.5%` goal** | **`54.2%`** | **`3.11 ms/move`** |
 | Production `eval2ply` (0-frame baseline) | Full 18→29 | `0` frames / no DAS | 500 | `640,950 ± 13,570` | `72.6%` transition / `27.6%` killscreen | — | fast |
 | Production `precompute 49×2 b=20` (capped `230` lines) | Full 18→29 | `18` frames / DAS | 50 | `1,042,307 ± 29,312` | `98.0%` transition / `76.0%` killscreen | `71.5%` | `9.34 ms/move` |
 | **Production `precompute 200ms b=-2` (uncapped topout)** | **Full 18→topout** | **`18` frames / DAS** | **40** | **`1,074,642 ± 13,120`** | **`100%` transition / `95.0%` killscreen / `82.5%` maxout** | **`67.8%`** | **`214.28 ms/move`** |
@@ -235,40 +237,126 @@ Updating `chooseHybridMove20`, `chooseTbNnPrecomputeMove`, and the inspector (`/
 
 ---
 
-## 6. The 18-Frame Reaction-Time Ablation (`V(b, c)` vs. `V_RT(b, c)`)
+## 6. Reaction-Time & DAS Physics Decomposition (`V(b, c)` vs. `V_RT(b, c, d)`)
 
 ### Section Glossary
 - **RT (Reaction Time, `18` frames)**: In real NES Tetris (and StackRabbit's `precompute` engine), the player does not see the next piece until the current piece spawns, and needs `18` frames (`0.30 s`) to react. On Level 19 (`gravity = 2`), the current piece falls **9 rows** and executes up to **3 horizontal shifts** during those 18 frames before the player can adjust mid-air for the newly revealed `nextPiece`.
 - **Precompute Collapse**: StackRabbit's exact decision procedure under RT: it chooses an initial 18-frame input prefix (a "phantom" commitment) that maximizes the expected value across all 7 possible next pieces, where for each next piece `n` the player chooses the best legal mid-air adjustment reachable from that 18-frame state.
-- **DAS Charge Penalty**: When placing the current piece ends without full DAS charge (`< 15` frames), the *next* piece starts with less horizontal reach. StackRabbit accounts for this by computing the exact value drop between full DAS (`15`), partial DAS (`10`), and minimum DAS (`5`).
-- **`V(b, c)` vs. `V_RT(b, c)`**: Our Phase 2 tablebase `V(b, c)` assumes 0-frame RT (full choice of any legal placement of `c` after seeing `n`). A reaction-time-aware tablebase `V_RT(b, c)` instead puts the exact 18-frame precompute commitment choice inside the Bellman equation: choosing the best 18-frame initial prefix *before* averaging over `n`.
+- **DAS Charge Penalty**: When placing the current piece ends without full DAS charge (`< 15` frames), the *next* piece starts with less horizontal reach. StackRabbit accounts for this by computing the value drop between full DAS (`15`), partial DAS (`10`), and minimum DAS (`5`).
+- **Effect 1 (Mid-Air DAS Reversal) vs. Effect 2 (Cross-Piece DAS Carryover)**: Under 18-frame RT, DAS hurts in two distinct ways. **Effect 1** happens *within* a single piece: committing left for 18 frames and then reversing right mid-air loses DAS momentum even if you started at full charge (`16`). **Effect 2** happens *across* pieces: ending a placement with low DAS charge (`5` or `10`) handicaps the *next* piece's horizontal reach.
+- **`V_RT(b, c, d)` (RT- and DAS-Aware Tablebase)**: An upgraded tablebase storing values across `(board, curPiece, startingDasBucket)` — e.g., 3 DAS buckets (`d ∈ {15, 10, 5}`, `21` floats per board) — with the exact 18-frame precompute commitment inside the Bellman backup.
 
-### The 2×2 (`Reaction Time × DAS`) Ablation Results
-To measure how much our 0-frame `V(b, c)` tablebase loses under true live NES constraints — and isolate *why* — we built `tbnn_precompute_adapter.hpp` (calling StackRabbit's exact `fullMoveSearch`, `analyzePrecomputeCollapse`, and DAS penalty buckets) and ran a controlled **2×2 ablation** on `r5.tb.bin + r5_128x64.nn.bin` (`200` validation games, `seed = 30,000,000`, `m = 0.40`, `ply = 2`):
+### Phase A: Initial 2×2 Ablation (Before `OUT → TB2`)
+To measure how much our 0-frame `V(b, c)` tablebase loses under true live NES constraints, we first built `tbnn_precompute_adapter.hpp` (calling StackRabbit's exact `fullMoveSearch`, `analyzePrecomputeCollapse`, and DAS penalty buckets) and ran a **2×2 ablation** on `r5.tb.bin + r5_128x64.nn.bin` (`200` validation games, `seed = 30,000,000`, `m = 0.40`, `ply = 2`):
 
-| Condition (`r5.tb.bin + r5_128x64`, `200g`) | Mean Score ± SE | Delta vs. `rt=0, das=0` | Goal (`100l`) | TRT | Ply-1 TB Hit | Wall Speed |
+| Condition (`r5.tb.bin + r5_128x64`, `200g`, before `OUT→TB2`) | Mean Score ± SE | Delta vs. `rt=0, das=0` | Goal (`100l`) | TRT | Ply-1 TB Hit | Wall Speed |
 |---|---:|---:|---:|---:|---:|---:|
 | `rt = 0, das = 0` (0-frame, no DAS) | `356,570 ± 4,432` | `0` | `95.5%` | `52.5%` | `94.65%` | `0.77 ms/mv` |
 | `rt = 0, das = 1` (0-frame + full DAS charge physics) | `355,628 ± 4,421` | **`-942` (`-0.3%`)** | `95.5%` | `52.4%` | `94.24%` | `0.91 ms/mv` |
 | `rt = 18, das = 0` (18-frame RT, no DAS) | `325,538 ± 5,496` | **`-31,032` (`-8.7%`)** | `84.0%` | `49.1%` | `91.41%` | `0.93 ms/mv` |
-| `rt = 18, das = 1` (full live 18f RT + DAS, before `OUT→TB2`) | `305,110 ± 6,756` | **`-51,460` (`-14.4%`)** | `82.0%` | `47.1%` | `89.07%` | `2.81 ms/mv` |
-| **`rt = 18, das = 1` (full live 18f RT + DAS, with `OUT→TB2`)** | **`313,338 ± 5,816`** | **`-43,232` (`-12.1%`)** | **`81.0%`** | **`47.6%`** | **`88.12%`** | **`2.53 ms/mv`** |
-| *Standalone `128×64` NNUE (`rt = 18, das = 1`, no TB)* | *`301,696 ± 6,818`* | *`-54,874`* | *`77.5%`* | — | *`0%`* | *`32.75 ms/mv`* |
-| *Production StackRabbit `200ms b=-2` (`rt = 18, das = 1`, `80g`)* | *`338,305 ± 12,534`* | — | *`81.2%`* | *`55.1%`* | — | *`195.50 ms/mv`* |
+| `rt = 18, das = 1` (full live 18f RT + DAS) | `305,110 ± 6,756` | **`-51,460` (`-14.4%`)** | `82.0%` | `47.1%` | `89.07%` | `2.81 ms/mv` |
 
-### What the 2×2 Ablation Tells Us
-1. **DAS charge physics alone is essentially a non-issue (`-0.9k`, `-0.3%`)**: Pure 10 Hz `"X....."` move generation already models the vast majority of DAS reachability; StackRabbit's runtime DAS-charge penalty buckets cleanly handle the occasional low-charge move without needing DAS charge baked into the board key!
-2. **18-frame reaction time is a major real effect (`-31.0k` alone, `-43.2k` to `-51.5k` combined with DAS):** Under 0-frame assumptions, `V(b, c)` happily builds shapes that rely on waiting until frame 0 to commit left vs. right once `nextPiece` is known. Under 18-frame Level 19 gravity (9 rows of drop before reacting), high stacks and sharp two-sided dependencies become unadjustable in mid-air — forcing awkward compromises that both lower TRT (`52.4% → 47.6%`) and increase topouts (`4.5% → 19.0%`).
-3. **Why we are already strikingly close to production StackRabbit `200 ms` — and how Phases 3–5 close the gap:** Even with a `5M`-board 0-frame stationary TB, our `r5 + 128×64` (`OUT→TB2`) already matches production `200 ms b=-2` on 100-line survival (`81.0%` vs. `81.2%`) while running **`77×` faster (`2.53 ms/mv` vs. `195.5 ms/mv`)**, and trails `200 ms b=-2` on Level 19 score by only **`-25.0k`** (`313.3k` vs. `338.3k`). Three large, orthogonal upgrades remain ahead of us:
-   - **Reaction-time-aware solving (`V_RT(b, c)`)**: Baking 18-frame mid-air commitment directly into the Bellman backup on Level 19 so the tablebase stops valuing unadjustable shapes (directly attacking the `-43k` RT drop).
-   - **Finite-horizon backward induction (Phases 4–5)**: Replacing stationary `γ = 0.995` with exact undiscounted NES scoring (`L = 229 → 130` and `L = 129 → 0`) so the agent plays aggressively for `20× → 29×` Tetrises (`65%–75%+` TRT instead of stationary `47%–54%` TRT) while smoothly managing the Level 18 → 19 transition and killscreen horizon.
-   - **Scaling from `5M` → `20M+` boards + full `256×64` NNUE**: Lifting both TB coverage (`88%–93% → 96%+`) and out-of-TB accuracy.
+At first glance, the `rt = 0, das = 1` row (`-0.9k`) made DAS look negligible — **but notice the huge interaction term**: turning on DAS at `rt = 0` cost only `-0.9k`, whereas turning on DAS at `rt = 18` cost an extra **`-20.4k`** (`325.5k → 305.1k`)!
+
+### Phase B: 6-Way Diagnostic Splitting Effect 1 vs. Effect 2 (With `OUT → TB2`)
+To pinpoint whether that extra `-20k+` interaction came from **Effect 1** (mid-air DAS reversal) or **Effect 2** (cross-piece DAS carryover), we added a `reset16` test mode (resetting DAS charge back to full `16` at the start of every piece) and an `applyDasPenalties` toggle (because running `reset16` with penalties still enabled makes the agent needlessly avoid "losing" DAS charge that gets magically restored anyway!). All 6 conditions ran on `r5.tb.bin + r5_128x64.nn.bin` with `OUT → TB2` (`200g`, `seed = 30,000,000`, `m = 0.40`, `ply = 2`):
+
+| Condition (`r5 + 128×64`, `OUT → TB2`, `200g`) | Mean Score ± SE | Step Delta | Goal (`100l`) | TRT | What It Isolates |
+|---|---:|---:|---:|---:|---|
+| 1. `rt = 0, das = 0` | `361,724 ± 4,394` | baseline | `96.0%` | `53.5%` | Ideal 0-frame 10 Hz baseline |
+| 2. `rt = 18, das = 0` | `340,354 ± 5,295` | **`-21,370` (`44%`)** | `88.5%` | `51.1%` | Pure 18-frame RT commitment (no DAS) |
+| 3. `rt = 18, das = 1` (`reset16`, penalties OFF) | `331,284 ± 5,436` | **`-9,070` (`19%`)** | `85.5%` | `50.0%` | **True Effect 1**: mid-air DAS reversal reachability |
+| 4. `rt = 18, das = 1` (`reset16`, penalties ON) | `315,438 ± 6,357` | *(`-15,846` artifact)* | `82.0%` | `48.6%` | Confounded: agent fears phantom DAS loss |
+| 5. **`rt = 18, das = 1` (live DAS, penalties ON)** | **`313,338 ± 5,816`** | **`-17,946` (`37%`)** *(vs. #3)* | **`81.0%`** | **`47.6%`** | **True Effect 2**: cross-piece DAS carryover |
+| 6. `rt = 18, das = 1` (live DAS, penalties OFF) | `215,402 ± 8,277` | `-97,936` *(vs. #5)* | `43.5%` | `42.8%` | Value of StackRabbit's runtime DAS penalties |
+| *Production StackRabbit `200ms b=-2` (`80g`)* | *`338,305 ± 12,534`* | — | *`81.2%`* | *`55.1%`* | *Target baseline (`195.5 ms/mv` vs. our `2.53 ms/mv`)* |
+
+### Key Takeaways From the 6-Way Diagnostic
+1. **Why DAS was harmless at `rt = 0` yet accounts for `56%` (`-27.0k`) of the gap at `rt = 18`:** At `rt = 0`, you know `nextPiece` immediately on frame 0 and can plan a clean charge-preserving wall-tap or tuck from the top of the board. Under `18`-frame RT, mid-air adjustments frequently force low-charge landings (`afterDAS` lands at `79.2%` full / `11.7%` partial / `9.1%` minimum) and reverse-direction shifts that lose DAS charge mid-flight.
+2. **Runtime DAS penalties are already doing massive heavy lifting (`+97.9k` points, `43.5% → 81.0%` goal),** but because the underlying tablebase `V(b, c)` does not know the starting DAS charge `d`, the agent still loses `-17.9k` from Effect 2 (and another `-21.4k` from pure RT + `-9.1k` from Effect 1).
+3. **Why `V_RT(b, c, d)` should start with 3 DAS buckets (`d ∈ {15, 10, 5}`) rather than interpolating between 2 (`{15, 5}`):** Horizontal reachability in NES Tetris is a **sharp step function, not linear**. On a high right-well stack, an `I` piece with `d = 10` either *can* reach column 9 for a Tetris or it *cannot* — it does not earn `50%` of a Tetris! Storing 3 explicit buckets (`21` floats/board instead of `7`) captures `d = 10` reachability cleanly (and we can compare 3-bucket vs. 2-bucket afterward to see how much it matters).
+4. **Why we paused `V_RT(b, c, d)` before implementing it:** Even at `0`-frame (`362.0k`), our stationary `PerPiece` agent topped out at **`54.0%` TRT** (`47.6%` under live 18-frame DAS, vs. production's `55.1%` and strong human DAS play at `~60%`). Before multiplying tablebase complexity by `3×` for DAS buckets, we decided to fix the underlying Level 19 stacking/burning objective first.
 
 ---
 
-## 7. Upcoming Phases (To Be Appended)
+## 7. Debugging Stationary TRT: Per-Line Discounting, Two Hidden Flywheel Traps, and the `γ = 0.98` Breakthrough
 
-- **Phase 2 Decision / Phase 3**: Implement `V_RT(b, c)` (if approved) and scale Stationary Level 19 + Level 18 flywheels (`5M → 20M+`).
-- **Phase 4**: Shared-key multi-slice backward induction across Levels 19–28 (`L = 229 → 130`, exact undiscounted NES points, terminal `0.0` at `L >= 230`).
-- **Phase 5**: Level 18 → 19 transition backward induction (`L = 129 → 0`) and unified line-count-aware NNUE `V_nn(b, c, L)`.
-- **Phase 6**: Final untouched held-out evaluation (`seed = 700,000`, full Level 18 → topout pure 10 Hz DAS) against production StackRabbit `200 ms b=-2`, plus production integration proposal.
+### Section Glossary
+- **Per-Piece (`γ_piece`) vs. Per-Line (`γ_line`) Discounting**: Under `PerPiece` (`γ = 0.995`), every piece placement multiplies future value by `0.995` regardless of how many lines it clears. Under `PerLine` (`γ = 0.98` or `0.99`), clearing `lc` lines multiplies future value by `γ^lc` (with a tiny `0.9999` tie-break on `0`-line placements), charging an opportunity cost per cleared line.
+- **Reward Hacking (Out-of-Distribution Overestimation)**: When an agent discovers an unvisited or unrepresentable board where the NN accidentally predicts an absurdly high value, and actively steers toward that garbage board to collect the fake payoff.
+- **Danger-Zone Sampling**: Intentionally dedicating a small fraction (`12%`) of NNUE distillation rollout games to noisy random moves (`ε = 0.35`) so the training set actually sees high stacks (`H >= 12`) and real topouts instead of only clean `H <= 8` boards.
+- **Equilibrium Value (`V_∞`)**: The steady-state expected return of an infinite-horizon solver. Under `PerLine` discounting with average reward `r̄` per line, $V_\infty = \bar{r} / (1 - \gamma)$ — so `(1 - γ) · V_∞ = r̄` is independent of `γ`, meaning the anti-burning penalty reaches full strength as soon as `V(0)` approaches `V_∞`.
+
+### Why We Tried Per-Line Discounting (`γ = 0.99`)
+In a real 100-line Level 19 game, clearing a Single consumes `1%` of your entire line budget — wasting future Tetris capacity. Under our Phase 2 `PerPiece` solver (`γ = 0.995`), clearing a Single paid **`+0.033` reward** with the exact same `0.995` discount as a `0`-line placement, so the agent happily burned safe Singles whenever the stack got mildly awkward (`54.0%` TRT at 0-frame, `47.6%` at 18-frame DAS).
+
+Switching to `PerLine` discounting (`γ = 0.99` per cleared line) initially failed badly — our first multi-round run crashed all the way down to `168.8k` Hybrid (`94.9k` NN-only)! Debugging *why* turned out to be one of the highest-leverage investigations of the whole project, uncovering **two hidden flywheel bugs** plus a **fundamental discounting insight**.
+
+### Discovery 1: The High-Stack / Pure-Terminal NNUE Training Blind Spot
+Inspecting the first `PerLine` NNUE (`perline_soft1_128x64`, which collapsed to `134.1k` NN-only) revealed that it predicted **`V_nn(H = 12, T) = +3.191`** on a nearly dead high stack! Tracing `sampleDistillDataset20` (`nnue_20row.hpp`) showed why:
+- On-policy rollouts played so cleanly that **`0.00%`** of sampled training decisions had stack height `H >= 12`.
+- Even when a rollout *did* reach a forced topout where every legal move died (`bestQ == minQ == 0.0`), the dataset filter (`bestQ > minQ + 1e-9`) **threw the decision away** because it had no move-ranking signal!
+
+**Fix (`nnue_20row.hpp`):** Added `12%` danger-zone rollout games (`ε = 0.35` uniform random moves to climb into `H >= 12`) and a `hasRankingSignal` flag so pure-terminal topout decisions still train the value head (`childValTarget = 0.0`) without corrupting the move-ranking loss. That increased real topout supervision by **`20×–200×`** and immediately jumped `perline_soft1` NN-only from **`134.1k → 257.8k` (`+123.8k`)** and Hybrid from **`192.8k → 267.9k` (`+75.1k`)**.
+
+### Discovery 2: The Uncorrectable `!fitsKey` (`>= 10`-Hole) Soft-Boundary Exploit
+Even after fixing high-stack sampling, multi-round `PerLine` still degraded across rounds (`267.9k → 249.6k → 168.8k`). Inspecting the maximum-value board (`maxV`) inside `perline_r4.tb.bin` revealed a shocking smoking gun:
+- In healthy `r5.tb.bin`, `maxV = 8.89` sits on a textbook **0-hole, `H = 12` double-Tetris right-well stack**.
+- In poisoned `perline_r4.tb.bin`, **`maxV = 8.17` sat on a hideous `7`-hole, `H = 4` garbage board**!
+- Tracing its children showed that one `L`-piece placement created a **`17`-hole child (`!fitsKey`)** whose NNUE prediction exploded every round: **`6.306` (Round 1) → `8.569` (Round 2) → `9.899` (Round 3) → `10.394` (Round 4)**!
+
+**Why this happened:** Under Soft-Boundary MPI, if the NNUE overestimates a *representable* (`<= 9`-hole, `fitsKey == true`) board, the flywheel is **self-correcting** — state generation visits that board, pulls it into next round's tablebase, and the Bellman solver immediately corrects its value. **But `K16-Opt2c` caps holes at `<= 9`, so a `>= 10`-hole (`!fitsKey`) board can NEVER enter the tablebase.** Any NNUE overestimation there becomes a **permanent, uncorrectable reward-hacking sink** that pulls `solve_20row` and `generate_20row` straight toward multi-hole garbage!
+
+**Permanent fix (`solver_20row.hpp`, `state_gen_20row.hpp`, `das_tb_test.cpp`):** Gated Soft-Boundary NN continuation strictly on `fitsKey == true` — any `!fitsKey` (`>= 10`-hole) child receives **`0.0` continuation** during both `solve20MPI` / `evaluateSoftBoundaryMC20` and `generateStateSetTbNn20` (while keeping runtime `OUT → TB2` ply-2 re-entry untouched for legitimate temporary overhangs). Verified with a dedicated unit test asserting zero `BoundaryFn` calls on `>= 10`-hole children (**13/13 tests, `11,424,467` assertions passing**).
+
+### Clean 3-Round `PerLine` (`γ = 0.99`) Verification & Discovery 3: The `V(0)` Coupling Problem
+
+With both bugs fixed, we ran 3 clean `PerLine` (`γ = 0.99`) flywheel rounds (`perline_c1..c3`) starting from `perline_hard.tb.bin` (`5.0M` on `r5.states.bin`, `E[V(0)] = 3.855`):
+
+| Model | Boards | `E[V(0)]` | `maxV` Board | Soft-MC `z` | 0-Frame Hybrid (`ply = 2`, `500g`) | Goal (`100l`) | TRT | NN-Only (`200g`) |
+|---|---:|---:|---|---:|---:|---:|---:|---:|
+| `r1` (`PerPiece` Round 1 baseline) | `5.00M` | `3.50` | `H = 8`, `0` holes | `0.06` | `238,792` *(200g)* | `39.5%` | `50.8%` | `240,304` |
+| `r5` (`PerPiece` Round 5 baseline) | `5.00M` | `6.95` | `H = 12`, `0` holes | `0.33` | **`361,994 ± 2,877`** | **`94.0%`** | **`54.0%`** | `339,748` |
+| `perline_c1` (`γ = 0.99`, Round 1) | `5.00M` | `4.99` | `H = 12`, `0` holes (`6.44`) | `0.38` | `292,642` (`300.4k` @ `m=0.80`) | `70.0%` (`77%`) | `49.1%` | `281,214` |
+| `perline_c2` (`γ = 0.99`, Round 2) | `1.38M`* | `5.43` | `H = 10`, `0` holes (`6.78`) | `0.21` | `302,335 ± 4,501` | `76.4%` | `48.7%` | — |
+| `perline_c3` (`γ = 0.99`, Round 3) | `1.50M`* | `5.85` | `H = 11`, `0` holes (`7.17`) | `0.43` | `310,996 ± 4,108` (`m=0.60`) | `80.8%` | `48.7%` | `259,522` |
+
+*\*Note: Omitting `--merge` in Rounds 2–3 shrank the tablebase `3.3×` (`5.0M → 1.38M → 1.50M`), evicting `H = 10` recovery boards (`H = 10` went `OUT` in `c2/c3`, whereas `r5` kept `V(H = 10) = 4.53 / 3.80`).*
+
+The exploit was 100% gone (`maxV` stayed a textbook 0-hole double-Tetris stack every round, Soft-MC passed at `z <= 0.43`, and `perline_c1` beat `r1` by **`+61.6k`**). **Yet even clean `perline_c1..c3` stayed stuck at `48.7%–49.1%` TRT!** Why?
+
+Doing the Bellman algebra revealed **Discovery 3**:
+- Under `PerLine` discounting, the net penalty for burning a Single is $\frac{1}{30} - (1 - \gamma) V(0)$ — **dynamically coupled to `V(0)`**!
+- At infinite-horizon equilibrium ($V_\infty = \bar{r}/(1 - \gamma) \approx 17.5$ for `γ = 0.99` at `60%` TRT), a Single costs `0.033 - 0.175 = -0.142`.
+- **But at Round 3 (`V(0) = 5.85`, only `33%` of equilibrium)**, a Single only costs `0.033 - 0.058 = -0.025` — **`5×` weaker than equilibrium** and tiny next to the `-0.45` boundary penalty of stacking higher! Waiting `10+` flywheel rounds for `V(0)` to creep up before the burn penalty reaches full strength makes training slow, sensitive to tablebase size, and hard to tune.
+
+### Why We Rejected a Fixed Burn Penalty (`c`) — and How Warm-Starting `PerLine γ = 0.98` Solved It Cleanly
+
+We first considered bypassing `PerLine` convergence by adding a fixed per-line penalty `c` inside `PerPiece` (`r'(lc) = r(lc) - c · lc`), targeting `~60%` TRT directly. Analyzing the risk-reward math revealed two hidden downsides:
+1. **Survival distortion:** You cannot set `c` all the way to the full `60%` TRT rate (`~0.166` Tetrises/line), because average shaped reward drops to `~0`, collapsing `V(empty) → 0` until topping out (`0`) looks as good as digging out to survive! Even at `c = 0.09` (`V(0) ≈ 3.2`), shrinking `V(0)` in half (`6.95 → 3.2`) makes *every* scoring gamble (`Tetris vs. 4 Singles`, `Triple vs. 3 Singles`) `~2.2×` more reckless relative to survival.
+2. **Unnecessary complexity:** A fixed burn penalty in `PerPiece` can never be weaned off, adds a second stationary-only knob that disappears completely in finite-horizon backward induction, and isn't even needed once `PerLine` starts near equilibrium!
+
+**The cleaner insight (`PerLine γ = 0.98` warm-started from `r5`):**
+- At `γ = 0.98` (50-line effective horizon — matching the average remaining lines of a 100-line Level 19 game!), equilibrium value is **$V_\infty \approx 8.0–8.5$** instead of `17.5`.
+- Because `r5.tb.bin` + `r5_128x64.nn.bin` ALREADY had **`E[V(0)] = 6.95`** (nearly `90%` of `γ = 0.98`'s equilibrium!) with all `5.0M` boards intact and clean negative `V_nn` on `H >= 12`, warm-starting a **single 6-minute `PerLine γ = 0.98` solve** from `r5` put `V(0)` at equilibrium (`7.042`) on **Round 1** — automatically producing all three real 100-line risk ratios (`1.6%` Single burn, `1.9%` Triple vs. 3 Singles, `11%` Tetris vs. 4 Singles) with **zero new knobs**!
+
+| Model (`5.0M` `r5.states.bin`, `seed = 30,000,000`, `ply = 2`, `OUT → TB2`) | `E[V(0)]` / NNUE Val MAE & Top-1 | 0-Frame Hybrid (`500g`) | 0-Frame Goal / TRT | 0-Frame Standalone NNUE (`200g`) | 18-Frame Live DAS (`200g`, `m = 0.40`) |
+|---|---|---:|---|---:|---:|
+| `r5` (`PerPiece γ = 0.995`) | `6.950` / `0.152`, `82.0%` | `361,994 ± 2,877` | `94.0%` / `54.0%` | `339,748` (`90.5%`, `51.2%` TRT) | `313,338 ± 5,816` (`81.0%`, `47.6%` TRT) |
+| **`perline98_r1` (`PerLine γ = 0.98`, warm-started from `r5`)** | **`7.042` / `0.0990`, `83.45%`** | **`391,326 ± 3,268`** (`+29.3k`!) | **`90.2%` / `60.8%`** (`91.8%` @ `m=0.40`) | **`364,626`** (`86.5%`, `58.6%` TRT) | **`323,186 ± 7,840`** (`74.5%`, **`54.2%` TRT**) |
+
+Highlights from that single 6-minute solve:
+- **Nailed the `60%` TRT target immediately (`60.8%` 0-frame, `54.2%` live 18-frame DAS)** while keeping `maxV = 7.8612` on a textbook 0-hole `H = 11` stack (`Soft-MC z = 0.70`).
+- **Best NNUE accuracy of the entire project (`MAE = 0.0990`, `top1 = 83.45%`, `regret = 0.0204`)** — our standalone `170 KB` NNUE (`364.6k`) now beats our previous best `5M` `PerPiece` TB + NNUE Hybrid (`362.0k`)!
+- **Why TB hit rate (`93.0% → 89.6%`) and survival (`94.0% → 90.2%`) dipped slightly:** `perline98_r1` is still running on `r5.states.bin` (`avgMaxH = 6.73` vs. `r5`'s `6.15`), so its taller `60.8%`-TRT stacks step outside `r5`'s state set. Pulling those taller recovery boards in via on-policy `5.0M` `--merge` rounds is our first Phase 2B step.
+
+### Process Lesson: Mandatory Parallel Reviewer Subagents
+Running a 3-reviewer subagent pass (**Logic**, **Perf & Scale**, **Readability**) in parallel with `perline98_r1` caught several real bugs before they could affect multi-round training — most notably a validation-sampling bug (`g % 100 < 37`) that starved the `15,000`-decision validation set of greedy games, `PerLine` omitted in 3-ply search and two inspector routes, a margin-regime mismatch in `bestSecondPieceScoreForDas`, and heavy `std::unordered_map` per-move allocation churn in `tbnn_precompute_adapter.hpp`. We fixed all HIGH/MEDIUM findings (passing `13/13` tests, `11,424,479` assertions) and codified mandatory parallel reviewer passes into `AGENTS.md` so no training run ever builds on unreviewed solver or sampling code.
+
+---
+
+## 8. Restructured Three-Horizon Roadmap (To Be Appended)
+
+- **Horizon 1 — Active Focus (Phase 2B, Pure Stationary L19 Next-Box Stacking, `rt = 0`, no DAS)**: Keep iterating in our fastest, cleanest sandbox (`5–8 min/round`) across on-policy `PerLine γ = 0.98` rounds, horizon sweeps (`0.975–0.985`), state-set / Soft-Boundary tuning, NNUE capacity & features (`256×64`, flattening `H = 14..18`), runtime search, and inspector audits until pure L19 Next-Box stacking reaches `~410k+` (`60–65%` TRT, `>= 93%` survival).
+- **Horizon 2 — Near-Term Future (Phase 3, Live 18-Frame RT & DAS on L19)**: Only after Phase 2B meets its exit bar — implement 3-bucket `V_RT(b, c, d)` (`d ∈ {15, 10, 5}`), benchmark 3-bucket vs. 2-bucket `{15, 5}`, and run live-DAS on-policy rounds to decisively beat production `200 ms b = -2` (`338.3k`).
+- **Horizon 3 — Long-Term Future (Phases 4–6)**: Stationary L18 + `20M+` scaling, exact undiscounted multi-level backward induction (`L = 229 → 130` & `L = 129 → 0`) with unified `V_nn(b, c, d, L)`, and final untouched held-out `seed = 700,000` evaluation & production integration proposal.

@@ -47,6 +47,9 @@ struct InspectorContext {
   int activeLevel() const noexcept { return tb.isLoaded() ? tb.level() : level; }
   int activeGravity() const noexcept { return getGravity20(activeLevel()); }
   double activeGamma() const noexcept { return tb.isLoaded() ? tb.gamma() : defaultGamma; }
+  DiscountMode activeDiscountMode() const noexcept {
+    return tb.isLoaded() ? tb.discountMode() : DiscountMode::PerPiece;
+  }
   RngMode activeRngMode() const noexcept {
     if (tb.isLoaded())
       return tb.rngMode();
@@ -446,6 +449,7 @@ inline HttpRouteResult handlePing(const std::map<std::string, std::string> &para
   std::string json = "{\"ok\":true";
   json += ",\"level\":" + std::to_string(ctx.activeLevel());
   json += ",\"gamma\":" + fmtDouble(ctx.activeGamma());
+  json += ",\"discountMode\":\"" + std::string(discountModeName(ctx.activeDiscountMode())) + "\"";
   json += ",\"rngMode\":\"" + std::string(rngModeName(ctx.activeRngMode())) + "\"";
   json += ",\"tbLoaded\":";
   json += (ctx.isTbLoaded() ? "true" : "false");
@@ -544,6 +548,7 @@ inline HttpRouteResult handleStateInfo(const std::map<std::string, std::string> 
     const int level = ctx.activeLevel();
     const int gravity = ctx.activeGravity();
     const double gamma = ctx.activeGamma();
+    const DiscountMode discountMode = ctx.activeDiscountMode();
     const int startLines = (level == 19) ? 130 : 0;
     const GameState gs = board20ToGameState(board, level, startLines, ctx.bc, ctx.aggro);
     std::vector<LockPlacement> m1, m2;
@@ -555,11 +560,11 @@ inline HttpRouteResult handleStateInfo(const std::map<std::string, std::string> 
         json.push_back(',');
       const HybridMoveChoice20 hyb = chooseHybridMove20(
           board, c, nextPiece, gravity, gamma, ctx.isTbLoaded() ? &ctx.tb : nullptr,
-          ctx.isNnLoaded() ? &ctx.nn : nullptr, margin, rngMode, outCfg);
+          ctx.isNnLoaded() ? &ctx.nn : nullptr, margin, rngMode, outCfg, discountMode);
       const HybridMoveChoice20 nnOnly =
           ctx.isNnLoaded() ? chooseHybridMove20(board, c, nextPiece, gravity, gamma,
                                                 static_cast<const MappedDasTablebase *>(nullptr),
-                                                &ctx.nn, margin, rngMode, outCfg)
+                                                &ctx.nn, margin, rngMode, outCfg, discountMode)
                            : HybridMoveChoice20{};
       const Eval2PlyResult ev =
           chooseEval2PlyMove10Hz(gs, c, nextPiece, ctx.bc, ctx.aggro, true, m1, m2);
@@ -629,6 +634,8 @@ inline HttpRouteResult handleMoves(const std::map<std::string, std::string> &par
   const int level = ctx.activeLevel();
   const int gravity = ctx.activeGravity();
   const double gamma = ctx.activeGamma();
+  const DiscountMode discountMode = ctx.activeDiscountMode();
+  const StepDiscountTable20 disc = StepDiscountTable20::make(gamma, discountMode);
   const RngMode rngMode = ctx.activeRngMode();
   const int startLines = (level == 19) ? 130 : 0;
   const GameState parentGs = board20ToGameState(board, level, startLines, ctx.bc, ctx.aggro);
@@ -639,7 +646,7 @@ inline HttpRouteResult handleMoves(const std::map<std::string, std::string> &par
   const NnSearchConfig20 outCfg{ply, NN_DEFAULT_3PLY_TOPK};
   const HybridMoveChoice20 hybBest = chooseHybridMove20(
       board, curPiece, nextPiece, gravity, gamma, ctx.isTbLoaded() ? &ctx.tb : nullptr,
-      ctx.isNnLoaded() ? &ctx.nn : nullptr, margin, rngMode, outCfg);
+      ctx.isNnLoaded() ? &ctx.nn : nullptr, margin, rngMode, outCfg, discountMode);
 
   struct MoveView {
     CompactPlacement p;
@@ -684,7 +691,7 @@ inline HttpRouteResult handleMoves(const std::map<std::string, std::string> &par
       if (!mv.inTb) {
         mv.ply2 = detail::bestReplyHybrid2Ply20(
             mv.afterRows, nextPiece, gravity, gamma, ctx.isTbLoaded() ? &ctx.tb : nullptr,
-            ctx.isNnLoaded() ? &ctx.nn : nullptr, margin, rngMode, pl2);
+            ctx.isNnLoaded() ? &ctx.nn : nullptr, margin, rngMode, pl2, discountMode);
         if (mv.ply2.anyInTb) {
           anyTbGrounded = true;
         }
@@ -701,24 +708,25 @@ inline HttpRouteResult handleMoves(const std::map<std::string, std::string> &par
   for (int i = 0; i < pl.count; ++i) {
     auto &mv = views[static_cast<size_t>(i)];
     const double rew = REWARD_NORM_TETRIS[mv.lc];
-    mv.tbQ = mv.inTb ? (rew + gamma * static_cast<double>(mv.tbVal)) : rew;
-    mv.nnQ1 = ctx.isNnLoaded()
-                  ? scoreMoveNn1Ply20(mv.afterRows, mv.lc, nextPiece, gravity, gamma, ctx.nn)
-                  : 0.0;
+    const double dFac = disc.f[mv.lc];
+    mv.tbQ = mv.inTb ? (rew + dFac * static_cast<double>(mv.tbVal)) : rew;
+    mv.nnQ1 = ctx.isNnLoaded() ? scoreMoveNn1Ply20(mv.afterRows, mv.lc, nextPiece, gravity, gamma,
+                                                   ctx.nn, discountMode)
+                               : 0.0;
     mv.nnQ2 = ctx.isNnLoaded() ? scoreMoveNn2Ply20(mv.afterRows, mv.lc, nextPiece, gravity, gamma,
-                                                   ctx.nn, rngMode)
+                                                   ctx.nn, rngMode, discountMode)
                                : 0.0;
     const double chosenNnQ = (ply == 2) ? mv.nnQ2 : mv.nnQ1;
     if (mv.inTb) {
       mv.hybridQ = mv.tbQ;
     } else if (ply == 2) {
-      mv.hybridQ = rew + gamma * (anyTbGrounded ? mv.ply2.bestIfTbGrounded : mv.ply2.bestIfAllOut);
+      mv.hybridQ = rew + dFac * (anyTbGrounded ? mv.ply2.bestIfTbGrounded : mv.ply2.bestIfAllOut);
       mv.ply2ReenteredTb = anyTbGrounded && mv.ply2.bestGroundedFromTb;
     } else if (ctx.isNnLoaded()) {
       if (anyInTb) {
         if (std::isfinite(margin)) {
-          const double estCont = std::max(0.0, (chosenNnQ - rew) / std::max(1e-12, gamma));
-          mv.hybridQ = rew + gamma * std::max(0.0, estCont - std::max(0.0, margin));
+          const double estCont = std::max(0.0, (chosenNnQ - rew) / std::max(1e-12, dFac));
+          mv.hybridQ = rew + dFac * std::max(0.0, estCont - std::max(0.0, margin));
         } else {
           mv.hybridQ = rew;
         }
@@ -778,41 +786,6 @@ inline HttpRouteResult handleMoves(const std::map<std::string, std::string> &par
     json += (mv.inTb ? "true" : "false");
     json += ",\"ply2ReenteredTb\":";
     json += (mv.ply2ReenteredTb ? "true" : "false");
-    json += ",\"ply2Move\":";
-    if (!mv.inTb && ply == 2 && mv.ply2.hasMove) {
-      const CompactPlacement p2 = anyTbGrounded ? mv.ply2.bestGroundedMove : mv.ply2.bestAllOutMove;
-      const uint8_t lc2 = anyTbGrounded ? mv.ply2.bestGroundedLc : mv.ply2.bestAllOutLc;
-      const bool inTb2 = anyTbGrounded && mv.ply2.bestGroundedFromTb;
-      const uint64_t pieceMask =
-          detail::PIECE_MASK_64.mask[nextPiece][p2.rot][p2.x + detail::PIECE_MASK_X_OFFSET];
-      json += "{\"rot\":" + std::to_string(p2.rot);
-      json += ",\"x\":" + std::to_string(p2.x);
-      json += ",\"y\":" + std::to_string(p2.y);
-      json += ",\"tuckInput\":\"";
-      json.push_back(p2.tuckInput);
-      json += "\",\"lc\":" + std::to_string(lc2);
-      json += ",\"inTb\":";
-      json += (inTb2 ? "true" : "false");
-      json += ",\"cells\":[";
-      bool firstCell = true;
-      for (int dr = 0; dr < 4; ++dr) {
-        const int r = static_cast<int>(p2.y) + dr;
-        if (r < 0 || r >= BOARD_ROWS)
-          continue;
-        const uint16_t rowBits = static_cast<uint16_t>((pieceMask >> (dr * 16)) & FULL_ROW_MASK);
-        for (int c = 0; c < BOARD_WIDTH; ++c) {
-          if ((rowBits >> (9 - c)) & 1U) {
-            if (!firstCell)
-              json.push_back(',');
-            firstCell = false;
-            json += "[" + std::to_string(r) + "," + std::to_string(c) + "]";
-          }
-        }
-      }
-      json += "]}";
-    } else {
-      json += "null";
-    }
     json += ",\"ply2Move\":";
     if (!mv.inTb && ply == 2 && mv.ply2.hasMove) {
       const CompactPlacement p2 = anyTbGrounded ? mv.ply2.bestGroundedMove : mv.ply2.bestAllOutMove;
@@ -928,6 +901,7 @@ inline HttpRouteResult handleStepDisagreement(const std::map<std::string, std::s
   const int level = ctx.activeLevel();
   const int gravity = ctx.activeGravity();
   const double gamma = ctx.activeGamma();
+  const DiscountMode discountMode = ctx.activeDiscountMode();
   const RngMode rngMode = ctx.activeRngMode();
   const int startLines = (level == 19) ? 130 : 0;
   const NnSearchConfig20 outCfg{ply, NN_DEFAULT_3PLY_TOPK};
@@ -937,9 +911,9 @@ inline HttpRouteResult handleStepDisagreement(const std::map<std::string, std::s
   std::vector<LockPlacement> m1, m2;
 
   for (int step = 0; step < maxSteps; ++step) {
-    const HybridMoveChoice20 hyb =
-        chooseHybridMove20(board, curP, nextP, gravity, gamma, ctx.isTbLoaded() ? &ctx.tb : nullptr,
-                           ctx.isNnLoaded() ? &ctx.nn : nullptr, margin, rngMode, outCfg);
+    const HybridMoveChoice20 hyb = chooseHybridMove20(
+        board, curP, nextP, gravity, gamma, ctx.isTbLoaded() ? &ctx.tb : nullptr,
+        ctx.isNnLoaded() ? &ctx.nn : nullptr, margin, rngMode, outCfg, discountMode);
     if (!hyb.found) {
       // Restart from empty board on top-out so stepping always keeps searching smoothly.
       board = Board20::empty();
@@ -961,7 +935,7 @@ inline HttpRouteResult handleStepDisagreement(const std::map<std::string, std::s
       } else if (mode == "tb-vs-nn" && ctx.isNnLoaded()) {
         const HybridMoveChoice20 nnOnly = chooseHybridMove20(
             board, curP, nextP, gravity, gamma, static_cast<const MappedDasTablebase *>(nullptr),
-            &ctx.nn, margin, rngMode, outCfg);
+            &ctx.nn, margin, rngMode, outCfg, discountMode);
         disagree = nnOnly.found
                    && (hyb.placement.rot != nnOnly.placement.rot
                        || hyb.placement.x != nnOnly.placement.x
@@ -969,7 +943,7 @@ inline HttpRouteResult handleStepDisagreement(const std::map<std::string, std::s
       } else if (mode == "nn-vs-eval" && ctx.isNnLoaded()) {
         const HybridMoveChoice20 nnOnly = chooseHybridMove20(
             board, curP, nextP, gravity, gamma, static_cast<const MappedDasTablebase *>(nullptr),
-            &ctx.nn, margin, rngMode, outCfg);
+            &ctx.nn, margin, rngMode, outCfg, discountMode);
         const GameState gs = board20ToGameState(board, level, startLines, ctx.bc, ctx.aggro);
         const Eval2PlyResult ev =
             chooseEval2PlyMove10Hz(gs, curP, nextP, ctx.bc, ctx.aggro, true, m1, m2);

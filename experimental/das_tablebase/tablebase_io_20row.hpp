@@ -36,6 +36,7 @@ inline constexpr char STATES_V2_MAGIC[8] = {'S', 'R', 'S', 'T', 'V', '0', '0', '
 inline constexpr char TABLEBASE_V3_MAGIC[8] = {'S', 'R', 'T', 'B', 'V', '0', '0', '3'};
 inline constexpr uint32_t KEY_ENCODING_K16_OPT2C = 1U;
 inline constexpr uint32_t REWARD_MODE_NORM_TETRIS = 0U;
+inline constexpr uint32_t TB_FLAG_DISCOUNT_PER_LINE = 1U;
 inline constexpr double MISSING_BOARD_VALUE = -1.0;
 inline constexpr uint32_t INVALID_BOARD_ID = UINT32_MAX;
 
@@ -61,7 +62,7 @@ struct TablebaseHeaderV3 {
   uint32_t level;              // 18, 19, or 29
   uint32_t lineCount;          // 0 = stationary
   uint32_t reactionTimeFrames; // 0 for standard V(b, c)
-  uint32_t flags;              // Reserved (must be 0)
+  uint32_t flags;              // Bit 0: TB_FLAG_DISCOUNT_PER_LINE; bits 1..31 reserved (0)
   double gamma;                // Discount factor in (0, 1]
   double emptyBoardValue;      // E[V(0, c)] under rngMode, or MISSING_BOARD_VALUE
   double bellmanResidual;
@@ -296,7 +297,9 @@ inline bool validateTbHeaderV3(const TablebaseHeaderV3 &hdr, uint64_t payloadByt
       *errOut = "Unsupported key geometry/encoding in SRTBV003: " + path;
     return false;
   }
-  if (hdr.rngMode > 1U || hdr.rewardMode != REWARD_MODE_NORM_TETRIS || hdr.flags != 0U) {
+  if (hdr.rngMode > 1U
+      || hdr.rewardMode != REWARD_MODE_NORM_TETRIS
+      || (hdr.flags & ~TB_FLAG_DISCOUNT_PER_LINE) != 0U) {
     if (errOut)
       *errOut = "Unsupported rngMode/rewardMode/flags in SRTBV003: " + path;
     return false;
@@ -465,7 +468,6 @@ inline bool writeTablebaseV3(const std::string &path, const std::vector<BoardKey
   hdr.keyBytes = sizeof(BoardKey);
   hdr.maxRows = BOARD_ROWS;
   hdr.maxHoles = KEY_MAX_HOLES;
-  hdr.flags = 0U;
 
   const uint64_t payloadBytes =
       static_cast<uint64_t>(sortedKeys.size()) * static_cast<uint64_t>(sizeof(PackedDasRecord));
@@ -585,6 +587,10 @@ public:
   int level() const noexcept { return static_cast<int>(header_.level); }
   int gravity() const noexcept { return getGravity20(level()); }
   double gamma() const noexcept { return header_.gamma; }
+  DiscountMode discountMode() const noexcept {
+    return ((header_.flags & TB_FLAG_DISCOUNT_PER_LINE) != 0U) ? DiscountMode::PerLine
+                                                               : DiscountMode::PerPiece;
+  }
   double emptyBoardValue() const noexcept {
     return loaded_ ? header_.emptyBoardValue : MISSING_BOARD_VALUE;
   }
@@ -994,6 +1000,10 @@ public:
   int level() const noexcept { return static_cast<int>(header_.level); }
   int gravity() const noexcept { return getGravity20(level()); }
   double gamma() const noexcept { return header_.gamma; }
+  DiscountMode discountMode() const noexcept {
+    return ((header_.flags & TB_FLAG_DISCOUNT_PER_LINE) != 0U) ? DiscountMode::PerLine
+                                                               : DiscountMode::PerPiece;
+  }
   double emptyBoardValue() const noexcept {
     return loaded_ ? header_.emptyBoardValue : MISSING_BOARD_VALUE;
   }

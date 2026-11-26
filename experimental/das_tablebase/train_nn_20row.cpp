@@ -1,6 +1,7 @@
 // train_nn_20row.cpp — Pure-supervised on-policy multi-task NNUE distillation CLI (SRNNV001 v2).
-// Samples 70/30 greedy+recovery trajectories from an SRTBV003 tablebase (optionally guided on
-// out-of-TB steps by a prior NNUE) and trains TinyDasNet with 4-part multi-task Adam loss:
+// Samples greedy + recovery + danger-zone trajectories from an SRTBV003 tablebase (optionally
+// guided on out-of-TB steps by a prior NNUE) and trains TinyDasNet with 4-part multi-task Adam
+// loss:
 //   parent 7-output Huber + child Huber + ply-2 top-out target (0.0) + Boltzmann move-ranking CE.
 
 #include "nnue_20row.hpp"
@@ -50,31 +51,34 @@ bool parseStrictDouble(std::string_view s, double &out) {
 }
 
 void printUsage(FILE *stream, const char *prog) {
-  fprintf(stream,
-          "Usage: %s --tb=TB_PATH --out=NN_PATH [options]\n"
-          "  --guide-nn=PATH          Optional prior SRNNV001 NNUE for out-of-TB rollout guidance\n"
-          "  --init-nn=PATH           Optional warm-start SRNNV001 NNUE (matching h1/h2)\n"
-          "  --h1=N                   Hidden layer 1 width (default 128)\n"
-          "  --h2=N                   Hidden layer 2 width (default 64)\n"
-          "  --games=N                Rollout games for training dataset (default 4000)\n"
-          "  --max-decisions=N        Max training decisions (default 300000)\n"
-          "  --val-decisions=N        Max validation decisions (default 15000)\n"
-          "  --recover-frac=F         Fraction of epsilon-recovery rollout games (default 0.30)\n"
-          "  --recover-eps=F          Epsilon during recovery games (default 0.08)\n"
-          "  --rollout-margin=F       Partial-OUT margin when --guide-nn is set (default 0.6)\n"
-          "  --epochs=N               Training epochs (default 25)\n"
-          "  --batch-size=N           Adam mini-batch size (default 256)\n"
-          "  --lr=F                   Initial learning rate (default 2e-3)\n"
-          "  --min-lr=F               Cosine floor learning rate (default 1e-4)\n"
-          "  --weight-decay=F         L2 weight decay (default 1e-5)\n"
-          "  --huber-delta=F          Huber transition delta (default 0.5)\n"
-          "  --temp=F                 Boltzmann ranking temperature (default 0.35)\n"
-          "  --val-weight=F           Parent 7-output Huber weight (default 1.0)\n"
-          "  --child-val-weight=F     Candidate-child Huber weight (default 1.0)\n"
-          "  --rank-weight=F          Boltzmann move-ranking CE weight (default 4.0)\n"
-          "  --seed=U64               Base RNG seed (default 20000000)\n"
-          "  --threads=N              Worker threads (default auto)\n",
-          prog);
+  fprintf(
+      stream,
+      "Usage: %s --tb=TB_PATH --out=NN_PATH [options]\n"
+      "  --guide-nn=PATH          Optional prior SRNNV001 NNUE for out-of-TB rollout guidance\n"
+      "  --init-nn=PATH           Optional warm-start SRNNV001 NNUE (matching h1/h2)\n"
+      "  --h1=N                   Hidden layer 1 width (default 128)\n"
+      "  --h2=N                   Hidden layer 2 width (default 64)\n"
+      "  --games=N                Rollout games for training dataset (default 4000)\n"
+      "  --max-decisions=N        Max training decisions (default 300000)\n"
+      "  --val-decisions=N        Max validation decisions (default 15000)\n"
+      "  --recover-frac=F         Fraction of epsilon-recovery rollout games (default 0.25)\n"
+      "  --recover-eps=F          Epsilon during recovery games (default 0.08)\n"
+      "  --danger-frac=F          Fraction of uniform danger-zone rollout games (default 0.12)\n"
+      "  --danger-eps=F           Epsilon during danger-zone games (default 0.35)\n"
+      "  --rollout-margin=F       Partial-OUT margin when --guide-nn is set (default 0.6)\n"
+      "  --epochs=N               Training epochs (default 25)\n"
+      "  --batch-size=N           Adam mini-batch size (default 256)\n"
+      "  --lr=F                   Initial learning rate (default 2e-3)\n"
+      "  --min-lr=F               Cosine floor learning rate (default 1e-4)\n"
+      "  --weight-decay=F         L2 weight decay (default 1e-5)\n"
+      "  --huber-delta=F          Huber transition delta (default 0.5)\n"
+      "  --temp=F                 Boltzmann ranking temperature (default 0.35)\n"
+      "  --val-weight=F           Parent 7-output Huber weight (default 1.0)\n"
+      "  --child-val-weight=F     Candidate-child Huber weight (default 1.0)\n"
+      "  --rank-weight=F          Boltzmann move-ranking CE weight (default 4.0)\n"
+      "  --seed=U64               Base RNG seed (default 20000000)\n"
+      "  --threads=N              Worker threads (default auto)\n",
+      prog);
 }
 
 } // namespace
@@ -196,6 +200,24 @@ int main(int argc, char **argv) {
       }
       continue;
     }
+    if (tryPrefix("--danger-frac=", val)) {
+      if (!parseStrictDouble(val, sampleCfg.dangerFrac)
+          || sampleCfg.dangerFrac < 0.0
+          || sampleCfg.dangerFrac > 1.0) {
+        fprintf(stderr, "Error: invalid --danger-frac\n");
+        return 1;
+      }
+      continue;
+    }
+    if (tryPrefix("--danger-eps=", val)) {
+      if (!parseStrictDouble(val, sampleCfg.dangerEpsilon)
+          || sampleCfg.dangerEpsilon < 0.0
+          || sampleCfg.dangerEpsilon > 1.0) {
+        fprintf(stderr, "Error: invalid --danger-eps\n");
+        return 1;
+      }
+      continue;
+    }
     if (tryPrefix("--rollout-margin=", val)) {
       if (!parseStrictDouble(val, sampleCfg.rolloutMargin) || sampleCfg.rolloutMargin < 0.0) {
         fprintf(stderr, "Error: invalid --rollout-margin\n");
@@ -311,6 +333,11 @@ int main(int argc, char **argv) {
     fprintf(stderr, "Error: --out must not alias --tb, --guide-nn, or --init-nn\n");
     return 1;
   }
+  if (sampleCfg.recoverFrac + sampleCfg.dangerFrac > 1.0 + 1e-9) {
+    fprintf(stderr, "Error: --recover-frac + --danger-frac (%.3f) must be <= 1.0\n",
+            sampleCfg.recoverFrac + sampleCfg.dangerFrac);
+    return 1;
+  }
   if (trainCfg.numThreads == 0) {
     trainCfg.numThreads = std::max(1, static_cast<int>(std::thread::hardware_concurrency()));
   }
@@ -323,9 +350,10 @@ int main(int argc, char **argv) {
     fprintf(stderr, "Error loading --tb: %s\n", err.c_str());
     return 1;
   }
-  printf("Indexed TB %s (%llu boards, L%d, rng=%s, gamma=%.5f, E[V(0)]=%.5f)\n", tbPath.c_str(),
-         static_cast<unsigned long long>(tb.size()), tb.level(), das::rngModeName(tb.rngMode()),
-         tb.gamma(), tb.emptyBoardValue());
+  printf("Indexed TB %s (%llu boards, L%d, rng=%s, gamma=%.5f [%s], E[V(0)]=%.5f)\n",
+         tbPath.c_str(), static_cast<unsigned long long>(tb.size()), tb.level(),
+         das::rngModeName(tb.rngMode()), tb.gamma(), das::discountModeName(tb.discountMode()),
+         tb.emptyBoardValue());
 
   das::TinyDasNet guideNn;
   if (!guideNnPath.empty()) {
@@ -387,6 +415,7 @@ int main(int argc, char **argv) {
   // Release indexed TB RAM before training.
   const das::RngMode rngMode = tb.rngMode();
   trainCfg.gamma = tb.gamma();
+  trainCfg.discountMode = tb.discountMode();
   tb.clear();
 
   printf(
@@ -408,8 +437,8 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  const das::NnEvalMetrics20 finalVal =
-      das::evaluateNnOnDecisions20(trained, valDs.decisions, trainCfg.gamma);
+  const das::NnEvalMetrics20 finalVal = das::evaluateNnOnDecisions20(
+      trained, valDs.decisions, trainCfg.gamma, nullptr, trainCfg.discountMode);
   const double totalSec =
       std::chrono::duration<double>(std::chrono::steady_clock::now() - tStart).count();
   printf("DONE train_nn_20row -> %s\n"

@@ -141,76 +141,74 @@ Prove the full 4-pillar flywheel on Stationary Level 19 (`gravity = 2`, 10 Hz) a
   - **Round 2** (`518k` Soft MPI `m=0.45`, `eps=0.14` high-churn): `E[V(0)] = 3.547` (`z=0.79`), `r2_128x64` (`MAE=0.108`, `top1=82.1%`) → Hybrid **`292,943 ± 4,330`** (`74.6%` goal), NN-only **`295,141 ± 4,490`** (`77.0%` goal).
   - **Round 3** (`2.75M` `nn-error` `eps=0.05`, Soft MPI `m=0.25`): `E[V(0)] = 5.115` (`z=0.29`), `r3_128x64` (`MAE=0.176`, `top1=81.4%`) → Hybrid **`327,724 ± 3,833`** (`84.2%` goal, `90.5%` hit), NN-only **`329,159 ± 3,465`** (`88.4%` goal).
   - **Round 4** (`3.51M` `nn-error` `eps=0.08`, Soft MPI `m=0.25`): `E[V(0)] = 6.581` (`z=0.34`), `r4_128x64` (`MAE=0.185`, `top1=80.6%`) → Hybrid **`347,786 ± 3,323`** (`92.0%` goal, `94.2%` hit), NN-only **`339,474 ± 3,360`** (`90.0%` goal).
-  - **Round 5** (full **`5.0M`** `nn-error` `eps=0.10`, Soft MPI `m=0.25`): `E[V(0)] = 6.950` (`z=0.33`), `r5_128x64` (`MAE=0.152`, `top1=82.0%`, `regret=0.0347`) → Hybrid **`356,715 ± 3,049`** (`14.863` normT, **`93.4%` goal**, `53.3%` TRT, **`94.0%` TB hit**, **`0.214 ms/mv`**; `m=0.35..0.50` = `354.4k–355.0k`, `93.6%` goal); NN-only **`346,682 ± 3,095`** (`92.2%` goal); cold 30-ep `r5_256x64` (`339 KB`, `MAE=0.162`, `top1=81.2%`) → Hybrid `349,727 ± 3,445` (`m=0.50`, `90.0%` goal).
-  - [ ] *Pending user decision*: Final expansion (`20M+` cap once `V_RT(b, c)` decision is approved) + warm-trained `256×64` NNUE.
-- [x] **18-Frame Reaction-Time Calibration Check (`V(b, c)` vs. `V_RT(b, c)`, `seed=30000000`, `200g` `tbnn-precompute` 2×2 ablation on `r5.tb.bin + r5_128x64.nn.bin`, `m=0.40`, `ply=2`)**:
-  - `rt=0, das=0`: **`356,570 ± 4,432`** (`95.5%` goal, `52.5%` TRT, `94.65%` hit, `0.77 ms/mv`) — exact parity with 0-frame `tbnn`.
-  - `rt=0, das=1`: **`355,628 ± 4,421`** (`95.5%` goal, `52.4%` TRT, `94.24%` hit, `0.91 ms/mv`) — DAS charge physics costs only `-0.9k` (`-0.3%`).
-  - `rt=18, das=0`: **`325,538 ± 5,496`** (`84.0%` goal, `49.1%` TRT, `91.41%` hit, `0.93 ms/mv`) — `-31.0k` from 18-frame reaction-time blindness alone.
-  - `rt=18, das=1`: **`305,110 ± 6,756`** (`82.0%` goal, `47.1%` TRT, `89.07%` hit, **`2.81 ms/mv`**) — `-50.5k` (`-14.2%`) total drop vs `rt=0, das=1`; beats `precompute 0×0` (`248.8k`, `36.0%`) by `+56.4k` / `+46%` survival, beats `precompute 49×2` (`343.2k`, `66.0%`) by `+16%` survival and `4.8×` speed, but trails `49×2` score by `-38.1k` due to both 0-frame `V(b, c)` RT sensitivity and low stationary TRT (`47–53%`). Standalone NNUE (`rt=18, das=1`): `301,696 ± 6,818` (`77.5%` goal, `32.75 ms/mv`).
-  - [ ] *STOPPED before implementing `V_RT(b, c)` or scaling to `20M` boards — awaiting user go-ahead.*
-- [x] **Verification & Review (Logic + Simplicity + Perf/Scale)**:
-  - `das_tb_test`: `10/10` suites (`11,424,416 / 11,424,416` assertions), `cpp_test_unit` (`80/80`), `precompute_static_lint` (0 warnings), `format_cpp`, `-O3 -Wall -Wextra -Werror`, `-DNDEBUG -fsyntax-only`, `git diff --stat -- src/` & `experimental/tablebase/` empty, and all 3 Phase 2 subagent reviews completed and addressed.
+  - **Round 5** (full **`5.0M`** `nn-error` `eps=0.10`, Soft MPI `m=0.25`): `E[V(0)] = 6.950` (`z=0.33`), `r5_128x64` (`MAE=0.152`, `top1=82.0%`, `regret=0.0347`) → Hybrid **`356,715 ± 3,049`** (`14.863` normT, **`93.4%` goal**, `53.3%` TRT, **`94.0%` TB hit**, **`0.214 ms/mv`**); NN-only **`346,682 ± 3,095`** (`92.2%` goal); cold 30-ep `r5_256x64` (`339 KB`, `MAE=0.162`, `top1=81.2%`) → Hybrid `349,727 ± 3,445` (`m=0.50`, `90.0%` goal).
+  - **Ply-2 TB Re-Entry (`OUT → TB2`)**: Added `detail::bestReplyHybrid2Ply20` in `nnue_20row.hpp`, `tbnn_precompute_adapter.hpp`, and `inspector_routes.hpp` (plus Undo/Redo, visual `CUR`/`NEXT` boxes, and dual hover previews in `inspector.html`). On `r5.tb.bin + r5_128x64`: 0-frame jumped **`356,715 → 361,994 ± 2,877`** (`+5,279`, `94.0%` goal, `54.0%` TRT, **`0.102 ms/mv`, `2.1×` faster**); 18f DAS jumped **`305,110 → 313,338 ± 5,816`** (`+8,228`, `81.0%` goal, `47.6%` TRT, **`2.53 ms/mv`**).
+- [x] **6-Way Reaction-Time & DAS Effect 1 vs. Effect 2 Diagnostic (`seed=30000000`, `200g` `tbnn-precompute` on `r5.tb.bin + r5_128x64`, `m=0.40`, `ply=2`, `OUT→TB2`)**:
+  - `rt=0, das=0`: **`361,724 ± 4,394`** (`96.0%` goal, `53.5%` TRT) — 0-frame baseline.
+  - `rt=18, das=0`: **`340,354 ± 5,295`** (`88.5%` goal, `51.1%` TRT) → pure 18f RT cost = **`-21,370` (`44%`)**.
+  - `rt=18, das=1` (`reset16`, penalties OFF): **`331,284 ± 5,436`** (`85.5%` goal, `50.0%` TRT) → true **Effect 1** (mid-air DAS reversal) = **`-9,070` (`19%`)** (`reset16` with penalties ON = `315,438`, confounded by phantom penalty aversion).
+  - `rt=18, das=1` (live DAS, penalties ON): **`313,338 ± 5,816`** (`81.0%` goal, `47.6%` TRT, `afterDAS: 79.2% full / 11.7% part / 9.1% min`) → true **Effect 2** (cross-piece DAS carryover) = **`-17,946` (`37%`)**.
+  - `rt=18, das=1` (live DAS, penalties OFF): **`215,402 ± 8,277`** (`43.5%` goal, `42.8%` TRT) → runtime DAS penalties save **`+97,936`** points.
+- [x] **Per-Line Discounting (`DiscountMode::PerLine`), Danger-Zone Sampling & `!fitsKey → 0.0` Guard**:
+  - Added `DiscountMode::PerLine` (`TB_FLAG_DISCOUNT_PER_LINE`), danger-zone NNUE sampling (`12%` uniform `ε=0.35`, `hasRankingSignal` pure-terminal supervision), and the permanent `!fitsKey → 0.0` Soft-Boundary guard (eliminating uncorrectable `>= 10`-hole OOD reward hacking).
+  - **`perline98_r1` (`5.0M` `r5.states.bin`, `γ=0.98 [line]`, warm-started from `r5`, `m=0.30`)**: converged in 11 iters (`413s`), `E[V(0)] = 7.0424`, `maxV = 7.8612` (0-hole `H=11`), Soft-MC `z=0.70`, NNUE **`MAE=0.0990 / top1=83.45% / regret=0.0204`** →
+    - 0-frame Hybrid (`500g`, `m=0.25`): **`391,326 ± 3,268`** (**`+29,332`** over `r5`, **`60.8%` TRT**, `90.2%` goal; `m=0.40` = `389,862`, `91.8%` goal, `max=500.0k`).
+    - 0-frame Standalone `170 KB` NNUE (`200g`): **`364,626 ± 6,940`** (`86.5%` goal, `58.6%` TRT — beats `r5` Hybrid).
+    - 18f Live DAS (`200g`, `rt=18, das=1, m=0.40`): **`323,186 ± 7,840`** (`+9,848` over `r5`, **`54.2%` TRT**, `74.5%` goal, `3.11 ms/mv`).
+- [x] **Verification & 3-Reviewer Passes (Phase 2 + Post-Phase-2 Diff)**:
+  - Phase 2 + Post-Phase-2 3-reviewer subagent passes (**Logic**, **Perf & Scale**, **Readability**) completed and all HIGH/MEDIUM findings fixed (including `valDs` bijective interleaving `(g*37)%100`, `PerLine` 3-ply & inspector routes, zero-alloc `FlatSecondMoveCache`, DAS penalty grounded-margin parity, duplicate `"ply2Move"` JSON removal, and `2×` Soft-Boundary disk threshold).
+  - `das_tb_test`: `13/13` suites (`11,424,479 / 11,424,479` assertions), `format_cpp`, `-O3 -Wall -Wextra -Werror`, `-DNDEBUG -fsyntax-only`, `git diff --stat -- src/` & `experimental/tablebase/` empty.
 
 ---
 
-### Phase 3: Stationary Level 18 Flywheel
-Apply the proven Phase 2 pipeline to Stationary Level 18 (`gravity = 3`, 10 Hz).
+## Horizon 1 (Active Focus): Phase 2B — Pure Stationary Level 19 Next-Box Stacking (`rt = 0`, no DAS)
 
-- [ ] **Run Stationary Level 18 Flywheel (3–4 Rounds, `5M` iteration → `20M+` final)**:
-  - Seed Round 0 from `eval.cpp` on Level 18 (`L = 0..129`, `gravity = 3`), drop `eval.cpp` from Round 1 onward, run `nn-error` state selection + Soft-Boundary MPI (`γ ≈ 0.995`, normalized score, and `V_RT` if locked in Phase 2) + `128×64` NNUE at `5M`, then warm-start expand to `20M+` boards with final `256×64` NNUE.
-  - Verify clear gain over production StackRabbit on validation Level 18 Tetris rate, average score over 130 lines, and survival (`seed=30000000`), with Soft-MC `<= 3.5σ` on every solve.
-- [ ] **Verification & Review**:
-  - Verify Level 18 gravity-3 parity tests, `1T == 4T`, and `Soft-MC <= 3.5σ`. (Run Logic + Simplicity reviews if any solver/sampler code changed.)
+*Goal:* Iterate deeply in our fastest, cleanest sandbox (`~5–8 min/round`, pure 0-frame 10 Hz Level 19 Next-Box stacking) until 0-frame L19 stacking is genuinely elite (target: **`>= 410k+` mean score**, **`60–65%` TRT**, **`>= 93–95%` 100-line survival**, clean `H = 14..18` NNUE extrapolation, and strong standalone NNUE) **before** multiplying complexity for DAS/RT or multi-level backward induction. Every code change in Phase 2B requires a parallel 3-reviewer subagent pass per `AGENTS.md`.
 
----
-
-### Phase 4: Full Level 19–28 Backward Induction (`L = 229 → 130`, Exact Undiscounted NES Score)
-Replace stationary discounting across Levels 19–28 with exact undiscounted ($\gamma = 1.0$) backward induction using true `(levelAfter + 1)` NES multipliers and exact Level 29 killscreen horizon (`L >= 230` → `0.0`).
-
-- [ ] **Shared-Key Multi-Slice Backward-Induction Solver (`backward_solver.hpp`, `solve_backward.cpp`)**:
-  - Build one shared `states_l19_28.states.bin` (union of Phase 2 Stationary 19 boards + late-game `L = 190..229` aggressive rollouts under fixed board cap).
-  - Build `FlatBoardIndex` **once**; keep at most **5 value slices** (`L..L+4`, `double[7]` for active `L`, `float[7]` for frozen `L+1..L+4`) in RAM at once.
-  - For each slice `L = 229` down to `130`:
-    - Line clears (`r ∈ 1..4`) add exact NES points `{40, 100, 300, 1200} × (getLevelAfterLineClears(level(L), L, r) + 1)` (scaled cleanly in `1/1200`-Tetris or `1/1000`-point units with checked terminal fixed-point bounds) + frozen `V(childId, n, L + r)` (or `0.0` if `L + r >= 230`, or Soft-Boundary NNUE if `childId` is out-of-TB).
-    - `r = 0` moves iterate inside slice `L` (converges in ~4–8 outer sweeps with $\gamma = 1.0$).
-  - Save compact shared-key slice table (`SRTBS001`: one sorted key table + `100` contiguous `float[7]` value blocks, or per-slice files) and run exact end-to-end Soft-Boundary MC verification from `(board=0, L=130)` through `L=230` (`<= 3.5σ` vs `E[V(0, L=130)]` in real NES points!).
-- [ ] **Endgame NNUE & Slice-Retention Study**:
-  - Train line-count-aware Level 19–28 NNUE (`level`, `linesToKillscreen` populated) across `L = 130..229` on-policy trajectories; verify 1–2 Soft-Boundary refinement passes if needed.
-  - Measure on validation (`seed=30000000`) how much real 100-line NES score (`L = 130 → 230`) improves over Phase 2 Stationary 19 — and test slice-retention options (all 100 slices mmap'd vs. dense endgame `L = 185..229` + strided `L = 130..184` + NNUE) for disk-size vs. strength tradeoff.
-- [ ] **Verification & Review (Logic + Simplicity + Perf/Scale)**:
-  - Unit tests: exact level-up multiplier boundary test (`L = 137..139`, `L = 226..229`), small-board brute-force finite-horizon backward-induction oracle (`L = 0..10`), `1T == 4T`, `L >= 230` zero-continuation check, overflow guards. Run all 3 subagent reviewers.
+### Brainstormed Pure L19 NB Stacking Levers (Test Independently)
+- [ ] **2B.1 — On-Policy `PerLine γ = 0.98` Flywheel (`5.0M`, `--merge`)**:
+  - Run Rounds 2–3 (`perline98_r2`, `perline98_r3`) from `perline98_r1` (`391.3k / 60.8% TRT / 90.2% goal / 89.6% hit`) with `--merge` so the `5.0M` TB pulls in taller `60%`-TRT recovery boards (`H = 8..12`) and lifts both TB hit rate (`89.6% → 93%+`) and survival (`90.2% → 93–95%`).
+- [ ] **2B.2 — Per-Line Horizon Sweep (`γ ∈ {0.975, 0.98, 0.985}`)**:
+  - Map the converged `(score, TRT, survival)` Pareto frontier on `5.0M` on-policy states to confirm the best stationary L19 horizon.
+- [ ] **2B.3 — `5M` State-Set & Soft-Boundary Solver Tuning**:
+  - Tune `generate_20row` (`epsilon`, `nn-error` weight/cap, `protectedCore`, `siblingMinVisits`) for taller `PerLine` stacks.
+  - Test tighter `--boundary-margin` (`0.20–0.30`) and 2-ply Soft-Boundary MPI (`--boundary-ply=2`) once `valMAE < 0.10`.
+- [ ] **2B.4 — NNUE Architecture, Features & High-Stack Calibration**:
+  - Flatten the remaining positive `V_nn` tail at `H = 14..18` (`+0.6..+2.7` on `perline98_r1`) via `--danger-frac` / `--recover-frac` / `temperature` / `rankWeight` tuning.
+  - Test warm-started `256×64` NNUE and candidate feature enrichments (well depth, overhang/hole depth, surface parity/roughness) aiming for standalone NNUE `>= 385k–395k`.
+- [ ] **2B.5 — 0-Frame Runtime Search & Margin Tuning**:
+  - Sweep `out-margin` (`0.15–0.40`), selective `--out-ply=3` (now `PerLine`-consistent) on all-OUT / high-risk boards, and ply-2 re-entry refinements.
+- [ ] **2B.6 — Qualitative Browser Inspector Audits (`das_inspector`)**:
+  - Audit `TB+NN` vs. `eval.cpp` / `NN-only` disagreements and topout replays after each major jump to uncover systematic blind spots.
+- [ ] **2B.7 — Capacity Scaling (`5M → 15M–20M`)**:
+  - Only after `5M` recipe plateaus: first land the Perf-review 20M–50M RAM fixes in `state_gen_20row.hpp` (SoA `rawEntries`, 64-shard sibling dedup, parallel sort) and `tablebase_io_20row.hpp` (single-pass `IndexedDasTablebase::buildFromMapped`, `MADV_RANDOM`), then expand L19 NB TB to `15M–20M`.
+- [ ] **2B Exit Gate & 3-Reviewer Sign-Off**:
+  - Pure L19 NB stacking meets target bar (`>= 410k+`, `60–65%` TRT, `>= 93%` goal), all tests pass (`das_tb_test`, `-Wall -Wextra -Werror`, `-DNDEBUG`), and 3-reviewer pass (Logic, Perf & Scale, Readability) signed off.
 
 ---
 
-### Phase 5: Level 18 → 19 Transition (`L = 129 → 0`) & Unified 230-Line Engine
-Connect Level 18 cleanly into Phase 4's exact `V(b, c, L = 130)` and unify all regimes into a single full-game Hybrid TB + NNUE engine.
+## Horizon 2 (Near-Term Future): Phase 3 — Live 18-Frame Reaction Time & DAS Integration (Stationary L19)
 
-- [ ] **Level 18 → 19 Backward Induction**:
-  - Build shared `states_l18.states.bin` (Phase 3 Stationary 18 boards + `L = 110..129` transition rollouts).
-  - Run undiscounted ($\gamma = 1.0$) backward induction from `L = 129` down to `L = 0` (or down to stationary convergence around `L ≈ 105–115` if `V(b, c, L) - V(b, c, L+1)` stabilizes), using exact `19×` NES scoring on `L < 130` and terminating at `L >= 130` into Phase 4's exact `V(b, c, L')` (with Soft-Boundary NNUE for out-of-TB cross-boundary hits).
-  - Verify exact full-game Soft-Boundary MC from `(board=0, L=0)` to `L = 230` (`<= 3.5σ` in exact NES points!).
-- [ ] **Unified Line-Count-Aware NNUE (`V_nn(b, c, L)`)**:
-  - Distill all regimes (`L = 0..229`) into one unified `256×64` (`~345 KB`) NNUE (`featureVersion = 2`, inputs include `level`, `linesToTransition`, `linesToKillscreen`, and `gravityMode`).
-  - Benchmark full **NTSC 18 → 29** games (18-frame reaction time, 10 Hz) on validation (`seed=30000000`) comparing:
-    - Hybrid TB + Unified NNUE (2-ply, tuned runtime `m`),
-    - Standalone Unified NNUE (2-ply, zero TB — preview of future WASM strength),
-    - Production StackRabbit (`eval.cpp` + playouts / tournament `-2`).
-- [ ] **Verification & Review (Logic + Simplicity)**:
-  - Cross-boundary `L = 126..133` unit tests (exact `getLevelAfterLineClears` parity with `src/backend/utils.hpp`, gravity switch `3 → 2` at `L >= 130`, score-scale consistency across boundary), `1T == 4T`, Soft-MC `<= 3.5σ`.
+*Deferred until Phase 2B exit gate is met.* Goal: transfer our strong L19 NB engine to true live **18-frame reaction time + 10 Hz DAS** rules and decisively beat production StackRabbit `200 ms b=-2` (`338,305 ± 12,534`, `81.2%` goal, `55.1%` TRT, `195.5 ms/mv`) at `< 5 ms/mv`.
+
+- [ ] **3.1 — 3-Bucket `V_RT(b, c, d)` (`d ∈ {15, 10, 5}`, `21` floats/board)**:
+  - Bake exact 18-frame precompute commitment + DAS charge carryover directly into the Bellman backup and NNUE (explicit `d = 10` bucket because NES DAS reachability is a sharp step function, not linear).
+  - Directly targets all three gaps from our 6-way diagnostic (`-21.4k` pure RT, `-9.1k` Effect 1 mid-air reversal, `-17.9k` Effect 2 cross-piece carryover).
+- [ ] **3.2 — 3-Bucket vs. 2-Bucket (`d ∈ {15, 5}`) Ablation**:
+  - Quantify the real score/survival vs. RAM/speed tradeoff of 3 buckets vs. 2 buckets.
+- [ ] **3.3 — Live-DAS On-Policy Flywheel & Benchmark vs. Production `200 ms b=-2`**:
+  - Generate on-policy live 18-frame DAS states (capturing mid-air adjustment and low-DAS recovery positions), run Soft-Boundary MPI + NNUE distillation, and verify clear win over `338.3k` (`81.2%` goal, `55.1%` TRT) on validation `seed=30000000`.
+- [ ] **3.4 — Verification & 3-Reviewer Sign-Off**:
+  - Small-board brute-force `V_RT` oracle parity, `1T == 4T`, Soft-MC `<= 3.5σ`, and full 3-reviewer pass.
 
 ---
 
-### Phase 6: Final Held-Out Evaluation, Integration Proposal & Human Retrospective
-Deliver clean, reproducible head-to-head numbers on untouched test seeds and prepare the production integration proposal.
+## Horizon 3 (Long-Term Future Roadmap — Detailed Design Deferred Until Phases 2B & 3 Complete)
 
-- [ ] **Untouched Held-Out Evaluation (`seed=700000`, zero tuning on test)**:
-  - Full NTSC **18 → 29 DAS** head-to-head (18-frame reaction time, 10 Hz `fullMoveSearch` + `dasPenaltyLookupMap`): average score ± SE, median, p90, maxout rate, Level 18→19 transition rate, mean/p99 per-move latency (`ms`), and TB hit rate vs. production StackRabbit.
-  - Also evaluate on `docs/benchmark_hard_positions.md` (`standard` and `hard` suites) and inspect representative disagreements in the 20×10 browser inspector.
-- [ ] **Production Integration Proposal (No `src/` edits until user approves)**:
-  - Present concrete options for wiring into `src/backend/`:
-    - **Path B (Primary)**: Memory-mapped TB + Unified NNUE inside `live_game_server` / `precompute.cpp` (with `dasPenaltyLookupMap` + 18-frame mid-air adjustment search).
-    - **Path A (WASM follow-up)**: Standalone Unified NNUE replacing `eval.cpp` + playouts for zero-asset browser/WASM builds.
-  - List the exact `AGENTS.md` verification matrix required upon integration (`cpp_test_unit`, `precompute_static_lint`, `precompute_tsan`, `fuzz_verify_sequences`, `precompute_verify`, `live_server_check`, `wasm_build`).
-- [ ] **Write Human-Targeted Retrospective (`docs/tetris_20row_tablebase_retrospective.md`)**:
-  - Follow `AGENTS.md` human-doc rules: explain *what* and *why*, glossary in every major section, abbreviation count audit (`>= 3` uses), quantitative progression tables, and takeaways.
+- [ ] **Phase 4 — Stationary Level 18 Flywheel (`gravity = 3`, `L = 0..129`) & `20M+` Scale**:
+  - Apply the proven Phase 2B + Phase 3 pipeline (winning discount/DAS representation) to Stationary Level 18 and scale both regimes to `20M+` boards.
+- [ ] **Phase 5 — Finite-Horizon Multi-Level Backward Induction (`L = 229 → 130` & `L = 129 → 0`)**:
+  - Shared-key exact undiscounted (`γ = 1.0`) backward induction across Levels 19–28 (`20× → 29×` multipliers, terminal `0.0` at `L >= 230`) and Level 18 → 19 transition (`L = 129 → 0`, `19×` into `V(b, c, d, L = 130)`), plus unified line-count-aware NNUE `V_nn(b, c, d, L)`.
+- [ ] **Phase 6 — Untouched Held-Out Evaluation (`seed = 700,000`) & Production Integration Proposal**:
+  - Head-to-head full NTSC **18 → topout** pure 10 Hz DAS evaluation vs. production StackRabbit `200 ms b=-2` (`1,074,642 ± 13,120`) on untouched `seed = 700,000` + `docs/benchmark_hard_positions.md`.
+  - Production integration proposal (Path B: mmap TB + NNUE in `live_game_server`; Path A: standalone WASM NNUE) with full `AGENTS.md` verification matrix, and final retrospective update.

@@ -54,6 +54,7 @@ void printUsage(FILE *stream, const char *prog) {
           "  --level=19|18            Stationary level (default 19)\n"
           "  --rng=nes|uniform        RNG mode (default nes)\n"
           "  --gamma=F                Discount factor in (0, 1] (default 0.995)\n"
+          "  --discount-mode=piece|line  Per-piece or per-line discount (default piece)\n"
           "  --boundary-nn=PATH       Frozen SRNNV001 NNUE for Soft-Boundary MPI\n"
           "  --boundary-margin=F      Conservative soft-boundary subtraction (default 0.6)\n"
           "  --boundary-ply=1|2       Soft-boundary eval depth (default 1)\n"
@@ -157,6 +158,13 @@ int main(int argc, char **argv) {
     if (tryPrefix("--gamma=", val)) {
       if (!parseStrictDouble(val, cfg.gamma) || cfg.gamma <= 0.0 || cfg.gamma > 1.0) {
         fprintf(stderr, "Error: invalid --gamma\n");
+        return 1;
+      }
+      continue;
+    }
+    if (tryPrefix("--discount-mode=", val)) {
+      if (!das::parseDiscountMode(val, cfg.discountMode)) {
+        fprintf(stderr, "Error: invalid --discount-mode (expected piece or line)\n");
         return 1;
       }
       continue;
@@ -269,8 +277,14 @@ int main(int argc, char **argv) {
               das::rngModeName(cfg.rngMode));
       return 1;
     }
-    printf("Warm-start TB: %s (%llu boards, E[V(0)]=%.5f)\n", initPath.c_str(),
-           static_cast<unsigned long long>(initTb.size()), initTb.emptyBoardValue());
+    printf("Warm-start TB: %s (%llu boards, %s, gamma=%.5f, E[V(0)]=%.5f)\n", initPath.c_str(),
+           static_cast<unsigned long long>(initTb.size()),
+           das::discountModeName(initTb.discountMode()), initTb.gamma(), initTb.emptyBoardValue());
+    if (initTb.discountMode() != cfg.discountMode) {
+      fprintf(stderr, "Note: warm-start TB discount mode (%s) differs from CLI (%s)\n",
+              das::discountModeName(initTb.discountMode()),
+              das::discountModeName(cfg.discountMode));
+    }
   }
 
   das::TinyDasNet boundaryNn;
@@ -288,9 +302,9 @@ int main(int argc, char **argv) {
            boundaryNn.h1, boundaryNn.h2, boundaryMargin, boundaryPly);
   }
 
-  printf("Solving L%d (%s, gamma=%.5f, tol=%.1e, cache=%s, threads=%d)...\n", cfg.level,
-         das::rngModeName(cfg.rngMode), cfg.gamma, cfg.tolerance,
-         das::policyCacheModeName(cfg.policyCacheMode), cfg.numThreads);
+  printf("Solving L%d (%s, gamma=%.5f [%s], tol=%.1e, cache=%s, threads=%d)...\n", cfg.level,
+         das::rngModeName(cfg.rngMode), cfg.gamma, das::discountModeName(cfg.discountMode),
+         cfg.tolerance, das::policyCacheModeName(cfg.policyCacheMode), cfg.numThreads);
   fflush(stdout);
 
   das::SolveResult20 res;
@@ -300,6 +314,7 @@ int main(int argc, char **argv) {
     softBound.margin = boundaryMargin;
     softBound.gravity = das::getGravity20(cfg.level);
     softBound.gamma = cfg.gamma;
+    softBound.discountMode = cfg.discountMode;
     softBound.rngMode = cfg.rngMode;
     softBound.use2Ply = (boundaryPly == 2);
     res = das::solve20MPI(keys, cfg, initTb.isLoaded() ? &initTb : nullptr, softBound);
@@ -321,6 +336,8 @@ int main(int argc, char **argv) {
   hdr.level = static_cast<uint32_t>(cfg.level);
   hdr.lineCount = 0U;
   hdr.reactionTimeFrames = 0U;
+  hdr.flags =
+      (cfg.discountMode == das::DiscountMode::PerLine) ? das::TB_FLAG_DISCOUNT_PER_LINE : 0U;
   hdr.gamma = cfg.gamma;
   hdr.emptyBoardValue = res.emptyBoardValue;
   hdr.bellmanResidual = res.bellmanResidual;
