@@ -63,6 +63,9 @@ rebuilding on disk does not update it. Rebuild and restart `live_game_server`
   context belongs in the docs (`TESTING.md`, `docs/*.md`). Unintuitive temporary
   behavior caused by an in-progress refactor may carry a `TODO` naming the
   follow-up.
+- **Commit messages describe qualitative changes only.** Never put benchmark
+  scores, speedups, or metric improvement numbers in commit messages — record
+  quantitative results in retrospective/plan docs (`docs/*.md`) instead.
 
 ## Writing Docs
 
