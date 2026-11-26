@@ -34,9 +34,17 @@ static_assert(std::numeric_limits<float>::is_iec559,
 
 inline constexpr char STATES_V2_MAGIC[8] = {'S', 'R', 'S', 'T', 'V', '0', '0', '2'};
 inline constexpr char TABLEBASE_V3_MAGIC[8] = {'S', 'R', 'T', 'B', 'V', '0', '0', '3'};
+inline constexpr char TABLEBASE_V4_MAGIC[8] = {'S', 'R', 'T', 'B', 'V', '0', '0', '4'};
 inline constexpr uint32_t KEY_ENCODING_K16_OPT2C = 1U;
 inline constexpr uint32_t REWARD_MODE_NORM_TETRIS = 0U;
 inline constexpr uint32_t TB_FLAG_DISCOUNT_PER_LINE = 1U;
+inline constexpr uint32_t TB_V4_MOVE_SLOW_TAPS = 1U << 0;
+inline constexpr uint32_t TB_V4_MOVE_POLE_VAULTS = 1U << 1;
+inline constexpr uint32_t TB_V4_MOVE_QUICKTAPS = 1U << 2;
+inline constexpr uint32_t TB_V4_MOVE_TUCKS = 1U << 3;
+inline constexpr uint32_t TB_V4_MOVE_FLAGS_MASK =
+    TB_V4_MOVE_SLOW_TAPS | TB_V4_MOVE_POLE_VAULTS | TB_V4_MOVE_QUICKTAPS | TB_V4_MOVE_TUCKS;
+inline constexpr int MAX_DAS_BUCKETS = 3;
 inline constexpr double MISSING_BOARD_VALUE = -1.0;
 inline constexpr uint32_t INVALID_BOARD_ID = UINT32_MAX;
 
@@ -906,6 +914,7 @@ public:
 
 private:
   friend class IndexedDasTablebase;
+  friend class IndexedDasRtTablebase;
 
   bool beginBuild(size_t count, std::string *errOut = nullptr) {
     clear();
@@ -1105,6 +1114,609 @@ private:
   TablebaseHeaderV3 header_{};
   bool loaded_ = false;
 };
+
+// ---------------- SRTBV004: reaction-time + DAS-bucket tablebase V_RT(b, c, d) ----------------
+//
+// Each record stores a 16-byte BoardKey followed by NUM_PIECES * numDasBuckets float32 values in
+// [curPiece][dasBucket] order (value index = c * numDasBuckets + k). DAS buckets index starting
+// DAS charge classes from lowest to highest (2 buckets: {<15, >=15}; 3 buckets: {<10, 10..14,
+// >=15}); the representative starting charges used by the move search are given by
+// dasBucketRepresentativeCharge().
+
+inline constexpr int MAX_RT_VALUES_PER_BOARD = NUM_PIECES * MAX_DAS_BUCKETS;
+
+constexpr bool isValidDasBucketCount(int numBuckets) noexcept {
+  return numBuckets == 2 || numBuckets == 3;
+}
+
+// Maps an ending DAS charge (0..16) to its bucket index for `numBuckets` in {2, 3}.
+constexpr int dasChargeToBucket(int dasCharge, int numBuckets) noexcept {
+  if (dasCharge >= 15) {
+    return numBuckets - 1;
+  }
+  return (numBuckets == 3 && dasCharge >= 10) ? 1 : 0;
+}
+
+// Representative starting DAS charge searched for each bucket.
+constexpr int dasBucketRepresentativeCharge(int bucket, int numBuckets) noexcept {
+  if (bucket >= numBuckets - 1) {
+    return 15;
+  }
+  return (numBuckets == 3 && bucket == 1) ? 10 : 5;
+}
+
+constexpr int rtValueIndex(int curPiece, int bucket, int numBuckets) noexcept {
+  return curPiece * numBuckets + bucket;
+}
+
+constexpr size_t rtRecordBytes(int numBuckets) noexcept {
+  return sizeof(BoardKey) + static_cast<size_t>(NUM_PIECES * numBuckets) * sizeof(float);
+}
+
+struct TablebaseHeaderV4 {
+  char magic[8];
+  uint64_t numBoards;
+  uint32_t keyEncoding;         // KEY_ENCODING_K16_OPT2C (1)
+  uint32_t keyBytes;            // 16
+  uint32_t maxRows;             // 20
+  uint32_t maxHoles;            // 9
+  uint32_t rngMode;             // 0 = Uniform, 1 = Nes
+  uint32_t rewardMode;          // 0 = NormTetris
+  uint32_t level;               // 18, 19, or 29
+  uint32_t lineCount;           // 0 = stationary
+  uint32_t reactionTimeFrames;  // frames before the next piece is reacted to (e.g. 18)
+  uint32_t flags;               // Bit 0: TB_FLAG_DISCOUNT_PER_LINE; bits 1..31 reserved (0)
+  uint32_t numDasBuckets;       // 2 or 3
+  uint32_t moveFlags;           // TB_V4_MOVE_* bits describing the move-search input model
+  uint32_t dpadGapFrames;       // 0..7
+  uint32_t rotGapFrames;        // 0..7
+  uint32_t quicktapDelayFrames; // 2..5
+  uint32_t reserved;            // 0
+  double gamma;                 // Discount factor in (0, 1]
+  double emptyBoardValue;       // E_c[V(0, c, highest bucket)] under rngMode, or MISSING
+  double bellmanResidual;
+};
+static_assert(sizeof(TablebaseHeaderV4) == 104, "TablebaseHeaderV4 must be 104 bytes");
+
+namespace detail {
+
+inline bool validateTbHeaderV4(const TablebaseHeaderV4 &hdr, uint64_t payloadBytes,
+                               const std::string &path, std::string *errOut) {
+  auto fail = [&](const char *msg) {
+    if (errOut)
+      *errOut = std::string(msg) + ": " + path;
+    return false;
+  };
+  if (std::memcmp(hdr.magic, TABLEBASE_V4_MAGIC, sizeof(TABLEBASE_V4_MAGIC)) != 0) {
+    return fail("Invalid SRTBV004 magic");
+  }
+  if (hdr.keyEncoding != KEY_ENCODING_K16_OPT2C
+      || hdr.keyBytes != sizeof(BoardKey)
+      || hdr.maxRows != BOARD_ROWS
+      || hdr.maxHoles != KEY_MAX_HOLES) {
+    return fail("Unsupported key geometry/encoding in SRTBV004");
+  }
+  if (hdr.rngMode > 1U
+      || hdr.rewardMode != REWARD_MODE_NORM_TETRIS
+      || (hdr.flags & ~TB_FLAG_DISCOUNT_PER_LINE) != 0U
+      || (hdr.moveFlags & ~TB_V4_MOVE_FLAGS_MASK) != 0U
+      || hdr.reserved != 0U) {
+    return fail("Unsupported rngMode/rewardMode/flags in SRTBV004");
+  }
+  if (hdr.level != 18U && hdr.level != 19U && hdr.level != 29U) {
+    return fail("Unsupported level in SRTBV004");
+  }
+  if (!isValidDasBucketCount(static_cast<int>(hdr.numDasBuckets))) {
+    return fail("Unsupported numDasBuckets in SRTBV004 (expected 2 or 3)");
+  }
+  if (hdr.reactionTimeFrames > 63U
+      || hdr.dpadGapFrames > 7U
+      || hdr.rotGapFrames > 7U
+      || hdr.quicktapDelayFrames < 2U
+      || hdr.quicktapDelayFrames > 5U) {
+    return fail("Unsupported move-search timing fields in SRTBV004");
+  }
+  if (!std::isfinite(hdr.gamma) || hdr.gamma <= 0.0 || hdr.gamma > 1.0) {
+    return fail("Invalid gamma in SRTBV004");
+  }
+  if (!std::isfinite(hdr.emptyBoardValue)
+      || !std::isfinite(hdr.bellmanResidual)
+      || hdr.bellmanResidual < 0.0) {
+    return fail("Invalid header metrics in SRTBV004");
+  }
+  const uint64_t recBytes = rtRecordBytes(static_cast<int>(hdr.numDasBuckets));
+  if (payloadBytes % recBytes != 0 || payloadBytes / recBytes != hdr.numBoards) {
+    return fail("File size mismatch for SRTBV004 payload");
+  }
+  return true;
+}
+
+} // namespace detail
+
+// Writes an SRTBV004 tablebase (valuesFlat holds numBoards * 7 * numDasBuckets doubles in
+// [board][curPiece][bucket] order), validating all keys and values before truncating the output.
+inline bool writeTablebaseV4(const std::string &path, const std::vector<BoardKey> &sortedKeys,
+                             const std::vector<double> &valuesFlat, const TablebaseHeaderV4 &meta,
+                             std::string *errOut = nullptr) {
+  const int nb = static_cast<int>(meta.numDasBuckets);
+  if (!isValidDasBucketCount(nb)) {
+    if (errOut)
+      *errOut = "writeTablebaseV4: numDasBuckets must be 2 or 3";
+    return false;
+  }
+  const size_t vpb = static_cast<size_t>(NUM_PIECES * nb);
+  if (sortedKeys.size() > std::numeric_limits<size_t>::max() / vpb
+      || valuesFlat.size() != sortedKeys.size() * vpb) {
+    if (errOut)
+      *errOut = "Value array size does not match numBoards * 7 * numDasBuckets";
+    return false;
+  }
+  if (!detail::validateSortedKeys(sortedKeys, errOut)) {
+    return false;
+  }
+  for (double dv : valuesFlat) {
+    const float fv = static_cast<float>(dv);
+    if (!std::isfinite(dv) || dv < 0.0 || !std::isfinite(fv) || fv < 0.0f) {
+      if (errOut)
+        *errOut = "Refusing to write non-finite, overflowing, or negative TB value";
+      return false;
+    }
+  }
+
+  TablebaseHeaderV4 hdr = meta;
+  std::memcpy(hdr.magic, TABLEBASE_V4_MAGIC, sizeof(TABLEBASE_V4_MAGIC));
+  hdr.numBoards = static_cast<uint64_t>(sortedKeys.size());
+  hdr.keyEncoding = KEY_ENCODING_K16_OPT2C;
+  hdr.keyBytes = sizeof(BoardKey);
+  hdr.maxRows = BOARD_ROWS;
+  hdr.maxHoles = KEY_MAX_HOLES;
+  hdr.reserved = 0U;
+  const size_t recBytes = rtRecordBytes(nb);
+  const uint64_t payloadBytes =
+      static_cast<uint64_t>(sortedKeys.size()) * static_cast<uint64_t>(recBytes);
+  if (!detail::validateTbHeaderV4(hdr, payloadBytes, path, errOut)) {
+    return false;
+  }
+
+  std::ofstream out(path, std::ios::binary | std::ios::trunc);
+  if (!out) {
+    if (errOut)
+      *errOut = "Failed to open tablebase for writing: " + path;
+    return false;
+  }
+  out.write(reinterpret_cast<const char *>(&hdr), sizeof(hdr));
+
+  constexpr size_t CHUNK = 16384;
+  std::vector<uint8_t> buf;
+  buf.reserve(std::min(sortedKeys.size(), CHUNK) * recBytes);
+  float row[MAX_RT_VALUES_PER_BOARD];
+  for (size_t i = 0; i < sortedKeys.size(); ++i) {
+    for (size_t v = 0; v < vpb; ++v) {
+      row[v] = static_cast<float>(valuesFlat[i * vpb + v]);
+    }
+    const size_t off = buf.size();
+    buf.resize(off + recBytes);
+    std::memcpy(buf.data() + off, &sortedKeys[i], sizeof(BoardKey));
+    std::memcpy(buf.data() + off + sizeof(BoardKey), row, vpb * sizeof(float));
+    if (buf.size() >= CHUNK * recBytes || i + 1 == sortedKeys.size()) {
+      out.write(reinterpret_cast<const char *>(buf.data()),
+                static_cast<std::streamsize>(buf.size()));
+      buf.clear();
+    }
+  }
+  if (!out.good()) {
+    if (errOut)
+      *errOut = "I/O error writing SRTBV004 file: " + path;
+    return false;
+  }
+  return true;
+}
+
+// Read-only memory-mapped SRTBV004 tablebase (O(log N) binary search, transactional open).
+class MappedDasRtTablebase {
+public:
+  static constexpr uint64_t NOT_FOUND = ~0ULL;
+
+  MappedDasRtTablebase() = default;
+  MappedDasRtTablebase(const MappedDasRtTablebase &) = delete;
+  MappedDasRtTablebase &operator=(const MappedDasRtTablebase &) = delete;
+  MappedDasRtTablebase(MappedDasRtTablebase &&other) noexcept { *this = std::move(other); }
+
+  MappedDasRtTablebase &operator=(MappedDasRtTablebase &&other) noexcept {
+    if (this != &other) {
+      close();
+      header_ = other.header_;
+      records_ = other.records_;
+      recBytes_ = other.recBytes_;
+      loaded_ = other.loaded_;
+#ifndef _WIN32
+      mapAddr_ = other.mapAddr_;
+      mapSize_ = other.mapSize_;
+      other.mapAddr_ = nullptr;
+      other.mapSize_ = 0;
+#else
+      owned_ = std::move(other.owned_);
+      records_ = owned_.data();
+#endif
+      other.records_ = nullptr;
+      other.loaded_ = false;
+      other.header_ = {};
+    }
+    return *this;
+  }
+
+  ~MappedDasRtTablebase() { close(); }
+
+  bool open(const std::string &path, std::string *errOut = nullptr, bool verifyRecords = false) {
+    MappedDasRtTablebase staged;
+    if (!staged.openInternal(path, errOut, verifyRecords)) {
+      return false;
+    }
+    *this = std::move(staged);
+    return true;
+  }
+
+  void close() noexcept {
+#ifndef _WIN32
+    if (mapAddr_ != nullptr && mapSize_ > 0) {
+      ::munmap(mapAddr_, mapSize_);
+    }
+    mapAddr_ = nullptr;
+    mapSize_ = 0;
+#else
+    std::vector<uint8_t>().swap(owned_);
+#endif
+    records_ = nullptr;
+    header_ = {};
+    recBytes_ = 0;
+    loaded_ = false;
+  }
+
+  void adviseSequential() const noexcept {
+#ifndef _WIN32
+    if (mapAddr_ != nullptr && mapSize_ > 0)
+      ::madvise(mapAddr_, mapSize_, MADV_SEQUENTIAL);
+#endif
+  }
+  void adviseRandom() const noexcept {
+#ifndef _WIN32
+    if (mapAddr_ != nullptr && mapSize_ > 0)
+      ::madvise(mapAddr_, mapSize_, MADV_RANDOM);
+#endif
+  }
+  void adviseDontNeed() const noexcept {
+#ifndef _WIN32
+    if (mapAddr_ != nullptr && mapSize_ > 0)
+      ::madvise(mapAddr_, mapSize_, MADV_DONTNEED);
+#endif
+  }
+
+  bool isLoaded() const noexcept { return loaded_; }
+  const TablebaseHeaderV4 &header() const noexcept { return header_; }
+  uint64_t size() const noexcept { return loaded_ ? header_.numBoards : 0; }
+  int numDasBuckets() const noexcept { return static_cast<int>(header_.numDasBuckets); }
+  int valuesPerBoard() const noexcept { return NUM_PIECES * numDasBuckets(); }
+  RngMode rngMode() const noexcept {
+    return (header_.rngMode == 1U) ? RngMode::Nes : RngMode::Uniform;
+  }
+  int level() const noexcept { return static_cast<int>(header_.level); }
+  int gravity() const noexcept { return getGravity20(level()); }
+  double gamma() const noexcept { return header_.gamma; }
+  DiscountMode discountMode() const noexcept {
+    return ((header_.flags & TB_FLAG_DISCOUNT_PER_LINE) != 0U) ? DiscountMode::PerLine
+                                                               : DiscountMode::PerPiece;
+  }
+  double emptyBoardValue() const noexcept {
+    return loaded_ ? header_.emptyBoardValue : MISSING_BOARD_VALUE;
+  }
+
+  BoardKey keyAt(uint64_t idx) const noexcept {
+    assert(loaded_ && idx < header_.numBoards);
+    BoardKey k;
+    std::memcpy(&k, records_ + idx * recBytes_, sizeof(k));
+    return k;
+  }
+
+  // Copies valuesPerBoard() floats for record idx.
+  void copyValuesAt(uint64_t idx, float *out) const noexcept {
+    assert(loaded_ && idx < header_.numBoards);
+    std::memcpy(out, records_ + idx * recBytes_ + sizeof(BoardKey),
+                static_cast<size_t>(valuesPerBoard()) * sizeof(float));
+  }
+
+  bool recordValuesValidAt(uint64_t idx) const noexcept {
+    float row[MAX_RT_VALUES_PER_BOARD];
+    copyValuesAt(idx, row);
+    for (int v = 0; v < valuesPerBoard(); ++v) {
+      if (!std::isfinite(row[v]) || row[v] < 0.0f) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  uint64_t findIndex(BoardKey target) const noexcept {
+    if (!loaded_ || header_.numBoards == 0) {
+      return NOT_FOUND;
+    }
+    uint64_t lo = 0;
+    uint64_t hi = header_.numBoards;
+    while (lo < hi) {
+      const uint64_t mid = lo + ((hi - lo) >> 1);
+      const BoardKey midKey = keyAt(mid);
+      if (midKey < target) {
+        lo = mid + 1;
+      } else if (midKey > target) {
+        hi = mid;
+      } else {
+        return mid;
+      }
+    }
+    return NOT_FOUND;
+  }
+
+  // Copies valuesPerBoard() floats into outRow when found.
+  bool lookup(BoardKey target, float *outRow) const noexcept {
+    const uint64_t idx = findIndex(target);
+    if (idx == NOT_FOUND) {
+      return false;
+    }
+    copyValuesAt(idx, outRow);
+    return true;
+  }
+
+private:
+  TablebaseHeaderV4 header_{};
+  const uint8_t *records_ = nullptr;
+  size_t recBytes_ = 0;
+  bool loaded_ = false;
+#ifndef _WIN32
+  void *mapAddr_ = nullptr;
+  size_t mapSize_ = 0;
+#else
+  std::vector<uint8_t> owned_;
+#endif
+
+  bool openInternal(const std::string &path, std::string *errOut, bool verifyRecords) {
+#ifndef _WIN32
+    const int fd = ::open(path.c_str(), O_RDONLY);
+    if (fd < 0) {
+      if (errOut)
+        *errOut = "Failed to open SRTBV004 file: " + path;
+      return false;
+    }
+    struct stat st{};
+    if (::fstat(fd, &st) != 0 || st.st_size < static_cast<off_t>(sizeof(TablebaseHeaderV4))) {
+      ::close(fd);
+      if (errOut)
+        *errOut = "SRTBV004 file too small or unreadable: " + path;
+      return false;
+    }
+    const uint64_t fileSize = static_cast<uint64_t>(st.st_size);
+    if (fileSize > static_cast<uint64_t>(std::numeric_limits<size_t>::max())) {
+      ::close(fd);
+      if (errOut)
+        *errOut = "SRTBV004 file exceeds addressable size_t";
+      return false;
+    }
+    void *mapped = ::mmap(nullptr, static_cast<size_t>(fileSize), PROT_READ, MAP_PRIVATE, fd, 0);
+    ::close(fd);
+    if (mapped == MAP_FAILED) {
+      if (errOut)
+        *errOut = "mmap failed for SRTBV004 file: " + path;
+      return false;
+    }
+    mapAddr_ = mapped;
+    mapSize_ = static_cast<size_t>(fileSize);
+    std::memcpy(&header_, mapped, sizeof(header_));
+    const uint64_t payloadBytes = fileSize - sizeof(TablebaseHeaderV4);
+    if (!detail::validateTbHeaderV4(header_, payloadBytes, path, errOut)) {
+      close();
+      return false;
+    }
+    records_ = static_cast<const uint8_t *>(mapped) + sizeof(TablebaseHeaderV4);
+#else
+    std::ifstream in(path, std::ios::binary | std::ios::ate);
+    if (!in) {
+      if (errOut)
+        *errOut = "Failed to open SRTBV004 file: " + path;
+      return false;
+    }
+    const std::streamoff endPos = in.tellg();
+    if (endPos < static_cast<std::streamoff>(sizeof(TablebaseHeaderV4))) {
+      if (errOut)
+        *errOut = "SRTBV004 file smaller than header: " + path;
+      return false;
+    }
+    in.seekg(0, std::ios::beg);
+    in.read(reinterpret_cast<char *>(&header_), sizeof(header_));
+    const uint64_t payloadBytes = static_cast<uint64_t>(endPos) - sizeof(TablebaseHeaderV4);
+    if (!detail::validateTbHeaderV4(header_, payloadBytes, path, errOut)) {
+      close();
+      return false;
+    }
+    owned_.resize(static_cast<size_t>(payloadBytes));
+    if (!owned_.empty()) {
+      in.read(reinterpret_cast<char *>(owned_.data()), static_cast<std::streamsize>(payloadBytes));
+      if (!in.good()) {
+        if (errOut)
+          *errOut = "Failed reading SRTBV004 payload: " + path;
+        close();
+        return false;
+      }
+    }
+    records_ = owned_.data();
+#endif
+    recBytes_ = rtRecordBytes(static_cast<int>(header_.numDasBuckets));
+    loaded_ = true;
+    if (verifyRecords) {
+      for (uint64_t i = 0; i < header_.numBoards; ++i) {
+        const BoardKey k = keyAt(i);
+        if (!isValidBoardKey(k) || !recordValuesValidAt(i)) {
+          if (errOut)
+            *errOut = "Corrupt key or value in SRTBV004 at index " + std::to_string(i);
+          close();
+          return false;
+        }
+        if (i > 0 && k <= keyAt(i - 1)) {
+          if (errOut)
+            *errOut = "Unsorted or duplicate key in SRTBV004 at index " + std::to_string(i);
+          close();
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+};
+
+// In-RAM O(1) indexed SRTBV004 tablebase (~32.8 B index + 4 * 7 * numDasBuckets B per board).
+class IndexedDasRtTablebase {
+public:
+  bool buildFromMapped(const MappedDasRtTablebase &mapped, std::string *errOut = nullptr) {
+    if (!mapped.isLoaded()) {
+      if (errOut)
+        *errOut = "Cannot index unloaded MappedDasRtTablebase";
+      return false;
+    }
+    const uint64_t n64 = mapped.size();
+    const size_t vpb = static_cast<size_t>(mapped.valuesPerBoard());
+    if (n64 > static_cast<uint64_t>(std::numeric_limits<size_t>::max() / vpb)) {
+      if (errOut)
+        *errOut = "IndexedDasRtTablebase board count overflows size_t";
+      return false;
+    }
+    const size_t n = static_cast<size_t>(n64);
+    FlatBoardIndex stagedIndex;
+    if (!stagedIndex.beginBuild(n, errOut)) {
+      return false;
+    }
+    std::vector<float> stagedVals(n * vpb);
+    BoardKey prevKey = EMPTY_BOARD_KEY;
+    for (size_t i = 0; i < n; ++i) {
+      const BoardKey k = mapped.keyAt(static_cast<uint64_t>(i));
+      if (!isValidBoardKey(k) || !mapped.recordValuesValidAt(static_cast<uint64_t>(i))) {
+        if (errOut)
+          *errOut = "Corrupt key or value in SRTBV004 at index " + std::to_string(i);
+        return false;
+      }
+      if (i > 0 && k <= prevKey) {
+        if (errOut)
+          *errOut = "Unsorted or duplicate key in SRTBV004 at index " + std::to_string(i);
+        return false;
+      }
+      prevKey = k;
+      mapped.copyValuesAt(static_cast<uint64_t>(i), &stagedVals[i * vpb]);
+      if (!stagedIndex.insertBuiltKey(k, static_cast<uint32_t>(i), errOut)) {
+        return false;
+      }
+    }
+    index_ = std::move(stagedIndex);
+    values_ = std::move(stagedVals);
+    header_ = mapped.header();
+    vpb_ = static_cast<int>(vpb);
+    loaded_ = true;
+    return true;
+  }
+
+  bool open(const std::string &path, std::string *errOut = nullptr) {
+    MappedDasRtTablebase mapped;
+    if (!mapped.open(path, errOut, /*verifyRecords=*/false)) {
+      return false;
+    }
+    mapped.adviseSequential();
+    const bool ok = buildFromMapped(mapped, errOut);
+    mapped.adviseDontNeed();
+    return ok;
+  }
+
+  void clear() noexcept {
+    index_.clear();
+    std::vector<float>().swap(values_);
+    header_ = {};
+    vpb_ = 0;
+    loaded_ = false;
+  }
+
+  bool isLoaded() const noexcept { return loaded_; }
+  uint64_t size() const noexcept { return loaded_ ? header_.numBoards : 0; }
+  const TablebaseHeaderV4 &header() const noexcept { return header_; }
+  int numDasBuckets() const noexcept { return static_cast<int>(header_.numDasBuckets); }
+  int valuesPerBoard() const noexcept { return vpb_; }
+  RngMode rngMode() const noexcept {
+    return (header_.rngMode == 1U) ? RngMode::Nes : RngMode::Uniform;
+  }
+  int level() const noexcept { return static_cast<int>(header_.level); }
+  int gravity() const noexcept { return getGravity20(level()); }
+  double gamma() const noexcept { return header_.gamma; }
+  DiscountMode discountMode() const noexcept {
+    return ((header_.flags & TB_FLAG_DISCOUNT_PER_LINE) != 0U) ? DiscountMode::PerLine
+                                                               : DiscountMode::PerPiece;
+  }
+  double emptyBoardValue() const noexcept {
+    return loaded_ ? header_.emptyBoardValue : MISSING_BOARD_VALUE;
+  }
+
+  // Returns a pointer to valuesPerBoard() floats, or nullptr when the board is not stored.
+  const float *findRow(BoardKey key) const noexcept {
+    if (!loaded_) {
+      return nullptr;
+    }
+    const uint32_t id = index_.find(key);
+    return (id == INVALID_BOARD_ID) ? nullptr : &values_[static_cast<size_t>(id) * vpb_];
+  }
+
+  bool lookup(BoardKey key, float *outRow) const noexcept {
+    const float *row = findRow(key);
+    if (row == nullptr) {
+      return false;
+    }
+    std::memcpy(outRow, row, static_cast<size_t>(vpb_) * sizeof(float));
+    return true;
+  }
+
+private:
+  FlatBoardIndex index_;
+  std::vector<float> values_;
+  TablebaseHeaderV4 header_{};
+  int vpb_ = 0;
+  bool loaded_ = false;
+};
+
+// Peeks the 8-byte file magic (empty string on I/O failure).
+inline std::string peekFileMagic(const std::string &path) {
+  std::ifstream in(path, std::ios::binary);
+  char magic[8] = {};
+  if (!in || !in.read(magic, sizeof(magic))) {
+    return std::string();
+  }
+  return std::string(magic, sizeof(magic));
+}
+
+// Loads sorted BoardKeys from SRSTV002, SRTBV003, or SRTBV004 files.
+inline bool loadInputBoardKeysAnyFormat(const std::string &path, std::vector<BoardKey> &outKeys,
+                                        std::string *errOut = nullptr) {
+  const std::string magic = peekFileMagic(path);
+  if (magic.size() == sizeof(TABLEBASE_V4_MAGIC)
+      && std::memcmp(magic.data(), TABLEBASE_V4_MAGIC, sizeof(TABLEBASE_V4_MAGIC)) == 0) {
+    MappedDasRtTablebase tb;
+    if (!tb.open(path, errOut)) {
+      return false;
+    }
+    tb.adviseSequential();
+    std::vector<BoardKey> keys(static_cast<size_t>(tb.size()));
+    for (uint64_t i = 0; i < tb.size(); ++i) {
+      keys[static_cast<size_t>(i)] = tb.keyAt(i);
+    }
+    tb.adviseDontNeed();
+    if (!detail::validateSortedKeys(keys, errOut)) {
+      return false;
+    }
+    outKeys = std::move(keys);
+    return true;
+  }
+  return loadInputBoardKeys(path, outKeys, errOut);
+}
 
 } // namespace das
 

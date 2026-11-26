@@ -1,10 +1,11 @@
-// train_nn_20row.cpp — Pure-supervised on-policy multi-task NNUE distillation CLI (SRNNV001 v2).
-// Samples greedy + recovery + danger-zone trajectories from an SRTBV003 tablebase (optionally
-// guided on out-of-TB steps by a prior NNUE) and trains TinyDasNet with 4-part multi-task Adam
-// loss:
-//   parent 7-output Huber + child Huber + ply-2 top-out target (0.0) + Boltzmann move-ranking CE.
+// train_nn_20row.cpp — Pure-supervised on-policy multi-task NNUE distillation CLI (SRNNV001 v2/v3).
+// Samples greedy + recovery + danger-zone trajectories from an SRTBV003 (7-output) or SRTBV004
+// (7 * K-output V_RT) tablebase (optionally guided on out-of-TB steps by a prior NNUE) and trains
+// TinyDasNet with 4-part multi-task Adam loss:
+//   parent 7/7*K-output Huber + child Huber + ply-2 top-out target (0.0) + Boltzmann ranking CE.
 
 #include "nnue_20row.hpp"
+#include "rt_nn_boundary_20row.hpp"
 #include "tablebase_io_20row.hpp"
 
 #include <algorithm>
@@ -73,7 +74,7 @@ void printUsage(FILE *stream, const char *prog) {
       "  --weight-decay=F         L2 weight decay (default 1e-5)\n"
       "  --huber-delta=F          Huber transition delta (default 0.5)\n"
       "  --temp=F                 Boltzmann ranking temperature (default 0.35)\n"
-      "  --val-weight=F           Parent 7-output Huber weight (default 1.0)\n"
+      "  --val-weight=F           Parent (7 or 7*K)-output Huber weight (default 1.0)\n"
       "  --child-val-weight=F     Candidate-child Huber weight (default 1.0)\n"
       "  --rank-weight=F          Boltzmann move-ranking CE weight (default 4.0)\n"
       "  --seed=U64               Base RNG seed (default 20000000)\n"
@@ -344,16 +345,42 @@ int main(int argc, char **argv) {
   sampleCfg.numThreads = trainCfg.numThreads;
 
   const auto tStart = std::chrono::steady_clock::now();
-  das::IndexedDasTablebase tb;
   std::string err;
-  if (!tb.open(tbPath, &err)) {
-    fprintf(stderr, "Error loading --tb: %s\n", err.c_str());
-    return 1;
+  const std::string tbMagic = das::peekFileMagic(tbPath);
+  const bool isRtTb = (tbMagic == std::string(das::TABLEBASE_V4_MAGIC, 8));
+
+  das::IndexedDasTablebase tb;
+  das::IndexedDasRtTablebase rtTb;
+  das::RngMode rngMode = das::RngMode::Nes;
+  if (isRtTb) {
+    if (!rtTb.open(tbPath, &err)) {
+      fprintf(stderr, "Error loading SRTBV004 --tb: %s\n", err.c_str());
+      return 1;
+    }
+    rngMode = rtTb.rngMode();
+    trainCfg.gamma = rtTb.gamma();
+    trainCfg.discountMode = rtTb.discountMode();
+    trainCfg.outDim = das::NUM_PIECES * rtTb.numDasBuckets();
+    printf("Indexed V_RT TB %s (%llu boards, L%d, K=%d [%d outputs], rt=%uf, rng=%s, "
+           "gamma=%.5f [%s], E[V(0,full)]=%.5f)\n",
+           tbPath.c_str(), static_cast<unsigned long long>(rtTb.size()), rtTb.level(),
+           rtTb.numDasBuckets(), trainCfg.outDim, rtTb.header().reactionTimeFrames,
+           das::rngModeName(rngMode), rtTb.gamma(), das::discountModeName(rtTb.discountMode()),
+           rtTb.emptyBoardValue());
+  } else {
+    if (!tb.open(tbPath, &err)) {
+      fprintf(stderr, "Error loading --tb: %s\n", err.c_str());
+      return 1;
+    }
+    rngMode = tb.rngMode();
+    trainCfg.gamma = tb.gamma();
+    trainCfg.discountMode = tb.discountMode();
+    trainCfg.outDim = das::NUM_PIECES;
+    printf("Indexed TB %s (%llu boards, L%d, rng=%s, gamma=%.5f [%s], E[V(0)]=%.5f)\n",
+           tbPath.c_str(), static_cast<unsigned long long>(tb.size()), tb.level(),
+           das::rngModeName(rngMode), tb.gamma(), das::discountModeName(tb.discountMode()),
+           tb.emptyBoardValue());
   }
-  printf("Indexed TB %s (%llu boards, L%d, rng=%s, gamma=%.5f [%s], E[V(0)]=%.5f)\n",
-         tbPath.c_str(), static_cast<unsigned long long>(tb.size()), tb.level(),
-         das::rngModeName(tb.rngMode()), tb.gamma(), das::discountModeName(tb.discountMode()),
-         tb.emptyBoardValue());
 
   das::TinyDasNet guideNn;
   if (!guideNnPath.empty()) {
@@ -361,12 +388,24 @@ int main(int argc, char **argv) {
       fprintf(stderr, "Error loading --guide-nn: %s\n", err.c_str());
       return 1;
     }
-    if (guideNn.rngMode != tb.rngMode()) {
+    if (guideNn.rngMode != rngMode) {
       fprintf(stderr, "Error: --guide-nn rng (%s) does not match --tb (%s)\n",
-              das::rngModeName(guideNn.rngMode), das::rngModeName(tb.rngMode()));
+              das::rngModeName(guideNn.rngMode), das::rngModeName(rngMode));
       return 1;
     }
-    printf("Loaded guide NNUE %s (%dx%d)\n", guideNnPath.c_str(), guideNn.h1, guideNn.h2);
+    if (isRtTb) {
+      if (!das::nnSupportsDasBuckets(guideNn, rtTb.numDasBuckets())) {
+        fprintf(stderr, "Error: --guide-nn outDim (%d) is incompatible with %d DAS buckets\n",
+                guideNn.outDim, rtTb.numDasBuckets());
+        return 1;
+      }
+    } else if (guideNn.outDim != das::NUM_PIECES) {
+      fprintf(stderr, "Error: --guide-nn outDim (%d) must be %d for SRTBV003 --tb\n",
+              guideNn.outDim, das::NUM_PIECES);
+      return 1;
+    }
+    printf("Loaded guide NNUE %s (%dx%d, out=%d)\n", guideNnPath.c_str(), guideNn.h1, guideNn.h2,
+           guideNn.outDim);
   }
   das::TinyDasNet initNn;
   if (!initNnPath.empty()) {
@@ -379,12 +418,18 @@ int main(int argc, char **argv) {
               initNn.h2, trainCfg.h1, trainCfg.h2);
       return 1;
     }
-    if (initNn.rngMode != tb.rngMode()) {
+    if (initNn.rngMode != rngMode) {
       fprintf(stderr, "Error: --init-nn rng (%s) does not match --tb (%s)\n",
-              das::rngModeName(initNn.rngMode), das::rngModeName(tb.rngMode()));
+              das::rngModeName(initNn.rngMode), das::rngModeName(rngMode));
       return 1;
     }
-    printf("Loaded warm-start NNUE %s (%dx%d)\n", initNnPath.c_str(), initNn.h1, initNn.h2);
+    if (initNn.outDim != trainCfg.outDim && initNn.outDim != das::NUM_PIECES) {
+      fprintf(stderr, "Error: --init-nn outDim (%d) is incompatible with target outDim (%d)\n",
+              initNn.outDim, trainCfg.outDim);
+      return 1;
+    }
+    printf("Loaded warm-start NNUE %s (%dx%d, out=%d)\n", initNnPath.c_str(), initNn.h1, initNn.h2,
+           initNn.outDim);
   }
 
   printf(
@@ -393,16 +438,31 @@ int main(int argc, char **argv) {
   fflush(stdout);
 
   const auto tSamp = std::chrono::steady_clock::now();
-  das::DistillDataset20 trainDs =
-      das::sampleDistillDataset20(tb, guideNn.isLoaded() ? &guideNn : nullptr, sampleCfg);
-
+  das::DistillDataset20 trainDs;
   das::DistillDataset20 valDs;
-  if (valDecisions > 0) {
-    das::DistillSampleConfig20 valCfg = sampleCfg;
-    valCfg.numGames = std::max(200, sampleCfg.numGames / 8);
-    valCfg.maxDecisions = valDecisions;
-    valCfg.baseSeed = sampleCfg.baseSeed + 5000000ULL;
-    valDs = das::sampleDistillDataset20(tb, guideNn.isLoaded() ? &guideNn : nullptr, valCfg);
+  if (isRtTb) {
+    const das::DasRtMoveTables tables(das::moveConfigFromHeaderV4(rtTb.header()));
+    trainDs = das::sampleDistillDatasetRt20(rtTb, tables, guideNn.isLoaded() ? &guideNn : nullptr,
+                                            sampleCfg);
+    if (valDecisions > 0) {
+      das::DistillSampleConfig20 valCfg = sampleCfg;
+      valCfg.numGames = std::max(200, sampleCfg.numGames / 8);
+      valCfg.maxDecisions = valDecisions;
+      valCfg.baseSeed = sampleCfg.baseSeed + 5000000ULL;
+      valDs = das::sampleDistillDatasetRt20(rtTb, tables, guideNn.isLoaded() ? &guideNn : nullptr,
+                                            valCfg);
+    }
+    rtTb.clear();
+  } else {
+    trainDs = das::sampleDistillDataset20(tb, guideNn.isLoaded() ? &guideNn : nullptr, sampleCfg);
+    if (valDecisions > 0) {
+      das::DistillSampleConfig20 valCfg = sampleCfg;
+      valCfg.numGames = std::max(200, sampleCfg.numGames / 8);
+      valCfg.maxDecisions = valDecisions;
+      valCfg.baseSeed = sampleCfg.baseSeed + 5000000ULL;
+      valDs = das::sampleDistillDataset20(tb, guideNn.isLoaded() ? &guideNn : nullptr, valCfg);
+    }
+    tb.clear();
   }
   const double sampSec =
       std::chrono::duration<double>(std::chrono::steady_clock::now() - tSamp).count();
@@ -412,21 +472,13 @@ int main(int argc, char **argv) {
          sampSec);
   fflush(stdout);
 
-  // Release indexed TB RAM before training.
-  const das::RngMode rngMode = tb.rngMode();
-  trainCfg.gamma = tb.gamma();
-  trainCfg.discountMode = tb.discountMode();
-  tb.clear();
-
-  printf(
-      "Training TinyDasNet (%dx%d, %zu params, %.1f KB, epochs=%d, bs=%d, lr=%.1e, T=%.2f, "
-      "delta=%.2f)...\n",
-      trainCfg.h1, trainCfg.h2,
-      das::TinyDasNet::totalParams(das::NN_INPUT_DIM, trainCfg.h1, trainCfg.h2),
-      static_cast<double>(das::TinyDasNet::totalParams(das::NN_INPUT_DIM, trainCfg.h1, trainCfg.h2)
-                          * sizeof(float))
-          / 1024.0,
-      trainCfg.epochs, trainCfg.batchSize, trainCfg.lr, trainCfg.temperature, trainCfg.huberDelta);
+  const size_t nParams =
+      das::TinyDasNet::totalParams(das::NN_INPUT_DIM, trainCfg.h1, trainCfg.h2, trainCfg.outDim);
+  printf("Training TinyDasNet (%dx%d -> %d, %zu params, %.1f KB, epochs=%d, bs=%d, lr=%.1e, "
+         "T=%.2f, delta=%.2f)...\n",
+         trainCfg.h1, trainCfg.h2, trainCfg.outDim, nParams,
+         static_cast<double>(nParams * sizeof(float)) / 1024.0, trainCfg.epochs, trainCfg.batchSize,
+         trainCfg.lr, trainCfg.temperature, trainCfg.huberDelta);
   fflush(stdout);
 
   das::TinyDasNet trained = das::trainTinyDasNet(trainDs.decisions, valDs.decisions, rngMode,

@@ -7,6 +7,7 @@
 
 #include "eval_adapter.hpp"
 #include "nnue_20row.hpp"
+#include "rt_nn_boundary_20row.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -610,6 +611,340 @@ chooseTbNnPrecomputeMove(const GameState &state, int curPieceIdx, int nextPieceI
   res.rot = chosenRot;
   res.x = chosenX;
   res.y = chosenY;
+  res.dasChargeAfter = chosenDas;
+  res.linesCleared = cleared;
+  res.afterState =
+      board20ToGameState(gameStateToBoard20(after), nextLevel, nextLines, bc, opts.aggro);
+  return res;
+}
+
+// Native V_RT(b', n, d') + DasRtMoveTables reaction-time move selector:
+//   - Generates early locks + reaction-time phantoms and their post-RT adjustment moves in one pass
+//     via DasRtMoveTables (`ws.search`).
+//   - Scores each unique lock cell (rot, x, y) directly from `rtTb->lookup` in O(1) across all
+//     (nextPiece n, ending DAS bucket k') with zero 2nd-piece `fullMoveSearch` penalty sweeps.
+//   - For out-of-TB cells, supports 1-ply multi-bucket NNUE, 2-ply `OUT -> TB2 / NN` re-entry
+//     (threading exact 2nd-piece ending DAS buckets into `rtTb` / `nn`), and selective 3-ply Top-K.
+template <typename RtTbType>
+inline TbNnPrecomputeResult
+chooseTbNnRtMove(const GameState &state, int curPieceIdx, int nextPieceIdx, const RtTbType *rtTb,
+                 const TinyDasNet *nn, const DasRtMoveTables &tables, RtDecisionWorkspace &ws,
+                 const TbNnPrecomputeOptions &opts, const BackendContexts &bc) {
+  TbNnPrecomputeResult res{};
+  if (curPieceIdx < 0
+      || curPieceIdx >= NUM_PIECES
+      || nextPieceIdx < 0
+      || nextPieceIdx >= NUM_PIECES
+      || opts.dasCharge < 0) {
+    return res;
+  }
+
+  const bool hasTb = (rtTb != nullptr && rtTb->isLoaded());
+  const int K =
+      hasTb ? rtTb->numDasBuckets()
+            : ((nn != nullptr && nn->isLoaded() && nn->numDasBuckets() >= 2) ? nn->numDasBuckets()
+                                                                             : MAX_DAS_BUCKETS);
+  if (!isValidDasBucketCount(K)) {
+    return res;
+  }
+  const bool hasNn = (nn != nullptr && nnSupportsDasBuckets(*nn, K));
+  const int vpb = NUM_PIECES * K;
+  const int startDas = std::clamp(opts.dasCharge, 0, DAS_CHARGE_MAX);
+  const Board20 board20 = gameStateToBoard20(state);
+  const bool zeroRt = (opts.reactionTime <= 0);
+
+  ws.search(tables, board20, curPieceIdx, &startDas, 1, /*forceZeroRt=*/zeroRt);
+  const int nCells = ws.numCells();
+  if (nCells == 0 || nCells > DAS_MAX_LOCK_MOVES) {
+    return res;
+  }
+
+  struct RtCellMeta {
+    uint8_t lc = 0;
+    uint8_t bucketMask = 0;
+    int8_t bestOverallDas = 0;
+    bool fitsKey = false;
+    bool inTb = false;
+    BoardKey afterKey = EMPTY_KEY;
+    uint16_t afterRows[BOARD_ROWS] = {};
+    float tbRow[MAX_RT_VALUES_PER_BOARD] = {};
+  };
+  RtCellMeta cells[DAS_MAX_LOCK_MOVES];
+
+  const DasRtSearchResult &sr = ws.result(0);
+  for (int e = 0; e < sr.numEarlyMoves; ++e) {
+    const int cl = ws.localCellOf(0, sr.earlyMoves[e].cellIdx);
+    const int dasAfter = static_cast<int>(sr.earlyMoves[e].dasAfter);
+    const int kb = dasChargeToBucket(dasAfter, K);
+    RtCellMeta &u = cells[cl];
+    u.bucketMask = static_cast<uint8_t>(u.bucketMask | (1U << kb));
+    if (dasAfter > u.bestOverallDas) {
+      u.bestOverallDas = static_cast<int8_t>(dasAfter);
+    }
+  }
+  const int totalAdjEdges = sr.adjMoveOffset[sr.numAdjStates];
+  for (int e = 0; e < totalAdjEdges; ++e) {
+    const int cl = ws.localCellOf(0, sr.adjEdges[e].cellIdx);
+    const int dasAfter = static_cast<int>(sr.adjEdges[e].dasAfter);
+    const int kb = dasChargeToBucket(dasAfter, K);
+    RtCellMeta &u = cells[cl];
+    u.bucketMask = static_cast<uint8_t>(u.bucketMask | (1U << kb));
+    if (dasAfter > u.bestOverallDas) {
+      u.bestOverallDas = static_cast<int8_t>(dasAfter);
+    }
+  }
+  if (zeroRt) {
+    for (int i = 0; i < nCells; ++i) {
+      RtCellMeta &u = cells[i];
+      u.bucketMask = static_cast<uint8_t>(1U << dasChargeToBucket(u.bestOverallDas, K));
+    }
+  }
+
+  const StepDiscountTable20 disc = StepDiscountTable20::make(opts.gamma, opts.discountMode);
+  const int nLo = zeroRt ? nextPieceIdx : 0;
+  const int nHi = zeroRt ? nextPieceIdx : (NUM_PIECES - 1);
+  double bestInTbForPiece[NUM_PIECES];
+  for (int n = 0; n < NUM_PIECES; ++n) {
+    bestInTbForPiece[n] = -std::numeric_limits<double>::infinity();
+  }
+
+  bool anyInTbOverall = false;
+  for (int i = 0; i < nCells; ++i) {
+    RtCellMeta &u = cells[i];
+    u.lc = ws.computeAfterRows(board20, curPieceIdx, i, u.afterRows);
+    const int startRow = (u.lc == 0)
+                             ? std::max(0, std::min(static_cast<int>(board20.topNonEmptyRow),
+                                                    static_cast<int>(ws.cell(i).y)))
+                             : 0;
+    u.fitsKey = encodeBoardKey(u.afterRows, u.afterKey, startRow);
+    if (hasTb && u.fitsKey && rtTb->lookup(u.afterKey, u.tbRow)) {
+      u.inTb = true;
+      anyInTbOverall = true;
+      const double rew = REWARD_NORM_TETRIS[u.lc];
+      const double dFac = disc.f[u.lc];
+      for (int n = nLo; n <= nHi; ++n) {
+        for (int kb = 0; kb < K; ++kb) {
+          if (((u.bucketMask >> kb) & 1U) == 0U)
+            continue;
+          const double q = rew + dFac * static_cast<double>(u.tbRow[rtValueIndex(n, kb, K)]);
+          if (q > bestInTbForPiece[n]) {
+            bestInTbForPiece[n] = q;
+          }
+        }
+      }
+    }
+  }
+
+  const bool finiteMargin = std::isfinite(opts.outMargin);
+  const double clampedMargin = finiteMargin ? std::max(0.0, opts.outMargin) : 0.0;
+  const bool usePly2HybridPath = opts.outCfg.usesPly2HybridPath(hasTb);
+  const bool isHighRisk = opts.outCfg.isPly3HighRisk(board20);
+  const bool needSelectivePly3 = usePly2HybridPath && opts.outCfg.ply >= 3 && hasNn;
+  const bool needRiskPrescreen = needSelectivePly3 && isHighRisk && finiteMargin;
+
+  bool anyTbGroundedForPiece[NUM_PIECES];
+  double bestTbGroundedForPiece[NUM_PIECES];
+  double bestAllOutForPiece[NUM_PIECES];
+  for (int n = 0; n < NUM_PIECES; ++n) {
+    anyTbGroundedForPiece[n] = anyInTbOverall;
+    bestTbGroundedForPiece[n] = bestInTbForPiece[n];
+    bestAllOutForPiece[n] = -std::numeric_limits<double>::infinity();
+  }
+
+  detail::Ply2HybridEval20 ply2[DAS_MAX_LOCK_MOVES][NUM_PIECES][MAX_DAS_BUCKETS];
+  if (usePly2HybridPath) {
+    DasMoveList pl2;
+    for (int i = 0; i < nCells; ++i) {
+      const RtCellMeta &u = cells[i];
+      if (u.inTb) {
+        continue;
+      }
+      const double rew = REWARD_NORM_TETRIS[u.lc];
+      const double dFac = disc.f[u.lc];
+      const Board20 bAfter = Board20::fromRows(u.afterRows);
+      for (int n = nLo; n <= nHi; ++n) {
+        detail::bestReplyHybrid2PlyRtMultiBucket20(bAfter, n, u.bucketMask, K, tables, disc, rtTb,
+                                                   nn, opts.outMargin, opts.rngMode, pl2,
+                                                   anyTbGroundedForPiece[n], ply2[i][n]);
+        for (int kb = 0; kb < K; ++kb) {
+          if (((u.bucketMask >> kb) & 1U) == 0U)
+            continue;
+          const auto &p2 = ply2[i][n][kb];
+          if (p2.anyInTb && needRiskPrescreen) {
+            const double tbOnlyQ = rew + dFac * p2.bestTbOnly;
+            if (tbOnlyQ > bestTbGroundedForPiece[n]) {
+              bestTbGroundedForPiece[n] = tbOnlyQ;
+            }
+          }
+          if (needSelectivePly3) {
+            const double aoQ = rew + dFac * p2.bestIfAllOut;
+            if (aoQ > bestAllOutForPiece[n]) {
+              bestAllOutForPiece[n] = aoQ;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  const double tieEps = 1e-12;
+  bool anyPly3Used = false;
+
+  for (int i = 0; i < nCells; ++i) {
+    const RtCellMeta &u = cells[i];
+    const double rew = REWARD_NORM_TETRIS[u.lc];
+    const double dFac = disc.f[u.lc];
+    double *qc = ws.q(i);
+    for (int o = 0; o < vpb; ++o) {
+      qc[o] = rew;
+    }
+
+    if (u.inTb) {
+      for (int o = 0; o < vpb; ++o) {
+        qc[o] = rew + dFac * static_cast<double>(u.tbRow[o]);
+      }
+      continue;
+    }
+
+    float nnRtRow[MAX_RT_VALUES_PER_BOARD] = {};
+    const bool needNn1 =
+        !usePly2HybridPath && hasNn && opts.outCfg.ply == 1 && (!anyInTbOverall || finiteMargin);
+    const bool topClear =
+        ((u.afterRows[0] | u.afterRows[1] | u.afterRows[2]) & FULL_ROW_MASK) == 0U;
+    const Board20 bAfter = (!usePly2HybridPath && hasNn && (!topClear || opts.outCfg.ply >= 2))
+                               ? Board20::fromRows(u.afterRows)
+                               : Board20::empty();
+    if (needNn1) {
+      evalNnRtRow(*nn, u.afterRows, K, nnRtRow);
+    }
+
+    for (int n = nLo; n <= nHi; ++n) {
+      const bool canSpawn1 =
+          !needNn1 || topClear || !collides20(bAfter, n, SPAWN_COL, PIECES_20[n].initialY, 0);
+      for (int kb = 0; kb < K; ++kb) {
+        if (((u.bucketMask >> kb) & 1U) == 0U)
+          continue;
+        const int o = rtValueIndex(n, kb, K);
+        double qVal = rew;
+        if (usePly2HybridPath) {
+          const auto &p2 = ply2[i][n][kb];
+          const bool groundedPiece = anyTbGroundedForPiece[n];
+          qVal = rew + dFac * (groundedPiece ? p2.bestIfTbGrounded : p2.bestIfAllOut);
+          if (needSelectivePly3 && p2.hasMove) {
+            if (!groundedPiece) {
+              if (qVal + NN_3PLY_PRESCREEN_SLACK >= bestAllOutForPiece[n]) {
+                anyPly3Used = true;
+                const double est3 = detail::bestReplyNn3PlyTopKRt20(
+                    u.afterRows, n, kb, K, tables, opts.gamma, *nn, opts.rngMode, opts.outCfg.topK,
+                    opts.discountMode);
+                qVal = rew + dFac * est3;
+              }
+            } else if (needRiskPrescreen
+                       && !p2.bestGroundedFromTb
+                       && qVal + NN_3PLY_PRESCREEN_SLACK >= bestTbGroundedForPiece[n]) {
+              anyPly3Used = true;
+              const double est3 = detail::bestReplyNn3PlyTopKRt20(
+                  u.afterRows, n, kb, K, tables, opts.gamma, *nn, opts.rngMode, opts.outCfg.topK,
+                  opts.discountMode);
+              double cont = std::max(0.0, est3 - clampedMargin);
+              if (p2.anyInTb && p2.bestTbOnly >= cont - tieEps) {
+                cont = p2.bestTbOnly;
+              }
+              qVal = rew + dFac * cont;
+            }
+          }
+        } else if (hasNn && (!anyInTbOverall || finiteMargin)) {
+          double estCont = 0.0;
+          if (opts.outCfg.ply >= 3) {
+            DasMoveList pl2Local;
+            if (anyInTbOverall) {
+              const double est2 = detail::bestReplyNn2PlyRt20(bAfter, n, kb, K, tables, disc, *nn,
+                                                              opts.rngMode, pl2Local);
+              if (rew + dFac * std::max(0.0, est2 - clampedMargin) + NN_3PLY_PRESCREEN_SLACK
+                  < bestInTbForPiece[n]) {
+                estCont = est2;
+              } else {
+                anyPly3Used = true;
+                estCont = detail::bestReplyNn3PlyTopKRt20(u.afterRows, n, kb, K, tables, opts.gamma,
+                                                          *nn, opts.rngMode, opts.outCfg.topK,
+                                                          opts.discountMode);
+              }
+            } else {
+              anyPly3Used = true;
+              estCont = detail::bestReplyNn3PlyTopKRt20(u.afterRows, n, kb, K, tables, opts.gamma,
+                                                        *nn, opts.rngMode, opts.outCfg.topK,
+                                                        opts.discountMode);
+            }
+          } else if (opts.outCfg.ply == 2) {
+            DasMoveList pl2Local;
+            estCont = detail::bestReplyNn2PlyRt20(bAfter, n, kb, K, tables, disc, *nn, opts.rngMode,
+                                                  pl2Local);
+          } else if (canSpawn1) {
+            estCont = std::max(0.0, static_cast<double>(nnRtRow[o]));
+          }
+          qVal = anyInTbOverall ? (rew + dFac * std::max(0.0, estCont - clampedMargin))
+                                : (rew + dFac * estCont);
+        }
+        qc[o] = qVal;
+      }
+    }
+  }
+
+  int chosenCell = -1;
+  int chosenDas = DAS_CHARGE_MAX;
+  if (zeroRt) {
+    double bestQ = -std::numeric_limits<double>::infinity();
+    bool bestInTb = false;
+    for (int i = 0; i < nCells; ++i) {
+      const RtCellMeta &u = cells[i];
+      const int dasAfter = static_cast<int>(u.bestOverallDas);
+      const int kb = dasChargeToBucket(dasAfter, K);
+      const double q = ws.q(i)[rtValueIndex(nextPieceIdx, kb, K)];
+      const bool strictlyBetter = (chosenCell < 0 || q > bestQ + tieEps);
+      const bool tieBetter =
+          !strictlyBetter
+          && (std::abs(q - bestQ) <= tieEps)
+          && ((u.inTb && !bestInTb) || (u.inTb == bestInTb && dasAfter > chosenDas));
+      if (strictlyBetter || tieBetter) {
+        chosenCell = i;
+        chosenDas = dasAfter;
+        bestQ = q;
+        bestInTb = u.inTb;
+      }
+    }
+  } else {
+    const auto transProb = detail::buildTransitionProbMatrix(opts.rngMode);
+    const RtDecisionWorkspace::Choice ch =
+        ws.chooseAction(0, K, transProb[static_cast<size_t>(curPieceIdx)]);
+    if (!ch.any) {
+      return res;
+    }
+    chosenCell = ch.cellForNext[nextPieceIdx];
+    chosenDas = ch.dasAfterForNext[nextPieceIdx];
+  }
+  if (chosenCell < 0) {
+    return res;
+  }
+
+  const RtDecisionWorkspace::Cell &cl = ws.cell(chosenCell);
+  const RtCellMeta &chosenMeta = cells[chosenCell];
+  res.chosenInTb = chosenMeta.inTb;
+  res.usedAllOutFallback =
+      !(usePly2HybridPath ? anyTbGroundedForPiece[nextPieceIdx] : anyInTbOverall);
+  res.usedPly3 = anyPly3Used;
+
+  const EvalContext ctx = getEvalContext(state, bc.lookup, false, opts.aggro);
+  LockPlacement lp = {static_cast<int>(cl.x), static_cast<int>(cl.y),  static_cast<int>(cl.rot), -1,
+                      NO_TUCK_NOTATION,       &PIECE_LIST[curPieceIdx]};
+  GameState after = advanceGameState(state, lp, &ctx);
+  const int cleared = after.lines - state.lines;
+  const int nextLines = opts.stationaryLevel ? state.lines : after.lines;
+  const int nextLevel = opts.stationaryLevel ? state.level : after.level;
+
+  res.hasMove = true;
+  res.rot = static_cast<int>(cl.rot);
+  res.x = static_cast<int>(cl.x);
+  res.y = static_cast<int>(cl.y);
   res.dasChargeAfter = chosenDas;
   res.linesCleared = cleared;
   res.afterState =

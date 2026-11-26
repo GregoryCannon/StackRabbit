@@ -189,12 +189,12 @@ private:
   std::vector<Entry> slots_;
 };
 
-// Sequential chunked storage for N * 49 packed uint32_t words (used for both MPI policy table
-// and iter-1 precomputed bestOutStore). Supports RAM or auto-unlinked 64-bit SSD temp files
-// (~12.8 MB RAM regardless of board count up to 50M+ boards).
+// Sequential chunked storage for N * wordsPerBoard packed uint32_t words (49 words/board for
+// V(b, c) MPI policy & bestOutStore; 7 * K * 7 words/board for V_RT(b, c, d) MPI policy).
+// Supports RAM or auto-unlinked 64-bit SSD temp files.
 class PolicyActionStore20 {
 public:
-  static constexpr size_t CHUNK_BOARDS = 65536; // 65,536 * 49 * 4 B = 12.8 MB
+  static constexpr size_t CHUNK_BOARDS = 65536; // 65,536 boards per sequential I/O chunk
 
 #ifndef _WIN32
   static_assert(sizeof(off_t) >= 8, "64-bit off_t required for >4 GB policy cache files");
@@ -207,24 +207,26 @@ public:
   PolicyActionStore20 &operator=(const PolicyActionStore20 &) = delete;
   ~PolicyActionStore20() { close(); }
 
-  bool init(size_t numBoards, bool useDisk, std::string *errOut = nullptr) {
+  bool init(size_t numBoards, bool useDisk, std::string *errOut = nullptr,
+            size_t wordsPerBoard = ACTIONS_PER_BOARD) {
     close();
     numBoards_ = numBoards;
     useDisk_ = useDisk;
+    wordsPerBoard_ = wordsPerBoard;
     if (numBoards_ == 0) {
       return true;
     }
     if (!useDisk_) {
-      if (numBoards_ > std::numeric_limits<size_t>::max() / ACTIONS_PER_BOARD) {
+      if (numBoards_ > std::numeric_limits<size_t>::max() / wordsPerBoard_) {
         if (errOut)
           *errOut = "PolicyActionStore20 RAM allocation overflow";
         return false;
       }
-      ramBuf_.assign(numBoards_ * ACTIONS_PER_BOARD, packPolicyAction(INVALID_BOARD_ID, 0));
+      ramBuf_.assign(numBoards_ * wordsPerBoard_, packPolicyAction(INVALID_BOARD_ID, 0));
       return true;
     }
 
-    const size_t chunkElems = std::min(numBoards_, CHUNK_BOARDS) * ACTIONS_PER_BOARD;
+    const size_t chunkElems = std::min(numBoards_, CHUNK_BOARDS) * wordsPerBoard_;
     ioBuf_.assign(chunkElems, 0U);
 
     std::error_code ec;
@@ -293,7 +295,7 @@ public:
     assert(chunkBegin + chunkCount <= numBoards_);
     (void)chunkCount;
     if (!useDisk_) {
-      return ramBuf_.data() + chunkBegin * ACTIONS_PER_BOARD;
+      return ramBuf_.data() + chunkBegin * wordsPerBoard_;
     }
     assert(chunkCount <= CHUNK_BOARDS);
     return ioBuf_.data();
@@ -310,7 +312,7 @@ public:
   const uint32_t *readChunk(size_t chunkBegin, size_t chunkCount, std::string *errOut = nullptr) {
     assert(chunkBegin + chunkCount <= numBoards_);
     if (!useDisk_) {
-      return ramBuf_.data() + chunkBegin * ACTIONS_PER_BOARD;
+      return ramBuf_.data() + chunkBegin * wordsPerBoard_;
     }
     if (chunkCount == 0) {
       return ioBuf_.data();
@@ -324,6 +326,7 @@ public:
 
 private:
   size_t numBoards_ = 0;
+  size_t wordsPerBoard_ = ACTIONS_PER_BOARD;
   bool useDisk_ = false;
   std::vector<uint32_t> ramBuf_;
   std::vector<uint32_t> ioBuf_;
@@ -334,11 +337,11 @@ private:
   std::fstream stream_;
 #endif
 
-  static constexpr size_t chunkBytes(size_t boards) noexcept {
-    return boards * ACTIONS_PER_BOARD * sizeof(uint32_t);
+  size_t chunkBytes(size_t boards) const noexcept {
+    return boards * wordsPerBoard_ * sizeof(uint32_t);
   }
-  static constexpr uint64_t boardByteOffset(size_t chunkBegin) noexcept {
-    return static_cast<uint64_t>(chunkBegin) * ACTIONS_PER_BOARD * sizeof(uint32_t);
+  uint64_t boardByteOffset(size_t chunkBegin) const noexcept {
+    return static_cast<uint64_t>(chunkBegin) * wordsPerBoard_ * sizeof(uint32_t);
   }
 
   bool writeBytesAt(const void *src, size_t nBytes, uint64_t offset, std::string *errOut) {

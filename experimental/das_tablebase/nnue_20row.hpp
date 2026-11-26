@@ -19,14 +19,19 @@
 #include <functional>
 #include <limits>
 #include <mutex>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
 
 namespace das {
 
-// Compact cache-resident 20-row NNUE predicting all 7 Next-Box values V_hat(b, 0..6) in
-// normalized Tetris-equivalents (featureVersion = 2, NN_INPUT_DIM = 272 floats).
+// Compact cache-resident 20-row NNUE predicting Next-Box values in normalized Tetris-equivalents
+// (featureVersion = 2, NN_INPUT_DIM = 272 floats). A net has outDim = 7 * K outputs for
+// K in {1, 2, 3}: output o = c * K + k predicts V_hat(b, c, k) for piece c and starting DAS bucket
+// k (k = K - 1 is full DAS charge). K == 1 nets predict the plain Next-Box values V_hat(b, 0..6).
+// The 7-value APIs (forwardFeatures, evalAll, evalPiece, evalExpected, ...) always return one value
+// per piece, read from the full-DAS bucket of each piece.
 //
 // Input layout (272 floats):
 //   [  0..199] : 200 raw binary board cells (row 0..19 x col 0..9; ~75-85% zeros skipped)
@@ -52,6 +57,11 @@ inline constexpr int NN_FEAT_GLOBALS_OFF = 240;
 inline constexpr int NN_FEAT_HORIZON_OFF = 269;
 inline constexpr int NN_INPUT_DIM = 272;
 inline constexpr int NN_MAX_HIDDEN_DIM = 512;
+inline constexpr int NN_MAX_OUT_DIM = NUM_PIECES * MAX_DAS_BUCKETS;
+static_assert(NN_MAX_OUT_DIM == MAX_RT_VALUES_PER_BOARD, "NNUE outputs must cover one V_RT row");
+// LabeledMoveCand20::outIdx sentinel: train the candidate against the net's 7-value output for
+// the decision's nextPiece (TinyDasNet::legacyOutIdx).
+inline constexpr uint8_t NN_OUT_IDX_NEXT_PIECE = 0xFFU;
 inline constexpr int NN_FAST_STACK_SUM = 384; // Keeps hot stack frame < 2 KB on ARM64
 inline constexpr int NN_DEFAULT_3PLY_TOPK = 6;
 inline constexpr int NN_DEFAULT_3PLY_MIN_HEIGHT = 10;
@@ -109,6 +119,12 @@ inline double huberLossAndGrad(double err, double delta, double &outDeriv) noexc
 }
 
 } // namespace detail
+
+// Valid output widths: 7 (one value per piece) or 7 * K for a valid DAS bucket count K.
+constexpr bool isValidNnOutDim(int outDim) noexcept {
+  return outDim == NUM_PIECES
+         || (outDim > 0 && outDim % NUM_PIECES == 0 && isValidDasBucketCount(outDim / NUM_PIECES));
+}
 
 // Extracts 272 normalized floats from any 20x10 row bitmask array (works both inside and outside
 // the K16 key domain). Optional horizon[3] supplies line-count features when non-null.
@@ -346,8 +362,17 @@ public:
     return h1 > 0
            && h2 > 0
            && inDim == NN_INPUT_DIM
-           && outDim == NUM_PIECES
+           && isValidNnOutDim(outDim)
            && params.size() == totalParams(inDim, h1, h2, outDim);
+  }
+
+  // Number of DAS buckets K per piece (1 for 7-output nets).
+  int numDasBuckets() const noexcept { return outDim / NUM_PIECES; }
+
+  // Output row behind the 7-value APIs for `piece`: its highest (full-DAS) bucket.
+  int legacyOutIdx(int piece) const noexcept {
+    const int k = numDasBuckets();
+    return piece * k + (k - 1);
   }
 
   size_t offW1() const noexcept { return 0; }
@@ -361,13 +386,14 @@ public:
     return offW3() + static_cast<size_t>(outDim) * static_cast<size_t>(h2);
   }
 
-  void initRandom(int hid1, int hid2, RngMode mode, uint64_t seed) {
+  void initRandom(int hid1, int hid2, RngMode mode, uint64_t seed, int outD = NUM_PIECES) {
     assert(hid1 > 0 && hid1 <= NN_MAX_HIDDEN_DIM);
     assert(hid2 > 0 && hid2 <= NN_MAX_HIDDEN_DIM);
+    assert(isValidNnOutDim(outD));
     inDim = NN_INPUT_DIM;
     h1 = hid1;
     h2 = hid2;
-    outDim = NUM_PIECES;
+    outDim = outD;
     rngMode = mode;
     params.assign(totalParams(inDim, h1, h2, outDim), 0.0f);
 
@@ -387,24 +413,62 @@ public:
               std::sqrt(3.0 / static_cast<double>(h2)));
   }
 
-  // Forward pass from pre-extracted feature vector.
-  void forwardFeatures(const float x[NN_INPUT_DIM], float out[NUM_PIECES]) const noexcept {
-    assert(isLoaded());
-    if (h1 + h2 <= NN_FAST_STACK_SUM) {
-      alignas(16) float buf[NN_FAST_STACK_SUM];
-      forwardWithBuf(x, buf, buf + h1, out);
-    } else {
-      forwardLarge(x, out);
+  // Multi-bucket copy of a 7-output net: hidden layers are shared and each piece's output row is
+  // replicated across all `numBuckets` DAS buckets, so every bucket predicts the source value.
+  // Returns an unloaded net unless this net is a loaded 7-output net and numBuckets is valid.
+  TinyDasNet expandedToBuckets(int numBuckets) const {
+    TinyDasNet out;
+    assert(isLoaded() && outDim == NUM_PIECES && isValidDasBucketCount(numBuckets));
+    if (!isLoaded() || outDim != NUM_PIECES || !isValidDasBucketCount(numBuckets)) {
+      return out;
     }
+    out.inDim = inDim;
+    out.h1 = h1;
+    out.h2 = h2;
+    out.outDim = NUM_PIECES * numBuckets;
+    out.rngMode = rngMode;
+    out.params.assign(totalParams(out.inDim, out.h1, out.h2, out.outDim), 0.0f);
+    // W1, b1, W2, b2 share offsets; only the output layer is widened.
+    std::copy(params.begin(), params.begin() + static_cast<std::ptrdiff_t>(offW3()),
+              out.params.begin());
+    const size_t rowLen = static_cast<size_t>(h2);
+    for (int c = 0; c < NUM_PIECES; ++c) {
+      const float *srcRow = params.data() + offW3() + static_cast<size_t>(c) * rowLen;
+      for (int k = 0; k < numBuckets; ++k) {
+        const size_t o = static_cast<size_t>(rtValueIndex(c, k, numBuckets));
+        std::copy(srcRow, srcRow + rowLen,
+                  out.params.begin() + static_cast<std::ptrdiff_t>(out.offW3() + o * rowLen));
+        out.params[out.offB3() + o] = params[offB3() + static_cast<size_t>(c)];
+      }
+    }
+    return out;
+  }
+
+  // 7-value forward pass (one value per piece, full-DAS bucket) from a pre-extracted feature
+  // vector.
+  void forwardFeatures(const float x[NN_INPUT_DIM], float out[NUM_PIECES]) const noexcept {
+    const int k = numDasBuckets();
+    forwardRows(x, out, k - 1, k, NUM_PIECES);
+  }
+
+  // Full forward pass writing all outDim outputs (index c * K + k).
+  void forwardFeaturesAll(const float x[NN_INPUT_DIM], float out[NN_MAX_OUT_DIM]) const noexcept {
+    forwardRows(x, out, 0, 1, outDim);
   }
 
   float forwardFeaturesPiece(const float x[NN_INPUT_DIM], int pieceIdx) const noexcept {
-    assert(isLoaded() && pieceIdx >= 0 && pieceIdx < NUM_PIECES);
+    assert(pieceIdx >= 0 && pieceIdx < NUM_PIECES);
+    return forwardFeaturesOutput(x, legacyOutIdx(pieceIdx));
+  }
+
+  // Single output row `outIdx` in [0, outDim).
+  float forwardFeaturesOutput(const float x[NN_INPUT_DIM], int outIdx) const noexcept {
+    assert(isLoaded() && outIdx >= 0 && outIdx < outDim);
     if (h1 + h2 <= NN_FAST_STACK_SUM) {
       alignas(16) float buf[NN_FAST_STACK_SUM];
-      return forwardPieceWithBuf(x, buf, buf + h1, pieceIdx);
+      return forwardOutputWithBuf(x, buf, buf + h1, outIdx);
     }
-    return forwardPieceLarge(x, pieceIdx);
+    return forwardOutputLarge(x, outIdx);
   }
 
   void evalAll(const uint16_t rows[BOARD_ROWS], float out[NUM_PIECES],
@@ -414,11 +478,53 @@ public:
     forwardFeatures(x, out);
   }
 
+  // Writes all outDim outputs V_hat(b, c, k) at index c * numDasBuckets() + k.
+  void evalAllRt(const uint16_t rows[BOARD_ROWS], float out[NN_MAX_OUT_DIM],
+                 const float horizon[3] = nullptr) const noexcept {
+    float x[NN_INPUT_DIM];
+    extractNnFeatures20(rows, x, horizon);
+    forwardFeaturesAll(x, out);
+  }
+
   float evalPiece(const uint16_t rows[BOARD_ROWS], int pieceIdx,
                   const float horizon[3] = nullptr) const noexcept {
     float x[NN_INPUT_DIM];
     extractNnFeatures20(rows, x, horizon);
     return forwardFeaturesPiece(x, pieceIdx);
+  }
+
+  // V_hat(b, piece, bucket); bucket is clamped to [0, numDasBuckets()).
+  float evalPieceBucket(const uint16_t rows[BOARD_ROWS], int pieceIdx, int bucket,
+                        const float horizon[3] = nullptr) const noexcept {
+    assert(pieceIdx >= 0 && pieceIdx < NUM_PIECES);
+    assert(bucket >= 0 && bucket < numDasBuckets());
+    const int k = numDasBuckets();
+    const int b = std::clamp(bucket, 0, k - 1);
+    float x[NN_INPUT_DIM];
+    extractNnFeatures20(rows, x, horizon);
+    return forwardFeaturesOutput(x, rtValueIndex(pieceIdx, b, k));
+  }
+
+  // Evaluates the 7 piece outputs for a fixed DAS `bucket` using a strided 7-row Layer-3 pass.
+  void evalBucket(const uint16_t rows[BOARD_ROWS], int bucket, int numBuckets,
+                  float out[NUM_PIECES], const float horizon[3] = nullptr) const noexcept {
+    if (bucket < 0 || bucket >= numBuckets) {
+      for (int p = 0; p < NUM_PIECES; ++p)
+        out[p] = 0.0f;
+      return;
+    }
+    if (outDim == NUM_PIECES) {
+      evalAll(rows, out, horizon);
+      return;
+    }
+    if (outDim != NUM_PIECES * numBuckets) {
+      for (int p = 0; p < NUM_PIECES; ++p)
+        out[p] = 0.0f;
+      return;
+    }
+    float x[NN_INPUT_DIM];
+    extractNnFeatures20(rows, x, horizon);
+    forwardRows(x, out, bucket, numBuckets, NUM_PIECES);
   }
 
   double evalExpected(const uint16_t rows[BOARD_ROWS], RngMode mode,
@@ -507,7 +613,8 @@ public:
     }
     if (hdr.featureVersion != NN_FEATURE_VERSION_20
         || hdr.inDim != NN_INPUT_DIM
-        || hdr.outDim != NUM_PIECES
+        || hdr.outDim > static_cast<uint32_t>(NN_MAX_OUT_DIM)
+        || !isValidNnOutDim(static_cast<int>(hdr.outDim))
         || hdr.h1 == 0
         || hdr.h1 > NN_MAX_HIDDEN_DIM
         || hdr.h2 == 0
@@ -642,33 +749,45 @@ private:
     }
   }
 
-  void forwardWithBuf(const float *x, float *a1, float *a2, float out[NUM_PIECES]) const noexcept {
-    computeHidden(x, a1, a2);
-    const float *__restrict__ w3 = params.data() + offW3();
-    const float *__restrict__ b3 = params.data() + offB3();
-    for (int p = 0; p < NUM_PIECES; ++p) {
-      out[p] = b3[p]
-               + detail::dotProduct4(w3 + static_cast<size_t>(p) * static_cast<size_t>(h2), a2, h2);
+  // Writes `count` outputs: out[i] = output row (first + i * stride).
+  void forwardRows(const float *x, float *out, int first, int stride, int count) const noexcept {
+    assert(isLoaded());
+    if (h1 + h2 <= NN_FAST_STACK_SUM) {
+      alignas(16) float buf[NN_FAST_STACK_SUM];
+      forwardRowsWithBuf(x, buf, buf + h1, out, first, stride, count);
+    } else {
+      forwardRowsLarge(x, out, first, stride, count);
     }
   }
 
-  float forwardPieceWithBuf(const float *x, float *a1, float *a2, int pieceIdx) const noexcept {
+  void forwardRowsWithBuf(const float *x, float *a1, float *a2, float *out, int first, int stride,
+                          int count) const noexcept {
+    computeHidden(x, a1, a2);
+    const float *__restrict__ w3 = params.data() + offW3();
+    const float *__restrict__ b3 = params.data() + offB3();
+    for (int i = 0; i < count; ++i) {
+      const int o = first + i * stride;
+      out[i] = b3[o]
+               + detail::dotProduct4(w3 + static_cast<size_t>(o) * static_cast<size_t>(h2), a2, h2);
+    }
+  }
+
+  float forwardOutputWithBuf(const float *x, float *a1, float *a2, int outIdx) const noexcept {
     computeHidden(x, a1, a2);
     const float *__restrict__ w3 =
-        params.data() + offW3() + static_cast<size_t>(pieceIdx) * static_cast<size_t>(h2);
-    return params[offB3() + static_cast<size_t>(pieceIdx)] + detail::dotProduct4(w3, a2, h2);
+        params.data() + offW3() + static_cast<size_t>(outIdx) * static_cast<size_t>(h2);
+    return params[offB3() + static_cast<size_t>(outIdx)] + detail::dotProduct4(w3, a2, h2);
   }
 
-  DAS_NN_NOINLINE void forwardLarge(const float x[NN_INPUT_DIM],
-                                    float out[NUM_PIECES]) const noexcept {
+  DAS_NN_NOINLINE void forwardRowsLarge(const float *x, float *out, int first, int stride,
+                                        int count) const noexcept {
     float buf[NN_MAX_HIDDEN_DIM * 2];
-    forwardWithBuf(x, buf, buf + h1, out);
+    forwardRowsWithBuf(x, buf, buf + h1, out, first, stride, count);
   }
 
-  DAS_NN_NOINLINE float forwardPieceLarge(const float x[NN_INPUT_DIM],
-                                          int pieceIdx) const noexcept {
+  DAS_NN_NOINLINE float forwardOutputLarge(const float x[NN_INPUT_DIM], int outIdx) const noexcept {
     float buf[NN_MAX_HIDDEN_DIM * 2];
-    return forwardPieceWithBuf(x, buf, buf + h1, pieceIdx);
+    return forwardOutputWithBuf(x, buf, buf + h1, outIdx);
   }
 };
 
@@ -1390,6 +1509,9 @@ struct NnSoftBoundaryEval20 {
 struct LabeledMoveCand20 {
   std::array<uint16_t, BOARD_ROWS> afterRows{};
   uint8_t linesCleared = 0;
+  // Net output supervised by childValTarget / ranked by qStar. NN_OUT_IDX_NEXT_PIECE selects the
+  // 7-value output of the decision's nextPiece; otherwise must be < the trained net's outDim.
+  uint8_t outIdx = NN_OUT_IDX_NEXT_PIECE;
   double qStar = 0.0;          // r_m + gamma * V_tb(b', nextPiece) (or r_m + 0.0 for ply-2 top-out)
   double childValTarget = 0.0; // V_tb(b', nextPiece) (or 0.0 for ply-2 top-out)
 };
@@ -1399,11 +1521,64 @@ struct LabeledDecision20 {
   int curPiece = 0;
   int nextPiece = 0;
   bool boardInTb = false;
-  bool hasRankingSignal = true; // False for pure-terminal top-out supervision (childVal loss only)
-  std::array<float, NUM_PIECES> vStar{};
+  bool hasRankingSignal = true;  // False for pure-terminal top-out supervision (childVal loss only)
+  uint8_t vStarDim = NUM_PIECES; // Number of valid parent vStar entries (7 or 7 * numDasBuckets)
+  // Parent value targets; the first net.outDim entries are supervised (index c * K + k).
+  std::array<float, NN_MAX_OUT_DIM> vStar{};
   double bestQStar = 0.0;
   std::vector<LabeledMoveCand20> moves;
 };
+
+namespace detail {
+
+// Output row trained/ranked for candidate `mv` of decision `d` (may be out of range for an
+// unvalidated dataset; see validateDecisionOutIdx20).
+inline int effectiveOutIdx20(const TinyDasNet &net, const LabeledDecision20 &d,
+                             const LabeledMoveCand20 &mv) noexcept {
+  return (mv.outIdx == NN_OUT_IDX_NEXT_PIECE) ? net.legacyOutIdx(d.nextPiece)
+                                              : static_cast<int>(mv.outIdx);
+}
+
+} // namespace detail
+
+// Returns false (with a message) if any decision's vStarDim (when boardInTb) or any candidate's
+// output index is invalid for a net with `outDim` outputs.
+inline bool validateDecisionOutIdx20(const std::vector<LabeledDecision20> &data, int outDim,
+                                     std::string *errOut = nullptr) {
+  for (size_t i = 0; i < data.size(); ++i) {
+    const auto &d = data[i];
+    if (d.boardInTb && static_cast<int>(d.vStarDim) != outDim) {
+      if (errOut) {
+        *errOut = "Decision "
+                  + std::to_string(i)
+                  + " has vStarDim "
+                  + std::to_string(d.vStarDim)
+                  + " != outDim "
+                  + std::to_string(outDim);
+      }
+      return false;
+    }
+    for (const auto &mv : d.moves) {
+      const bool ok = (mv.outIdx == NN_OUT_IDX_NEXT_PIECE)
+                          ? (d.nextPiece >= 0 && d.nextPiece < NUM_PIECES)
+                          : (static_cast<int>(mv.outIdx) < outDim);
+      if (!ok) {
+        if (errOut) {
+          *errOut = "Decision "
+                    + std::to_string(i)
+                    + " has candidate outIdx "
+                    + std::to_string(mv.outIdx)
+                    + " (nextPiece "
+                    + std::to_string(d.nextPiece)
+                    + ") invalid for outDim "
+                    + std::to_string(outDim);
+        }
+        return false;
+      }
+    }
+  }
+  return true;
+}
 
 struct DistillSampleConfig20 {
   int numGames = 4000;
@@ -1671,6 +1846,7 @@ struct NnTrainConfig20 {
   double temperature = 0.35; // Boltzmann move-ranking temperature
   double gamma = 0.995;
   DiscountMode discountMode = DiscountMode::PerPiece;
+  int outDim = NUM_PIECES; // 7 or 7 * numDasBuckets (see isValidNnOutDim)
   uint64_t seed = 42ULL;
   int numThreads = 1;
   bool verbose = true;
@@ -1735,6 +1911,7 @@ inline double computeBatchSliceLossAndGrad(const TinyDasNet &net,
   const int inD = net.inDim;
   const int h1 = net.h1;
   const int h2 = net.h2;
+  const int outD = net.outDim;
   const size_t offW1 = net.offW1();
   const size_t offB1 = net.offB1();
   const size_t offW2 = net.offW2();
@@ -1780,14 +1957,14 @@ inline double computeBatchSliceLossAndGrad(const TinyDasNet &net,
       a2[k] = (a2[k] > 0.0f) ? a2[k] : 0.0f;
   };
 
+  // Accumulates gradients for output rows [oBegin, oEnd) given dLoss/dOutput in dOut (indexed by
+  // absolute output row).
   auto backpropCached = [&](const float *__restrict__ feat, const float *__restrict__ a1,
-                            const float *__restrict__ a2, const double dOut[NUM_PIECES],
-                            bool onlyPiece, int pieceIdx) {
+                            const float *__restrict__ a2, const double *dOut, int oBegin,
+                            int oEnd) {
     for (int k = 0; k < h2; ++k)
       dA2Ptr[k] = 0.0;
-    const int pStart = onlyPiece ? pieceIdx : 0;
-    const int pEnd = onlyPiece ? (pieceIdx + 1) : NUM_PIECES;
-    for (int p = pStart; p < pEnd; ++p) {
+    for (int p = oBegin; p < oEnd; ++p) {
       const double dp = dOut[p];
       if (dp == 0.0)
         continue;
@@ -1849,13 +2026,13 @@ inline double computeBatchSliceLossAndGrad(const TinyDasNet &net,
   for (int idx = 0; idx < count; ++idx) {
     const LabeledDecision20 &d = data[static_cast<size_t>(indices[idx])];
 
-    // 1. Parent 7-output Huber value loss (single extract + single forward)
+    // 1. Parent outDim-output Huber value loss (single extract + single forward)
     if (d.boardInTb && cfg.valWeight > 0.0) {
       extractNnFeatures20(d.rows.data(), parentX);
       forwardHidden(parentX, sc.parentA1.data(), sc.parentA2.data());
-      double dOut[NUM_PIECES] = {};
-      const double scale = cfg.valWeight / static_cast<double>(NUM_PIECES);
-      for (int p = 0; p < NUM_PIECES; ++p) {
+      double dOut[NN_MAX_OUT_DIM] = {};
+      const double scale = cfg.valWeight / static_cast<double>(outD);
+      for (int p = 0; p < outD; ++p) {
         const float pred = b3[p]
                            + dotProduct4(w3 + static_cast<size_t>(p) * static_cast<size_t>(h2),
                                          sc.parentA2.data(), h2);
@@ -1865,7 +2042,7 @@ inline double computeBatchSliceLossAndGrad(const TinyDasNet &net,
         totalLoss += scale * huberLossAndGrad(err, cfg.huberDelta, deriv);
         dOut[p] = scale * deriv;
       }
-      backpropCached(parentX, sc.parentA1.data(), sc.parentA2.data(), dOut, /*onlyPiece=*/false, 0);
+      backpropCached(parentX, sc.parentA1.data(), sc.parentA2.data(), dOut, 0, outD);
     }
 
     // 2 & 3 & 4. Candidate-child Huber + Terminal ply-2 top-out + Boltzmann move-ranking CE
@@ -1874,20 +2051,20 @@ inline double computeBatchSliceLossAndGrad(const TinyDasNet &net,
     const bool doChildVal = (mCnt >= 1 && cfg.childValWeight > 0.0);
     if (doChildVal || doRank) {
       sc.ensureCands(mCnt, h1, h2);
-      const int np = d.nextPiece;
-      const float *__restrict__ w3Np = w3 + static_cast<size_t>(np) * static_cast<size_t>(h2);
-      const float b3Np = b3[np];
 
       double maxTrue = -std::numeric_limits<double>::infinity();
       double maxPred = -std::numeric_limits<double>::infinity();
       for (size_t m = 0; m < mCnt; ++m) {
         const auto &mv = d.moves[m];
+        const int oi = effectiveOutIdx20(net, d, mv);
+        assert(oi >= 0 && oi < outD);
         float *mx = sc.candX.data() + m * NN_INPUT_DIM;
         float *ma1 = sc.candA1.data() + m * static_cast<size_t>(h1);
         float *ma2 = sc.candA2.data() + m * static_cast<size_t>(h2);
         extractNnFeatures20(mv.afterRows.data(), mx);
         forwardHidden(mx, ma1, ma2);
-        const double vPred = static_cast<double>(b3Np + dotProduct4(w3Np, ma2, h2));
+        const float *__restrict__ w3Row = w3 + static_cast<size_t>(oi) * static_cast<size_t>(h2);
+        const double vPred = static_cast<double>(b3[oi] + dotProduct4(w3Row, ma2, h2));
         sc.predV[m] = vPred;
         if (doRank) {
           sc.predQ[m] = REWARD_NORM_TETRIS[mv.linesCleared] + disc.f[mv.linesCleared] * vPred;
@@ -1930,11 +2107,12 @@ inline double computeBatchSliceLossAndGrad(const TinyDasNet &net,
           dPiece += cfg.rankWeight * (sc.probQ[m] - sc.probP[m]) * invT * disc.f[mv.linesCleared];
         }
         if (dPiece != 0.0) {
-          double dOut[NUM_PIECES] = {};
-          dOut[np] = dPiece;
-          backpropCached(
-              sc.candX.data() + m * NN_INPUT_DIM, sc.candA1.data() + m * static_cast<size_t>(h1),
-              sc.candA2.data() + m * static_cast<size_t>(h2), dOut, /*onlyPiece=*/true, np);
+          const int oi = effectiveOutIdx20(net, d, mv);
+          double dOut[NN_MAX_OUT_DIM] = {};
+          dOut[oi] = dPiece;
+          backpropCached(sc.candX.data() + m * NN_INPUT_DIM,
+                         sc.candA1.data() + m * static_cast<size_t>(h1),
+                         sc.candA2.data() + m * static_cast<size_t>(h2), dOut, oi, oi + 1);
         }
       }
     }
@@ -1951,16 +2129,16 @@ inline double computeBatchSliceLossAndGrad(const TinyDasNet &net,
   return computeBatchSliceLossAndGrad(net, data, indices, count, cfg, gradOut, sc);
 }
 
-} // namespace detail
-
 inline NnEvalMetrics20
-evaluateNnOnDecisions20(const TinyDasNet &net, const std::vector<LabeledDecision20> &valData,
-                        double gamma, detail::PersistentWorkerPool *pool = nullptr,
-                        DiscountMode discountMode = DiscountMode::PerPiece) noexcept {
+evaluateNnOnDecisions20Unchecked(const TinyDasNet &net,
+                                 const std::vector<LabeledDecision20> &valData, double gamma,
+                                 PersistentWorkerPool *pool = nullptr,
+                                 DiscountMode discountMode = DiscountMode::PerPiece) noexcept {
   NnEvalMetrics20 m{};
   if (!net.isLoaded() || valData.empty())
     return m;
   const int threads = (pool != nullptr) ? pool->numThreads() : 1;
+  const int outD = net.outDim;
   const StepDiscountTable20 disc = StepDiscountTable20::make(gamma, discountMode);
 
   struct alignas(128) EvalAccum {
@@ -1974,12 +2152,13 @@ evaluateNnOnDecisions20(const TinyDasNet &net, const std::vector<LabeledDecision
 
   auto runRange = [&](int tid, size_t begin, size_t end) {
     EvalAccum &a = accs[static_cast<size_t>(tid)];
-    float pred[NUM_PIECES];
+    float pred[NN_MAX_OUT_DIM];
+    float x[NN_INPUT_DIM];
     for (size_t idx = begin; idx < end; ++idx) {
       const auto &d = valData[idx];
       if (d.boardInTb) {
-        net.evalAll(d.rows.data(), pred);
-        for (int p = 0; p < NUM_PIECES; ++p) {
+        net.evalAllRt(d.rows.data(), pred);
+        for (int p = 0; p < outD; ++p) {
           a.maeSum += std::abs(static_cast<double>(pred[p])
                                - static_cast<double>(d.vStar[static_cast<size_t>(p)]));
           a.maeCnt++;
@@ -1989,10 +2168,11 @@ evaluateNnOnDecisions20(const TinyDasNet &net, const std::vector<LabeledDecision
         int bestIdx = 0;
         double bestSc = -std::numeric_limits<double>::infinity();
         for (size_t i = 0; i < d.moves.size(); ++i) {
-          const double sc =
-              REWARD_NORM_TETRIS[d.moves[i].linesCleared]
-              + disc.f[d.moves[i].linesCleared]
-                    * static_cast<double>(net.evalPiece(d.moves[i].afterRows.data(), d.nextPiece));
+          const auto &mv = d.moves[i];
+          extractNnFeatures20(mv.afterRows.data(), x);
+          const float v = net.forwardFeaturesOutput(x, effectiveOutIdx20(net, d, mv));
+          const double sc = REWARD_NORM_TETRIS[mv.linesCleared]
+                            + disc.f[mv.linesCleared] * static_cast<double>(v);
           if (i == 0 || sc > bestSc) {
             bestSc = sc;
             bestIdx = static_cast<int>(i);
@@ -2029,20 +2209,60 @@ evaluateNnOnDecisions20(const TinyDasNet &net, const std::vector<LabeledDecision
   return m;
 }
 
-// Deterministic (1T == MT) multi-task Adam trainer for TinyDasNet.
+} // namespace detail
+
+// Parent MAE over all net.outDim outputs; ranking scores each candidate with its effective output
+// (LabeledMoveCand20::outIdx). Returns NaN metrics if valData has outIdx/vStarDim values invalid
+// for net.
+inline NnEvalMetrics20
+evaluateNnOnDecisions20(const TinyDasNet &net, const std::vector<LabeledDecision20> &valData,
+                        double gamma, detail::PersistentWorkerPool *pool = nullptr,
+                        DiscountMode discountMode = DiscountMode::PerPiece) noexcept {
+  NnEvalMetrics20 m{};
+  if (!net.isLoaded() || valData.empty())
+    return m;
+  if (!validateDecisionOutIdx20(valData, net.outDim)) {
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    m.valMae = nan;
+    m.top1ExactPct = nan;
+    m.meanRegret = nan;
+    return m;
+  }
+  return detail::evaluateNnOnDecisions20Unchecked(net, valData, gamma, pool, discountMode);
+}
+
+// Deterministic (1T == MT) multi-task Adam trainer for TinyDasNet with cfg.outDim outputs.
+// When warmStart != nullptr, its h1/h2 must match cfg and its outDim must equal cfg.outDim or
+// NUM_PIECES (expanded via expandedToBuckets()). Throws std::invalid_argument on any invalid
+// configuration, warmStart mismatch, or dataset outIdx/vStarDim mismatch.
 inline TinyDasNet trainTinyDasNet(const std::vector<LabeledDecision20> &trainData,
                                   const std::vector<LabeledDecision20> &valData, RngMode rngMode,
                                   const NnTrainConfig20 &cfg,
                                   const TinyDasNet *warmStart = nullptr) {
+  if (!isValidNnOutDim(cfg.outDim)) {
+    throw std::invalid_argument("trainTinyDasNet: invalid outDim " + std::to_string(cfg.outDim));
+  }
+  std::string dataErr;
+  if (!validateDecisionOutIdx20(trainData, cfg.outDim, &dataErr)
+      || !validateDecisionOutIdx20(valData, cfg.outDim, &dataErr)) {
+    throw std::invalid_argument("trainTinyDasNet: " + dataErr);
+  }
   TinyDasNet net;
-  if (warmStart != nullptr
-      && warmStart->isLoaded()
-      && warmStart->h1 == cfg.h1
-      && warmStart->h2 == cfg.h2) {
-    net = *warmStart;
-    net.rngMode = rngMode;
+  if (warmStart != nullptr) {
+    if (!warmStart->isLoaded() || warmStart->h1 != cfg.h1 || warmStart->h2 != cfg.h2) {
+      throw std::invalid_argument("trainTinyDasNet: warmStart is unloaded or h1/h2 mismatch");
+    }
+    if (warmStart->outDim == cfg.outDim) {
+      net = *warmStart;
+      net.rngMode = rngMode;
+    } else if (warmStart->outDim == NUM_PIECES) {
+      net = warmStart->expandedToBuckets(cfg.outDim / NUM_PIECES);
+      net.rngMode = rngMode;
+    } else {
+      throw std::invalid_argument("trainTinyDasNet: warmStart outDim incompatible with cfg.outDim");
+    }
   } else {
-    net.initRandom(cfg.h1, cfg.h2, rngMode, cfg.seed);
+    net.initRandom(cfg.h1, cfg.h2, rngMode, cfg.seed, cfg.outDim);
   }
   if (trainData.empty() || cfg.epochs <= 0) {
     return net;
@@ -2151,7 +2371,7 @@ inline TinyDasNet trainTinyDasNet(const std::vector<LabeledDecision20> &trainDat
     const double epSec =
         std::chrono::duration<double>(std::chrono::steady_clock::now() - epStart).count();
     const NnEvalMetrics20 vm =
-        evaluateNnOnDecisions20(net, valData, cfg.gamma, &pool, cfg.discountMode);
+        detail::evaluateNnOnDecisions20Unchecked(net, valData, cfg.gamma, &pool, cfg.discountMode);
     const double valScore = vm.top1ExactPct - 10.0 * vm.meanRegret - 0.5 * vm.valMae;
     if (valData.empty() || valScore > bestValScore) {
       bestValScore = valScore;

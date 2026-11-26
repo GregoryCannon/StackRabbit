@@ -8,7 +8,9 @@
 #include "eval_adapter.hpp"
 #include "inspector_routes.hpp"
 #include "nnue_20row.hpp"
+#include "rt_nn_boundary_20row.hpp"
 #include "solver_20row.hpp"
+#include "solver_rt_20row.hpp"
 #include "state_gen_20row.hpp"
 #include "tablebase_io_20row.hpp"
 #include "tbnn_precompute_adapter.hpp"
@@ -21,6 +23,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <thread>
 #include <tuple>
 #include <vector>
@@ -2217,5 +2220,883 @@ TEST_CASE("DasRtMoveTables: parity, pole vaults, slow-taps, quicktaps, wall-char
       w.join();
     }
     CHECK(errCount.load() == 0);
+  }
+}
+
+TEST_CASE("Multi-bucket NNUE: 21-output save/load, legacy API collapse, finite-difference "
+          "gradients, warm-start expansion") {
+  namespace fs = std::filesystem;
+  const fs::path tmpDir = fs::temp_directory_path() / "sr_das_tb_test_multibucket_nn";
+  fs::create_directories(tmpDir);
+  std::string err;
+
+  das::Rng boardRng(4321ULL);
+  auto randomRows = [&](std::array<uint16_t, das::BOARD_ROWS> &rows, int topRow) {
+    rows.fill(0);
+    for (int r = topRow; r < das::BOARD_ROWS; ++r) {
+      rows[static_cast<size_t>(r)] = static_cast<uint16_t>(boardRng.nextU64() & 0x3FEU);
+    }
+  };
+
+  // 1. Output-width validation, save/load round trips, and hostile outDim rejection.
+  CHECK(das::isValidNnOutDim(7));
+  CHECK(das::isValidNnOutDim(14));
+  CHECK(das::isValidNnOutDim(21));
+  CHECK(!das::isValidNnOutDim(0));
+  CHECK(!das::isValidNnOutDim(8));
+  CHECK(!das::isValidNnOutDim(28));
+  CHECK(!das::isValidNnOutDim(-7));
+  for (int outDim : {14, 21}) {
+    das::TinyDasNet net;
+    net.initRandom(32, 16, das::RngMode::Nes, 31337ULL, outDim);
+    REQUIRE(net.isLoaded());
+    CHECK(net.outDim == outDim);
+    CHECK(net.numDasBuckets() == outDim / das::NUM_PIECES);
+    const std::string path = (tmpDir / ("net" + std::to_string(outDim) + ".nn.bin")).string();
+    REQUIRE(net.save(path, &err));
+    das::TinyDasNet loaded;
+    REQUIRE(loaded.load(path, &err));
+    CHECK(loaded.outDim == outDim);
+    CHECK(loaded.h1 == 32);
+    CHECK(loaded.h2 == 16);
+    CHECK(loaded.params == net.params);
+  }
+  {
+    // 7-output initialization is unchanged by the outDim parameter.
+    das::TinyDasNet a, b;
+    a.initRandom(16, 8, das::RngMode::Nes, 99ULL);
+    b.initRandom(16, 8, das::RngMode::Nes, 99ULL, das::NUM_PIECES);
+    CHECK(a.params == b.params);
+    CHECK(a.numDasBuckets() == 1);
+
+    // Self-consistent file (size matches outDim = 8) is still rejected for its outDim.
+    const std::string badPath = (tmpDir / "out8.nn.bin").string();
+    das::TinyNnHeader hdr{};
+    std::memcpy(hdr.magic, das::NN_FILE_MAGIC, sizeof(das::NN_FILE_MAGIC));
+    hdr.featureVersion = das::NN_FEATURE_VERSION_20;
+    hdr.inDim = das::NN_INPUT_DIM;
+    hdr.h1 = 16;
+    hdr.h2 = 8;
+    hdr.outDim = 8;
+    hdr.rngMode = 1;
+    const std::vector<float> junk(das::TinyDasNet::totalParams(das::NN_INPUT_DIM, 16, 8, 8), 0.1f);
+    {
+      std::ofstream out(badPath, std::ios::binary | std::ios::trunc);
+      out.write(reinterpret_cast<const char *>(&hdr), sizeof(hdr));
+      out.write(reinterpret_cast<const char *>(junk.data()),
+                static_cast<std::streamsize>(junk.size() * sizeof(float)));
+    }
+    CHECK(!a.load(badPath, &err));
+    CHECK(a.isLoaded());
+    CHECK(a.params == b.params);
+    das::TinyDasNet bad = a;
+    bad.outDim = 8;
+    bad.params.resize(das::TinyDasNet::totalParams(das::NN_INPUT_DIM, 16, 8, 8));
+    CHECK(!bad.isLoaded());
+  }
+
+  // 2. Legacy 7-value APIs on multi-bucket nets read the full-DAS bucket (bit-exact), on both the
+  // stack-buffer and large-hidden forward paths.
+  for (const auto &shape : {std::pair<int, int>{32, 16}, std::pair<int, int>{320, 128}}) {
+    for (int outDim : {14, 21}) {
+      das::TinyDasNet net;
+      net.initRandom(shape.first, shape.second, das::RngMode::Nes, 2024ULL, outDim);
+      const int kb = net.numDasBuckets();
+      for (int t = 0; t < 8; ++t) {
+        std::array<uint16_t, das::BOARD_ROWS> rows{};
+        randomRows(rows, 10 + t);
+        float all[das::NN_MAX_OUT_DIM];
+        float legacy[das::NUM_PIECES];
+        net.evalAllRt(rows.data(), all);
+        net.evalAll(rows.data(), legacy);
+        double evNes = 0.0;
+        for (int c = 0; c < das::NUM_PIECES; ++c) {
+          CHECK(net.legacyOutIdx(c) == c * kb + (kb - 1));
+          CHECK(legacy[c] == all[c * kb + (kb - 1)]);
+          CHECK(net.evalPiece(rows.data(), c) == all[c * kb + (kb - 1)]);
+          for (int k = 0; k < kb; ++k) {
+            CHECK(net.evalPieceBucket(rows.data(), c, k) == all[das::rtValueIndex(c, k, kb)]);
+          }
+          const double vc =
+              std::isfinite(legacy[c]) ? std::max(0.0, static_cast<double>(legacy[c])) : 0.0;
+          evNes += das::openingPieceProb(das::RngMode::Nes, c) * vc;
+        }
+        CHECK(net.evalExpected(rows.data(), das::RngMode::Nes) == evNes);
+      }
+    }
+  }
+
+  // 3. expandedToBuckets replicates each piece's output row across every bucket (bit-exact).
+  das::TinyDasNet base7;
+  base7.initRandom(32, 16, das::RngMode::Nes, 777ULL);
+  for (int kb : {2, 3}) {
+    const das::TinyDasNet expanded = base7.expandedToBuckets(kb);
+    REQUIRE(expanded.isLoaded());
+    CHECK(expanded.outDim == das::NUM_PIECES * kb);
+    for (int t = 0; t < 8; ++t) {
+      std::array<uint16_t, das::BOARD_ROWS> rows{};
+      randomRows(rows, 8 + t);
+      float v7[das::NUM_PIECES];
+      float vAll[das::NN_MAX_OUT_DIM];
+      base7.evalAll(rows.data(), v7);
+      expanded.evalAllRt(rows.data(), vAll);
+      for (int c = 0; c < das::NUM_PIECES; ++c) {
+        for (int k = 0; k < kb; ++k) {
+          CHECK(vAll[das::rtValueIndex(c, k, kb)] == v7[c]);
+        }
+      }
+    }
+  }
+
+  // 4. Central finite-difference gradient check on a 21-output net with candidates spanning
+  // different DAS buckets (plus one nextPiece-sentinel candidate) and 21 parent targets.
+  das::TinyDasNet net;
+  net.initRandom(16, 8, das::RngMode::Nes, 12345ULL, das::NN_MAX_OUT_DIM);
+  das::Rng rng(999ULL);
+  std::vector<das::LabeledDecision20> ds;
+  for (int d = 0; d < 4; ++d) {
+    das::LabeledDecision20 ld{};
+    for (int r = 14; r < das::BOARD_ROWS; ++r) {
+      ld.rows[static_cast<size_t>(r)] = static_cast<uint16_t>((rng.nextU64() & 0x3FEU));
+    }
+    ld.curPiece = d % das::NUM_PIECES;
+    ld.nextPiece = (d + 2) % das::NUM_PIECES;
+    ld.boardInTb = true;
+    ld.vStarDim = das::NN_MAX_OUT_DIM;
+    for (int o = 0; o < das::NN_MAX_OUT_DIM; ++o) {
+      ld.vStar[static_cast<size_t>(o)] = 2.0f + 0.15f * static_cast<float>(o + d);
+    }
+    for (int m = 0; m < 5; ++m) {
+      das::LabeledMoveCand20 mc{};
+      mc.afterRows = ld.rows;
+      mc.afterRows[13] = static_cast<uint16_t>(1U << m);
+      mc.linesCleared = static_cast<uint8_t>(m % 3);
+      // Buckets 0, 1, 2 of varying pieces, plus the nextPiece sentinel for m == 4.
+      mc.outIdx = (m == 4) ? das::NN_OUT_IDX_NEXT_PIECE
+                           : static_cast<uint8_t>(das::rtValueIndex((d + m) % das::NUM_PIECES,
+                                                                    m % das::MAX_DAS_BUCKETS,
+                                                                    das::MAX_DAS_BUCKETS));
+      mc.childValTarget = (m == 3) ? 0.0 : (1.5 + 0.4 * static_cast<double>(m));
+      mc.qStar = das::REWARD_NORM_TETRIS[mc.linesCleared] + 0.995 * mc.childValTarget;
+      ld.bestQStar = std::max(ld.bestQStar, mc.qStar);
+      ld.moves.push_back(mc);
+    }
+    ds.push_back(std::move(ld));
+  }
+  CHECK(das::validateDecisionOutIdx20(ds, das::NN_MAX_OUT_DIM));
+  CHECK(das::detail::effectiveOutIdx20(net, ds[0], ds[0].moves[4])
+        == das::rtValueIndex(ds[0].nextPiece, das::MAX_DAS_BUCKETS - 1, das::MAX_DAS_BUCKETS));
+
+  das::NnTrainConfig20 tcfg;
+  tcfg.h1 = 16;
+  tcfg.h2 = 8;
+  tcfg.outDim = das::NN_MAX_OUT_DIM;
+  tcfg.valWeight = 1.0;
+  tcfg.childValWeight = 1.0;
+  tcfg.rankWeight = 4.0;
+  tcfg.huberDelta = 0.5;
+  tcfg.temperature = 0.7;
+  tcfg.gamma = 0.995;
+
+  {
+    // Candidate-only losses touch exactly the W3 rows / b3 entries of their effective outputs.
+    das::NnTrainConfig20 candOnly = tcfg;
+    candOnly.valWeight = 0.0;
+    const int oneIdx[1] = {0};
+    std::vector<double> g(net.params.size(), 0.0);
+    das::detail::computeBatchSliceLossAndGrad(net, ds, oneIdx, 1, candOnly, g);
+    bool used[das::NN_MAX_OUT_DIM] = {};
+    for (const auto &mv : ds[0].moves) {
+      used[das::detail::effectiveOutIdx20(net, ds[0], mv)] = true;
+    }
+    for (int o = 0; o < das::NN_MAX_OUT_DIM; ++o) {
+      bool rowNonZero = (g[net.offB3() + static_cast<size_t>(o)] != 0.0);
+      for (int k = 0; k < net.h2; ++k) {
+        rowNonZero = rowNonZero || g[net.offW3() + static_cast<size_t>(o * net.h2 + k)] != 0.0;
+      }
+      if (!used[o]) {
+        CHECK(!rowNonZero);
+      }
+    }
+  }
+
+  const int oneIdx[1] = {0};
+  std::vector<double> grad(net.params.size(), 0.0);
+  const double singleLoss =
+      das::detail::computeBatchSliceLossAndGrad(net, ds, oneIdx, 1, tcfg, grad);
+  REQUIRE(std::isfinite(singleLoss));
+
+  const std::pair<size_t, size_t> blocks[6] = {
+      {net.offW1(), net.offB1()}, {net.offB1(), net.offW2()}, {net.offW2(), net.offB2()},
+      {net.offB2(), net.offW3()}, {net.offW3(), net.offB3()}, {net.offB3(), net.params.size()},
+  };
+  constexpr float EPS = 5e-3f;
+  int nonZeroChecked = 0;
+  for (int b = 0; b < 6; ++b) {
+    const size_t lo = blocks[b].first;
+    const size_t hi = blocks[b].second;
+    int checkedInBlock = 0;
+    for (size_t p = lo; p < hi && checkedInBlock < 12; ++p) {
+      if (std::abs(grad[p]) < 0.05)
+        continue;
+      const float orig = net.params[p];
+      const float pPlus = orig + EPS;
+      const float pMinus = orig - EPS;
+      const double hPos = static_cast<double>(pPlus) - static_cast<double>(orig);
+      const double hNeg = static_cast<double>(orig) - static_cast<double>(pMinus);
+      std::vector<double> dummy(net.params.size(), 0.0);
+      net.params[p] = pPlus;
+      const double lPlus =
+          das::detail::computeBatchSliceLossAndGrad(net, ds, oneIdx, 1, tcfg, dummy);
+      net.params[p] = pMinus;
+      const double lMinus =
+          das::detail::computeBatchSliceLossAndGrad(net, ds, oneIdx, 1, tcfg, dummy);
+      net.params[p] = orig;
+
+      const double fdPos = (lPlus - singleLoss) / hPos;
+      const double fdNeg = (singleLoss - lMinus) / hNeg;
+      const double kinkGap = std::abs(fdPos - fdNeg) / std::max(1e-6, std::abs(grad[p]));
+      if (kinkGap > 5e-3) {
+        continue;
+      }
+      const double fd = (lPlus - lMinus) / (hPos + hNeg);
+      const double denom = std::max({1e-6, std::abs(grad[p]), std::abs(fd)});
+      const double relErr = std::abs(grad[p] - fd) / denom;
+      CHECK(relErr < 5e-4);
+      checkedInBlock++;
+      nonZeroChecked++;
+    }
+    CHECK(checkedInBlock > 0);
+  }
+  CHECK(nonZeroChecked >= 24);
+
+  // 5. Evaluation metrics and outIdx validation.
+  const das::NnEvalMetrics20 vm = das::evaluateNnOnDecisions20(net, ds, tcfg.gamma);
+  CHECK(std::isfinite(vm.valMae));
+  CHECK(std::isfinite(vm.meanRegret));
+  {
+    std::vector<das::LabeledDecision20> badDs = ds;
+    badDs[1].moves[0].outIdx = 14; // valid for 21 outputs, invalid for 14
+    CHECK(das::validateDecisionOutIdx20(badDs, 21));
+    CHECK(!das::validateDecisionOutIdx20(badDs, 14, &err));
+    std::vector<das::LabeledDecision20> badVStarDs = ds;
+    badVStarDs[0].vStarDim = 7; // mismatches outDim = 21 when boardInTb is true
+    CHECK(!das::validateDecisionOutIdx20(badVStarDs, 21, &err));
+    das::NnTrainConfig20 cfg21Quick = tcfg;
+    cfg21Quick.epochs = 1;
+    cfg21Quick.verbose = false;
+    CHECK_THROWS_AS(das::trainTinyDasNet(badVStarDs, ds, das::RngMode::Nes, cfg21Quick),
+                    std::invalid_argument);
+    das::NnTrainConfig20 cfg14 = tcfg;
+    cfg14.outDim = 14;
+    cfg14.epochs = 1;
+    cfg14.verbose = false;
+    CHECK_THROWS_AS(das::trainTinyDasNet(badDs, ds, das::RngMode::Nes, cfg14),
+                    std::invalid_argument);
+    das::NnTrainConfig20 cfgBadDim = tcfg;
+    cfgBadDim.outDim = 8;
+    CHECK_THROWS_AS(das::trainTinyDasNet(ds, ds, das::RngMode::Nes, cfgBadDim),
+                    std::invalid_argument);
+    das::TinyDasNet net14;
+    net14.initRandom(16, 8, das::RngMode::Nes, 5ULL, 14);
+    CHECK(std::isnan(das::evaluateNnOnDecisions20(net14, badDs, tcfg.gamma).valMae));
+  }
+
+  // 6. 1T == 4T training determinism for a 21-output net.
+  tcfg.epochs = 3;
+  tcfg.batchSize = 2;
+  tcfg.verbose = false;
+  tcfg.numThreads = 1;
+  const das::TinyDasNet m1 = das::trainTinyDasNet(ds, ds, das::RngMode::Nes, tcfg);
+  tcfg.numThreads = 4;
+  const das::TinyDasNet m4 = das::trainTinyDasNet(ds, ds, das::RngMode::Nes, tcfg);
+  CHECK(m1.outDim == das::NN_MAX_OUT_DIM);
+  REQUIRE(m1.params.size() == m4.params.size());
+  for (size_t i = 0; i < m1.params.size(); ++i) {
+    CHECK(std::fabs(m1.params[i] - m4.params[i]) < 1e-6f);
+  }
+
+  // 7. Trainer warm start: a matching 7-output net of the same h1/h2 is expanded per bucket.
+  {
+    das::TinyDasNet warm7;
+    warm7.initRandom(16, 8, das::RngMode::Nes, 4242ULL);
+    das::NnTrainConfig20 wcfg = tcfg;
+    wcfg.epochs = 0;
+    const das::TinyDasNet started = das::trainTinyDasNet(ds, ds, das::RngMode::Nes, wcfg, &warm7);
+    CHECK(started.outDim == das::NN_MAX_OUT_DIM);
+    CHECK(started.params == warm7.expandedToBuckets(das::MAX_DAS_BUCKETS).params);
+    das::TinyDasNet warm21;
+    warm21.initRandom(16, 8, das::RngMode::Nes, 4243ULL, das::NN_MAX_OUT_DIM);
+    const das::TinyDasNet same = das::trainTinyDasNet(ds, ds, das::RngMode::Nes, wcfg, &warm21);
+    CHECK(same.params == warm21.params);
+    das::TinyDasNet badH1;
+    badH1.initRandom(32, 8, das::RngMode::Nes, 4244ULL, das::NN_MAX_OUT_DIM);
+    CHECK_THROWS_AS(das::trainTinyDasNet(ds, ds, das::RngMode::Nes, wcfg, &badH1),
+                    std::invalid_argument);
+    das::TinyDasNet badOut14;
+    badOut14.initRandom(16, 8, das::RngMode::Nes, 4245ULL, 14);
+    CHECK_THROWS_AS(das::trainTinyDasNet(ds, ds, das::RngMode::Nes, wcfg, &badOut14),
+                    std::invalid_argument);
+  }
+
+  fs::remove_all(tmpDir);
+}
+
+namespace {
+
+// Small semi-closed subset of BoardKeys around the empty board for V_RT solver tests.
+std::vector<das::BoardKey> makeRtTestSubset(size_t targetSize) {
+  std::vector<das::BoardKey> keys = {das::EMPTY_BOARD_KEY};
+  das::PlacementList pl;
+  uint16_t afterRows[das::BOARD_ROWS];
+  for (size_t head = 0; head < keys.size() && keys.size() < targetSize; ++head) {
+    const das::Board20 b = das::Board20::fromKey(keys[head]);
+    for (int c = 0; c < das::NUM_PIECES && keys.size() < targetSize; ++c) {
+      das::findPlacements10Hz(b, c, das::GRAVITY_L19, pl);
+      for (int m = 0; m < pl.count && keys.size() < targetSize; m += 3) {
+        const auto &p = pl.data[m];
+        das::applyPlacement20(b, c, p.rot, p.x, p.y, afterRows);
+        das::BoardKey ak;
+        if (das::encodeBoardKey(afterRows, ak)
+            && std::find(keys.begin(), keys.end(), ak) == keys.end()) {
+          keys.push_back(ak);
+        }
+      }
+    }
+  }
+  // Include a 0-hole high-ledge board (cols 3..9 filled on rows 5..19, col 0 filled on row 19,
+  // cols 1..2 open) where an O-piece with full DAS (15) shifts left 3 columns in 5 frames to clear
+  // the ledge and clear row 19, while min DAS (5) is blocked by the initial charge delay.
+  {
+    uint16_t ledgeRows[das::BOARD_ROWS] = {};
+    for (int r = 5; r < das::BOARD_ROWS; ++r) {
+      ledgeRows[r] = static_cast<uint16_t>(0x3F8U); // cols 3..9
+    }
+    ledgeRows[19] |= 0x1U; // col 0
+    das::BoardKey lk;
+    if (das::encodeBoardKey(ledgeRows, lk)
+        && std::find(keys.begin(), keys.end(), lk) == keys.end()) {
+      keys.push_back(lk);
+    }
+  }
+  std::sort(keys.begin(), keys.end());
+  return keys;
+}
+
+struct ConstSoftBoundRt {
+  static constexpr bool enabled = true;
+  void evalRowRt(const uint16_t rows[das::BOARD_ROWS], int numBuckets,
+                 double out[das::MAX_RT_VALUES_PER_BOARD]) const noexcept {
+    int h = 0;
+    for (int r = 0; r < das::BOARD_ROWS; ++r) {
+      if ((rows[r] & das::FULL_ROW_MASK) != 0U) {
+        h = das::BOARD_ROWS - r;
+        break;
+      }
+    }
+    const double base = std::max(0.0, 1.5 - 0.08 * static_cast<double>(h));
+    for (int n = 0; n < das::NUM_PIECES; ++n) {
+      for (int k = 0; k < numBuckets; ++k) {
+        out[n * numBuckets + k] = base + 0.05 * n + 0.03 * k;
+      }
+    }
+  }
+};
+
+// Brute-force V_RT oracle: plain value iteration over transitions generated by the independent
+// frame-by-frame reference move search (das_rt_move_gen_ref.hpp).
+template <typename BoundaryFn>
+std::vector<double> bruteForceRtValues(const std::vector<das::BoardKey> &keys,
+                                       const das::MoveSearchConfig &mcfg, int K, double gamma,
+                                       das::DiscountMode mode, const BoundaryFn &bound) {
+  struct Edge {
+    int child; // -1 = out of set
+    uint8_t lc;
+    int bucket;
+    double outQ[das::MAX_RT_VALUES_PER_BOARD]; // used when child < 0
+  };
+  struct Action {
+    std::vector<int> edges; // early: 1 edge; phantom: all edges
+  };
+  struct StateDef {
+    std::vector<Action> actions;
+  };
+  const das::StepDiscountTable20 disc = das::StepDiscountTable20::make(gamma, mode);
+  std::map<das::BoardKey, int> idOf;
+  for (size_t i = 0; i < keys.size(); ++i) {
+    idOf[keys[i]] = static_cast<int>(i);
+  }
+  const int vpb = das::NUM_PIECES * K;
+  std::vector<Edge> edges;
+  std::vector<StateDef> states(keys.size() * static_cast<size_t>(vpb));
+  std::vector<das::ref::RefMove> moves, phiMoves;
+  std::vector<das::DasStartState> adj;
+
+  auto makeEdge = [&](const das::Board20 &b, int c, int rot, int x, int y, int dasAfter) {
+    Edge e{};
+    uint16_t rows[das::BOARD_ROWS];
+    e.lc = das::applyPlacement20(b, c, rot, x, y, rows);
+    e.bucket = das::dasChargeToBucket(dasAfter, K);
+    das::BoardKey k;
+    const bool fits = das::encodeBoardKey(rows, k);
+    auto it = fits ? idOf.find(k) : idOf.end();
+    e.child = (it != idOf.end()) ? it->second : -1;
+    const double rew = das::REWARD_NORM_TETRIS[e.lc];
+    if (e.child < 0) {
+      double cont[das::MAX_RT_VALUES_PER_BOARD] = {};
+      if constexpr (BoundaryFn::enabled) {
+        if (fits) {
+          bound.evalRowRt(rows, K, cont);
+        }
+        for (int o = 0; o < vpb; ++o) {
+          const double cc = fits ? std::max(0.0, cont[o]) : 0.0;
+          e.outQ[o] = das::unpackTerminalPayoff(das::packTerminalPayoff(rew + disc.f[e.lc] * cc));
+        }
+      } else {
+        for (int o = 0; o < vpb; ++o)
+          e.outQ[o] = rew;
+      }
+    }
+    edges.push_back(e);
+    return static_cast<int>(edges.size() - 1);
+  };
+
+  for (size_t i = 0; i < keys.size(); ++i) {
+    const das::Board20 b = das::Board20::fromKey(keys[i]);
+    for (int c = 0; c < das::NUM_PIECES; ++c) {
+      for (int k = 0; k < K; ++k) {
+        StateDef &sd = states[i * static_cast<size_t>(vpb) + static_cast<size_t>(c * K + k)];
+        const das::DasStartState sp =
+            das::DasStartState::spawn(c, das::dasBucketRepresentativeCharge(k, K));
+        if (das::collides20(b, c, sp.x, sp.y, sp.rot)) {
+          continue;
+        }
+        if (mcfg.reactionTime <= 0) {
+          das::ref::referenceSearchMoves(b, c, sp, mcfg, false, moves, nullptr);
+          Action a;
+          for (const auto &m : moves)
+            a.edges.push_back(makeEdge(b, c, m.rot, m.x, m.y, m.dasAfter));
+          sd.actions.push_back(a);
+          continue;
+        }
+        das::ref::referenceSearchMoves(b, c, sp, mcfg, false, moves, &adj);
+        const int minRtY = static_cast<int>(sp.y)
+                           + das::rt_detail::countGravityDrops(0, mcfg.reactionTime, mcfg.gravity);
+        for (const auto &m : moves) {
+          if (m.y < minRtY) {
+            Action a;
+            a.edges.push_back(makeEdge(b, c, m.rot, m.x, m.y, m.dasAfter));
+            sd.actions.push_back(a);
+          }
+        }
+        for (const auto &phi : adj) {
+          das::ref::referenceSearchMoves(b, c, phi, mcfg, false, phiMoves, nullptr);
+          if (phiMoves.empty())
+            continue;
+          Action a;
+          for (const auto &m : phiMoves)
+            a.edges.push_back(makeEdge(b, c, m.rot, m.x, m.y, m.dasAfter));
+          sd.actions.push_back(a);
+        }
+      }
+    }
+  }
+
+  std::vector<double> v(states.size(), 0.0), vn(states.size(), 0.0);
+  for (int it = 0; it < 5000; ++it) {
+    double maxDiff = 0.0;
+    for (size_t i = 0; i < keys.size(); ++i) {
+      for (int c = 0; c < das::NUM_PIECES; ++c) {
+        for (int k = 0; k < K; ++k) {
+          const size_t si = i * static_cast<size_t>(vpb) + static_cast<size_t>(c * K + k);
+          double best = 0.0;
+          bool any = false;
+          for (const Action &a : states[si].actions) {
+            double val = 0.0;
+            for (int nx = 0; nx < das::NUM_PIECES; ++nx) {
+              double bq = -1e300;
+              for (int ei : a.edges) {
+                const Edge &e = edges[static_cast<size_t>(ei)];
+                const int o = nx * K + e.bucket;
+                const double q =
+                    (e.child >= 0)
+                        ? das::REWARD_NORM_TETRIS[e.lc]
+                              + disc.f[e.lc]
+                                    * v[static_cast<size_t>(e.child) * static_cast<size_t>(vpb)
+                                        + static_cast<size_t>(o)]
+                        : e.outQ[o];
+                bq = std::max(bq, q);
+              }
+              val += das::pieceTransitionProb(das::RngMode::Nes, c, nx) * bq;
+            }
+            if (!any || val > best) {
+              best = val;
+              any = true;
+            }
+          }
+          vn[si] = best;
+          maxDiff = std::max(maxDiff, std::abs(best - v[si]));
+        }
+      }
+    }
+    v.swap(vn);
+    if (maxDiff < 1e-12)
+      break;
+  }
+  return v;
+}
+
+das::SolveRtConfig20 makeRtCfg(int K, int threads, double gamma, das::DiscountMode mode) {
+  das::SolveRtConfig20 cfg;
+  cfg.base.rngMode = das::RngMode::Nes;
+  cfg.base.level = 19;
+  cfg.base.gamma = gamma;
+  cfg.base.discountMode = mode;
+  cfg.base.tolerance = 1e-10;
+  cfg.base.innerStopRatio = 0.01;
+  cfg.base.maxOuterIterations = 60;
+  cfg.base.innerEvalSweeps = 400;
+  cfg.base.numThreads = threads;
+  cfg.base.minParallelBoards = 16;
+  cfg.numDasBuckets = K;
+  cfg.move.enableQuicktaps = false;
+  cfg.move.reactionTime = 18;
+  return cfg;
+}
+
+struct GuardCheckBoundaryRt {
+  static constexpr bool enabled = true;
+  mutable std::atomic<int> nonFitCalls{0};
+  void evalRowRt(const uint16_t afterRows[das::BOARD_ROWS], int numBuckets,
+                 double out[das::MAX_RT_VALUES_PER_BOARD]) const noexcept {
+    das::BoardKey k;
+    if (!das::encodeBoardKey(afterRows, k)) {
+      nonFitCalls.fetch_add(1, std::memory_order_relaxed);
+    }
+    for (int o = 0; o < das::NUM_PIECES * numBuckets; ++o)
+      out[o] = 1.0;
+  }
+};
+
+} // namespace
+
+TEST_CASE("SRTBV004: write/read round trip, Mapped == Indexed, any-format key loader, and guards") {
+  namespace fs = std::filesystem;
+  const fs::path tmpDir = fs::temp_directory_path() / "sr_das_rt_tb_io";
+  fs::create_directories(tmpDir);
+  const std::string path = (tmpDir / "rt.tb.bin").string();
+  const std::string bad = (tmpDir / "bad.tb.bin").string();
+
+  const std::vector<das::BoardKey> keys = makeRtTestSubset(40);
+  for (int K : {2, 3}) {
+    const size_t vpb = static_cast<size_t>(das::NUM_PIECES * K);
+    std::vector<double> vals(keys.size() * vpb);
+    for (size_t i = 0; i < vals.size(); ++i)
+      vals[i] = 0.125 * static_cast<double>(i % 29);
+    das::TablebaseHeaderV4 hdr{};
+    hdr.rngMode = 1U;
+    hdr.rewardMode = das::REWARD_MODE_NORM_TETRIS;
+    hdr.level = 19;
+    hdr.flags = das::TB_FLAG_DISCOUNT_PER_LINE;
+    hdr.numDasBuckets = static_cast<uint32_t>(K);
+    das::fillHeaderV4MoveFields(hdr, das::MoveSearchConfig{});
+    hdr.gamma = 0.975;
+    hdr.emptyBoardValue = 3.5;
+    hdr.bellmanResidual = 1e-7;
+    std::string err;
+    REQUIRE(das::writeTablebaseV4(path, keys, vals, hdr, &err));
+
+    das::MappedDasRtTablebase mapped;
+    REQUIRE(mapped.open(path, &err, /*verifyRecords=*/true));
+    CHECK(mapped.size() == keys.size());
+    CHECK(mapped.numDasBuckets() == K);
+    CHECK(mapped.discountMode() == das::DiscountMode::PerLine);
+    const das::MoveSearchConfig rt = das::moveConfigFromHeaderV4(mapped.header());
+    CHECK(rt.reactionTime == 18);
+    CHECK(rt.enableSlowTaps);
+    CHECK(!rt.enableQuicktaps);
+    das::IndexedDasRtTablebase indexed;
+    REQUIRE(indexed.open(path, &err));
+    float rowM[das::MAX_RT_VALUES_PER_BOARD], rowI[das::MAX_RT_VALUES_PER_BOARD];
+    for (size_t i = 0; i < keys.size(); ++i) {
+      REQUIRE(mapped.lookup(keys[i], rowM));
+      REQUIRE(indexed.lookup(keys[i], rowI));
+      for (size_t v = 0; v < vpb; ++v) {
+        CHECK(rowM[v] == rowI[v]);
+        CHECK(rowM[v] == static_cast<float>(vals[i * vpb + v]));
+      }
+    }
+    std::vector<das::BoardKey> loaded;
+    REQUIRE(das::loadInputBoardKeysAnyFormat(path, loaded, &err));
+    CHECK(loaded == keys);
+
+    // Hostile inputs: negative value, bad bucket count, truncated file.
+    std::vector<double> neg = vals;
+    neg[3] = -0.5;
+    CHECK(!das::writeTablebaseV4(bad, keys, neg, hdr, &err));
+    das::TablebaseHeaderV4 badHdr = hdr;
+    badHdr.numDasBuckets = 4;
+    CHECK(!das::writeTablebaseV4(bad, keys, vals, badHdr, &err));
+    {
+      std::ifstream in(path, std::ios::binary);
+      std::vector<char> bytes((std::istreambuf_iterator<char>(in)),
+                              std::istreambuf_iterator<char>());
+      std::ofstream out(bad, std::ios::binary | std::ios::trunc);
+      out.write(bytes.data(), static_cast<std::streamsize>(bytes.size() - 5));
+    }
+    CHECK(!mapped.open(bad, &err));
+    CHECK(mapped.isLoaded()); // transactional: previous mapping preserved
+  }
+
+  CHECK(das::dasChargeToBucket(0, 3) == 0);
+  CHECK(das::dasChargeToBucket(9, 3) == 0);
+  CHECK(das::dasChargeToBucket(10, 3) == 1);
+  CHECK(das::dasChargeToBucket(14, 3) == 1);
+  CHECK(das::dasChargeToBucket(15, 3) == 2);
+  CHECK(das::dasChargeToBucket(16, 3) == 2);
+  CHECK(das::dasChargeToBucket(14, 2) == 0);
+  CHECK(das::dasChargeToBucket(16, 2) == 1);
+  CHECK(das::dasBucketRepresentativeCharge(1, 3) == 10);
+  CHECK(das::dasBucketRepresentativeCharge(1, 2) == 15);
+
+  const uint32_t w = das::packRtPolicyAction(12345U, 3, 2);
+  CHECK(das::unpackRtPolicyChild(w) == 12345U);
+  CHECK(das::unpackRtPolicyBucket(w) == 2);
+  CHECK(das::unpackPolicyLines(w) == 3);
+  CHECK(das::unpackRtPolicyChild(das::packRtPolicyAction(das::INVALID_BOARD_ID, 0, 1))
+        == das::INVALID_BOARD_ID);
+  fs::remove_all(tmpDir);
+}
+
+TEST_CASE("solve20RtMPI: brute-force oracle parity (hard & soft boundary, K = 2 / 3, rt = 0 / 18), "
+          "1T == 4T, Ram == Disk, warm start, !fitsKey guard, and RT Soft-MC") {
+  const std::vector<das::BoardKey> keys = makeRtTestSubset(90);
+  REQUIRE(keys.size() >= 60);
+
+  // 1. Hard boundary, K = 3, rt = 18, PerLine gamma = 0.9.
+  {
+    const das::SolveRtConfig20 cfg = makeRtCfg(3, 1, 0.9, das::DiscountMode::PerLine);
+    const auto res = das::solve20RtMPI(keys, cfg);
+    REQUIRE(res.ok);
+    CHECK(res.converged);
+    CHECK(res.bellmanResidual < 1e-8);
+    const auto oracle = bruteForceRtValues(keys, cfg.move, 3, 0.9, das::DiscountMode::PerLine,
+                                           das::NoOpRtBoundaryEval20{});
+    REQUIRE(oracle.size() == res.values.size());
+    double maxErr = 0.0;
+    for (size_t i = 0; i < oracle.size(); ++i)
+      maxErr = std::max(maxErr, std::abs(oracle[i] - res.values[i]));
+    CHECK(maxErr < 1e-7);
+    CHECK(res.emptyBoardValue > 0.0);
+
+    // Non-triviality: starting DAS bucket must matter on at least some boards.
+    int bucketDiffs = 0;
+    for (size_t i = 0; i < keys.size(); ++i)
+      for (int c = 0; c < das::NUM_PIECES; ++c)
+        if (std::abs(res.values[i * 21 + static_cast<size_t>(das::rtValueIndex(c, 2, 3))]
+                     - res.values[i * 21 + static_cast<size_t>(das::rtValueIndex(c, 0, 3))])
+            > 1e-9)
+          bucketDiffs++;
+    CHECK(bucketDiffs > 0);
+    const size_t e = static_cast<size_t>(
+        std::lower_bound(keys.begin(), keys.end(), das::EMPTY_BOARD_KEY) - keys.begin());
+    for (int c = 0; c < das::NUM_PIECES; ++c) {
+      CHECK(res.values[e * 21 + static_cast<size_t>(das::rtValueIndex(c, 2, 3))]
+            >= res.values[e * 21 + static_cast<size_t>(das::rtValueIndex(c, 0, 3))] - 1e-12);
+    }
+
+    // 1T == 4T and Ram == Disk exact parity.
+    das::SolveRtConfig20 cfg4 = cfg;
+    cfg4.base.numThreads = 4;
+    const auto res4 = das::solve20RtMPI(keys, cfg4);
+    REQUIRE(res4.ok);
+    CHECK(res4.values == res.values);
+    das::SolveRtConfig20 cfgDisk = cfg4;
+    cfgDisk.base.policyCacheMode = das::PolicyCacheMode::Disk;
+    const auto resDisk = das::solve20RtMPI(keys, cfgDisk);
+    REQUIRE(resDisk.ok);
+    CHECK(resDisk.usedDiskPolicyCache);
+    CHECK(resDisk.values == res.values);
+  }
+
+  // 2. Soft boundary, K = 2, rt = 18; plus !fitsKey (>= 10-hole) guard check.
+  {
+    const das::SolveRtConfig20 cfg = makeRtCfg(2, 2, 0.9, das::DiscountMode::PerLine);
+    const ConstSoftBoundRt bound{};
+    const auto res = das::solve20RtMPI(keys, cfg, nullptr, nullptr, bound);
+    REQUIRE(res.ok);
+    CHECK(res.converged);
+    const auto oracle =
+        bruteForceRtValues(keys, cfg.move, 2, 0.9, das::DiscountMode::PerLine, bound);
+    double maxErr = 0.0;
+    for (size_t i = 0; i < oracle.size(); ++i)
+      maxErr = std::max(maxErr, std::abs(oracle[i] - res.values[i]));
+    CHECK(maxErr < 1e-7);
+
+    // Craft a 9-hole board where locking a piece creates >= 10 holes (!fitsKey) and verify
+    // solve20RtMPI never invokes boundaryFn.evalRowRt on !fitsKey children.
+    uint16_t nineHoleRows[das::BOARD_ROWS] = {};
+    for (int h = 0; h < 9; ++h) {
+      const int row = 18 - (h / 5) * 2;
+      const int col = (h % 5) * 2;
+      nineHoleRows[row] |= static_cast<uint16_t>(1U << col);
+    }
+    das::BoardKey nineHoleKey;
+    REQUIRE(das::encodeBoardKey(nineHoleRows, nineHoleKey));
+    std::vector<das::BoardKey> oneBoard = {nineHoleKey};
+    GuardCheckBoundaryRt guardBound;
+    const auto gRes = das::solve20RtMPI(oneBoard, cfg, nullptr, nullptr, guardBound);
+    REQUIRE(gRes.ok);
+    CHECK(guardBound.nonFitCalls.load() == 0);
+  }
+
+  // 3. rt = 0 (no reaction-time split), K = 3, PerPiece, hard boundary.
+  {
+    das::SolveRtConfig20 cfg = makeRtCfg(3, 2, 0.85, das::DiscountMode::PerPiece);
+    cfg.move.reactionTime = 0;
+    const auto res = das::solve20RtMPI(keys, cfg);
+    REQUIRE(res.ok);
+    const auto oracle = bruteForceRtValues(keys, cfg.move, 3, 0.85, das::DiscountMode::PerPiece,
+                                           das::NoOpRtBoundaryEval20{});
+    double maxErr = 0.0;
+    for (size_t i = 0; i < oracle.size(); ++i)
+      maxErr = std::max(maxErr, std::abs(oracle[i] - res.values[i]));
+    CHECK(maxErr < 1e-7);
+  }
+
+  // 4. Warm start (V3 broadcast and V4) == cold start, then RT Soft-MC on the written TB.
+  {
+    namespace fs = std::filesystem;
+    const fs::path tmpDir = fs::temp_directory_path() / "sr_das_rt_tb_solver";
+    fs::create_directories(tmpDir);
+    const std::string v3Path = (tmpDir / "v3.tb.bin").string();
+    const std::string v4Path = (tmpDir / "v4.tb.bin").string();
+
+    das::SolveRtConfig20 cfg = makeRtCfg(3, 4, 0.9, das::DiscountMode::PerLine);
+    const ConstSoftBoundRt bound{};
+    const auto cold = das::solve20RtMPI(keys, cfg, nullptr, nullptr, bound);
+    REQUIRE(cold.ok);
+
+    // V3 warm start: broadcast the K = 3 full-DAS bucket as a SRTBV003 table.
+    std::vector<double> v3(keys.size() * das::NUM_PIECES);
+    for (size_t i = 0; i < keys.size(); ++i)
+      for (int c = 0; c < das::NUM_PIECES; ++c)
+        v3[i * das::NUM_PIECES + static_cast<size_t>(c)] =
+            cold.values[i * 21 + static_cast<size_t>(das::rtValueIndex(c, 2, 3))];
+    das::TablebaseHeaderV3 h3{};
+    h3.rngMode = 1U;
+    h3.rewardMode = das::REWARD_MODE_NORM_TETRIS;
+    h3.level = 19;
+    h3.flags = das::TB_FLAG_DISCOUNT_PER_LINE;
+    h3.gamma = 0.9;
+    REQUIRE(das::writeTablebaseV3(v3Path, keys, v3, h3));
+    das::MappedDasTablebase init3;
+    REQUIRE(init3.open(v3Path));
+    const auto warm3 = das::solve20RtMPI(keys, cfg, &init3, nullptr, bound);
+    REQUIRE(warm3.ok);
+    CHECK(warm3.warmStartMatched == keys.size());
+    for (size_t i = 0; i < cold.values.size(); ++i)
+      CHECK(std::abs(warm3.values[i] - cold.values[i]) < 1e-7);
+
+    das::TablebaseHeaderV4 h4{};
+    h4.rngMode = 1U;
+    h4.rewardMode = das::REWARD_MODE_NORM_TETRIS;
+    h4.level = 19;
+    h4.flags = das::TB_FLAG_DISCOUNT_PER_LINE;
+    h4.numDasBuckets = 3;
+    das::fillHeaderV4MoveFields(h4, cfg.move);
+    h4.gamma = 0.9;
+    h4.emptyBoardValue = cold.emptyBoardValue;
+    h4.bellmanResidual = cold.bellmanResidual;
+    REQUIRE(das::writeTablebaseV4(v4Path, keys, cold.values, h4));
+    das::MappedDasRtTablebase init4;
+    REQUIRE(init4.open(v4Path));
+    const auto warm4 = das::solve20RtMPI(keys, cfg, nullptr, &init4, bound);
+    REQUIRE(warm4.ok);
+    CHECK(warm4.outerIterations <= 2);
+    for (size_t i = 0; i < cold.values.size(); ++i)
+      CHECK(std::abs(warm4.values[i] - cold.values[i]) < 1e-7);
+
+    // Both warm-start sources at once is an error.
+    CHECK(!das::solve20RtMPI(keys, cfg, &init3, &init4, bound).ok);
+
+    // RT Soft-MC: Mapped and Indexed agree exactly, 1T == 4T, and z <= 3.5.
+    const das::DasRtMoveTables tables(cfg.move);
+    das::IndexedDasRtTablebase idx4;
+    REQUIRE(idx4.open(v4Path));
+    const auto mcM = das::evaluateSoftBoundaryMcRt20(init4, tables, 3000, 91000000ULL, 1, bound);
+    const auto mcI = das::evaluateSoftBoundaryMcRt20(idx4, tables, 3000, 91000000ULL, 4, bound);
+    CHECK(mcM.meanReturn == mcI.meanReturn);
+    CHECK(mcM.zScore <= 3.5);
+
+    // On-policy RT distillation sampler (1T == 4T) + 21-output TinyDasNet training +
+    // chooseTbNnRtMove.
+    das::DistillSampleConfig20 scfg{};
+    scfg.numGames = 16;
+    scfg.maxDecisions = 120;
+    scfg.maxPiecesPerGame = 30;
+    scfg.baseSeed = 888888ULL;
+    scfg.numThreads = 1;
+    const das::DistillDataset20 ds1 = das::sampleDistillDatasetRt20(idx4, tables, nullptr, scfg);
+    scfg.numThreads = 4;
+    const das::DistillDataset20 ds4 = das::sampleDistillDatasetRt20(idx4, tables, nullptr, scfg);
+    REQUIRE(!ds1.decisions.empty());
+    REQUIRE(ds1.decisions.size() == ds4.decisions.size());
+    CHECK(ds1.totalSteps == ds4.totalSteps);
+    CHECK(das::validateDecisionOutIdx20(ds1.decisions, das::NN_MAX_OUT_DIM));
+    for (size_t i = 0; i < ds1.decisions.size(); ++i) {
+      CHECK(ds1.decisions[i].vStarDim == das::NN_MAX_OUT_DIM);
+      CHECK(ds1.decisions[i].curPiece == ds4.decisions[i].curPiece);
+      CHECK(ds1.decisions[i].nextPiece == ds4.decisions[i].nextPiece);
+      CHECK(ds1.decisions[i].moves.size() == ds4.decisions[i].moves.size());
+    }
+
+    das::NnTrainConfig20 rtTrainCfg{};
+    rtTrainCfg.h1 = 16;
+    rtTrainCfg.h2 = 8;
+    rtTrainCfg.outDim = das::NN_MAX_OUT_DIM;
+    rtTrainCfg.epochs = 2;
+    rtTrainCfg.batchSize = 16;
+    rtTrainCfg.gamma = 0.9;
+    rtTrainCfg.discountMode = das::DiscountMode::PerLine;
+    rtTrainCfg.verbose = false;
+    const das::TinyDasNet rtNet =
+        das::trainTinyDasNet(ds1.decisions, ds1.decisions, das::RngMode::Nes, rtTrainCfg);
+    CHECK(rtNet.outDim == das::NN_MAX_OUT_DIM);
+
+    // Native V_RT runtime adapter (chooseTbNnRtMove) across rt = 0 and rt = 18, ply = 1 / 2 / 3.
+    const das::BackendContexts bc = das::BackendContexts::make10Hz();
+    const GameState emptyGs = das::board20ToGameState(das::Board20::empty(), 19, 130, bc, AGGRO);
+    das::RtDecisionWorkspace rtWs;
+    for (int rt : {0, 18}) {
+      for (int ply : {1, 2, 3}) {
+        das::TbNnPrecomputeOptions opts{};
+        opts.dasCharge = 15;
+        opts.reactionTime = rt;
+        opts.gamma = 0.9;
+        opts.discountMode = das::DiscountMode::PerLine;
+        opts.outMargin = 0.15;
+        opts.outCfg.ply = ply;
+        opts.outCfg.topK = 2;
+        const das::TbNnPrecomputeResult mv =
+            das::chooseTbNnRtMove(emptyGs, 0, 6, &idx4, &rtNet, tables, rtWs, opts, bc);
+        CHECK(mv.hasMove);
+        CHECK(mv.dasChargeAfter >= 0);
+        CHECK(mv.dasChargeAfter <= DAS_CHARGE_MAX);
+      }
+    }
+
+    init3.close();
+    init4.close();
+    fs::remove_all(tmpDir);
+  }
+
+  // 5. Config guards.
+  {
+    das::SolveRtConfig20 cfg = makeRtCfg(4, 1, 0.9, das::DiscountMode::PerLine);
+    CHECK(!das::solve20RtMPI(keys, cfg).ok);
+    cfg = makeRtCfg(3, 1, 0.9, das::DiscountMode::PerLine);
+    cfg.move.gravity = 3; // mismatches level 19
+    CHECK(!das::solve20RtMPI(keys, cfg).ok);
   }
 }

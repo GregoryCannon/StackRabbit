@@ -179,15 +179,20 @@ int boardMaxHeight(const das::Board20 &b) noexcept {
   return (b.topNonEmptyRow < das::BOARD_ROWS) ? (das::BOARD_ROWS - b.topNonEmptyRow) : 0;
 }
 
-GameOutcome runSingleGame(const BenchConfig &cfg, const das::BackendContexts &bc,
-                          double calibratedMovesPerMs7T, const das::IndexedDasTablebase *tb,
-                          const das::TinyDasNet *nn, int gameIdx, std::vector<LockPlacement> &m1,
-                          std::vector<LockPlacement> &m2) {
+GameOutcome
+runSingleGame(const BenchConfig &cfg, const das::BackendContexts &bc, double calibratedMovesPerMs7T,
+              const das::IndexedDasTablebase *tb, const das::IndexedDasRtTablebase *rtTb,
+              const das::TinyDasNet *nn,
+              const std::array<std::unique_ptr<das::DasRtMoveTables>, 4> &rtTablesByGrav,
+              das::RtDecisionWorkspace *rtWs, int gameIdx, std::vector<LockPlacement> &m1,
+              std::vector<LockPlacement> &m2) {
   das::Rng rng(cfg.seed + static_cast<uint64_t>(gameIdx) * 1009ULL);
   const bool stationary = (cfg.mode != BenchMode::Full18);
   const int startLevel = (cfg.mode == BenchMode::L19) ? 19 : 18;
   const int startLines = (cfg.mode == BenchMode::L19) ? 130 : 0;
   const int lineGoal = resolvedLineGoal(cfg);
+  const bool useRtTbPath = (rtTb != nullptr && rtTb->isLoaded())
+                           || (nn != nullptr && nn->isLoaded() && nn->outDim > das::NUM_PIECES);
 
   GameState st =
       das::board20ToGameState(das::Board20::empty(), startLevel, startLines, bc, cfg.aggro);
@@ -236,7 +241,7 @@ GameOutcome runSingleGame(const BenchConfig &cfg, const das::BackendContexts &bc
       dasCharge = cfg.useDas ? pr.dasChargeAfter : -1;
       st = pr.afterState;
       curLevel = st.level;
-    } else if (cfg.agent == AgentKind::TbNn) {
+    } else if (cfg.agent == AgentKind::TbNn && !useRtTbPath) {
       out.sumMaxHeight += static_cast<uint64_t>(boardMaxHeight(b20));
       const int gravity = das::getGravity20(curLevel);
       das::HybridMoveChoice20 ch =
@@ -259,7 +264,7 @@ GameOutcome runSingleGame(const BenchConfig &cfg, const das::BackendContexts &bc
       out.sumMaxHeight += static_cast<uint64_t>(boardMaxHeight(das::gameStateToBoard20(st)));
       das::TbNnPrecomputeOptions opts;
       opts.dasCharge = dasCharge;
-      opts.reactionTime = (out.pieces == 0) ? 0 : cfg.reactionTime;
+      opts.reactionTime = (cfg.agent == AgentKind::TbNn || out.pieces == 0) ? 0 : cfg.reactionTime;
       opts.gamma = cfg.gamma;
       opts.discountMode = cfg.discountMode;
       opts.outMargin = cfg.outMargin;
@@ -268,8 +273,15 @@ GameOutcome runSingleGame(const BenchConfig &cfg, const das::BackendContexts &bc
       opts.aggro = cfg.aggro;
       opts.stationaryLevel = stationary;
 
+      const int curGrav = das::getGravity20(st.level);
+      const das::DasRtMoveTables *curRtTables =
+          (useRtTbPath && curGrav >= 1 && curGrav <= 3)
+              ? rtTablesByGrav[static_cast<size_t>(curGrav)].get()
+              : nullptr;
       das::TbNnPrecomputeResult pr =
-          das::chooseTbNnPrecomputeMove(st, curP, nextP, tb, nn, opts, bc);
+          useRtTbPath
+              ? das::chooseTbNnRtMove(st, curP, nextP, rtTb, nn, *curRtTables, *rtWs, opts, bc)
+              : das::chooseTbNnPrecomputeMove(st, curP, nextP, tb, nn, opts, bc);
       if (!pr.hasMove)
         break;
       cleared = pr.linesCleared;
@@ -651,35 +663,68 @@ int main(int argc, char **argv) {
   }
 
   das::IndexedDasTablebase tb;
+  das::IndexedDasRtTablebase rtTb;
   if (!cfg.tbPath.empty()) {
     std::string err;
-    if (!tb.open(cfg.tbPath, &err)) {
-      fprintf(stderr, "Error loading --tb: %s\n", err.c_str());
-      return 1;
+    const std::string magic = das::peekFileMagic(cfg.tbPath);
+    if (magic == std::string(das::TABLEBASE_V4_MAGIC, 8)) {
+      if (!rtTb.open(cfg.tbPath, &err)) {
+        fprintf(stderr, "Error loading SRTBV004 --tb: %s\n", err.c_str());
+        return 1;
+      }
+      if (rtTb.rngMode() != cfg.rngMode) {
+        fprintf(stderr, "Error: --tb rng (%s) does not match --rng=%s\n",
+                das::rngModeName(rtTb.rngMode()), das::rngModeName(cfg.rngMode));
+        return 1;
+      }
+      if ((cfg.mode == BenchMode::L19 && rtTb.level() != 19)
+          || (cfg.mode == BenchMode::L18 && rtTb.level() != 18)) {
+        fprintf(stderr, "Error: --tb level (%d) does not match --mode=%s\n", rtTb.level(),
+                modeName(cfg.mode));
+        return 1;
+      }
+      if (cfg.gammaSet && std::abs(rtTb.gamma() - cfg.gamma) > 1e-9) {
+        fprintf(stderr, "Error: --gamma (%.5f) does not match --tb gamma (%.5f)\n", cfg.gamma,
+                rtTb.gamma());
+        return 1;
+      }
+      if (cfg.discountModeSet && rtTb.discountMode() != cfg.discountMode) {
+        fprintf(stderr, "Error: --discount-mode (%s) does not match --tb (%s)\n",
+                das::discountModeName(cfg.discountMode),
+                das::discountModeName(rtTb.discountMode()));
+        return 1;
+      }
+      cfg.gamma = rtTb.gamma();
+      cfg.discountMode = rtTb.discountMode();
+    } else {
+      if (!tb.open(cfg.tbPath, &err)) {
+        fprintf(stderr, "Error loading --tb: %s\n", err.c_str());
+        return 1;
+      }
+      if (tb.rngMode() != cfg.rngMode) {
+        fprintf(stderr, "Error: --tb rng (%s) does not match --rng=%s\n",
+                das::rngModeName(tb.rngMode()), das::rngModeName(cfg.rngMode));
+        return 1;
+      }
+      if ((cfg.mode == BenchMode::L19 && tb.level() != 19)
+          || (cfg.mode == BenchMode::L18 && tb.level() != 18)) {
+        fprintf(stderr, "Error: --tb level (%d) does not match --mode=%s\n", tb.level(),
+                modeName(cfg.mode));
+        return 1;
+      }
+      if (cfg.gammaSet && std::abs(tb.gamma() - cfg.gamma) > 1e-9) {
+        fprintf(stderr, "Error: --gamma (%.5f) does not match --tb gamma (%.5f)\n", cfg.gamma,
+                tb.gamma());
+        return 1;
+      }
+      if (cfg.discountModeSet && tb.discountMode() != cfg.discountMode) {
+        fprintf(stderr, "Error: --discount-mode (%s) does not match --tb (%s)\n",
+                das::discountModeName(cfg.discountMode), das::discountModeName(tb.discountMode()));
+        return 1;
+      }
+      cfg.gamma = tb.gamma();
+      cfg.discountMode = tb.discountMode();
     }
-    if (tb.rngMode() != cfg.rngMode) {
-      fprintf(stderr, "Error: --tb rng (%s) does not match --rng=%s\n",
-              das::rngModeName(tb.rngMode()), das::rngModeName(cfg.rngMode));
-      return 1;
-    }
-    if ((cfg.mode == BenchMode::L19 && tb.level() != 19)
-        || (cfg.mode == BenchMode::L18 && tb.level() != 18)) {
-      fprintf(stderr, "Error: --tb level (%d) does not match --mode=%s\n", tb.level(),
-              modeName(cfg.mode));
-      return 1;
-    }
-    if (cfg.gammaSet && std::abs(tb.gamma() - cfg.gamma) > 1e-9) {
-      fprintf(stderr, "Error: --gamma (%.5f) does not match --tb gamma (%.5f)\n", cfg.gamma,
-              tb.gamma());
-      return 1;
-    }
-    if (cfg.discountModeSet && tb.discountMode() != cfg.discountMode) {
-      fprintf(stderr, "Error: --discount-mode (%s) does not match --tb (%s)\n",
-              das::discountModeName(cfg.discountMode), das::discountModeName(tb.discountMode()));
-      return 1;
-    }
-    cfg.gamma = tb.gamma();
-    cfg.discountMode = tb.discountMode();
   }
   das::TinyDasNet nn;
   if (!cfg.nnPath.empty()) {
@@ -692,6 +737,42 @@ int main(int argc, char **argv) {
       fprintf(stderr, "Error: --nn rng (%s) does not match --rng=%s\n",
               das::rngModeName(nn.rngMode), das::rngModeName(cfg.rngMode));
       return 1;
+    }
+    if (rtTb.isLoaded() && !das::nnSupportsDasBuckets(nn, rtTb.numDasBuckets())) {
+      fprintf(stderr, "Error: --nn outDim (%d) is incompatible with SRTBV004 K=%d\n", nn.outDim,
+              rtTb.numDasBuckets());
+      return 1;
+    }
+    if (tb.isLoaded() && nn.outDim != das::NUM_PIECES) {
+      fprintf(stderr, "Error: --nn outDim (%d) must be %d when paired with SRTBV003 --tb\n",
+              nn.outDim, das::NUM_PIECES);
+      return 1;
+    }
+  }
+
+  const bool needRtTables = rtTb.isLoaded() || (nn.isLoaded() && nn.outDim > das::NUM_PIECES);
+  if (needRtTables && !cfg.useDas) {
+    fprintf(stderr, "Error: --das=0 is unsupported with SRTBV004 --tb or multi-bucket --nn\n");
+    return 1;
+  }
+  das::MoveSearchConfig rtMoveCfg =
+      rtTb.isLoaded() ? das::moveConfigFromHeaderV4(rtTb.header()) : das::MoveSearchConfig{};
+  rtMoveCfg.reactionTime = (cfg.agent == AgentKind::TbNn) ? 0 : cfg.reactionTime;
+  std::array<std::unique_ptr<das::DasRtMoveTables>, 4> rtTablesByGrav{};
+  if (needRtTables) {
+    const auto buildForGravity = [&](int g) {
+      das::MoveSearchConfig gc = rtMoveCfg;
+      gc.gravity = g;
+      rtTablesByGrav[static_cast<size_t>(g)] = std::make_unique<das::DasRtMoveTables>(gc);
+    };
+    if (cfg.mode == BenchMode::L19) {
+      buildForGravity(das::GRAVITY_L19);
+    } else if (cfg.mode == BenchMode::L18) {
+      buildForGravity(das::GRAVITY_L18);
+    } else {
+      buildForGravity(das::GRAVITY_L18);
+      buildForGravity(das::GRAVITY_L19);
+      buildForGravity(das::GRAVITY_L29);
     }
   }
 
@@ -729,13 +810,16 @@ int main(int argc, char **argv) {
         std::vector<LockPlacement> m1, m2;
         m1.reserve(64);
         m2.reserve(64);
+        std::unique_ptr<das::RtDecisionWorkspace> rtWs =
+            needRtTables ? std::make_unique<das::RtDecisionWorkspace>() : nullptr;
         while (true) {
           const int g = nextGame.fetch_add(1, std::memory_order_relaxed);
           if (g >= cfg.games)
             break;
           outcomes[static_cast<size_t>(g)] =
               runSingleGame(cfg, bc, calibratedMovesPerMs7T, tb.isLoaded() ? &tb : nullptr,
-                            nn.isLoaded() ? &nn : nullptr, g, m1, m2);
+                            rtTb.isLoaded() ? &rtTb : nullptr, nn.isLoaded() ? &nn : nullptr,
+                            rtTablesByGrav, rtWs.get(), g, m1, m2);
           const int done = doneGames.fetch_add(1, std::memory_order_relaxed) + 1;
           if (cfg.agent == AgentKind::Precompute
               && cfg.games >= 20
@@ -838,8 +922,9 @@ int main(int argc, char **argv) {
       }
     }
     printf(" gamma=%.4f[%s] tb=%s nn=%s threads=%d\n", cfg.gamma,
-           das::discountModeName(cfg.discountMode), tb.isLoaded() ? "on" : "off",
-           nn.isLoaded() ? "on" : "off", numThreads);
+           das::discountModeName(cfg.discountMode),
+           rtTb.isLoaded() ? "v4" : (tb.isLoaded() ? "on" : "off"), nn.isLoaded() ? "on" : "off",
+           numThreads);
   }
   printf("  Score:      %.0f +/- %.0f | med=%.0f p90=%.0f max=%.0f\n", meanScore, seScore, medScore,
          p90Score, maxScore);
