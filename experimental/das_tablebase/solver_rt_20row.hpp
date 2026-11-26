@@ -461,20 +461,27 @@ inline bool initializeRtValuesFromWarmStart(const std::vector<BoardKey> &sortedK
 struct RtBackupWorker {
   RtDecisionWorkspace ws;
   std::unique_ptr<SoftBoundaryCacheRt20> cache;
+  std::vector<uint32_t> depScratch;
 };
+
+inline constexpr uint8_t ALL_PIECES_MASK = static_cast<uint8_t>((1U << NUM_PIECES) - 1U);
 
 // Fills q/word for every cell of `ws` given current values vCur (in-TB children), the soft
 // boundary (out-of-TB, fitsKey children), or zero continuation. Sets sawOverflow = true on payoff
-// overflow.
+// overflow. Optionally records whether any cell landed in the tablebase and appends its childId.
 template <typename BoundaryFn>
 inline void fillRtCellValues(const Board20 &board, int piece, int numBuckets,
                              const FlatBoardIndex &index, const std::vector<double> &vCur,
                              const StepDiscountTable20 &disc, const BoundaryFn &boundaryFn,
                              SoftBoundaryCacheRt20 *cache, RtDecisionWorkspace &ws,
-                             bool &sawOverflow) noexcept {
+                             bool &sawOverflow, bool *outHasInTb = nullptr,
+                             std::vector<uint32_t> *outInTbChildren = nullptr) {
   const int vpb = NUM_PIECES * numBuckets;
   uint16_t afterRows[BOARD_ROWS];
   double cont[MAX_RT_VALUES_PER_BOARD];
+  if (outHasInTb != nullptr) {
+    *outHasInTb = false;
+  }
   for (int i = 0; i < ws.numCells(); ++i) {
     const uint8_t lc = ws.computeAfterRows(board, piece, i, afterRows);
     const RtDecisionWorkspace::Cell &cl = ws.cell(i);
@@ -491,6 +498,12 @@ inline void fillRtCellValues(const Board20 &board, int piece, int numBuckets,
     uint32_t *wc = ws.word(i);
 
     if (cid != INVALID_BOARD_ID) {
+      if (outHasInTb != nullptr) {
+        *outHasInTb = true;
+      }
+      if (outInTbChildren != nullptr) {
+        outInTbChildren->push_back(cid);
+      }
       const double *childRow = &vCur[static_cast<size_t>(cid) * static_cast<size_t>(vpb)];
       for (int n = 0; n < NUM_PIECES; ++n) {
         for (int k = 0; k < numBuckets; ++k) {
@@ -537,36 +550,102 @@ inline void fillRtCellValues(const Board20 &board, int piece, int numBuckets,
   }
 }
 
-// Full RT Bellman backup for one board: writes 7 * numBuckets values into newRow and (when
-// actionsOut != nullptr) 7 policy words per (c, k) at actionsOut[(c * K + k) * 7 + n].
+// Evaluates one piece's K bucket values from already-recorded packed RT policy words.
+inline void evalRtPieceFromPolicy20(int piece, int numBuckets, size_t zeroRowBase,
+                                    const double *__restrict__ vCurPtr,
+                                    const TransitionProbMatrix &transProb,
+                                    const StepDiscountTable20 &disc, const uint32_t *boardActs,
+                                    double *newRow) noexcept {
+  const size_t vpb = static_cast<size_t>(NUM_PIECES * numBuckets);
+  const auto &probs = transProb[static_cast<size_t>(piece)];
+  for (int k = 0; k < numBuckets; ++k) {
+    const int vi = rtValueIndex(piece, k, numBuckets);
+    const uint32_t *w = &boardActs[static_cast<size_t>(vi) * NUM_PIECES];
+    double v = 0.0;
+    for (int nx = 0; nx < NUM_PIECES; ++nx) {
+      const uint32_t packed = w[nx];
+      double q = 0.0;
+      if (isTerminalPayoff(packed)) {
+        q = unpackTerminalPayoff(packed);
+      } else {
+        const uint8_t lc = unpackPolicyLines(packed);
+        const uint32_t raw = packed & RT_ACTION_CHILD_MASK;
+        const size_t rowBase =
+            (raw == RT_ACTION_OUT_CHILD) ? zeroRowBase : static_cast<size_t>(raw) * vpb;
+        const int nextBucket = unpackRtPolicyBucket(packed);
+        q = REWARD_NORM_TETRIS[lc]
+            + disc.f[lc] * vCurPtr[rowBase + static_cast<size_t>(nx * numBuckets + nextBucket)];
+      }
+      v += probs[static_cast<size_t>(nx)] * q;
+    }
+    newRow[vi] = v;
+  }
+}
+
+// Full or partial RT Bellman backup for one board: writes 7 * numBuckets values into newRow and
+// (when policyActions != nullptr) updates the 7 policy words per (c, k) for dirty pieces.
+// Pieces with bit 0 in `dirtyPieceMask` copy their bit-identical values from `oldRow` without
+// running move generation, NN calls, or modifying `policyActions`.
+// Preconditions:
+//   - When dirtyPieceMask != ALL_PIECES_MASK: oldRow != nullptr, outHasInTbMask == nullptr, and
+//     outInTbChildren == nullptr.
+//   - When outInTbChildren != nullptr, it is cleared and filled with sorted unique childIds.
 template <typename BoundaryFn>
-inline void
-computeRtBellmanBackup20(const Board20 &board, const DasRtMoveTables &tables, int numBuckets,
-                         const FlatBoardIndex &index, const std::vector<double> &vCur,
-                         const TransitionProbMatrix &transProb, const StepDiscountTable20 &disc,
-                         const BoundaryFn &boundaryFn, RtBackupWorker &worker, double *newRow,
-                         uint32_t *actionsOut, bool &sawOverflow) noexcept {
+inline void computeRtBellmanBackup20(
+    const Board20 &board, const DasRtMoveTables &tables, int numBuckets,
+    const FlatBoardIndex &index, const std::vector<double> &vCur,
+    const TransitionProbMatrix &transProb, const StepDiscountTable20 &disc,
+    const BoundaryFn &boundaryFn, RtBackupWorker &worker, const double *oldRow, double *newRow,
+    uint32_t *policyActions, bool &sawOverflow, uint8_t dirtyPieceMask = ALL_PIECES_MASK,
+    uint8_t *outHasInTbMask = nullptr, std::vector<uint32_t> *outInTbChildren = nullptr) {
+  assert(dirtyPieceMask == ALL_PIECES_MASK
+         || (oldRow != nullptr && outHasInTbMask == nullptr && outInTbChildren == nullptr));
   int reps[MAX_DAS_BUCKETS];
   for (int k = 0; k < numBuckets; ++k) {
     reps[k] = dasBucketRepresentativeCharge(k, numBuckets);
   }
   const uint32_t emptyAct = packRtPolicyAction(INVALID_BOARD_ID, 0, 0);
+  uint8_t inTbMask = 0U;
+  if (outInTbChildren != nullptr) {
+    outInTbChildren->clear();
+  }
   for (int c = 0; c < NUM_PIECES; ++c) {
+    if (((dirtyPieceMask >> c) & 1U) == 0U) {
+      for (int k = 0; k < numBuckets; ++k) {
+        const int vi = rtValueIndex(c, k, numBuckets);
+        newRow[vi] = oldRow[vi];
+      }
+      continue;
+    }
     worker.ws.search(tables, board, c, reps, numBuckets);
+    bool pieceHasInTb = false;
     fillRtCellValues(board, c, numBuckets, index, vCur, disc, boundaryFn, worker.cache.get(),
-                     worker.ws, sawOverflow);
+                     worker.ws, sawOverflow, outHasInTbMask != nullptr ? &pieceHasInTb : nullptr,
+                     outInTbChildren);
+    if (pieceHasInTb) {
+      inTbMask = static_cast<uint8_t>(inTbMask | (1U << c));
+    }
     const auto &probs = transProb[static_cast<size_t>(c)];
     for (int k = 0; k < numBuckets; ++k) {
       const RtDecisionWorkspace::Choice ch = worker.ws.chooseAction(k, numBuckets, probs);
       newRow[rtValueIndex(c, k, numBuckets)] = ch.any ? ch.value : 0.0;
-      if (actionsOut != nullptr) {
-        uint32_t *dst = &actionsOut[static_cast<size_t>(rtValueIndex(c, k, numBuckets)) * 7];
+      if (policyActions != nullptr) {
+        uint32_t *dst =
+            &policyActions[static_cast<size_t>(rtValueIndex(c, k, numBuckets)) * NUM_PIECES];
         for (int n = 0; n < NUM_PIECES; ++n) {
           dst[n] = ch.any ? worker.ws.word(ch.cellForNext[n])[n * numBuckets + ch.bucketForNext[n]]
                           : emptyAct;
         }
       }
     }
+  }
+  if (outHasInTbMask != nullptr) {
+    *outHasInTbMask = inTbMask;
+  }
+  if (outInTbChildren != nullptr && outInTbChildren->size() > 1) {
+    std::sort(outInTbChildren->begin(), outInTbChildren->end());
+    outInTbChildren->erase(std::unique(outInTbChildren->begin(), outInTbChildren->end()),
+                           outInTbChildren->end());
   }
 }
 
@@ -673,54 +752,196 @@ inline SolveRtResult20 solve20RtMPI(const std::vector<BoardKey> &sortedKeys,
     return ev;
   };
 
-  // One full Bellman backup over all boards (policy improvement when recording actions).
-  auto runImprovement = [&](bool recordActions, double &outDiff, double &outMaxV) -> bool {
+  // Exact dependency tracking built on outer == 1 so outer >= 2 skips every (board, piece) that
+  // has zero in-TB children or whose in-TB children were bit-identical since the previous backup.
+  enum class BackupMode { CollectDeps, Incremental, Residual };
+  constexpr size_t MAX_IN_TB_CHILD_EDGES = 100'000'000ULL; // 400 MB cap
+  static_assert(MAX_IN_TB_CHILD_EDGES <= std::numeric_limits<uint32_t>::max(),
+                "MAX_IN_TB_CHILD_EDGES must fit in uint32_t offsets");
+  std::vector<uint8_t> hasInTbPieceMask(n, detail::ALL_PIECES_MASK);
+  std::vector<uint64_t> prevBoardDirtyBits((n + 63) / 64, ~uint64_t{0});
+  std::vector<uint8_t> curBoardDirty(n, 0U);
+  std::vector<uint32_t> boardInTbOffset;
+  std::vector<uint32_t> boardInTbChildren;
+  bool useChildDeps = true;
+
+  auto isPrevBoardDirty = [&](uint32_t cid) noexcept -> bool {
+    return ((prevBoardDirtyBits[cid >> 6] >> (cid & 63U)) & 1ULL) != 0ULL;
+  };
+  auto computeBoardDirtyMask = [&](size_t i) noexcept -> uint8_t {
+    uint8_t mask = hasInTbPieceMask[i];
+    if (mask != 0U && useChildDeps) {
+      const uint32_t lo = boardInTbOffset[i];
+      const uint32_t hi = boardInTbOffset[i + 1];
+      bool anyChildDirty = false;
+      for (uint32_t e = lo; e < hi; ++e) {
+        if (isPrevBoardDirty(boardInTbChildren[e])) {
+          anyChildDirty = true;
+          break;
+        }
+      }
+      if (!anyChildDirty) {
+        mask = 0U;
+      }
+    }
+    return mask;
+  };
+
+  // One full or incremental Bellman backup over all boards.
+  auto runImprovement = [&](BackupMode mode, double &outDiff, double &outMaxV,
+                            uint64_t *outSkippedPieces = nullptr) -> bool {
+    const bool recordActions = (mode != BackupMode::Residual);
+    const bool collectDeps = (mode == BackupMode::CollectDeps);
+    const bool allowSkip = (mode == BackupMode::Incremental);
     std::atomic<bool> sawNonFinite{false};
     std::atomic<bool> sawOverflow{false};
+    std::atomic<uint64_t> skippedPieces{0};
     outDiff = 0.0;
     outMaxV = 0.0;
-    for (size_t chunkBegin = 0; chunkBegin < n; chunkBegin += chunkStride) {
-      const size_t chunkEnd = std::min(n, chunkBegin + chunkStride);
+    if (collectDeps && useChildDeps) {
+      boardInTbOffset.assign(n + 1, 0U);
+      boardInTbChildren.clear();
+    }
+    // Always bound chunk size during CollectDeps so temporary per-chunk edge storage stays small
+    // even in RAM policy-cache mode.
+    const size_t loopStride =
+        (useDisk || collectDeps) ? detail::PolicyActionStore20::CHUNK_BOARDS : chunkStride;
+    std::vector<uint8_t> chunkMasks;
+    if (allowSkip) {
+      chunkMasks.resize(std::min(n, loopStride));
+    }
+
+    for (size_t chunkBegin = 0; chunkBegin < n; chunkBegin += loopStride) {
+      const size_t chunkEnd = std::min(n, chunkBegin + loopStride);
       const size_t chunkCount = chunkEnd - chunkBegin;
-      uint32_t *chunkActions =
-          recordActions ? policyStore.beginWriteChunk(chunkBegin, chunkCount) : nullptr;
+
+      size_t dirtyBoardsInChunk = chunkCount;
+      bool allFullPiecesDirty = true;
+      if (allowSkip) {
+        dirtyBoardsInChunk = 0;
+        for (size_t j = 0; j < chunkCount; ++j) {
+          const uint8_t m = computeBoardDirtyMask(chunkBegin + j);
+          chunkMasks[j] = m;
+          if (m != 0U) {
+            dirtyBoardsInChunk++;
+          }
+          if (m != detail::ALL_PIECES_MASK) {
+            allFullPiecesDirty = false;
+          }
+        }
+        if (dirtyBoardsInChunk == 0) {
+          // Entire chunk is bit-identical to the previous backup: zero move gen and zero disk I/O.
+          std::memcpy(&vNext[chunkBegin * vpb], &vCur[chunkBegin * vpb],
+                      chunkCount * vpb * sizeof(double));
+          for (size_t j = 0; j < chunkCount; ++j) {
+            const double *row = &vCur[(chunkBegin + j) * vpb];
+            for (size_t v = 0; v < vpb; ++v) {
+              outMaxV = std::max(outMaxV, row[v]);
+            }
+          }
+          skippedPieces.fetch_add(static_cast<uint64_t>(chunkCount) * NUM_PIECES,
+                                  std::memory_order_relaxed);
+          continue;
+        }
+      }
+
+      uint32_t *chunkActions = nullptr;
+      if (recordActions) {
+        if (allowSkip && !allFullPiecesDirty) {
+          chunkActions = policyStore.beginModifyChunk(chunkBegin, chunkCount, &res.error);
+          if (chunkActions == nullptr) {
+            return false;
+          }
+        } else {
+          chunkActions = policyStore.beginWriteChunk(chunkBegin, chunkCount);
+        }
+      }
+
+      std::vector<std::vector<uint32_t>> chunkDeps((collectDeps && useChildDeps) ? chunkCount : 0U);
+      std::atomic<size_t> depEdgeBudget{collectDeps && useChildDeps ? boardInTbChildren.size()
+                                                                    : 0U};
+      std::atomic<size_t> nextBoard{chunkBegin};
       std::fill(threadMaxDiff.begin(), threadMaxDiff.end(), 0.0);
       std::fill(threadMaxVal.begin(), threadMaxVal.end(), 0.0);
-      pool.runSubrange(chunkBegin, chunkEnd, std::max<size_t>(1, bc.minParallelBoards / 16),
-                       [&](int tid, size_t subBegin, size_t subEnd) {
-                         detail::RtBackupWorker &w = *workers[static_cast<size_t>(tid)];
-                         double localDiff = 0.0;
-                         double localMax = 0.0;
-                         bool localOverflow = false;
-                         double row[MAX_RT_VALUES_PER_BOARD];
-                         for (size_t i = subBegin; i < subEnd; ++i) {
-                           const Board20 board = Board20::fromKey(sortedKeys[i]);
-                           uint32_t *acts = (chunkActions != nullptr)
-                                                ? &chunkActions[(i - chunkBegin) * wordsPerBoard]
-                                                : nullptr;
-                           detail::computeRtBellmanBackup20(board, tables, K, index, vCur,
-                                                            transProb, disc, boundaryFn, w, row,
-                                                            acts, localOverflow);
-                           const double *oldRow = &vCur[i * vpb];
-                           double *dst = &vNext[i * vpb];
-                           for (size_t v = 0; v < vpb; ++v) {
-                             const double nv = row[v];
-                             if (!std::isfinite(nv)) {
-                               sawNonFinite.store(true, std::memory_order_relaxed);
-                               continue;
-                             }
-                             if (recordActions) {
-                               dst[v] = nv;
-                             }
-                             localMax = std::max(localMax, nv);
-                             localDiff = std::max(localDiff, std::abs(nv - oldRow[v]));
-                           }
-                         }
-                         if (localOverflow)
-                           sawOverflow.store(true, std::memory_order_relaxed);
-                         threadMaxDiff[static_cast<size_t>(tid)] = localDiff;
-                         threadMaxVal[static_cast<size_t>(tid)] = localMax;
-                       });
+      const size_t grabSize = allowSkip ? 256U : std::max<size_t>(64U, bc.minParallelBoards / 16U);
+
+      pool.run([&](int tid) {
+        detail::RtBackupWorker &w = *workers[static_cast<size_t>(tid)];
+        double localDiff = 0.0;
+        double localMax = 0.0;
+        bool localOverflow = false;
+        uint64_t localSkipped = 0;
+        double row[MAX_RT_VALUES_PER_BOARD];
+        while (true) {
+          const size_t subBegin = nextBoard.fetch_add(grabSize, std::memory_order_relaxed);
+          if (subBegin >= chunkEnd) {
+            break;
+          }
+          const size_t subEnd = std::min(chunkEnd, subBegin + grabSize);
+          for (size_t i = subBegin; i < subEnd; ++i) {
+            const uint8_t dirtyMask =
+                allowSkip ? chunkMasks[i - chunkBegin] : detail::ALL_PIECES_MASK;
+            const double *oldRow = &vCur[i * vpb];
+            double *dst = &vNext[i * vpb];
+            if (dirtyMask == 0U) {
+              std::memcpy(dst, oldRow, vpb * sizeof(double));
+              for (size_t v = 0; v < vpb; ++v) {
+                localMax = std::max(localMax, oldRow[v]);
+              }
+              localSkipped += NUM_PIECES;
+              continue;
+            }
+            for (int c = 0; c < NUM_PIECES; ++c) {
+              if (((dirtyMask >> c) & 1U) == 0U)
+                localSkipped++;
+            }
+            const Board20 board = Board20::fromKey(sortedKeys[i]);
+            uint32_t *acts = (chunkActions != nullptr)
+                                 ? &chunkActions[(i - chunkBegin) * wordsPerBoard]
+                                 : nullptr;
+            const bool wantDeps =
+                collectDeps
+                && useChildDeps
+                && (depEdgeBudget.load(std::memory_order_relaxed) <= MAX_IN_TB_CHILD_EDGES);
+            std::vector<uint32_t> *depTarget = wantDeps ? &w.depScratch : nullptr;
+            detail::computeRtBellmanBackup20(
+                board, tables, K, index, vCur, transProb, disc, boundaryFn, w, oldRow, row, acts,
+                localOverflow, dirtyMask, collectDeps ? &hasInTbPieceMask[i] : nullptr, depTarget);
+            if (wantDeps && !w.depScratch.empty()) {
+              const size_t prevTot =
+                  depEdgeBudget.fetch_add(w.depScratch.size(), std::memory_order_relaxed);
+              if (prevTot + w.depScratch.size() <= MAX_IN_TB_CHILD_EDGES) {
+                chunkDeps[i - chunkBegin].assign(w.depScratch.begin(), w.depScratch.end());
+              }
+            }
+            bool boardChanged = false;
+            for (size_t v = 0; v < vpb; ++v) {
+              const double nv = row[v];
+              if (!std::isfinite(nv)) {
+                sawNonFinite.store(true, std::memory_order_relaxed);
+                continue;
+              }
+              if (recordActions) {
+                dst[v] = nv;
+                if (nv != oldRow[v]) {
+                  boardChanged = true;
+                }
+              }
+              localMax = std::max(localMax, nv);
+              localDiff = std::max(localDiff, std::abs(nv - oldRow[v]));
+            }
+            if (recordActions && boardChanged) {
+              curBoardDirty[i] = 1U;
+            }
+          }
+        }
+        if (localOverflow)
+          sawOverflow.store(true, std::memory_order_relaxed);
+        if (localSkipped > 0)
+          skippedPieces.fetch_add(localSkipped, std::memory_order_relaxed);
+        threadMaxDiff[static_cast<size_t>(tid)] = localDiff;
+        threadMaxVal[static_cast<size_t>(tid)] = localMax;
+      });
       if (sawNonFinite.load()) {
         res.error = "Non-finite value encountered during RT Bellman backup";
         return false;
@@ -729,11 +950,33 @@ inline SolveRtResult20 solve20RtMPI(const std::vector<BoardKey> &sortedKeys,
         res.error = "Soft-boundary terminal payoff exceeded TERMINAL_MAX_PAYOFF";
         return false;
       }
+      if (collectDeps && useChildDeps) {
+        if (depEdgeBudget.load(std::memory_order_relaxed) > MAX_IN_TB_CHILD_EDGES) {
+          useChildDeps = false;
+          std::vector<uint32_t>().swap(boardInTbChildren);
+          std::vector<uint32_t>().swap(boardInTbOffset);
+          if (bc.verbose) {
+            printf("  [RT-MPI] in-TB dependency graph exceeded %zu edges; falling back to "
+                   "zero-child piece skipping\n",
+                   MAX_IN_TB_CHILD_EDGES);
+            fflush(stdout);
+          }
+        } else {
+          for (size_t j = 0; j < chunkCount; ++j) {
+            const auto &deps = chunkDeps[j];
+            boardInTbChildren.insert(boardInTbChildren.end(), deps.begin(), deps.end());
+            boardInTbOffset[chunkBegin + j + 1] = static_cast<uint32_t>(boardInTbChildren.size());
+          }
+        }
+      }
       outDiff = std::max(outDiff, *std::max_element(threadMaxDiff.begin(), threadMaxDiff.end()));
       outMaxV = std::max(outMaxV, *std::max_element(threadMaxVal.begin(), threadMaxVal.end()));
       if (recordActions && !policyStore.finishWriteChunk(chunkBegin, chunkCount, &res.error)) {
         return false;
       }
+    }
+    if (outSkippedPieces != nullptr) {
+      *outSkippedPieces = skippedPieces.load();
     }
     return true;
   };
@@ -762,38 +1005,24 @@ inline SolveRtResult20 solve20RtMPI(const std::vector<BoardKey> &sortedKeys,
                            const double *oldRow = &vCurPtr[i * vpb];
                            double *__restrict__ dst = &vNext[i * vpb];
                            for (int c = 0; c < NUM_PIECES; ++c) {
-                             const auto &probs = transProb[static_cast<size_t>(c)];
-                             for (int k = 0; k < K; ++k) {
-                               const int vi = rtValueIndex(c, k, K);
-                               const uint32_t *w = &acts[static_cast<size_t>(vi) * 7];
-                               double v = 0.0;
-                               for (int nx = 0; nx < NUM_PIECES; ++nx) {
-                                 const uint32_t packed = w[nx];
-                                 double q = 0.0;
-                                 if (isTerminalPayoff(packed)) {
-                                   q = unpackTerminalPayoff(packed);
-                                 } else {
-                                   const uint8_t lc = unpackPolicyLines(packed);
-                                   const uint32_t raw = packed & RT_ACTION_CHILD_MASK;
-                                   const size_t rowBase = (raw == RT_ACTION_OUT_CHILD)
-                                                              ? zeroRowBase
-                                                              : static_cast<size_t>(raw) * vpb;
-                                   q = REWARD_NORM_TETRIS[lc]
-                                       + disc.f[lc]
-                                             * vCurPtr[rowBase
-                                                       + static_cast<size_t>(
-                                                           nx * K + unpackRtPolicyBucket(packed))];
-                                 }
-                                 v += probs[static_cast<size_t>(nx)] * q;
+                             detail::evalRtPieceFromPolicy20(c, K, zeroRowBase, vCurPtr, transProb,
+                                                             disc, acts, dst);
+                           }
+                           bool boardChanged = false;
+                           for (size_t vi = 0; vi < vpb; ++vi) {
+                             const double v = dst[vi];
+                             if (!std::isfinite(v)) {
+                               sawNonFinite.store(true, std::memory_order_relaxed);
+                             } else {
+                               if (v != oldRow[vi]) {
+                                 boardChanged = true;
                                }
-                               dst[vi] = v;
-                               if (!std::isfinite(v)) {
-                                 sawNonFinite.store(true, std::memory_order_relaxed);
-                               } else {
-                                 localMax = std::max(localMax, v);
-                                 localDiff = std::max(localDiff, std::abs(v - oldRow[vi]));
-                               }
+                               localMax = std::max(localMax, v);
+                               localDiff = std::max(localDiff, std::abs(v - oldRow[vi]));
                              }
+                           }
+                           if (boardChanged && curBoardDirty[i] == 0U) {
+                             curBoardDirty[i] = 1U;
                            }
                          }
                          threadMaxDiff[static_cast<size_t>(tid)] = localDiff;
@@ -811,9 +1040,12 @@ inline SolveRtResult20 solve20RtMPI(const std::vector<BoardKey> &sortedKeys,
 
   for (int outer = 1; outer <= bc.maxOuterIterations; ++outer) {
     const auto iterStart = std::chrono::steady_clock::now();
+    std::fill(curBoardDirty.begin(), curBoardDirty.end(), static_cast<uint8_t>(0U));
     double outerDiff = 0.0;
     double outerMaxV = 0.0;
-    if (!runImprovement(/*recordActions=*/true, outerDiff, outerMaxV)) {
+    uint64_t skippedPieces = 0;
+    const BackupMode mode = (outer == 1) ? BackupMode::CollectDeps : BackupMode::Incremental;
+    if (!runImprovement(mode, outerDiff, outerMaxV, &skippedPieces)) {
       return res;
     }
     const double impSec =
@@ -851,14 +1083,23 @@ inline SolveRtResult20 solve20RtMPI(const std::vector<BoardKey> &sortedKeys,
         }
       }
     }
+    // Pack curBoardDirty into compact 1-bit/board prevBoardDirtyBits for L2-friendly child checks.
+    std::fill(prevBoardDirtyBits.begin(), prevBoardDirtyBits.end(), uint64_t{0});
+    for (size_t i = 0; i < n; ++i) {
+      if (curBoardDirty[i] != 0U) {
+        prevBoardDirtyBits[i >> 6] |= (uint64_t{1} << (i & 63U));
+      }
+    }
 
     if (bc.verbose) {
       const double iterSec =
           std::chrono::duration<double>(std::chrono::steady_clock::now() - iterStart).count();
+      const double skipPct =
+          100.0 * static_cast<double>(skippedPieces) / static_cast<double>(n * NUM_PIECES);
       printf("  [RT-MPI outer=%2d] outerDiff=%.3e inner=%d(%.2e) E[V(0,full)]=%.5f maxV=%.3f "
-             "(improve %.1fs, total %.1fs)\n",
-             outer, outerDiff, innerDone, innerDiff, emptyValue(vCur), res.maxValue, impSec,
-             iterSec);
+             "skip=%.1f%% (improve %.1fs, total %.1fs)\n",
+             outer, outerDiff, innerDone, innerDiff, emptyValue(vCur), res.maxValue, skipPct,
+             impSec, iterSec);
       fflush(stdout);
     }
     if (outerDiff <= bc.tolerance) {
@@ -868,10 +1109,16 @@ inline SolveRtResult20 solve20RtMPI(const std::vector<BoardKey> &sortedKeys,
   }
 
   policyStore.close();
+  std::vector<uint32_t>().swap(boardInTbChildren);
+  std::vector<uint32_t>().swap(boardInTbOffset);
+  std::vector<uint8_t>().swap(hasInTbPieceMask);
+  std::vector<uint64_t>().swap(prevBoardDirtyBits);
+  std::vector<uint8_t>().swap(curBoardDirty);
+
   if (cfg.exactResidual) {
     double resid = 0.0;
     double maxV = 0.0;
-    if (!runImprovement(/*recordActions=*/false, resid, maxV)) {
+    if (!runImprovement(BackupMode::Residual, resid, maxV)) {
       return res;
     }
     res.bellmanResidual = resid;

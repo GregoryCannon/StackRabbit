@@ -301,6 +301,22 @@ public:
     return ioBuf_.data();
   }
 
+  // Loads an existing chunk for in-place read-modify-write; pair with finishWriteChunk().
+  uint32_t *beginModifyChunk(size_t chunkBegin, size_t chunkCount, std::string *errOut = nullptr) {
+    assert(chunkBegin + chunkCount <= numBoards_);
+    if (!useDisk_) {
+      return ramBuf_.data() + chunkBegin * wordsPerBoard_;
+    }
+    if (chunkCount == 0) {
+      return ioBuf_.data();
+    }
+    assert(chunkCount <= CHUNK_BOARDS);
+    if (!readBytesAt(ioBuf_.data(), chunkBytes(chunkCount), boardByteOffset(chunkBegin), errOut)) {
+      return nullptr;
+    }
+    return ioBuf_.data();
+  }
+
   bool finishWriteChunk(size_t chunkBegin, size_t chunkCount, std::string *errOut = nullptr) {
     assert(chunkBegin + chunkCount <= numBoards_);
     if (!useDisk_ || chunkCount == 0) {
