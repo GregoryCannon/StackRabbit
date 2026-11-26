@@ -233,19 +233,57 @@ Prove the full 4-pillar flywheel on Stationary Level 19 (`gravity = 2`, 10 Hz) a
 
 ---
 
-## Horizon 2 (Near-Term Future): Phase 3 — Live 18-Frame Reaction Time & DAS Integration (Stationary L19)
+## Horizon 2 (Active Planning — Ready to Build): Phase 3 — Live 18-Frame Reaction Time & DAS Integration (Stationary L19)
 
-*Deferred until Phase 2B exit gate is met.* Goal: transfer our strong L19 NB engine to true live **18-frame reaction time + 10 Hz DAS** rules and decisively beat production StackRabbit `200 ms b=-2` (`338,305 ± 12,534`, `81.2%` goal, `55.1%` TRT, `195.5 ms/mv`) at `< 5 ms/mv`.
+*Goal:* Close the remaining **`-55k` gap** between our 0-frame `20M` ceiling (`450.3k`, `97.4%` goal) and live 18-frame DAS (`395.4k`, `90.0%` goal, `6.14 ms/mv`), targeting **`~415k–430k+`** (`93–96%` goal) at **`~1–3 ms/mv`** (already `+57.1k` ahead of production `200 ms b = -2`'s `338.3k`, and eliminating `~70%` of runtime latency by baking DAS carryover into `V_RT`). Every code milestone requires a parallel 3-reviewer pass per `AGENTS.md`.
 
-- [ ] **3.1 — 3-Bucket `V_RT(b, c, d)` (`d ∈ {15, 10, 5}`, `21` floats/board)**:
-  - Bake exact 18-frame precompute commitment + DAS charge carryover directly into the Bellman backup and NNUE (explicit `d = 10` bucket because NES DAS reachability is a sharp step function, not linear).
-  - Directly targets all three gaps from our 6-way diagnostic (`-21.4k` pure RT, `-9.1k` Effect 1 mid-air reversal, `-17.9k` Effect 2 cross-piece carryover).
-- [ ] **3.2 — 3-Bucket vs. 2-Bucket (`d ∈ {15, 5}`) Ablation**:
-  - Quantify the real score/survival vs. RAM/speed tradeoff of 3 buckets vs. 2 buckets.
-- [ ] **3.3 — Live-DAS On-Policy Flywheel & Benchmark vs. Production `200 ms b=-2`**:
-  - Generate on-policy live 18-frame DAS states (capturing mid-air adjustment and low-DAS recovery positions), run Soft-Boundary MPI + NNUE distillation, and verify clear win over `338.3k` (`81.2%` goal, `55.1%` TRT) on validation `seed=30000000`.
-- [ ] **3.4 — Verification & 3-Reviewer Sign-Off**:
-  - Small-board brute-force `V_RT` oracle parity, `1T == 4T`, Soft-MC `<= 3.5σ`, and full 3-reviewer pass.
+### Locked Phase 3 Design Decisions
+- **Exact RT + DAS Bellman Equation (`PerLine γ = 0.975`, `m = 0.15`):**
+  $$V_{\text{RT}}(b, c, d) = \max_{\phi \in \Phi(b, c, d)} \sum_{n=0}^{6} P(n \mid c) \max_{a \in \text{Adj}(b, c, \phi)} \Big[ r(\text{lc}_a) + \delta(\text{lc}_a) \cdot V_{\text{RT}}(b'_a, n, d'_a) \Big]$$
+- **DAS Charge Buckets (Parameterized `numDasBuckets ∈ {2, 3}`):**
+  - **3-bucket (`21` floats/board):** `d ∈ {FULL = 15, PART = 10, MIN = 5}` with exact StackRabbit thresholds (`>= 15 → 15`, `10..14 → 10`, `< 10 → 5`).
+  - **2-bucket ablation (`14` floats/board):** `d ∈ {FULL = 15, LOW = 5}` (`>= 15 → 15`, `< 15 → 5`, where `< 15` acts as `5`).
+- **Fast Bitboard Move/Phantom Architecture (`das_rt_move_gen.hpp`):**
+  - **Unified Human Input Limit (Independent Thumbs, 7.5 Hz):**
+    - **D-pad thumb:** `>= 7` frames between any two D-pad button-down events (`>= 8f` period; bans quick `L → R` reversals; holding through ARE counts as an ARE button-down → `dpadCooldown = 0` at spawn; continuous DAS hold is one button-down).
+    - **Rotate thumb (independent):** `>= 7` frames between any two `A`/`B` button-down events (`>= 8f` period; bans quick `A → B`). Replaces legacy `arrFrameIndex`/`isArrContinued` grid tracking with two tiny `0..7` cooldown counters `(dpadCooldown, rotCooldown)` carried across frame 18.
+  - **Phase A — Precomputed `4 × uint64_t` (200-bit) Swept-Path Tracks (4 bitwise ANDs each):**
+    - **First half (frames `0..17`):** Precomputed empty-board 18-frame adjustment-state table `S_adj(c, d)` when `maxH <= 9` (`topNonEmptyRow >= 11`, `~80%+` of boards cannot collide in frames `0..17`).
+    - **Second half (frames `18..arrival`):** Precomputed swept-path masks per `(s_adj, goalRot, goalX)` across three clean, configurable tracks (`MoveSearchConfig`):
+      1. **DAS track** (always on),
+      2. **Native 7.5 Hz Slow-Tap track** (`enableSlowTaps = true`, always enabled for non-full DAS spawns `das < 15` and all `dasWillReset` adjustments — eliminates legacy "fake tuck" double-shifts),
+      3. **Quicktap track** (`enableQuicktaps = false` for this pure-DAS training run, natively supported with `X.X` default = 1 release frame / `quicktapDelayFrames = 2` after the penultimate held DAS shift, `das → 0`).
+  - **Pole-Vault Fallback (`enablePoleVaults = true`):** Only runs on a direction/track when its 4-AND swept-path mask collides. Tracks `(rot ∈ 0..3, rotCooldown ∈ 0..7)` as a **32-bit (`4 × uint8_t`) DP** along the track's fixed `(x(f), y(f))` schedule (~150 ns), natively finding arbitrary-frame pole vaults (e.g. `0 → 1 → 0` / `0 → 2 → 0` over tall peaks, delayed un-rotation at the edge) while strictly enforcing the 7-frame gap on `A`/`B`, plus stack backpointers for exact input reconstruction.
+  - **Phase B — O(1) Drop + Exact Retroactive DAS + Single-Mask Wall-Charge:**
+    - Column-height O(1) drop (with overhang fallback), closed-form hold-through-fall DAS (`framesUntilLock = 2*(lockY - yFirst) + ((frameFirst & 1) == 0 ? 1 : 0)`), and single-mask mid-fall wall-charge check (`touchesScreenWall || (board_rows[yWallStart..lockY] & sideShadowMask) != 0` → `16`), deduped per `(rot, x, lockY)` keeping max ending DAS.
+  - **Phase C — Pure Real Overhang Tucks & Spins:** Overhang-driven reverse lookup (skipped 100% when the board has no overhangs!), using independent `dpadCooldown == 0` for shift tucks, `rotCooldown == 0` for spins, and both for combos, plus exact wall-charge tuck DAS (`10` + fall-hold).
+  - **Standalone Milestone First:** Build, verify, and micro-benchmark `das_rt_move_gen.hpp` completely before starting any Phase 3 training or live-DAS games; later port back to `src/backend/full_move_search.cpp` once proven.
+- **1× Leaf Scoring + 32-Bit Policy Words:**
+  - Score unique lock placements `(rot, x, y)` **once** per `(b, c)` (shared across all `d` buckets & phantoms `φ`), so key encoding, `FlatBoardIndex` probes, and Soft-Boundary NNUE calls stay `1×`.
+  - Pack `2`-bit ending bucket `d'_a` directly into existing `uint32_t` policy words (`1` terminal + `3` line-clear + `2` DAS-bucket + `26` `childId` bits = up to `67M` boards; `588 B/board` SSD cache for 3-bucket).
+- **Leak-Free 3-vs-2 Bucket Ablation Protocol:**
+  - Start **both** 3-bucket and 2-bucket `5M` flywheels from the exact same neutral 0-frame Phase 2B base (`perline975_r3.tb.bin` + `perline975_r3_128x64_cal.nn.bin` + `perline975_r3.states.bin`, broadcast across `d` on Round 1). Neither branch ever reads the other's states, TB, or NNUE across independent on-policy Rounds 2–3 (`seed = 30,000,000`).
+- **Final Scaling Target (`15M` vs. `20M`):** Deferred until after `5M` `V_RT` hit rates & 3-vs-2 ablation results are measured (`15M` = `1.5 GB` `.tb.bin` / `6.2 GB` RAM; `20M` = `2.0 GB` `.tb.bin` / `7.7 GB` RAM).
+
+### Staged Phase 3 Milestones
+- [x] **3.0 — Fast Bitboard 18f RT + DAS Move/Phantom Generator (`das_rt_move_gen.hpp`)** *(complete before any Phase 3 training/games)*:
+  - Implemented unified 7.5 Hz independent-thumb model (`dpadCooldown`, `rotCooldown`, `shiftCooldown`, ARE-hold `dpadCooldown = 0`), precomputed 18f prefix table (`maxH <= 9`, exact 0..16 DAS classes), SoA swept-path `BoardMask5` + 16 B `WalkMeta` CSR tracks (DAS + native slow-taps + configurable `X.X` quicktaps), 32-bit (`4 × uint8_t`) pole-vault DP on collisions, O(1) drop + exact retroactive DAS + bitmask wall-charges (`canFreshWallChargeFrom`), pure overhang-driven Phase C tucks/spins, and batch `searchRtMultiDas` with caller-owned `RtSearchScratch` (`53,504 B`) and fused 2 B `AdjEdge`.
+  - Hard gate (ALL PASSED, `-Wall -Wextra -Werror`, ASan+UBSan clean, `15/15` `das_tb_test` / `11,424,881` assertions):
+    1. **`0` mismatches across `23,000` boards (`393,738` moves, `301,126` phis, `133,175` early locks)** vs. brute-force frame-by-frame reference across all 7 suites (`pureDAS_rt18` 10k, `quicktap_rt18` 5k, `direct_rt18` 2k, `L29_grav1_rt18` 2k, `L18_grav3_rt18` 2k, `pureDAS_rt0` 1k, `zeroGap_rt18` 1k, full `das ∈ {0,4,5,10,11,15,16}` & `searchRtMultiDas` full payload parity),
+    2. **Independent NES physics validator:** **`0` failures across `106,648` reconstructed spawn + adjustment sequences** (`3,000` boards across L19 `qt=0/1`, L29 `grav=1`, L18 `grav=3`),
+    3. **Legacy 7.5 Hz (`"X......."`) audit (`2,000` boards, `32,946` legacy moves):** **`legOnly = 0`**, `legHigherDas = 6` (legacy 1-frame off-by-one wall-charge tuck gap cheat), `newExtra = 1,914` (`slowTap = 1,433`, `poleVault = 313`, `tuck = 168`, `other = 0`), `newHigherDas = 7,822`,
+    4. **Throughput (`2,000` boards, `2.24 MB` tables):** `1T new_rt18 = 22.33 µs/call` (`2.8×` vs. `legacy_rt18 = 63.46 µs/call`), `multi3_rt18 = 15.83 µs/das` (`47.48 µs / 3 DAS`, `4.0×` per DAS; regimes: clean `43.39`, holey `66.13`, tall `32.61`), `spawn_only = 1.92 µs/call`, `8T = 9.59 µs / 3 DAS` (`104.2k board-pieces/s`, `4.9×` scaling).
+    5. **3-Reviewer Sign-off:** Parallel independent **Logic**, **Perf & Scale**, and **Readability** subagent reviews completed; all HIGH & MEDIUM findings fixed and re-verified (`0` mismatches, ASan/UBSan clean).
+- [ ] **3.1 — `V_RT(b, c, d)` Binary Format (`SRTBV004`) & Soft-Boundary MPI Solver (`solve20RtMPI`)**:
+  - Parameterized `numDasBuckets ∈ {2, 3}`, warm-start broadcast from `SRTBV003`, `26`-bit `childId` + `2`-bit `d'` policy store, `!fitsKey → 0.0` guard, and exact live-RT Soft-MC (`z <= 3.5`).
+  - Hard gate: small-board brute-force `V_RT` oracle parity, `1T == 4T`, `Ram == Disk`, + parallel 3-reviewer sign-off.
+- [ ] **3.2 — Multi-Bucket NNUE (`outDim = 7 × numDasBuckets`) & Native `V_RT` Runtime Adapter**:
+  - Generalize `TinyDasNet` (`outDim ∈ {7, 14, 21}`), on-policy 18f live-DAS distillation sampler, and native `V_RT(b', n, d')` O(1) lookup in `tbnn_precompute_adapter.hpp` (dropping redundant `bestSecondPieceScoreForDas` sweeps on in-TB leaves) + `OUT → TB2` with `d''` + selective `ply=3[allout]`.
+  - Hard gate: unit tests + parallel 3-reviewer sign-off.
+- [ ] **3.3 — Leak-Free `5M` Live-DAS Flywheel & 3-Bucket (`{15, 10, 5}`) vs. 2-Bucket (`{15, 5}`) Ablation**:
+  - Run independent `5M` on-policy live-DAS rounds for both 3-bucket and 2-bucket from neutral `perline975_r3`, compare score/survival/TRT/latency on `seed = 30,000,000` (`500g`), and test `128×64` vs. `256×64` for 21 outputs if needed.
+- [ ] **3.4 — Capacity Scaling (`15M` or `20M`) & Phase 3 Exit Gate**:
+  - Scale winning `V_RT` config to `15M–20M` (size chosen from `5M` hit-rate data), benchmark vs. production `200 ms b = -2` (`338.3k`) and Phase 2B `20M` (`395.4k`), update retrospective, and complete final 3-reviewer sign-off.
 
 ---
 

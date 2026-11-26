@@ -3,6 +3,8 @@
 
 #include "board_key.hpp"
 #include "core_20row.hpp"
+#include "das_rt_move_gen.hpp"
+#include "das_rt_move_gen_ref.hpp"
 #include "eval_adapter.hpp"
 #include "inspector_routes.hpp"
 #include "nnue_20row.hpp"
@@ -1734,4 +1736,486 @@ TEST_CASE("Selective runtime 3-ply: AllOut, Risk, bestTbOnly floor, and precompu
   CHECK(!preTallFloor.chosenInTb); // tallOut1 (floored at ~2.0) beats tallChildK (0.5)
 
   fs::remove_all(tmpDir);
+}
+
+TEST_CASE("DasRtMoveTables: parity, pole vaults, slow-taps, quicktaps, wall-charge tucks, "
+          "edge cases, NES physics, and thread safety") {
+  using MoveKey = std::tuple<int, int, int, int>;
+  auto toSortedKeysList = [](const das::DasMoveList &ml) {
+    std::vector<MoveKey> v;
+    v.reserve(static_cast<size_t>(ml.count));
+    for (int i = 0; i < ml.count; ++i) {
+      v.emplace_back(ml.data[i].rot, ml.data[i].x, ml.data[i].y, ml.data[i].dasChargeAfter);
+    }
+    std::sort(v.begin(), v.end());
+    return v;
+  };
+  auto toSortedKeysRef = [](const std::vector<das::ref::RefMove> &rm) {
+    std::vector<MoveKey> v;
+    v.reserve(rm.size());
+    for (const auto &m : rm) {
+      v.emplace_back(m.rot, m.x, m.y, m.dasAfter);
+    }
+    std::sort(v.begin(), v.end());
+    return v;
+  };
+  auto rtResultsEqual = [](const das::DasRtSearchResult &a, const das::DasRtSearchResult &b) {
+    if (a.numUniqueCells != b.numUniqueCells
+        || a.numEarlyMoves != b.numEarlyMoves
+        || a.numAdjStates != b.numAdjStates
+        || a.numAdjEdges != b.numAdjEdges) {
+      return false;
+    }
+    std::vector<MoveKey> ea, eb;
+    for (int i = 0; i < a.numEarlyMoves; ++i) {
+      const auto &ca = a.uniqueCells[a.earlyMoves[i].cellIdx];
+      const auto &cb = b.uniqueCells[b.earlyMoves[i].cellIdx];
+      ea.emplace_back(ca.rot, ca.x, ca.y, a.earlyMoves[i].dasAfter);
+      eb.emplace_back(cb.rot, cb.x, cb.y, b.earlyMoves[i].dasAfter);
+    }
+    std::sort(ea.begin(), ea.end());
+    std::sort(eb.begin(), eb.end());
+    if (ea != eb) {
+      return false;
+    }
+    std::unordered_map<uint64_t, int> bPhiMap;
+    for (int i = 0; i < b.numAdjStates; ++i) {
+      bPhiMap[b.adjStates[i].packKey()] = i;
+    }
+    if (static_cast<int>(bPhiMap.size()) != b.numAdjStates) {
+      return false;
+    }
+    std::vector<MoveKey> ma, mb;
+    for (int i = 0; i < a.numAdjStates; ++i) {
+      auto it = bPhiMap.find(a.adjStates[i].packKey());
+      if (it == bPhiMap.end()) {
+        return false;
+      }
+      const int j = it->second;
+      ma.clear();
+      mb.clear();
+      for (int e = a.adjMoveOffset[i]; e < a.adjMoveOffset[i + 1]; ++e) {
+        const auto &c = a.uniqueCells[a.adjEdges[e].cellIdx];
+        ma.emplace_back(c.rot, c.x, c.y, a.adjEdges[e].dasAfter);
+      }
+      for (int e = b.adjMoveOffset[j]; e < b.adjMoveOffset[j + 1]; ++e) {
+        const auto &c = b.uniqueCells[b.adjEdges[e].cellIdx];
+        mb.emplace_back(c.rot, c.x, c.y, b.adjEdges[e].dasAfter);
+      }
+      std::sort(ma.begin(), ma.end());
+      std::sort(mb.begin(), mb.end());
+      if (ma != mb) {
+        return false;
+      }
+    }
+    return true;
+  };
+
+  // 1. Crafted T-piece pole vault over a tall column-4 pillar (rows 6..19, height 14):
+  //    Direct rot 0 and rot 3 (cols x+1..x+3 / x+2..x+3) clip (4,6) at frame 11 (x=1, y=5),
+  //    whereas rotating 0->1 at f=0 (cols x+1..x+2) clears col 4 and then either:
+  //      - un-rotates 1->0 at f=12 (x=0) to reach (rot=0, x=0, y=17) directly (no tuck), or
+  //      - continues 1->2->3 to reach the left-wall cell (rot=3, x=-2, y=17), which is
+  //        completely unreachable without pole vaults (even with Phase C tucks/spins!).
+  {
+    uint16_t rows[das::BOARD_ROWS] = {};
+    for (int r = 6; r < das::BOARD_ROWS; ++r) {
+      rows[r] |= das::colBitMask(4);
+    }
+    const das::Board20 pillarBoard = das::Board20::fromRows(rows);
+    das::MoveSearchConfig cfgPv;
+    cfgPv.enableQuicktaps = false;
+    cfgPv.enablePoleVaults = true;
+    das::MoveSearchConfig cfgNoPv = cfgPv;
+    cfgNoPv.enablePoleVaults = false;
+    das::DasRtMoveTables tabPv(cfgPv), tabNoPv(cfgNoPv);
+    das::DasMoveList mlPv, mlNoPv;
+    const das::DasStartState sp = das::DasStartState::spawn(/*T=*/4, 15);
+    tabPv.searchMoves(pillarBoard, 4, sp, mlPv);
+    tabNoPv.searchMoves(pillarBoard, 4, sp, mlNoPv);
+
+    bool pvReachedRot0NoTuck = false;
+    bool pvReachedLeftWallRot3 = false;
+    bool noPvReachedLeftWallRot3 = false;
+    for (int i = 0; i < mlPv.count; ++i) {
+      const auto &m = mlPv.data[i];
+      if (m.rot == 0 && m.x == 0 && m.y == 17) {
+        pvReachedRot0NoTuck = (m.tuckInput == '.') && ((m.flags & das::MOVE_FLAG_POLE_VAULT) != 0U);
+      }
+      if (m.rot == 3 && m.x == -2 && m.y == 17) {
+        pvReachedLeftWallRot3 = true;
+        CHECK((m.flags & das::MOVE_FLAG_POLE_VAULT) != 0U);
+      }
+    }
+    for (int i = 0; i < mlNoPv.count; ++i) {
+      const auto &m = mlNoPv.data[i];
+      if (m.rot == 3 && m.x == -2 && m.y == 17) {
+        noPvReachedLeftWallRot3 = true;
+      }
+    }
+    CHECK(pvReachedRot0NoTuck);
+    CHECK(pvReachedLeftWallRot3);
+    CHECK(!noPvReachedLeftWallRot3);
+    CHECK(mlPv.count > mlNoPv.count);
+
+    // Full sorted (rot, x, y, dasAfter) parity with reference + independent NES physics check.
+    std::vector<das::ref::RefMove> refMoves;
+    das::ref::referenceSearchMoves(pillarBoard, 4, sp, cfgPv, /*trackSeq=*/true, refMoves, nullptr);
+    CHECK(toSortedKeysList(mlPv) == toSortedKeysRef(refMoves));
+    for (const auto &rm : refMoves) {
+      const auto vr = das::ref::validateNesInputSequence(pillarBoard, 4, sp, rm.seq, cfgPv);
+      REQUIRE(vr.ok);
+      CHECK(vr.finalRot == rm.rot);
+      CHECK(vr.finalX == rm.x);
+      CHECK(vr.finalY == rm.y);
+      CHECK(vr.finalDas == rm.dasAfter);
+    }
+  }
+
+  // 2. Native 7.5 Hz slow-tap (3-tap from spawn das=5 reaches x=0 higher than reset+DAS)
+  //    and X.X quicktap toggle (enableQuicktaps=true reaches left wall at height 11).
+  {
+    uint16_t rows[das::BOARD_ROWS] = {};
+    // Height 10 flat stack (rows 10..19): reset+DAS 3 shifts needs frame 22 (11 drops -> locks!),
+    // while 7.5 Hz 3-tap finishes at frame 16 (8 drops -> clears height 10!).
+    for (int r = 10; r < das::BOARD_ROWS; ++r) {
+      rows[r] = static_cast<uint16_t>(das::FULL_ROW_MASK ^ das::colBitMask(9));
+    }
+    const das::Board20 b10 = das::Board20::fromRows(rows);
+    das::MoveSearchConfig cfgSt;
+    cfgSt.enableSlowTaps = true;
+    cfgSt.enableQuicktaps = false;
+    das::MoveSearchConfig cfgNoSt = cfgSt;
+    cfgNoSt.enableSlowTaps = false;
+    das::DasRtMoveTables tabSt(cfgSt), tabNoSt(cfgNoSt);
+    das::DasMoveList mlSt, mlNoSt;
+    const das::DasStartState sp5 = das::DasStartState::spawn(/*O=*/1, 5);
+    tabSt.searchMoves(b10, 1, sp5, mlSt);
+    tabNoSt.searchMoves(b10, 1, sp5, mlNoSt);
+
+    bool stReachedX0 = false;
+    bool noStReachedX0 = false;
+    for (int i = 0; i < mlSt.count; ++i) {
+      if (mlSt.data[i].x == 0) {
+        stReachedX0 = true;
+        CHECK((mlSt.data[i].flags & das::MOVE_FLAG_SLOW_TAP) != 0U);
+      }
+    }
+    for (int i = 0; i < mlNoSt.count; ++i) {
+      if (mlNoSt.data[i].x == 0) {
+        noStReachedX0 = true;
+      }
+    }
+    CHECK(stReachedX0);
+    CHECK(!noStReachedX0);
+
+    // Quicktap test: O-piece with das=15, height 11 (rows 9..19, lockY=6).
+    // DAS 3 shifts to x=0 lands at f=12 (y=5), 4th DAS shift is at f=18 (locks at f=15, y=6!),
+    // while X.X quicktap fires at f=14 (y=6, bottom at row 8 -> clears row 9!).
+    uint16_t rows11[das::BOARD_ROWS] = {};
+    for (int r = 9; r < das::BOARD_ROWS; ++r) {
+      rows11[r] = static_cast<uint16_t>(das::FULL_ROW_MASK ^ das::colBitMask(9));
+    }
+    const das::Board20 b11 = das::Board20::fromRows(rows11);
+    das::MoveSearchConfig cfgQt = cfgSt;
+    cfgQt.enableQuicktaps = true;
+    das::DasRtMoveTables tabQt(cfgQt);
+    das::DasMoveList mlQt, mlNoQt;
+    const das::DasStartState sp15 = das::DasStartState::spawn(/*O=*/1, 15);
+    tabQt.searchMoves(b11, 1, sp15, mlQt);
+    tabSt.searchMoves(b11, 1, sp15, mlNoQt);
+    bool qtReachedLeftWall = false;
+    bool noQtReachedLeftWall = false;
+    for (int i = 0; i < mlQt.count; ++i) {
+      if (mlQt.data[i].x == -1) {
+        qtReachedLeftWall = true;
+        CHECK((mlQt.data[i].flags & das::MOVE_FLAG_QUICKTAP) != 0U);
+      }
+    }
+    for (int i = 0; i < mlNoQt.count; ++i) {
+      if (mlNoQt.data[i].x == -1) {
+        noQtReachedLeftWall = true;
+      }
+    }
+    CHECK(qtReachedLeftWall);
+    CHECK(!noQtReachedLeftWall);
+  }
+
+  // 3. Independent-thumb cooldown validator tests:
+  //    - Quick L->R or A->B within 7 frames MUST be rejected by NES physics validator,
+  //    - '_' ARE marker MUST be rejected when dasCharge <= 5,
+  //    - Independent L on frame 0 + A on frame 1 MUST be accepted,
+  //    - ARE hold '_' starts with dpadCooldown = 0 (allows X.X quicktap on frame 2).
+  {
+    const das::Board20 emptyB = das::Board20::empty();
+    das::MoveSearchConfig cfg;
+    const das::DasStartState sp5 = das::DasStartState::spawn(/*T=*/4, 5);
+    const das::DasStartState sp15 = das::DasStartState::spawn(/*T=*/4, 15);
+    // Quick L (f=0) -> R (f=2): violates 7-frame D-pad gap!
+    CHECK(!das::ref::validateNesInputSequence(emptyB, 4, sp5,
+                                              "L.R...................................", cfg)
+               .ok);
+    // Quick A (f=0) -> B (f=2): violates 7-frame rotate gap!
+    CHECK(!das::ref::validateNesInputSequence(emptyB, 4, sp5,
+                                              "A.B...................................", cfg)
+               .ok);
+    // ARE hold '_' illegal when das <= 5!
+    std::string badAre = "_L";
+    badAre.append(37, '.');
+    CHECK(!das::ref::validateNesInputSequence(emptyB, 4, sp5, badAre, cfg).ok);
+    // Independent L (f=0) + A (f=1): legal! (38 frames f=0..37 to lock at y=17 from y=-1)
+    std::string indSeq = "LA";
+    indSeq.append(36, '.');
+    const auto vrInd = das::ref::validateNesInputSequence(emptyB, 4, sp5, indSeq, cfg);
+    CHECK(vrInd.ok);
+    CHECK(vrInd.finalX == 2);
+    CHECK(vrInd.finalRot == 1);
+    // ARE hold '_' (f=0 L, f=1 '.', f=2 L quicktap): legal with dpadCooldown=0 at spawn!
+    std::string qtSeq = "_L.L";
+    qtSeq.append(35, '.');
+    const auto vrQt = das::ref::validateNesInputSequence(emptyB, 4, sp15, qtSeq, cfg);
+    CHECK(vrQt.ok);
+    CHECK(vrQt.finalX == 1);
+    CHECK(vrQt.finalDas == 0);
+  }
+
+  // 4. Edge-case & config regressions:
+  //    - Row-0 block + hole + I-piece (under-surface clamp & zero OOB/UB),
+  //    - Stationary startDas in {0, 4, 5, 10, 11, 15, 16} exact dasCharge preservation,
+  //    - Crafted Phase C wall-charge overhang tuck (MOVE_FLAG_TUCK | MOVE_FLAG_WALL_CHARGE),
+  //    - Gravity 1 (L29), Gravity 3 (L18), rt=0, dpadGapFrames=0 parity,
+  //    - Topped-out board, MoveSearchConfig::isValid(), and dasBucket* helpers.
+  {
+    // 4a. Row-0 block + hole + I-piece
+    uint16_t row0Rows[das::BOARD_ROWS] = {};
+    row0Rows[0] = das::colBitMask(0) | das::colBitMask(9);
+    row0Rows[1] = das::colBitMask(0); // hole under (9, 0)
+    const das::Board20 row0Board = das::Board20::fromRows(row0Rows);
+    das::MoveSearchConfig cfg;
+    das::DasRtMoveTables tables(cfg);
+    das::DasMoveList ml;
+    const das::DasStartState spI = das::DasStartState::spawn(/*I=*/0, 15);
+    tables.searchMoves(row0Board, 0, spI, ml);
+    std::vector<das::ref::RefMove> refMoves;
+    das::ref::referenceSearchMoves(row0Board, 0, spI, cfg, /*trackSeq=*/true, refMoves, nullptr);
+    CHECK(toSortedKeysList(ml) == toSortedKeysRef(refMoves));
+    for (const auto &rm : refMoves) {
+      const auto vr = das::ref::validateNesInputSequence(row0Board, 0, spI, rm.seq, cfg);
+      REQUIRE(vr.ok);
+    }
+
+    // 4b. Stationary startDas in {0, 4, 5, 10, 11, 15, 16} exact preservation on empty board
+    const das::Board20 emptyB = das::Board20::empty();
+    das::DasRtSearchResult rtRes;
+    for (int sd : {0, 4, 5, 10, 11, 15, 16}) {
+      const das::DasStartState spT = das::DasStartState::spawn(/*T=*/4, sd);
+      tables.searchMoves(emptyB, 4, spT, ml);
+      das::ref::referenceSearchMoves(emptyB, 4, spT, cfg, false, refMoves, nullptr);
+      CHECK(toSortedKeysList(ml) == toSortedKeysRef(refMoves));
+      bool foundStationary = false;
+      for (int i = 0; i < ml.count; ++i) {
+        if (ml.data[i].rot == 0 && ml.data[i].x == das::SPAWN_COL && ml.data[i].y == 17) {
+          foundStationary = true;
+          CHECK(ml.data[i].dasChargeAfter == sd);
+        }
+      }
+      CHECK(foundStationary);
+      tables.searchRt(emptyB, 4, sd, rtRes);
+      bool foundStationaryPhi = false;
+      for (int i = 0; i < rtRes.numAdjStates; ++i) {
+        const auto &phi = rtRes.adjStates[i];
+        if (phi.x == das::SPAWN_COL && phi.rot == 0 && phi.heldDir == 0) {
+          foundStationaryPhi = true;
+          CHECK(phi.dasCharge == sd);
+        }
+      }
+      CHECK(foundStationaryPhi);
+    }
+
+    // 4c. Crafted Phase C wall-charge overhang tuck (O-piece drops in cols 3..4, wall at col 5
+    //     on rows 12..19 lets it wall-charge right to 16, overhang at (2, 16) blocks direct drop
+    //     to cols 1..2, then L-tucks into cols 1..2 at row 18..19 with das >= 10!).
+    uint16_t tuckRows[das::BOARD_ROWS] = {};
+    for (int r = 12; r < das::BOARD_ROWS; ++r) {
+      tuckRows[r] |= das::colBitMask(5); // right wall for wall-charge at x=2 (cols 3..4)
+    }
+    tuckRows[16] |= das::colBitMask(2); // overhang above cols 1..2
+    const das::Board20 tuckBoard = das::Board20::fromRows(tuckRows);
+    const das::DasStartState spO5 = das::DasStartState::spawn(/*O=*/1, 5);
+    tables.searchMoves(tuckBoard, 1, spO5, ml);
+    das::ref::referenceSearchMoves(tuckBoard, 1, spO5, cfg, /*trackSeq=*/true, refMoves, nullptr);
+    CHECK(toSortedKeysList(ml) == toSortedKeysRef(refMoves));
+    bool foundWallChargeTuck = false;
+    for (int i = 0; i < ml.count; ++i) {
+      const auto &m = ml.data[i];
+      if (m.x == 1 && m.y == 17) {
+        CHECK((m.flags & das::MOVE_FLAG_TUCK) != 0U);
+        CHECK((m.flags & das::MOVE_FLAG_WALL_CHARGE) != 0U);
+        CHECK(m.dasChargeAfter >= das::DAS_POST_SHIFT_CHARGE);
+        foundWallChargeTuck = true;
+      }
+    }
+    CHECK(foundWallChargeTuck);
+    for (const auto &rm : refMoves) {
+      const auto vr = das::ref::validateNesInputSequence(tuckBoard, 1, spO5, rm.seq, cfg);
+      REQUIRE(vr.ok);
+    }
+
+    // 4d. Gravity 1 (L29), Gravity 3 (L18), rt=0, dpadGapFrames=0 parity
+    for (int grav : {1, 3}) {
+      das::MoveSearchConfig gcfg;
+      gcfg.gravity = grav;
+      das::DasRtMoveTables gtab(gcfg);
+      const das::DasStartState sp = das::DasStartState::spawn(/*L=*/5, 10);
+      gtab.searchMoves(tuckBoard, 5, sp, ml);
+      das::ref::referenceSearchMoves(tuckBoard, 5, sp, gcfg, /*trackSeq=*/true, refMoves, nullptr);
+      CHECK(toSortedKeysList(ml) == toSortedKeysRef(refMoves));
+      for (const auto &rm : refMoves) {
+        REQUIRE(das::ref::validateNesInputSequence(tuckBoard, 5, sp, rm.seq, gcfg).ok);
+      }
+    }
+    {
+      das::MoveSearchConfig rt0Cfg;
+      rt0Cfg.reactionTime = 0;
+      das::DasRtMoveTables rt0Tab(rt0Cfg);
+      rt0Tab.searchRt(tuckBoard, 1, 10, rtRes);
+      CHECK(rtRes.numEarlyMoves == 0);
+      CHECK(rtRes.numAdjStates == 1);
+      CHECK(rtRes.numUniqueCells == rtRes.numAdjEdges);
+      das::DasRtSearchResult rt0Multi[2];
+      const int twoDas[2] = {5, 15};
+      rt0Tab.searchRtMultiDas(tuckBoard, 1, twoDas, 2, rt0Multi);
+      CHECK(rt0Multi[0].numAdjStates == 1);
+      CHECK(rt0Multi[1].numAdjStates == 1);
+    }
+    {
+      das::MoveSearchConfig gap0Cfg;
+      gap0Cfg.dpadGapFrames = 0;
+      gap0Cfg.rotGapFrames = 0;
+      das::DasRtMoveTables gap0Tab(gap0Cfg);
+      gap0Tab.searchMoves(tuckBoard, 1, spO5, ml);
+      das::ref::referenceSearchMoves(tuckBoard, 1, spO5, gap0Cfg, /*trackSeq=*/true, refMoves,
+                                     nullptr);
+      CHECK(toSortedKeysList(ml) == toSortedKeysRef(refMoves));
+      for (const auto &rm : refMoves) {
+        REQUIRE(das::ref::validateNesInputSequence(tuckBoard, 1, spO5, rm.seq, gap0Cfg).ok);
+      }
+    }
+
+    // 4e. Topped-out board (immediate spawn collision), MoveSearchConfig::isValid(), dasBucket*
+    uint16_t fullTopRows[das::BOARD_ROWS] = {};
+    fullTopRows[0] = das::colBitMask(3) | das::colBitMask(4) | das::colBitMask(5);
+    const das::Board20 toppedOut = das::Board20::fromRows(fullTopRows);
+    tables.searchMoves(toppedOut, 4, das::DasStartState::spawn(4, 15), ml);
+    CHECK(ml.count == 0);
+    tables.searchRt(toppedOut, 4, 15, rtRes);
+    CHECK(rtRes.numUniqueCells == 0);
+    CHECK(rtRes.numAdjStates == 0);
+    CHECK(rtRes.numEarlyMoves == 0);
+
+    CHECK(cfg.isValid());
+    das::MoveSearchConfig badCfg = cfg;
+    badCfg.gravity = 0;
+    CHECK(!badCfg.isValid());
+    badCfg = cfg;
+    badCfg.dpadGapFrames = 8;
+    CHECK(!badCfg.isValid());
+    badCfg = cfg;
+    badCfg.quicktapDelayFrames = 1;
+    CHECK(!badCfg.isValid());
+    CHECK(das::dasBucket3(0) == 0);
+    CHECK(das::dasBucket3(9) == 0);
+    CHECK(das::dasBucket3(10) == 1);
+    CHECK(das::dasBucket3(14) == 1);
+    CHECK(das::dasBucket3(15) == 2);
+    CHECK(das::dasBucket3(16) == 2);
+    CHECK(das::dasBucket2(14) == 0);
+    CHECK(das::dasBucket2(15) == 1);
+    CHECK(das::dasBucketToRepresentative(0, 3) == 5);
+    CHECK(das::dasBucketToRepresentative(1, 3) == 10);
+    CHECK(das::dasBucketToRepresentative(2, 3) == 15);
+    CHECK(das::dasBucketToRepresentative(0, 2) == 5);
+    CHECK(das::dasBucketToRepresentative(1, 2) == 15);
+    CHECK(tables.memoryFootprintBytes() > 0U);
+  }
+
+  // 5. Multi-DAS batch full-payload parity + 4-thread macOS stack-safety & concurrency test
+  //    (both with external RtSearchScratch and with nullptr scratch).
+  {
+    das::MoveSearchConfig cfg;
+    cfg.enableQuicktaps = false;
+    cfg.reactionTime = 18;
+    const das::DasRtMoveTables tables(cfg);
+    constexpr int DAS_BUCKETS[3] = {5, 10, 15};
+
+    std::atomic<int> errCount{0};
+    std::vector<std::thread> workers;
+    for (int tid = 0; tid < 4; ++tid) {
+      workers.emplace_back([&, tid]() {
+        das::Rng rng(0xC0FFEE00ULL + static_cast<uint64_t>(tid) * 99991ULL);
+        das::DasRtSearchResult multiRes[3];
+        das::DasRtSearchResult singleRes;
+        das::RtSearchScratch scratch;
+        std::vector<das::ref::RefMove> refMoves;
+        std::vector<das::DasStartState> refAdj;
+
+        for (int i = 0; i < 60; ++i) {
+          uint16_t rows[das::BOARD_ROWS] = {};
+          int surf[das::BOARD_WIDTH];
+          for (int c = 0; c < das::BOARD_WIDTH; ++c) {
+            surf[c] = rng.nextInt(15);
+            for (int r = das::BOARD_ROWS - surf[c]; r < das::BOARD_ROWS; ++r) {
+              rows[r] |= das::colBitMask(c);
+            }
+          }
+          const int holes = (i % 2 == 0) ? 0 : (1 + rng.nextInt(6));
+          for (int h = 0; h < holes; ++h) {
+            const int c = rng.nextInt(das::BOARD_WIDTH);
+            if (surf[c] >= 2) {
+              const int r = (das::BOARD_ROWS - surf[c] + 1) + rng.nextInt(surf[c] - 1);
+              rows[r] &= static_cast<uint16_t>(~das::colBitMask(c));
+            }
+          }
+          for (int r = 0; r < das::BOARD_ROWS; ++r) {
+            if (rows[r] == das::FULL_ROW_MASK) {
+              rows[r] &= static_cast<uint16_t>(~das::colBitMask(rng.nextInt(das::BOARD_WIDTH)));
+            }
+          }
+          const das::Board20 b = das::Board20::fromRows(rows);
+          const int p = rng.nextInt(das::NUM_PIECES);
+
+          // Alternate external scratch and nullptr scratch to exercise both paths on worker stacks.
+          das::RtSearchScratch *scPtr = (i % 2 == 0) ? &scratch : nullptr;
+          tables.searchRtMultiDas(b, p, DAS_BUCKETS, 3, multiRes, scPtr);
+          for (int bi = 0; bi < 3; ++bi) {
+            tables.searchRt(b, p, DAS_BUCKETS[bi], singleRes, scPtr);
+            if (!rtResultsEqual(multiRes[bi], singleRes)) {
+              errCount.fetch_add(1);
+            }
+            if (i % 10 == 0 && bi == 2) {
+              const das::DasStartState sp = das::DasStartState::spawn(p, DAS_BUCKETS[bi]);
+              das::ref::referenceSearchMoves(b, p, sp, cfg, /*trackSeq=*/true, refMoves, &refAdj);
+              if (static_cast<int>(refAdj.size()) != multiRes[bi].numAdjStates) {
+                errCount.fetch_add(1);
+              }
+              for (const auto &rm : refMoves) {
+                const auto vr = das::ref::validateNesInputSequence(b, p, sp, rm.seq, cfg);
+                if (!vr.ok
+                    || vr.finalRot != rm.rot
+                    || vr.finalX != rm.x
+                    || vr.finalY != rm.y
+                    || vr.finalDas != rm.dasAfter) {
+                  errCount.fetch_add(1);
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+    for (auto &w : workers) {
+      w.join();
+    }
+    CHECK(errCount.load() == 0);
+  }
 }
