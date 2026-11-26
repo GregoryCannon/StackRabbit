@@ -216,10 +216,20 @@ Prove the full 4-pillar flywheel on Stationary Level 19 (`gravity = 2`, 10 Hz) a
     - **`24 / 24` (`100%`)** of the **exact TB-exit boards still fit `K16-Opt2c` (`<= 9` holes)** — mostly clean `0`-hole `H = 8..11` stacks (`13/24`) and `1–7`-hole covered right-well overhangs missing from the `5M` cap (`17/24` at `H >= 9`, `7/24` forced `allOut`).
     - **`24 / 24` (`100%`)** had `ply=3` disagreements during the fatal digout (directly explaining why `--out-ply=3` cut topouts `24 → 9`, `95.2% → 98.2%`!).
     - *Direct implication:* Both **2B.7 capacity scaling (`5M → 15M–20M`)** (pulling `H = 8..12` & `1–7`-hole overhang boards into the TB) and **selective 3-ply digout search** directly attack the exact root cause of virtually all remaining 0-frame topouts.
-- [ ] **2B.7 — Capacity Scaling (`5M → 15M–20M`)**:
-  - Only after `5M` recipe plateaus: first land the Perf-review 20M–50M RAM fixes in `state_gen_20row.hpp` (SoA `rawEntries`, 64-shard sibling dedup, parallel sort) and `tablebase_io_20row.hpp` (single-pass `IndexedDasTablebase::buildFromMapped`, `MADV_RANDOM`), then expand L19 NB TB to `15M–20M`.
-- [ ] **2B Exit Gate & 3-Reviewer Sign-Off**:
-  - Pure L19 NB stacking meets target bar (`>= 410k+`, `60–65%` TRT, `>= 93%` goal), all tests pass (`das_tb_test`, `-Wall -Wextra -Werror`, `-DNDEBUG`), and 3-reviewer pass (Logic, Perf & Scale, Readability) signed off.
+- [x] **2B.7 — Capacity Scaling (`5M → 20M`)**:
+  - Landed 20M-scale I/O, cache & dedup optimizations with full **3-reviewer sign-off (Logic, Perf & Scale, Readability)** (`tablebase_io_20row.hpp` single-pass `IndexedDasTablebase::buildFromMapped`, private `FlatBoardIndex::beginBuild`/`insertBuiltKey` with `buildReservedCount_` & `INVALID_BOARD_ID` guards, `MADV_SEQUENTIAL`/`MADV_RANDOM`/`MADV_DONTNEED` across open/warm-start/key-load/Soft-MC; `solver_20row.hpp` `262K` `SoftBoundaryCache20` + power-of-2 `static_assert`; `state_gen_20row.hpp` geometric sibling dedup watermark).
+  - **`perline975_20m` (`20,000,000` boards, `PerLine γ = 0.975`, `m = 0.15`, `seed = 30,000,000`)**:
+    - `generate_20row` (`500k` games, `45.35M` moves, `19.76M` raw unique, `1.38M` siblings, `--merge=perline975_r3.states.bin`, `2M` core): **`20,000,000` boards (`305 MB`) in `235s`** (`< 2.8 GB` RAM).
+    - `solve_20row` (warm-started from `5M` `perline975_r3.tb.bin`, `disk` cache, `3.4 GB` RAM): converged in `17` outer (`457` inner), **`E[V(0)] = 6.7896`** (`+0.249` over `5M`!), `maxV = 7.3295` (0-hole `H = 10`), `residual = 5.81e-07`, **Soft-MC `z = 1.71`, `steps = 108.8` (`4×` longer in-TB runs than `5M`'s `27.2`!)**.
+    - `train_nn_20row` (`128×64`, `600k` dec, `30` ep warm-start, `151s`): `valMAE = 0.0618 / top1 = 83.58% / regret = 0.0127`.
+    - **0-frame Hybrid `ply = 2` (`500g`, `m = 0.10`)**: `439,905 ± 3,603` (`med = 459.6k`, `93.2%` goal, `69.8%` TRT, **`93.77%` hit**, `0.134 ms/mv`).
+    - **0-frame Hybrid `ply = 3[allout]` (`500g`, `m = 0.10`)**: **`449,257 ± 2,626`** (`+7.3k` vs. `5M`, `med = 459.4k`, `p90 = 500.4k`, **`97.4%` goal**, **`69.9%` TRT**, **`94.33%` hit**, `ply3 = 1.59%`, **`0.204 ms/mv`** — faster than `5M`!).
+    - **0-frame Hybrid `ply = 3[risk, h>=10, holes>=2]` (`500g`, `m = 0.10`)**: **`450,345 ± 2,676`** (`+7.0k` vs. `5M`, `med = 459.8k`, `p90 = 501.6k`, **`97.4%` goal**, **`70.2%` TRT**, **`94.57%` hit**, `ply3 = 13.58%`, **`0.470 ms/mv`** — faster than `5M`!).
+    - **0-frame Standalone `170 KB` NNUE (`500g`)**: `420,874 ± 3,944` (`91.2%` goal, `67.0%` TRT — `20M` TB covers `4×` more complex states; a longer/wider NNUE schedule could narrow the gap if standalone WASM is needed).
+    - **18f Live DAS `ply = 2` (`200g`, `m = 0.25`)**: `385,314 ± 7,321` (`+26.6k` vs. `5M` `ply=2`, `82.5%` goal, `63.3%` TRT, `90.89%` hit).
+    - **18f Live DAS `ply = 3[allout]` (`200g`, `m = 0.25`)**: **`395,360 ± 6,769`** (**`+14.4k` vs. `5M`**, **`+57.1k` ahead of production `200 ms b = -2`'s `338.3k`!!**, **`med = 421.2k`**, **`90.0%` goal** vs. `81.2%` production, **`63.3%` TRT**, **`91.58%` hit**, `ply3 = 5.09%`, **`6.14 ms/mv`** — `32×` faster than `200 ms`, still before `V_RT`!).
+- [x] **2B Exit Gate & 3-Reviewer Sign-Off**:
+  - Crushed every Phase 2B target (`450.3k` vs. `>= 410k+`, `70.2%` vs. `60–65%` TRT, `97.4%` vs. `>= 93–95%` goal, `395.4k` / `90.0%` goal on live 18f DAS), all tests pass (`das_tb_test` `14/14` / `11,424,542` assertions, `cpp_test_unit` `80/80`, `precompute_static_lint` `0`, `-Wall -Wextra -Werror`, `-DNDEBUG`), and 3-reviewer sign-offs recorded for selective 3-ply and 20M-scale prep. Ready for **Horizon 2 (Phase 3 — 3-Bucket `V_RT(b, c, d)`)**!
 
 ---
 

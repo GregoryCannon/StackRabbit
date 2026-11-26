@@ -551,11 +551,30 @@ public:
     return true;
   }
 
-  // Advises OS to reclaim clean file-cache pages once a sequential warm-start scan completes.
+  // Advises OS to reclaim clean file-cache pages once a sequential scan completes (e.g., index
+  // build, key extraction, or warm-start load).
   void adviseDontNeed() const noexcept {
 #ifndef _WIN32
     if (mapAddr_ != nullptr && mapSize_ > 0) {
       ::madvise(mapAddr_, mapSize_, MADV_DONTNEED);
+    }
+#endif
+  }
+
+  // Advises OS for sequential scans (e.g., single-pass index build, key extraction, or warm-start).
+  void adviseSequential() const noexcept {
+#ifndef _WIN32
+    if (mapAddr_ != nullptr && mapSize_ > 0) {
+      ::madvise(mapAddr_, mapSize_, MADV_SEQUENTIAL);
+    }
+#endif
+  }
+
+  // Advises OS against read-ahead thrashing during random binary-search lookups (e.g., Soft-MC).
+  void adviseRandom() const noexcept {
+#ifndef _WIN32
+    if (mapAddr_ != nullptr && mapSize_ > 0) {
+      ::madvise(mapAddr_, mapSize_, MADV_RANDOM);
     }
 #endif
   }
@@ -780,7 +799,7 @@ inline bool loadInputBoardKeys(const std::string &path, std::vector<BoardKey> &o
   }
   if (std::memcmp(magic, TABLEBASE_V3_MAGIC, sizeof(TABLEBASE_V3_MAGIC)) == 0) {
     MappedDasTablebase tb;
-    if (!tb.open(path, errOut, /*verifyRecords=*/true)) {
+    if (!tb.open(path, errOut, /*verifyRecords=*/false)) {
       return false;
     }
     if (tb.size() > static_cast<uint64_t>(std::numeric_limits<size_t>::max() / sizeof(BoardKey))) {
@@ -788,10 +807,25 @@ inline bool loadInputBoardKeys(const std::string &path, std::vector<BoardKey> &o
         *errOut = "Tablebase board count overflows size_t";
       return false;
     }
+    tb.adviseSequential();
     std::vector<BoardKey> keys(static_cast<size_t>(tb.size()));
     for (uint64_t i = 0; i < tb.size(); ++i) {
-      keys[static_cast<size_t>(i)] = tb.keyAt(i);
+      const BoardKey k = tb.keyAt(i);
+      if (!isValidBoardKey(k) || !tb.recordValuesValidAt(i)) {
+        tb.adviseDontNeed();
+        if (errOut)
+          *errOut = "Corrupt key or value in SRTBV003 at index " + std::to_string(i);
+        return false;
+      }
+      if (i > 0 && k <= keys[static_cast<size_t>(i - 1)]) {
+        tb.adviseDontNeed();
+        if (errOut)
+          *errOut = "Unsorted or duplicate key in SRTBV003 at index " + std::to_string(i);
+        return false;
+      }
+      keys[static_cast<size_t>(i)] = k;
     }
+    tb.adviseDontNeed();
     outKeys = std::move(keys);
     return true;
   }
@@ -819,65 +853,17 @@ public:
     std::vector<Bucket>().swap(buckets_);
     numBuckets_ = 0;
     size_ = 0;
+    buildReservedCount_ = 0;
   }
 
   template <typename KeyAtFn>
   bool buildFromAccessor(size_t count, KeyAtFn &&keyAt, std::string *errOut = nullptr) {
-    clear();
-    if (count >= static_cast<size_t>(INVALID_BOARD_ID)) {
-      if (errOut)
-        *errOut = "Board count exceeds 32-bit boardId capacity";
+    if (!beginBuild(count, errOut)) {
       return false;
     }
-    if (count == 0) {
-      return true;
-    }
-
-    // Target <= 65% load factor (6 * 0.65 = 3.9 entries/bucket; integer ratio 10 / 39).
-    if (count > std::numeric_limits<size_t>::max() / 10) {
-      if (errOut)
-        *errOut = "FlatBoardIndex bucket count overflow";
-      return false;
-    }
-    const size_t nBuckets = std::max<size_t>(2, (count * 10 + 38) / 39);
-    Bucket emptyBucket{};
-    for (size_t j = 0; j < SLOTS_PER_BUCKET; ++j) {
-      emptyBucket.keys[j] = EMPTY_KEY;
-      emptyBucket.ids[j] = INVALID_BOARD_ID;
-    }
-    buckets_.assign(nBuckets, emptyBucket);
-    numBuckets_ = nBuckets;
-    size_ = count;
-
     for (size_t i = 0; i < count; ++i) {
-      const BoardKey k = keyAt(i);
-      if (k == EMPTY_KEY) {
-        clear();
-        if (errOut)
-          *errOut = "FlatBoardIndex cannot store EMPTY_KEY sentinel";
+      if (!insertBuiltKey(keyAt(i), static_cast<uint32_t>(i), errOut)) {
         return false;
-      }
-      size_t b = detail::fastRange64(hashBoardKeySlot(k), nBuckets);
-      bool inserted = false;
-      while (!inserted) {
-        Bucket &bkt = buckets_[b];
-        for (size_t j = 0; j < SLOTS_PER_BUCKET; ++j) {
-          if (bkt.keys[j] == EMPTY_KEY) {
-            bkt.keys[j] = k;
-            bkt.ids[j] = static_cast<uint32_t>(i);
-            inserted = true;
-            break;
-          }
-          if (bkt.keys[j] == k) {
-            clear();
-            if (errOut)
-              *errOut = "Duplicate BoardKey encountered while building FlatBoardIndex";
-            return false;
-          }
-        }
-        if (!inserted) {
-          b = (b + 1 == nBuckets) ? 0 : (b + 1);
-        }
       }
     }
     return true;
@@ -919,9 +905,82 @@ public:
   size_t capacity() const noexcept { return numBuckets_ * SLOTS_PER_BUCKET; }
 
 private:
+  friend class IndexedDasTablebase;
+
+  bool beginBuild(size_t count, std::string *errOut = nullptr) {
+    clear();
+    if (count >= static_cast<size_t>(INVALID_BOARD_ID)) {
+      if (errOut)
+        *errOut = "Board count exceeds 32-bit boardId capacity";
+      return false;
+    }
+    if (count == 0) {
+      return true;
+    }
+
+    // Target <= 65% load factor (6 * 0.65 = 3.9 entries/bucket; integer ratio 10 / 39).
+    if (count > (std::numeric_limits<size_t>::max() - 38) / 10) {
+      if (errOut)
+        *errOut = "FlatBoardIndex bucket count overflow";
+      return false;
+    }
+    const size_t nBuckets = std::max<size_t>(2, (count * 10 + 38) / 39);
+    Bucket emptyBucket{};
+    for (size_t j = 0; j < SLOTS_PER_BUCKET; ++j) {
+      emptyBucket.keys[j] = EMPTY_KEY;
+      emptyBucket.ids[j] = INVALID_BOARD_ID;
+    }
+    buckets_.assign(nBuckets, emptyBucket);
+    numBuckets_ = nBuckets;
+    size_ = 0;
+    buildReservedCount_ = count;
+    return true;
+  }
+
+  bool insertBuiltKey(BoardKey k, uint32_t id, std::string *errOut = nullptr) {
+    if (k == EMPTY_KEY) {
+      clear();
+      if (errOut)
+        *errOut = "FlatBoardIndex cannot store EMPTY_KEY sentinel";
+      return false;
+    }
+    if (id == INVALID_BOARD_ID) {
+      clear();
+      if (errOut)
+        *errOut = "FlatBoardIndex cannot store INVALID_BOARD_ID sentinel";
+      return false;
+    }
+    if (size_ >= buildReservedCount_ || numBuckets_ == 0) {
+      clear();
+      if (errOut)
+        *errOut = "FlatBoardIndex::insertBuiltKey exceeded reserved build capacity";
+      return false;
+    }
+    size_t b = detail::fastRange64(hashBoardKeySlot(k), numBuckets_);
+    while (true) {
+      Bucket &bkt = buckets_[b];
+      for (size_t j = 0; j < SLOTS_PER_BUCKET; ++j) {
+        if (bkt.keys[j] == EMPTY_KEY) {
+          bkt.keys[j] = k;
+          bkt.ids[j] = id;
+          ++size_;
+          return true;
+        }
+        if (bkt.keys[j] == k) {
+          clear();
+          if (errOut)
+            *errOut = "Duplicate BoardKey encountered while building FlatBoardIndex";
+          return false;
+        }
+      }
+      b = (b + 1 == numBuckets_) ? 0 : (b + 1);
+    }
+  }
+
   std::vector<Bucket> buckets_;
   size_t numBuckets_ = 0;
   size_t size_ = 0;
+  size_t buildReservedCount_ = 0;
 };
 
 // In-RAM O(1) indexed SRTBV003 tablebase (for fast rollouts, distillation, and benchmarking).
@@ -929,8 +988,8 @@ private:
 // 50M).
 class IndexedDasTablebase {
 public:
-  // Transactional build directly from MappedDasTablebase (no temporary keys vector, validates
-  // sorted keys & finite non-negative values inline).
+  // Single-pass transactional build directly from MappedDasTablebase (no temporary keys vector,
+  // validates sorted keys & finite non-negative values while populating FlatBoardIndex inline).
   bool buildFromMapped(const MappedDasTablebase &mapped, std::string *errOut = nullptr) {
     if (!mapped.isLoaded()) {
       if (errOut)
@@ -945,7 +1004,12 @@ public:
     }
     const size_t n = static_cast<size_t>(n64);
 
+    FlatBoardIndex stagedIndex;
+    if (!stagedIndex.beginBuild(n, errOut)) {
+      return false;
+    }
     std::vector<float> stagedVals(n * NUM_PIECES);
+
     BoardKey prevKey = EMPTY_BOARD_KEY;
     for (size_t i = 0; i < n; ++i) {
       const BoardKey k = mapped.keyAt(static_cast<uint64_t>(i));
@@ -961,12 +1025,9 @@ public:
       }
       prevKey = k;
       mapped.copyValuesAt(static_cast<uint64_t>(i), &stagedVals[i * NUM_PIECES]);
-    }
-
-    FlatBoardIndex stagedIndex;
-    if (!stagedIndex.buildFromAccessor(
-            n, [&](size_t i) noexcept { return mapped.keyAt(static_cast<uint64_t>(i)); }, errOut)) {
-      return false;
+      if (!stagedIndex.insertBuiltKey(k, static_cast<uint32_t>(i), errOut)) {
+        return false;
+      }
     }
 
     index_ = std::move(stagedIndex);
@@ -977,11 +1038,15 @@ public:
   }
 
   bool open(const std::string &path, std::string *errOut = nullptr, bool verifyRecords = false) {
+    (void)verifyRecords; // buildFromMapped validates all keys and values inline in a single pass.
     MappedDasTablebase mapped;
-    if (!mapped.open(path, errOut, verifyRecords)) {
+    if (!mapped.open(path, errOut, /*verifyRecords=*/false)) {
       return false;
     }
-    return buildFromMapped(mapped, errOut);
+    mapped.adviseSequential();
+    const bool ok = buildFromMapped(mapped, errOut);
+    mapped.adviseDontNeed();
+    return ok;
   }
 
   void clear() noexcept {

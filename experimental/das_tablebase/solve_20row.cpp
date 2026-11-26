@@ -366,6 +366,7 @@ int main(int argc, char **argv) {
       fprintf(stderr, "Error re-opening %s for Soft-MC: %s\n", outPath.c_str(), err.c_str());
       return 1;
     }
+    writtenTb.adviseRandom();
     const das::SoftMcResult20 mc =
         boundaryNn.isLoaded()
             ? das::evaluateSoftBoundaryMC20(writtenTb, mcGames, mcSeed, cfg.numThreads, softBound)

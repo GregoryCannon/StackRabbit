@@ -325,7 +325,7 @@ expandCoreSiblings20(const std::vector<std::pair<BoardKey, uint32_t>> &rawEntrie
         if (out.size() >= nextDedupAt) {
           std::sort(out.begin(), out.end());
           out.erase(std::unique(out.begin(), out.end()), out.end());
-          nextDedupAt = out.size() + LOCAL_DEDUP_STEP;
+          nextDedupAt = std::max(out.size() * 2, out.size() + LOCAL_DEDUP_STEP);
         }
       }
     }

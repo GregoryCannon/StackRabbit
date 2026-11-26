@@ -147,8 +147,11 @@ inline TransitionProbMatrix buildTransitionProbMatrix(RngMode mode) noexcept {
 // Ram == Disk, and Soft-MC parity). Freed immediately after outer iteration 1.
 class SoftBoundaryCache20 {
 public:
-  static constexpr size_t NUM_SLOTS = 65536;
+  static constexpr size_t NUM_SLOTS =
+      262144; // ~18.9 MB/worker, freed immediately after outer iter 1
   static constexpr size_t MASK = NUM_SLOTS - 1;
+  static_assert(NUM_SLOTS > 0 && (NUM_SLOTS & (NUM_SLOTS - 1)) == 0,
+                "SoftBoundaryCache20::NUM_SLOTS must be a power of two");
 
   struct Entry {
     BoardKey key = EMPTY_KEY;
@@ -991,8 +994,10 @@ inline SolveResult20 solve20MPI(const std::vector<BoardKey> &sortedKeys, const S
   std::vector<double> vCur((n + 1) * STATES_PER_BOARD, 0.0);
   std::vector<double> vNext((n + 1) * STATES_PER_BOARD, 0.0);
   if (initTb != nullptr && initTb->isLoaded()) {
+    initTb->adviseSequential();
     if (!detail::initializeValuesFromWarmStart(sortedKeys, *initTb, vCur, res.warmStartMatched,
                                                res.error)) {
+      initTb->adviseDontNeed();
       return res;
     }
     initTb->adviseDontNeed();
