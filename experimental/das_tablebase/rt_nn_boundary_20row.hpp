@@ -77,6 +77,22 @@ struct NnSoftBoundaryEvalRt20 {
   }
 };
 
+// Single-(piece, bucket) raw NN prediction; broadcasts 7-output nets across all buckets.
+inline float evalNnPieceBucket(const TinyDasNet &net, const uint16_t rows[BOARD_ROWS], int piece,
+                               int bucket, int numBuckets) noexcept {
+  if (!nnSupportsDasBuckets(net, numBuckets)
+      || piece < 0
+      || piece >= NUM_PIECES
+      || bucket < 0
+      || bucket >= numBuckets) {
+    return 0.0f;
+  }
+  if (net.outDim == NUM_PIECES) {
+    return net.evalPiece(rows, piece);
+  }
+  return net.evalPieceBucket(rows, piece, bucket);
+}
+
 // Expected NN value over the next piece when `curPiece`'s lock leaves the next piece in `bucket`.
 // Uses TinyDasNet::evalBucket so only the 7 Layer-3 outputs for `bucket` are computed.
 inline double evalNnNextPieceExpectedRt(const TinyDasNet &net, const uint16_t rows[BOARD_ROWS],

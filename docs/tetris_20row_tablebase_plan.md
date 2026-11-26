@@ -261,9 +261,10 @@ Prove the full 4-pillar flywheel on Stationary Level 19 (`gravity = 2`, 10 Hz) a
 - **1× Leaf Scoring + 32-Bit Policy Words:**
   - Score unique lock placements `(rot, x, y)` **once** per `(b, c)` (shared across all `d` buckets & phantoms `φ`), so key encoding, `FlatBoardIndex` probes, and Soft-Boundary NNUE calls stay `1×`.
   - Pack `2`-bit ending bucket `d'_a` directly into existing `uint32_t` policy words (`1` terminal + `3` line-clear + `2` DAS-bucket + `26` `childId` bits = up to `67M` boards; `588 B/board` SSD cache for 3-bucket).
-- **Leak-Free 3-vs-2 Bucket Ablation Protocol:**
+- **Leak-Free 3-vs-2 Bucket Ablation Protocol & Winner Selection Criteria:**
   - Start **both** 3-bucket and 2-bucket `5M` flywheels from the exact same neutral 0-frame Phase 2B base (`perline975_r3.tb.bin` + `perline975_r3_128x64_cal.nn.bin` + `perline975_r3.states.bin`, broadcast across `d` on Round 1). Neither branch ever reads the other's states, TB, or NNUE across independent on-policy Rounds 2–3 (`seed = 30,000,000`).
-- **Final Scaling Target (`15M` vs. `20M`):** Deferred until after `5M` `V_RT` hit rates & 3-vs-2 ablation results are measured (`15M` = `1.5 GB` `.tb.bin` / `6.2 GB` RAM; `20M` = `2.0 GB` `.tb.bin` / `7.7 GB` RAM).
+  - **Space/RAM-aware winner criterion (Occam's razor, `>= +10k` bar):** Evaluate `5M` 3-bucket (`21` floats/board) vs. `5M` 2-bucket (`14` floats/board) vs. the best **`5M` Phase 2B** baseline (`perline975_r3 + 128x64_cal`, `7` floats/board — *not* `20M` `perline975_20m`, which is reserved for the Step 3.4 scaled comparison) on **both** play strength (score, survival, TRT, latency) **and** space/RAM/compute cost. Require **`>= +10k`** improvement on `500g` (`seed = 30,000,000`) to justify stepping up to a heavier bucket count (since extra DAS buckets displace extra board states for the same RAM/disk budget); if the gap is `< +10k`, keep the simpler, more space-efficient model.
+- **Final Scaling Target (`15M` vs. `20M`):** Deferred until after `5M` `V_RT` hit rates & 3-vs-2 ablation results are measured (`15M` = `1.5 GB` `.tb.bin` / `6.2 GB` RAM; `20M` = `2.0 GB` `.tb.bin` / `7.7 GB` RAM for 3-bucket; proportionally smaller for 2-bucket or Phase 2B).
 
 ### Staged Phase 3 Milestones
 - [x] **3.0 — Fast Bitboard 18f RT + DAS Move/Phantom Generator (`das_rt_move_gen.hpp`)** *(complete before any Phase 3 training/games)*:
@@ -284,7 +285,8 @@ Prove the full 4-pillar flywheel on Stationary Level 19 (`gravity = 2`, 10 Hz) a
   - Implemented `chooseTbNnRtMove` in `tbnn_precompute_adapter.hpp` (O(1) direct `V_RT(b', n, d')` tablebase lookup with zero 2nd-piece `fullMoveSearch` penalty sweeps, `OUT → TB2` re-entry with exact 2nd-piece ending DAS bucket `d''`, selective/prescreened 3-ply Top-K, and zero-RT fast path) and multi-gravity `DasRtMoveTables` routing in `benchmark_20row.cpp`.
   - Hard gate (ALL PASSED): `18/18` `das_tb_test` (`11,438,368` assertions) + parallel 3-reviewer sign-off (**Logic**, **Perf & Scale**, **Readability**; all HIGH/MEDIUM findings resolved).
 - [ ] **3.3 — Leak-Free `5M` Live-DAS Flywheel & 3-Bucket (`{15, 10, 5}`) vs. 2-Bucket (`{15, 5}`) Ablation**:
-  - Run independent `5M` on-policy live-DAS rounds for both 3-bucket and 2-bucket from neutral `perline975_r3`, compare score/survival/TRT/latency on `seed = 30,000,000` (`500g`), and test `128×64` vs. `256×64` for 21 outputs if needed.
+  - Run independent `5M` on-policy live-DAS rounds for both 3-bucket and 2-bucket from neutral `perline975_r3`, compare score/survival/TRT/latency/RAM/disk against each other and the best **`5M` Phase 2B** policy (`perline975_r3 + 128x64_cal`, `ply=3[allout]`; *not* `20M` `perline975_20m`) on `seed = 30,000,000` (`500g`), and test `128×64` vs. `256×64` for 21 outputs if needed.
+  - **Winner criterion (`>= +10k` bar):** Factor in space/RAM/compute efficiency alongside play strength — adopt 3-bucket only if it beats 2-bucket by **`>= +10k`**, and adopt 2-bucket only if it beats the best `5M` Phase 2B policy by **`>= +10k`** (matching 3 rounds of `5M` if time permits for a low-noise apples-to-apples comparison). When gains are `< +10k`, select the simplest, most space-efficient model that delivers top-tier performance.
 - [ ] **3.4 — Capacity Scaling (`15M` or `20M`) & Phase 3 Exit Gate**:
   - Scale winning `V_RT` config to `15M–20M` (size chosen from `5M` hit-rate data), benchmark vs. production `200 ms b = -2` (`338.3k`) and Phase 2B `20M` (`395.4k`), update retrospective, and complete final 3-reviewer sign-off.
 

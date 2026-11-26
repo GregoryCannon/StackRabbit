@@ -3086,6 +3086,31 @@ TEST_CASE("solve20RtMPI: brute-force oracle parity (hard & soft boundary, K = 2 
       }
     }
 
+    // Live-RT on-policy state generator (generateStateSetRt20): 1T == 4T determinism + nn-error.
+    das::StateGenConfig20 gcfg{};
+    gcfg.level = 19;
+    gcfg.gamma = 0.9;
+    gcfg.numGames = 16;
+    gcfg.maxPiecesPerGame = 30;
+    gcfg.maxLinesPerGame = 10;
+    gcfg.epsilon = 0.15;
+    gcfg.minVisits = 1;
+    gcfg.siblingMinVisits = 2;
+    gcfg.maxBoards = 200;
+    gcfg.priorityMode = das::BoardPriorityMode::NnError;
+    gcfg.protectedCore = 20;
+    gcfg.baseSeed = 777777ULL;
+    gcfg.numThreads = 1;
+    das::StateGenStats20 gs1{}, gs4{};
+    const auto st1 = das::generateStateSetRt20(gcfg, &idx4, tables, &rtNet, {}, gs1);
+    gcfg.numThreads = 4;
+    const auto st4 = das::generateStateSetRt20(gcfg, &idx4, tables, &rtNet, {}, gs4);
+    CHECK(!st1.empty());
+    CHECK(st1.size() <= gcfg.maxBoards);
+    CHECK(st1 == st4);
+    CHECK(std::is_sorted(st1.begin(), st1.end()));
+    CHECK(std::binary_search(st1.begin(), st1.end(), das::EMPTY_BOARD_KEY));
+
     init3.close();
     init4.close();
     fs::remove_all(tmpDir);

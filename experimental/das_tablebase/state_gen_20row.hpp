@@ -3,6 +3,7 @@
 
 #include "core_20row.hpp"
 #include "nnue_20row.hpp"
+#include "rt_nn_boundary_20row.hpp"
 #include "tablebase_io_20row.hpp"
 
 #include <algorithm>
@@ -369,13 +370,27 @@ struct PrioritizedBoard20 {
 static_assert(sizeof(PrioritizedBoard20) == 32,
               "PrioritizedBoard20 should stay packed at 32 bytes");
 
+inline int resolveRtDasBuckets(const IndexedDasRtTablebase *rtTb, const TinyDasNet *nn) noexcept {
+  if (rtTb != nullptr && rtTb->isLoaded()) {
+    return rtTb->numDasBuckets();
+  }
+  if (nn != nullptr && nn->isLoaded() && nn->numDasBuckets() >= 2) {
+    return nn->numDasBuckets();
+  }
+  return MAX_DAS_BUCKETS;
+}
+
 // Deterministic 3-way merge (rawEntries + priorBoards + coreSiblings), prioritized eviction under
 // maxBoards, and strict ascending sort. Thread-count invariant (1T == MT).
+// Supports both IndexedDasTablebase (SRTBV003) and IndexedDasRtTablebase (SRTBV004).
+template <typename TbType = IndexedDasTablebase>
 inline std::vector<BoardKey>
 mergeFilterAndCap20(std::vector<std::pair<BoardKey, uint32_t>> &rawEntries,
                     const std::vector<BoardKey> &priorBoards, std::vector<BoardKey> &coreSiblings,
-                    const StateGenConfig20 &cfg, const IndexedDasTablebase *fastTb,
-                    const TinyDasNet *nn) {
+                    const StateGenConfig20 &cfg, const TbType *fastTb, const TinyDasNet *nn) {
+  static_assert(std::is_same_v<TbType, IndexedDasTablebase>
+                    || std::is_same_v<TbType, IndexedDasRtTablebase>,
+                "mergeFilterAndCap20 supports IndexedDasTablebase or IndexedDasRtTablebase");
   std::sort(rawEntries.begin(), rawEntries.end(),
             [](const auto &a, const auto &b) { return a.first < b.first; });
 
@@ -416,6 +431,48 @@ mergeFilterAndCap20(std::vector<std::pair<BoardKey, uint32_t>> &rawEntries,
     }
     if (!sawEmpty)
       exactCount++;
+  }
+
+  // Fast path: when no eviction is required, emit sorted BoardKeys directly without allocating the
+  // 32 B/item PrioritizedBoard20 buffer or re-sorting.
+  if (cfg.maxBoards == 0 || exactCount <= cfg.maxBoards) {
+    std::vector<BoardKey> out;
+    out.reserve(exactCount);
+    if (!sawEmpty) {
+      out.push_back(EMPTY_BOARD_KEY);
+    }
+    size_t ir = 0, ip = 0, is = 0;
+    while (ir < rawEntries.size() || ip < priorBoards.size() || is < coreSiblings.size()) {
+      BoardKey cur = EMPTY_KEY;
+      if (ir < rawEntries.size() && rawEntries[ir].first < cur)
+        cur = rawEntries[ir].first;
+      if (ip < priorBoards.size() && priorBoards[ip] < cur)
+        cur = priorBoards[ip];
+      if (is < coreSiblings.size() && coreSiblings[is] < cur)
+        cur = coreSiblings[is];
+
+      uint32_t visits = 0;
+      bool inPrior = false, inSib = false;
+      if (ir < rawEntries.size() && rawEntries[ir].first == cur) {
+        visits = rawEntries[ir].second;
+        ir++;
+      }
+      if (ip < priorBoards.size() && priorBoards[ip] == cur) {
+        inPrior = true;
+        ip++;
+      }
+      if (is < coreSiblings.size() && coreSiblings[is] == cur) {
+        inSib = true;
+        is++;
+      }
+      const bool isEmptyBoard = (cur == EMPTY_BOARD_KEY);
+      if (!isEmptyBoard && !inPrior && !inSib && visits < cfg.minVisits)
+        continue;
+      out.push_back(cur);
+    }
+    std::vector<std::pair<BoardKey, uint32_t>>().swap(rawEntries);
+    std::vector<BoardKey>().swap(coreSiblings);
+    return out;
   }
 
   std::vector<PrioritizedBoard20> items;
@@ -468,20 +525,10 @@ mergeFilterAndCap20(std::vector<std::pair<BoardKey, uint32_t>> &rawEntries,
   std::vector<std::pair<BoardKey, uint32_t>>().swap(rawEntries);
   std::vector<BoardKey>().swap(coreSiblings);
 
-  if (cfg.maxBoards == 0 || items.size() <= cfg.maxBoards) {
-    std::vector<BoardKey> out;
-    out.reserve(items.size());
-    for (const auto &it : items)
-      out.push_back(it.key);
-    std::vector<PrioritizedBoard20>().swap(items);
-    std::sort(out.begin(), out.end());
-    return out;
-  }
-
   // Promote top `protectedCore` highest-visit TIER_SCORED boards to TIER_CORE.
   if (cfg.priorityMode == BoardPriorityMode::NnError && cfg.protectedCore > 0) {
     std::vector<uint32_t> eligible;
-    eligible.reserve(items.size());
+    eligible.reserve(items.size() > priorBoards.size() ? (items.size() - priorBoards.size()) : 0U);
     for (size_t i = 0; i < items.size(); ++i) {
       if (items[i].tier == PrioritizedBoard20::TIER_SCORED) {
         eligible.push_back(static_cast<uint32_t>(i));
@@ -505,14 +552,32 @@ mergeFilterAndCap20(std::vector<std::pair<BoardKey, uint32_t>> &rawEntries,
   }
 
   // Score remaining TIER_SCORED items in parallel (deterministic per-item pure function).
-  const bool useNnErr =
-      (cfg.priorityMode == BoardPriorityMode::NnError && nn != nullptr && nn->isLoaded());
+  // For SRTBV004, nn-error averages |E_c[V_tb(b, c, k)] - E_c[V_nn(b, c, k)]| across DAS buckets k.
+  constexpr bool IS_RT_TB = std::is_same_v<TbType, IndexedDasRtTablebase>;
   const bool tbActive = (fastTb != nullptr && fastTb->isLoaded());
+  const int rtK = [&]() {
+    if constexpr (IS_RT_TB) {
+      return resolveRtDasBuckets(fastTb, nn);
+    } else {
+      return 1;
+    }
+  }();
+  const bool useNnErr = [&]() {
+    if (cfg.priorityMode != BoardPriorityMode::NnError || nn == nullptr || !nn->isLoaded()) {
+      return false;
+    }
+    if constexpr (IS_RT_TB) {
+      return nnSupportsDasBuckets(*nn, rtK);
+    } else {
+      return true;
+    }
+  }();
   if (useNnErr) {
     const int threads = std::max(1, cfg.numThreads);
     std::atomic<size_t> nextIdx{0};
     runWorkerPool(threads, items.size(), 4096, [&](int /*tid*/) {
-      float tbRow[NUM_PIECES];
+      float tbRow[MAX_RT_VALUES_PER_BOARD];
+      float nnRow[MAX_RT_VALUES_PER_BOARD];
       uint16_t rows[BOARD_ROWS];
       while (true) {
         const size_t s = nextIdx.fetch_add(1024, std::memory_order_relaxed);
@@ -524,12 +589,36 @@ mergeFilterAndCap20(std::vector<std::pair<BoardKey, uint32_t>> &rawEntries,
             continue;
           const double vCount = static_cast<double>(std::max<uint32_t>(1U, items[i].visits));
           if (tbActive && fastTb->lookup(items[i].key, tbRow)) {
-            const double tbExp = expectedValueFromRow(tbRow, cfg.rngMode);
-            decodeBoardKey(items[i].key, rows);
-            const double nnExp = nn->evalExpected(rows, cfg.rngMode);
-            const double err = (std::isfinite(tbExp) && std::isfinite(nnExp))
-                                   ? std::min(cfg.priorityErrCap, std::abs(tbExp - nnExp))
-                                   : 0.0;
+            double err = 0.0;
+            if constexpr (IS_RT_TB) {
+              decodeBoardKey(items[i].key, rows);
+              evalNnRtRow(*nn, rows, rtK, nnRow);
+              double sumErr = 0.0;
+              for (int k = 0; k < rtK; ++k) {
+                double tbExp = 0.0;
+                double nnExp = 0.0;
+                for (int c = 0; c < NUM_PIECES; ++c) {
+                  const double p = openingPieceProb(cfg.rngMode, c);
+                  const int idx = rtValueIndex(c, k, rtK);
+                  tbExp += p * static_cast<double>(tbRow[idx]);
+                  const double nv = std::isfinite(nnRow[idx])
+                                        ? std::max(0.0, static_cast<double>(nnRow[idx]))
+                                        : 0.0;
+                  nnExp += p * nv;
+                }
+                if (std::isfinite(tbExp) && std::isfinite(nnExp)) {
+                  sumErr += std::abs(tbExp - nnExp);
+                }
+              }
+              err = std::min(cfg.priorityErrCap, sumErr / static_cast<double>(rtK));
+            } else {
+              const double tbExp = expectedValueFromRow(tbRow, cfg.rngMode);
+              decodeBoardKey(items[i].key, rows);
+              const double nnExp = nn->evalExpected(rows, cfg.rngMode);
+              err = (std::isfinite(tbExp) && std::isfinite(nnExp))
+                        ? std::min(cfg.priorityErrCap, std::abs(tbExp - nnExp))
+                        : 0.0;
+            }
             items[i].score = vCount * (1.0 + cfg.nnErrorWeight * err);
           } else {
             items[i].score = vCount * (1.0 + cfg.frontierBoost);
@@ -762,6 +851,449 @@ inline std::vector<BoardKey> generateStateSetTbNn20(const StateGenConfig20 &cfg,
 
   std::vector<BoardKey> result =
       detail::mergeFilterAndCap20(rawEntries, priorBoards, coreSiblings, cfg, fastTb, nn);
+  statsOut.outputBoards = result.size();
+  statsOut.elapsedSeconds =
+      std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+  return result;
+}
+
+namespace detail {
+
+// Collects unique greedy V_RT + NN sibling children on core boards (visits >= siblingMinVisits)
+// across all starting DAS buckets, deduplicating lock-cell transitions per (board, piece).
+inline std::vector<BoardKey>
+expandCoreSiblingsRt20(const std::vector<std::pair<BoardKey, uint32_t>> &rawEntries,
+                       const StateGenConfig20 &cfg, const IndexedDasRtTablebase *rtTb,
+                       const DasRtMoveTables &tables, const TinyDasNet *nn) {
+  if (cfg.siblingMinVisits == 0) {
+    return {};
+  }
+  const bool tbActive = (rtTb != nullptr && rtTb->isLoaded());
+  const int K = resolveRtDasBuckets(rtTb, nn);
+  const bool nnActive = (nn != nullptr && nnSupportsDasBuckets(*nn, K));
+  if (!tbActive && !nnActive) {
+    return {};
+  }
+
+  std::vector<uint32_t> coreIdx;
+  for (size_t i = 0; i < rawEntries.size(); ++i) {
+    if (rawEntries[i].second >= cfg.siblingMinVisits) {
+      coreIdx.push_back(static_cast<uint32_t>(i));
+    }
+  }
+  if (coreIdx.empty()) {
+    return {};
+  }
+
+  const int threads = std::max(1, cfg.numThreads);
+  const int vpb = NUM_PIECES * K;
+  const StepDiscountTable20 disc =
+      StepDiscountTable20::make(cfg.gamma, tbActive ? rtTb->discountMode() : DiscountMode::PerLine);
+  const auto transProb = buildTransitionProbMatrix(cfg.rngMode);
+  int startDas[MAX_DAS_BUCKETS];
+  for (int k = 0; k < K; ++k) {
+    startDas[k] = dasBucketRepresentativeCharge(k, K);
+  }
+  constexpr size_t LOCAL_DEDUP_STEP = 1000000;
+
+  std::vector<std::vector<BoardKey>> perThread(static_cast<size_t>(threads));
+  std::atomic<size_t> nextPos{0};
+
+  runWorkerPool(threads, coreIdx.size(), 256, [&](int tid) {
+    auto &out = perThread[static_cast<size_t>(tid)];
+    size_t nextDedupAt = LOCAL_DEDUP_STEP;
+    auto ws = std::make_unique<RtDecisionWorkspace>();
+    std::vector<BoardKey> cellKeys(RtDecisionWorkspace::MAX_CELLS, EMPTY_KEY);
+    uint16_t afterRows[BOARD_ROWS];
+    float childRow[MAX_RT_VALUES_PER_BOARD];
+
+    while (true) {
+      const size_t start = nextPos.fetch_add(256, std::memory_order_relaxed);
+      if (start >= coreIdx.size())
+        break;
+      const size_t end = std::min(coreIdx.size(), start + 256);
+
+      for (size_t idx = start; idx < end; ++idx) {
+        const BoardKey parentKey = rawEntries[coreIdx[idx]].first;
+        const Board20 board = Board20::fromKey(parentKey);
+
+        for (int c = 0; c < NUM_PIECES; ++c) {
+          // When no TB is loaded, only full-DAS cells are needed for the NN sibling probe.
+          const int searchStarts = tbActive ? K : 1;
+          const int *searchDas = tbActive ? startDas : &startDas[K - 1];
+          ws->search(tables, board, c, searchDas, searchStarts);
+          const int nCells = ws->numCells();
+          if (nCells == 0)
+            continue;
+
+          bool anyInTb = false;
+          bool haveNnBest = false;
+          double bestNnQ = -std::numeric_limits<double>::infinity();
+          BoardKey bestNnKey = EMPTY_KEY;
+
+          for (int i = 0; i < nCells; ++i) {
+            const uint8_t lc = ws->computeAfterRows(board, c, i, afterRows);
+            const int sr = (lc == 0) ? std::max(0, std::min(static_cast<int>(board.topNonEmptyRow),
+                                                            static_cast<int>(ws->cell(i).y)))
+                                     : 0;
+            BoardKey childKey;
+            const bool fits = encodeBoardKey(afterRows, childKey, sr);
+            cellKeys[static_cast<size_t>(i)] = fits ? childKey : EMPTY_KEY;
+            const double rew = REWARD_NORM_TETRIS[lc];
+            const double dFac = disc.f[lc];
+            if (tbActive) {
+              double *qc = ws->q(i);
+              if (fits && rtTb->lookup(childKey, childRow)) {
+                anyInTb = true;
+                for (int o = 0; o < vpb; ++o) {
+                  qc[o] = rew + dFac * static_cast<double>(childRow[o]);
+                }
+              } else {
+                for (int o = 0; o < vpb; ++o) {
+                  qc[o] = rew;
+                }
+              }
+            }
+            // Probe the NN's preferred full-DAS sibling to pull high-value frontier boards in.
+            if (nnActive && fits) {
+              const double qNn =
+                  rew + dFac * evalNnNextPieceExpectedRt(*nn, afterRows, cfg.rngMode, c, K - 1, K);
+              if (!haveNnBest || qNn > bestNnQ) {
+                haveNnBest = true;
+                bestNnQ = qNn;
+                bestNnKey = childKey;
+              }
+            }
+          }
+
+          BoardKey emitted[NUM_PIECES * MAX_DAS_BUCKETS + 1];
+          int emitCnt = 0;
+          if (haveNnBest && bestNnKey != EMPTY_KEY) {
+            emitted[emitCnt++] = bestNnKey;
+            out.push_back(bestNnKey);
+          }
+          if (anyInTb) {
+            for (int k = 0; k < K; ++k) {
+              const RtDecisionWorkspace::Choice ch =
+                  ws->chooseAction(k, K, transProb[static_cast<size_t>(c)]);
+              if (!ch.any || ch.value <= 0.0)
+                continue;
+              for (int n = 0; n < NUM_PIECES; ++n) {
+                const BoardKey ck = cellKeys[static_cast<size_t>(ch.cellForNext[n])];
+                if (ck != EMPTY_KEY
+                    && std::find(emitted, emitted + emitCnt, ck) == emitted + emitCnt) {
+                  emitted[emitCnt++] = ck;
+                  out.push_back(ck);
+                }
+              }
+            }
+          }
+        }
+
+        if (out.size() >= nextDedupAt) {
+          std::sort(out.begin(), out.end());
+          out.erase(std::unique(out.begin(), out.end()), out.end());
+          nextDedupAt = out.size() + LOCAL_DEDUP_STEP;
+        }
+      }
+    }
+    std::sort(out.begin(), out.end());
+    out.erase(std::unique(out.begin(), out.end()), out.end());
+    out.shrink_to_fit();
+  });
+
+  while (perThread.size() > 1) {
+    std::vector<std::vector<BoardKey>> nextLevel;
+    nextLevel.reserve((perThread.size() + 1) / 2);
+    for (size_t i = 0; i < perThread.size(); i += 2) {
+      if (i + 1 == perThread.size()) {
+        nextLevel.push_back(std::move(perThread[i]));
+      } else {
+        std::vector<BoardKey> u;
+        u.reserve(std::max(perThread[i].size(), perThread[i + 1].size()));
+        std::set_union(perThread[i].begin(), perThread[i].end(), perThread[i + 1].begin(),
+                       perThread[i + 1].end(), std::back_inserter(u));
+        std::vector<BoardKey>().swap(perThread[i]);
+        std::vector<BoardKey>().swap(perThread[i + 1]);
+        nextLevel.push_back(std::move(u));
+      }
+    }
+    perThread.swap(nextLevel);
+  }
+  return perThread.empty() ? std::vector<BoardKey>{} : std::move(perThread[0]);
+}
+
+} // namespace detail
+
+// On-policy live-RT + DAS-bucket state generator (SRTBV004 + multi-bucket NNUE): runs 50/50
+// exploration rollouts under DasRtMoveTables with real DAS-bucket carryover, expands core V_RT
+// siblings, and merges/evicts down to cfg.maxBoards deterministically.
+inline std::vector<BoardKey>
+generateStateSetRt20(const StateGenConfig20 &cfg, const IndexedDasRtTablebase *rtTb,
+                     const DasRtMoveTables &tables, const TinyDasNet *nn,
+                     const std::vector<BoardKey> &priorBoards, StateGenStats20 &statsOut) {
+  const auto t0 = std::chrono::steady_clock::now();
+  statsOut = {};
+
+  const bool tbActive = (rtTb != nullptr && rtTb->isLoaded());
+  const int K = detail::resolveRtDasBuckets(rtTb, nn);
+  const int vpb = NUM_PIECES * K;
+  const bool nnActive = (nn != nullptr && nnSupportsDasBuckets(*nn, K));
+  const int threads = std::max(1, cfg.numThreads);
+  const StepDiscountTable20 disc =
+      StepDiscountTable20::make(cfg.gamma, tbActive ? rtTb->discountMode() : DiscountMode::PerLine);
+  const auto transProb = detail::buildTransitionProbMatrix(cfg.rngMode);
+
+  ShardedVisitCounter20 counter;
+  std::atomic<int> nextGame{0};
+  std::atomic<uint64_t> totalMoves{0};
+  std::atomic<uint64_t> inKeyMoves{0};
+
+  detail::runWorkerPool(threads, static_cast<size_t>(cfg.numGames), 16, [&](int /*tid*/) {
+    auto ws = std::make_unique<RtDecisionWorkspace>();
+    std::vector<std::array<uint16_t, BOARD_ROWS>> cellRows(DAS_MAX_LOCK_MOVES);
+    std::vector<int> bestBucketForCell(DAS_MAX_LOCK_MOVES, 0);
+    std::vector<uint8_t> cellIsGuidedOut(DAS_MAX_LOCK_MOVES, 0);
+    std::vector<uint8_t> cellFitsKey(DAS_MAX_LOCK_MOVES, 0);
+    std::vector<int> order;
+    order.reserve(DAS_MAX_LOCK_MOVES);
+    std::vector<BoardKey> batch;
+    batch.reserve(16384);
+    ShardedVisitCounter20::ShardBuckets byShard;
+    float childRow[MAX_RT_VALUES_PER_BOARD];
+    float nnRow[MAX_RT_VALUES_PER_BOARD];
+    uint64_t locMoves = 0, locInKey = 0;
+
+    while (true) {
+      const int g = nextGame.fetch_add(1, std::memory_order_relaxed);
+      if (g >= cfg.numGames)
+        break;
+
+      Rng rng(cfg.baseSeed + static_cast<uint64_t>(g) * 1009ULL);
+      int curP = rng.sampleOpeningPiece(cfg.rngMode);
+      int nextP = rng.sampleNextPiece(cfg.rngMode, curP);
+      int bucket = K - 1;
+      Board20 board = Board20::empty();
+      int totalLines = 0;
+
+      for (int step = 0; step < cfg.maxPiecesPerGame; ++step) {
+        if (cfg.maxLinesPerGame > 0 && totalLines >= cfg.maxLinesPerGame)
+          break;
+
+        BoardKey curKey;
+        if (encodeBoardKey(board.rows(), curKey, board.topNonEmptyRow)) {
+          batch.push_back(curKey);
+          locInKey++;
+          if (batch.size() >= 16384) {
+            counter.addBatch(batch, byShard);
+            batch.clear();
+          }
+        }
+        locMoves++;
+
+        // Piece 0 has next-box visibility from frame 0 (zeroRt); later pieces respect RT.
+        const int repDas = dasBucketRepresentativeCharge(bucket, K);
+        const bool zeroRt = (step == 0);
+        ws->search(tables, board, curP, &repDas, 1, /*forceZeroRt=*/zeroRt);
+        const int nCells = ws->numCells();
+        if (nCells == 0)
+          break;
+
+        bool bestBucketsReady = false;
+        auto ensureBestBuckets = [&]() noexcept {
+          if (bestBucketsReady)
+            return;
+          bestBucketsReady = true;
+          const DasRtSearchResult &sr = ws->result(0);
+          for (int i = 0; i < nCells; ++i) {
+            bestBucketForCell[static_cast<size_t>(i)] = 0;
+          }
+          for (int e = 0; e < sr.numEarlyMoves; ++e) {
+            const int cl = ws->localCellOf(0, sr.earlyMoves[e].cellIdx);
+            const int kb = dasChargeToBucket(sr.earlyMoves[e].dasAfter, K);
+            if (kb > bestBucketForCell[static_cast<size_t>(cl)]) {
+              bestBucketForCell[static_cast<size_t>(cl)] = kb;
+            }
+          }
+          const int totalAdjEdges = sr.adjMoveOffset[sr.numAdjStates];
+          for (int e = 0; e < totalAdjEdges; ++e) {
+            const int cl = ws->localCellOf(0, sr.adjEdges[e].cellIdx);
+            const int kb = dasChargeToBucket(sr.adjEdges[e].dasAfter, K);
+            if (kb > bestBucketForCell[static_cast<size_t>(cl)]) {
+              bestBucketForCell[static_cast<size_t>(cl)] = kb;
+            }
+          }
+        };
+
+        // Write raw continuation directly into ws->q(i); if anyInTb is true after scanning all
+        // cells, apply cfg.outMargin in-place to guided out-of-TB cells (matching Partial-OUT).
+        bool anyInTb = false;
+        for (int i = 0; i < nCells; ++i) {
+          auto &afterRows = cellRows[static_cast<size_t>(i)];
+          const uint8_t lc = ws->computeAfterRows(board, curP, i, afterRows.data());
+          const double rew = REWARD_NORM_TETRIS[lc];
+          const double dFac = disc.f[lc];
+          const int startRow = (lc == 0)
+                                   ? std::max(0, std::min(static_cast<int>(board.topNonEmptyRow),
+                                                          static_cast<int>(ws->cell(i).y)))
+                                   : 0;
+          BoardKey afterKey;
+          const bool fitsKey = encodeBoardKey(afterRows.data(), afterKey, startRow);
+          cellFitsKey[static_cast<size_t>(i)] = fitsKey ? 1 : 0;
+          cellIsGuidedOut[static_cast<size_t>(i)] = 0;
+          double *qc = ws->q(i);
+
+          if (tbActive && fitsKey && rtTb->lookup(afterKey, childRow)) {
+            anyInTb = true;
+            for (int o = 0; o < vpb; ++o) {
+              qc[o] = rew + dFac * static_cast<double>(childRow[o]);
+            }
+          } else {
+            for (int o = 0; o < vpb; ++o) {
+              qc[o] = rew;
+            }
+            // Unrepresentable (!fitsKey, >= 10 holes) boards cannot enter the state set or TB,
+            // so zero NN continuation prevents chasing OOD multi-hole sinks.
+            if (nnActive && fitsKey) {
+              cellIsGuidedOut[static_cast<size_t>(i)] = 1;
+              const bool topClear =
+                  ((afterRows[0] | afterRows[1] | afterRows[2]) & FULL_ROW_MASK) == 0U;
+              const Board20 bAfter =
+                  topClear ? Board20::empty() : Board20::fromRows(afterRows.data());
+              evalNnRtRow(*nn, afterRows.data(), K, nnRow);
+              for (int n = 0; n < NUM_PIECES; ++n) {
+                const bool canSpawn =
+                    topClear || !collides20(bAfter, n, SPAWN_COL, PIECES_20[n].initialY, 0);
+                if (!canSpawn)
+                  continue;
+                for (int k = 0; k < K; ++k) {
+                  const int o = rtValueIndex(n, k, K);
+                  const double est = std::max(0.0, static_cast<double>(nnRow[o]));
+                  qc[o] = rew + dFac * est;
+                }
+              }
+            }
+          }
+        }
+
+        if (nnActive && anyInTb && cfg.outMargin > 0.0) {
+          for (int i = 0; i < nCells; ++i) {
+            if (cellIsGuidedOut[static_cast<size_t>(i)] == 0U)
+              continue;
+            const uint8_t lc = ws->cell(i).lc;
+            const double rew = REWARD_NORM_TETRIS[lc];
+            const double marginDelta = disc.f[lc] * cfg.outMargin;
+            double *qc = ws->q(i);
+            for (int o = 0; o < vpb; ++o) {
+              qc[o] = std::max(rew, qc[o] - marginDelta);
+            }
+          }
+        }
+
+        int greedyCell = 0;
+        int greedyBucket = 0;
+        if (zeroRt) {
+          ensureBestBuckets();
+          greedyBucket = bestBucketForCell[0];
+          double bestSc = ws->q(0)[rtValueIndex(nextP, greedyBucket, K)];
+          for (int i = 1; i < nCells; ++i) {
+            const int kb = bestBucketForCell[static_cast<size_t>(i)];
+            const double sc = ws->q(i)[rtValueIndex(nextP, kb, K)];
+            if (sc > bestSc) {
+              bestSc = sc;
+              greedyCell = i;
+              greedyBucket = kb;
+            }
+          }
+        } else {
+          const RtDecisionWorkspace::Choice ch =
+              ws->chooseAction(0, K, transProb[static_cast<size_t>(curP)]);
+          if (!ch.any)
+            break;
+          greedyCell = ch.cellForNext[nextP];
+          greedyBucket = ch.bucketForNext[nextP];
+        }
+
+        int chosenCell = greedyCell;
+        int chosenBucket = greedyBucket;
+        if (cfg.epsilon > 0.0 && nCells > 1 && rng.nextUniform01() < cfg.epsilon) {
+          ensureBestBuckets();
+          const bool useNnProbe = nnActive && (rng.nextUniform01() < 0.5);
+          order.clear();
+          for (int i = 0; i < nCells; ++i) {
+            if (i != greedyCell) {
+              order.push_back(i);
+            }
+          }
+          if (useNnProbe) {
+            double nnScores[DAS_MAX_LOCK_MOVES];
+            for (int i : order) {
+              const auto &afterRows = cellRows[static_cast<size_t>(i)];
+              const uint8_t lc = ws->cell(i).lc;
+              const double rew = REWARD_NORM_TETRIS[lc];
+              double cont = 0.0;
+              if (cellFitsKey[static_cast<size_t>(i)] != 0U) {
+                const bool topClear =
+                    ((afterRows[0] | afterRows[1] | afterRows[2]) & FULL_ROW_MASK) == 0U;
+                const bool canSpawn = topClear
+                                      || !collides20(Board20::fromRows(afterRows.data()), nextP,
+                                                     SPAWN_COL, PIECES_20[nextP].initialY, 0);
+                if (canSpawn) {
+                  const int kb = bestBucketForCell[static_cast<size_t>(i)];
+                  cont = std::max(0.0, static_cast<double>(
+                                           evalNnPieceBucket(*nn, afterRows.data(), nextP, kb, K)));
+                }
+              }
+              nnScores[i] = rew + disc.f[lc] * cont;
+            }
+            std::sort(order.begin(), order.end(), [&](int a, int b) {
+              return (nnScores[a] != nnScores[b]) ? (nnScores[a] > nnScores[b]) : (a < b);
+            });
+            const int hi =
+                std::min<int>(static_cast<int>(order.size()), std::max(1, cfg.exploreTopK));
+            chosenCell = order[static_cast<size_t>(rng.nextInt(hi))];
+            chosenBucket = bestBucketForCell[static_cast<size_t>(chosenCell)];
+          } else {
+            // Rank non-greedy cells by their post-RT value for nextP and sample from the top beam.
+            std::sort(order.begin(), order.end(), [&](int a, int b) {
+              const double sa =
+                  ws->q(a)[rtValueIndex(nextP, bestBucketForCell[static_cast<size_t>(a)], K)];
+              const double sb =
+                  ws->q(b)[rtValueIndex(nextP, bestBucketForCell[static_cast<size_t>(b)], K)];
+              return (sa != sb) ? (sa > sb) : (a < b);
+            });
+            const int hi =
+                std::min<int>(static_cast<int>(order.size()), std::max(1, cfg.exploreTopK - 1));
+            chosenCell = order[static_cast<size_t>(rng.nextInt(hi))];
+            chosenBucket = bestBucketForCell[static_cast<size_t>(chosenCell)];
+          }
+        }
+
+        totalLines += ws->cell(chosenCell).lc;
+        board = Board20::fromRows(cellRows[static_cast<size_t>(chosenCell)].data());
+        bucket = chosenBucket;
+        curP = nextP;
+        nextP = rng.sampleNextPiece(cfg.rngMode, curP);
+      }
+    }
+    if (!batch.empty()) {
+      counter.addBatch(batch, byShard);
+    }
+    totalMoves.fetch_add(locMoves, std::memory_order_relaxed);
+    inKeyMoves.fetch_add(locInKey, std::memory_order_relaxed);
+  });
+
+  std::vector<std::pair<BoardKey, uint32_t>> rawEntries = counter.drainAndRelease();
+  statsOut.totalMoves = totalMoves.load();
+  statsOut.inKeyMoves = inKeyMoves.load();
+  statsOut.rawUniqueBoards = rawEntries.size();
+
+  std::vector<BoardKey> coreSiblings =
+      detail::expandCoreSiblingsRt20(rawEntries, cfg, rtTb, tables, nn);
+  statsOut.siblingBoardsAdded = coreSiblings.size();
+
+  std::vector<BoardKey> result =
+      detail::mergeFilterAndCap20(rawEntries, priorBoards, coreSiblings, cfg, rtTb, nn);
   statsOut.outputBoards = result.size();
   statsOut.elapsedSeconds =
       std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();

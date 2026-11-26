@@ -1,7 +1,8 @@
-// generate_20row.cpp — State-set generator (SRSTV002) for 20-row NES Tetris (10 Hz DAS).
+// generate_20row.cpp — State-set generator (SRSTV002) for 20-row NES Tetris.
 // Supports:
 //   - Round 0 seeding via production eval.cpp 2-ply (--seed-eval)
-//   - Rounds 1+ via TB+NNUE 50/50 exploration + core sibling expansion + nn-error eviction
+//   - Rounds 1+ via 0-frame TB+NNUE (SRTBV003) or live-RT V_RT+NNUE (SRTBV004 / multi-bucket NN)
+//     50/50 exploration + core sibling expansion + nn-error eviction
 //
 // Example (Round 0):
 //   ./build/generate_20row --seed-eval --level=19 --games=60000 --min-visits=2 \
@@ -76,9 +77,9 @@ void printUsage(FILE *stream, const char *prog) {
       stream,
       "Usage: %s --out=PATH [options]\n"
       "  --seed-eval               Seed states via 2-ply eval.cpp (Round 0 only)\n"
-      "  --tb=PATH                 SRTBV003 tablebase for TB+NN rollouts & nn-error scoring\n"
-      "  --nn=PATH                 SRNNV001 NNUE for frontier probes & nn-error scoring\n"
-      "  --merge=PATH              Prior SRSTV002/SRTBV003 board set to preserve (TIER_PRIOR)\n"
+      "  --tb=PATH                 SRTBV003 or SRTBV004 tablebase for rollouts & nn-error scoring\n"
+      "  --nn=PATH                 SRNNV001 NNUE (7 or 7*K outputs) for probes & nn-error scoring\n"
+      "  --merge=PATH              Prior SRSTV002/SRTBV003/SRTBV004 board set to preserve\n"
       "  --level=19|18             Stationary level (default 19)\n"
       "  --rng=nes|uniform         RNG mode (default nes)\n"
       "  --gamma=F                 Discount factor (default 0.995)\n"
@@ -229,7 +230,8 @@ std::vector<das::BoardKey> runSeedEvalGeneration(const GenCliConfig &cli,
 
   std::vector<das::BoardKey> emptySiblings;
   std::vector<das::BoardKey> result = das::detail::mergeFilterAndCap20(
-      rawEntries, priorBoards, emptySiblings, cli.gen, nullptr, nullptr);
+      rawEntries, priorBoards, emptySiblings, cli.gen,
+      static_cast<const das::IndexedDasTablebase *>(nullptr), nullptr);
   statsOut.outputBoards = result.size();
   statsOut.elapsedSeconds =
       std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
@@ -481,7 +483,7 @@ int main(int argc, char **argv) {
   std::vector<das::BoardKey> priorBoards;
   if (!cli.mergePath.empty()) {
     std::string err;
-    if (!das::loadInputBoardKeys(cli.mergePath, priorBoards, &err)) {
+    if (!das::loadInputBoardKeysAnyFormat(cli.mergePath, priorBoards, &err)) {
       fprintf(stderr, "Error loading --merge: %s\n", err.c_str());
       return 1;
     }
@@ -498,8 +500,32 @@ int main(int argc, char **argv) {
     fflush(stdout);
     boards = runSeedEvalGeneration(cli, priorBoards, stats);
   } else {
+    const bool isRtTb =
+        !cli.tbPath.empty()
+        && (das::peekFileMagic(cli.tbPath) == std::string(das::TABLEBASE_V4_MAGIC, 8));
     das::IndexedDasTablebase fastTb;
-    if (!cli.tbPath.empty()) {
+    das::IndexedDasRtTablebase rtTb;
+    if (isRtTb) {
+      std::string err;
+      if (!rtTb.open(cli.tbPath, &err)) {
+        fprintf(stderr, "Error loading SRTBV004 --tb: %s\n", err.c_str());
+        return 1;
+      }
+      if (rtTb.level() != cli.gen.level || rtTb.rngMode() != cli.gen.rngMode) {
+        fprintf(stderr, "Error: --tb level/rng (%d/%s) does not match CLI (%d/%s)\n", rtTb.level(),
+                das::rngModeName(rtTb.rngMode()), cli.gen.level, das::rngModeName(cli.gen.rngMode));
+        return 1;
+      }
+      if (gammaSet && std::abs(rtTb.gamma() - cli.gen.gamma) > 1e-9) {
+        fprintf(stderr, "Error: --gamma (%.5f) does not match --tb gamma (%.5f)\n", cli.gen.gamma,
+                rtTb.gamma());
+        return 1;
+      }
+      cli.gen.gamma = rtTb.gamma();
+      printf("Indexed V_RT TB %s (%llu boards, K=%d, rt=%uf, E[V(0,full)]=%.4f)\n",
+             cli.tbPath.c_str(), static_cast<unsigned long long>(rtTb.size()), rtTb.numDasBuckets(),
+             rtTb.header().reactionTimeFrames, rtTb.emptyBoardValue());
+    } else if (!cli.tbPath.empty()) {
       std::string err;
       if (!fastTb.open(cli.tbPath, &err)) {
         fprintf(stderr, "Error loading --tb: %s\n", err.c_str());
@@ -532,18 +558,44 @@ int main(int argc, char **argv) {
                 das::rngModeName(nn.rngMode), das::rngModeName(cli.gen.rngMode));
         return 1;
       }
-      printf("Loaded NNUE %s (%dx%d, rng=%s)\n", cli.nnPath.c_str(), nn.h1, nn.h2,
-             das::rngModeName(nn.rngMode));
+      if (isRtTb && !das::nnSupportsDasBuckets(nn, rtTb.numDasBuckets())) {
+        fprintf(stderr, "Error: --nn outDim (%d) is incompatible with SRTBV004 K=%d\n", nn.outDim,
+                rtTb.numDasBuckets());
+        return 1;
+      }
+      if (fastTb.isLoaded() && nn.outDim > das::NUM_PIECES) {
+        fprintf(stderr, "Error: --nn outDim (%d) must be %d when paired with SRTBV003 --tb\n",
+                nn.outDim, das::NUM_PIECES);
+        return 1;
+      }
+      printf("Loaded NNUE %s (%dx%d, out=%d, rng=%s)\n", cli.nnPath.c_str(), nn.h1, nn.h2,
+             nn.outDim, das::rngModeName(nn.rngMode));
     }
 
-    printf("Generating states via TB+NN (L%d, games=%d, eps=%.2f, mode=%s, core=%zu, "
-           "maxBoards=%zu, threads=%d)...\n",
-           cli.gen.level, cli.gen.numGames, cli.gen.epsilon,
-           das::boardPriorityModeName(cli.gen.priorityMode), cli.gen.protectedCore,
-           cli.gen.maxBoards, cli.gen.numThreads);
-    fflush(stdout);
-    boards = das::generateStateSetTbNn20(cli.gen, fastTb.isLoaded() ? &fastTb : nullptr,
+    const bool useRtGen = isRtTb || (nn.isLoaded() && nn.outDim > das::NUM_PIECES);
+    if (useRtGen) {
+      das::MoveSearchConfig mcfg =
+          isRtTb ? das::moveConfigFromHeaderV4(rtTb.header()) : das::MoveSearchConfig{};
+      mcfg.gravity = das::getGravity20(cli.gen.level);
+      const das::DasRtMoveTables tables(mcfg);
+      printf("Generating live-RT states via V_RT+NN (L%d, rt=%d, games=%d, eps=%.2f, mode=%s, "
+             "core=%zu, maxBoards=%zu, threads=%d)...\n",
+             cli.gen.level, mcfg.reactionTime, cli.gen.numGames, cli.gen.epsilon,
+             das::boardPriorityModeName(cli.gen.priorityMode), cli.gen.protectedCore,
+             cli.gen.maxBoards, cli.gen.numThreads);
+      fflush(stdout);
+      boards = das::generateStateSetRt20(cli.gen, rtTb.isLoaded() ? &rtTb : nullptr, tables,
                                          nn.isLoaded() ? &nn : nullptr, priorBoards, stats);
+    } else {
+      printf("Generating states via TB+NN (L%d, games=%d, eps=%.2f, mode=%s, core=%zu, "
+             "maxBoards=%zu, threads=%d)...\n",
+             cli.gen.level, cli.gen.numGames, cli.gen.epsilon,
+             das::boardPriorityModeName(cli.gen.priorityMode), cli.gen.protectedCore,
+             cli.gen.maxBoards, cli.gen.numThreads);
+      fflush(stdout);
+      boards = das::generateStateSetTbNn20(cli.gen, fastTb.isLoaded() ? &fastTb : nullptr,
+                                           nn.isLoaded() ? &nn : nullptr, priorBoards, stats);
+    }
   }
 
   std::string writeErr;
