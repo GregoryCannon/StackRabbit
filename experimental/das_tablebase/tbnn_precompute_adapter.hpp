@@ -47,6 +47,9 @@ struct TbNnPrecomputeResult {
   int linesCleared = 0;
   bool chosenInTb = false;
   bool usedAllOutFallback = false;
+  // True if 3-ply NN search ran for any evaluated next-piece branch (all 7 when rt > 0, or
+  // nextPieceIdx alone when rt == 0); usedAllOutFallback is scoped strictly to nextPieceIdx.
+  bool usedPly3 = false;
   GameState afterState = {};
 };
 
@@ -388,15 +391,35 @@ chooseTbNnPrecomputeMove(const GameState &state, int curPieceIdx, int nextPieceI
 
   const StepDiscountTable20 disc = StepDiscountTable20::make(opts.gamma, opts.discountMode);
 
+  const bool usePly2HybridPath = opts.outCfg.usesPly2HybridPath(hasTb);
+  const bool isHighRisk = opts.outCfg.isPly3HighRisk(board20);
+  const bool needSelectivePly3 = usePly2HybridPath && opts.outCfg.ply >= 3 && hasNn;
+  const bool needRiskPrescreen = needSelectivePly3 && isHighRisk && finiteMargin;
+
   bool anyTbGroundedForPiece[NUM_PIECES];
+  double bestTbGroundedForPiece[NUM_PIECES];
+  double bestAllOutForPiece[NUM_PIECES];
   for (int n = 0; n < NUM_PIECES; ++n) {
     anyTbGroundedForPiece[n] = anyInTbOverall;
+    bestTbGroundedForPiece[n] = -std::numeric_limits<double>::infinity();
+    bestAllOutForPiece[n] = -std::numeric_limits<double>::infinity();
   }
-  if (opts.outCfg.ply == 2) {
+  if (usePly2HybridPath) {
     PlacementList pl2;
     for (UniqueCell &u : cells) {
-      if (u.inTb)
+      const double rew = REWARD_NORM_TETRIS[u.lc];
+      const double dFac = disc.f[u.lc];
+      if (u.inTb) {
+        if (needRiskPrescreen) {
+          for (int n = 0; n < NUM_PIECES; ++n) {
+            const double q = rew + dFac * static_cast<double>(u.tbRow[n]);
+            if (q > bestTbGroundedForPiece[n]) {
+              bestTbGroundedForPiece[n] = q;
+            }
+          }
+        }
         continue;
+      }
       const Board20 bAfter = Board20::fromRows(u.afterRows);
       const TuckSetupInfo tucks = computeTuckSetupInfo(bAfter);
       for (int n = 0; n < NUM_PIECES; ++n) {
@@ -405,6 +428,18 @@ chooseTbNnPrecomputeMove(const GameState &state, int curPieceIdx, int nextPieceI
                                           opts.rngMode, pl2, anyTbGroundedForPiece[n]);
         if (u.ply2[n].anyInTb) {
           anyTbGroundedForPiece[n] = true;
+          if (needRiskPrescreen) {
+            const double tbOnlyQ = rew + dFac * u.ply2[n].bestTbOnly;
+            if (tbOnlyQ > bestTbGroundedForPiece[n]) {
+              bestTbGroundedForPiece[n] = tbOnlyQ;
+            }
+          }
+        }
+        if (needSelectivePly3) {
+          const double aoQ = rew + dFac * u.ply2[n].bestIfAllOut;
+          if (aoQ > bestAllOutForPiece[n]) {
+            bestAllOutForPiece[n] = aoQ;
+          }
         }
       }
     }
@@ -417,6 +452,8 @@ chooseTbNnPrecomputeMove(const GameState &state, int curPieceIdx, int nextPieceI
   std::vector<FullMovePossibility> dasBuf;
   dasBuf.reserve(64);
   detail::FlatSecondMoveCache dasScoreCache;
+  const double tieEps = 1e-12;
+  bool anyPly3Used = false;
 
   for (UniqueCell &u : cells) {
     const double rew = REWARD_NORM_TETRIS[u.lc];
@@ -451,16 +488,41 @@ chooseTbNnPrecomputeMove(const GameState &state, int curPieceIdx, int nextPieceI
       double qFull = rew;
       if (u.inTb) {
         qFull = rew + dFac * static_cast<double>(u.tbRow[n]);
-      } else if (opts.outCfg.ply == 2) {
-        qFull = rew
-                + dFac
-                      * (anyTbGroundedForPiece[n] ? u.ply2[n].bestIfTbGrounded
-                                                  : u.ply2[n].bestIfAllOut);
+      } else if (usePly2HybridPath) {
+        const bool groundedPiece = anyTbGroundedForPiece[n];
+        qFull = rew + dFac * (groundedPiece ? u.ply2[n].bestIfTbGrounded : u.ply2[n].bestIfAllOut);
+        // At rt == 0 (single phantom), collapse only reads nextPieceIdx, avoiding 7x 3-ply work.
+        const bool pieceNeedsPly3 = (opts.reactionTime > 0) || (n == nextPieceIdx);
+        if (needSelectivePly3 && pieceNeedsPly3 && u.ply2[n].hasMove) {
+          if (!groundedPiece) {
+            if (qFull + NN_3PLY_PRESCREEN_SLACK >= bestAllOutForPiece[n]) {
+              anyPly3Used = true;
+              const double est3 =
+                  detail::bestReplyNn3PlyTopK20(u.afterRows, n, gravity, opts.gamma, *nn,
+                                                opts.rngMode, opts.outCfg.topK, opts.discountMode);
+              qFull = rew + dFac * est3;
+            }
+          } else if (needRiskPrescreen
+                     && !u.ply2[n].bestGroundedFromTb
+                     && qFull + NN_3PLY_PRESCREEN_SLACK >= bestTbGroundedForPiece[n]) {
+            anyPly3Used = true;
+            const double est3 =
+                detail::bestReplyNn3PlyTopK20(u.afterRows, n, gravity, opts.gamma, *nn,
+                                              opts.rngMode, opts.outCfg.topK, opts.discountMode);
+            double cont = std::max(0.0, est3 - clampedMargin);
+            // 3-ply NN leaves skip TB lookup, so floor against any exact ply-2 TB re-entry.
+            if (u.ply2[n].anyInTb && u.ply2[n].bestTbOnly >= cont - tieEps) {
+              cont = u.ply2[n].bestTbOnly;
+            }
+            qFull = rew + dFac * cont;
+          }
+        }
       } else if (hasNn) {
         // When anyInTbOverall && !finiteMargin (+inf), out-of-TB moves get zero continuation.
         if (!anyInTbOverall || finiteMargin) {
           double estCont = 0.0;
           if (opts.outCfg.ply >= 3) {
+            anyPly3Used = true;
             estCont =
                 detail::bestReplyNn3PlyTopK20(u.afterRows, n, gravity, opts.gamma, *nn,
                                               opts.rngMode, opts.outCfg.topK, opts.discountMode);
@@ -534,7 +596,8 @@ chooseTbNnPrecomputeMove(const GameState &state, int curPieceIdx, int nextPieceI
     res.chosenInTb = cells[cit->second].inTb;
   }
   res.usedAllOutFallback =
-      !(opts.outCfg.ply == 2 ? anyTbGroundedForPiece[nextPieceIdx] : anyInTbOverall);
+      !(usePly2HybridPath ? anyTbGroundedForPiece[nextPieceIdx] : anyInTbOverall);
+  res.usedPly3 = anyPly3Used;
 
   const EvalContext ctx = getEvalContext(state, bc.lookup, false, opts.aggro);
   LockPlacement lp = {chosenX, chosenY, chosenRot, -1, NO_TUCK_NOTATION, curPiece};

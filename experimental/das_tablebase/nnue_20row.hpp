@@ -54,6 +54,8 @@ inline constexpr int NN_INPUT_DIM = 272;
 inline constexpr int NN_MAX_HIDDEN_DIM = 512;
 inline constexpr int NN_FAST_STACK_SUM = 384; // Keeps hot stack frame < 2 KB on ARM64
 inline constexpr int NN_DEFAULT_3PLY_TOPK = 6;
+inline constexpr int NN_DEFAULT_3PLY_MIN_HEIGHT = 10;
+inline constexpr int NN_DEFAULT_3PLY_MIN_HOLES = 2;
 inline constexpr double NN_3PLY_PRESCREEN_SLACK = 1.8; // Scaled for normalized Tetris-equivalents
 
 #if defined(_MSC_VER)
@@ -672,13 +674,67 @@ private:
 
 // ---------------- Neural Search & Calibrated Partial-OUT Selector ----------------
 
+enum class OutPly3Trigger : uint8_t {
+  Always = 0, // 3-ply directly on competitive out-of-TB moves (skips ply-2 TB re-entry check)
+  AllOut = 1, // Run fast ply-2 OUT->TB2; upgrade to 3-ply only when all ply-1 & ply-2 moves exit TB
+  Risk = 2,   // Upgrade on AllOut OR high-risk boards (maxH >= minHeight || holes >= minHoles)
+};
+
+inline const char *outPly3TriggerName(OutPly3Trigger trig) noexcept {
+  switch (trig) {
+  case OutPly3Trigger::Always:
+    return "always";
+  case OutPly3Trigger::AllOut:
+    return "allout";
+  case OutPly3Trigger::Risk:
+    return "risk";
+  }
+  return "unknown";
+}
+
+inline bool parseOutPly3Trigger(std::string_view s, OutPly3Trigger &out) noexcept {
+  if (s == "always") {
+    out = OutPly3Trigger::Always;
+    return true;
+  }
+  if (s == "allout") {
+    out = OutPly3Trigger::AllOut;
+    return true;
+  }
+  if (s == "risk") {
+    out = OutPly3Trigger::Risk;
+    return true;
+  }
+  return false;
+}
+
 struct NnSearchConfig20 {
   int ply = 2;
   int topK = NN_DEFAULT_3PLY_TOPK;
+  OutPly3Trigger ply3Trigger = OutPly3Trigger::Always;
+  int ply3MinHeight = NN_DEFAULT_3PLY_MIN_HEIGHT; // Active only when ply >= 3 && trigger == Risk
+  int ply3MinHoles = NN_DEFAULT_3PLY_MIN_HOLES;   // Active only when ply >= 3 && trigger == Risk
 
   static constexpr NnSearchConfig20 ply1() noexcept { return {1, NN_DEFAULT_3PLY_TOPK}; }
   static constexpr NnSearchConfig20 ply2() noexcept { return {2, NN_DEFAULT_3PLY_TOPK}; }
-  static constexpr NnSearchConfig20 ply3(int k = NN_DEFAULT_3PLY_TOPK) noexcept { return {3, k}; }
+  static constexpr NnSearchConfig20 ply3(int k = NN_DEFAULT_3PLY_TOPK,
+                                         OutPly3Trigger trig = OutPly3Trigger::Always,
+                                         int minH = NN_DEFAULT_3PLY_MIN_HEIGHT,
+                                         int minHoles = NN_DEFAULT_3PLY_MIN_HOLES) noexcept {
+    return {3, k, trig, minH, minHoles};
+  }
+
+  bool usesPly2HybridPath(bool hasTb) const noexcept {
+    return (ply == 2) || (ply >= 3 && ply3Trigger != OutPly3Trigger::Always && hasTb);
+  }
+
+  bool isPly3HighRisk(const Board20 &board) const noexcept {
+    if (ply < 3 || ply3Trigger != OutPly3Trigger::Risk) {
+      return false;
+    }
+    const int maxH = (board.topNonEmptyRow < BOARD_ROWS) ? (BOARD_ROWS - board.topNonEmptyRow) : 0;
+    return (maxH >= ply3MinHeight) || (static_cast<int>(board.numHoles) >= ply3MinHoles);
+  }
 };
 
 namespace detail {
@@ -719,6 +775,7 @@ struct Ply2HybridEval20 {
   CompactPlacement bestAllOutMove = {};
   double bestIfTbGrounded = 0.0;
   double bestIfAllOut = 0.0;
+  double bestTbOnly = -std::numeric_limits<double>::infinity();
 };
 
 // Best ply-2 reply over all legal nextPiece placements, checking the TB on every ply-2 leaf
@@ -752,6 +809,7 @@ bestReplyHybrid2Ply20(const Board20 &b20, const TuckSetupInfo &tucks, int nextPi
   float tbRow[NUM_PIECES];
   double bestGrounded = -std::numeric_limits<double>::infinity();
   double bestAllOut = -std::numeric_limits<double>::infinity();
+  double bestTbOnly = -std::numeric_limits<double>::infinity();
   bool bestGroundedTb = false;
   CompactPlacement bestGroundedMove{};
   CompactPlacement bestAllOutMove{};
@@ -781,6 +839,9 @@ bestReplyHybrid2Ply20(const Board20 &b20, const TuckSetupInfo &tucks, int nextPi
       res.anyInTb = true;
       qGrounded = rew2 + dFac2 * evTb;
       qAllOut = qGrounded;
+      if (qGrounded > bestTbOnly) {
+        bestTbOnly = qGrounded;
+      }
     } else if (needOutNn) {
       const double evNn = nn->evalNextPieceExpected(after2, mode, nextPiece);
       qAllOut = rew2 + dFac2 * evNn;
@@ -807,6 +868,7 @@ bestReplyHybrid2Ply20(const Board20 &b20, const TuckSetupInfo &tucks, int nextPi
 
   res.bestIfTbGrounded = bestGrounded;
   res.bestIfAllOut = bestAllOut;
+  res.bestTbOnly = bestTbOnly;
   res.bestGroundedFromTb = bestGroundedTb;
   res.bestGroundedMove = bestGroundedMove;
   res.bestAllOutMove = bestAllOutMove;
@@ -960,13 +1022,19 @@ struct HybridMoveChoice20 {
   bool afterFitsKey = false;
   bool chosenInTb = false;
   bool usedAllOutFallback = false;
+  bool usedPly3 = false;
   double score = 0.0;
 };
 
 // Calibrated Partial-OUT Hybrid TB + NNUE move selector:
 //   - Pass 1: TB lookup across all legal placements.
-//   - If ALL moves exit TB (all-OUT): rank directly via NN without margin clamping.
-//   - If >= 1 move stays in TB: in-TB scores r + gamma * V_tb; out-of-TB scores
+//   - For ply == 2 (and selective ply == 3 when a TB is loaded): out-of-TB ply-1 moves expand
+//     nextPiece and check ply-2 leaves against the TB first (OUT -> TB2 re-entry, zero margin).
+//     Selective ply == 3 then upgrades to 3-ply Top-K NN search only on AllOut turns (no ply-1 or
+//     ply-2 TB hit) or high-risk turns (maxH >= minHeight || holes >= minHoles) for competitive
+//     ungrounded OUT moves, flooring against any exact ply-2 TB re-entry (bestTbOnly).
+//   - For ply == 1 or unconditional ply == 3 (Always): if ALL ply-1 moves exit TB, rank directly
+//     via NN without margin clamping; otherwise in-TB scores r + gamma * V_tb and out-of-TB scores
 //     r + gamma * max(0, estCont - margin) when margin is finite (in-TB wins ties).
 template <typename TbType>
 inline HybridMoveChoice20
@@ -1027,9 +1095,10 @@ chooseHybridMove20(const Board20 &board, int curPiece, int nextPiece, int gravit
     }
   }
 
-  // For ply == 2, expand out-of-TB ply-1 moves and check ply-2 leaves against the TB first so
-  // temporary overhangs/tucks resolved by nextPiece re-enter the TB with exact value (no margin).
-  if (outCfg.ply == 2) {
+  // For ply == 2 (and selective ply >= 3 with a loaded TB), expand out-of-TB ply-1 moves and check
+  // ply-2 leaves against the TB first so temporary overhangs/tucks resolved by nextPiece re-enter
+  // the TB with exact value (no margin). Selective ply >= 3 then upgrades only when triggered.
+  if (outCfg.usesPly2HybridPath(hasTb)) {
     bool anyTbGrounded = anyInTb;
     PlacementList pl2;
     for (int i = 0; i < pl.count; ++i) {
@@ -1049,7 +1118,21 @@ chooseHybridMove20(const Board20 &board, int curPiece, int nextPiece, int gravit
     double bestQ = -std::numeric_limits<double>::infinity();
     bool bestGrounded = false;
     bool bestDirectTb = false;
+    auto considerCandidate = [&](int idx, double q, bool grounded, bool directTb) {
+      const bool strictlyBetter = (idx == 0 || q > bestQ + tieEps);
+      const bool tieBetter = !strictlyBetter
+                             && (std::abs(q - bestQ) <= tieEps)
+                             && ((grounded && !bestGrounded)
+                                 || (directTb && !bestDirectTb && grounded == bestGrounded));
+      if (strictlyBetter || tieBetter) {
+        bestIdx = idx;
+        bestQ = q;
+        bestGrounded = grounded;
+        bestDirectTb = directTb;
+      }
+    };
 
+    double bestTbGroundedQ = bestInTbQ;
     for (int i = 0; i < pl.count; ++i) {
       const auto &cm = metas[i];
       const double rew = REWARD_NORM_TETRIS[cm.lc];
@@ -1064,18 +1147,87 @@ chooseHybridMove20(const Board20 &board, int curPiece, int nextPiece, int gravit
       } else {
         q += dFac * (anyTbGrounded ? cm.ply2.bestIfTbGrounded : cm.ply2.bestIfAllOut);
         grounded = anyTbGrounded && cm.ply2.bestGroundedFromTb;
+        if (cm.ply2.anyInTb) {
+          const double tbOnlyQ = rew + dFac * cm.ply2.bestTbOnly;
+          if (tbOnlyQ > bestTbGroundedQ) {
+            bestTbGroundedQ = tbOnlyQ;
+          }
+        }
       }
+      considerCandidate(i, q, grounded, directTb);
+    }
 
-      const bool strictlyBetter = (i == 0 || q > bestQ + tieEps);
-      const bool tieBetter = !strictlyBetter
-                             && (std::abs(q - bestQ) <= tieEps)
-                             && ((grounded && !bestGrounded)
-                                 || (directTb && !bestDirectTb && grounded == bestGrounded));
-      if (strictlyBetter || tieBetter) {
-        bestIdx = i;
-        bestQ = q;
-        bestGrounded = grounded;
-        bestDirectTb = directTb;
+    bool usedPly3 = false;
+    if (outCfg.ply >= 3 && hasNn) {
+      const bool isHighRisk = outCfg.isPly3HighRisk(board);
+      if (!anyTbGrounded) {
+        const double bestPly2Q = bestQ;
+        int best3Idx = -1;
+        double best3Q = -std::numeric_limits<double>::infinity();
+        for (int i = 0; i < pl.count; ++i) {
+          const auto &cm = metas[i];
+          const double rew = REWARD_NORM_TETRIS[cm.lc];
+          const double dFac = disc.f[cm.lc];
+          const double ply2Q = rew + dFac * cm.ply2.bestIfAllOut;
+          if (ply2Q + NN_3PLY_PRESCREEN_SLACK < bestPly2Q) {
+            continue;
+          }
+          double est3 = 0.0;
+          if (cm.ply2.hasMove) {
+            usedPly3 = true;
+            est3 = detail::bestReplyNn3PlyTopK20(cm.rows, nextPiece, gravity, gamma, *nn, rngMode,
+                                                 outCfg.topK, discountMode);
+          }
+          const double q = rew + dFac * est3;
+          if (best3Idx < 0 || q > best3Q) {
+            best3Idx = i;
+            best3Q = q;
+          }
+        }
+        if (best3Idx >= 0) {
+          bestIdx = best3Idx;
+          bestQ = best3Q;
+        }
+      } else if (isHighRisk && allowPartialOut) {
+        // Re-evaluate competitive ungrounded OUT moves in a single zero-stack pass. Prescreen
+        // strictly against bestTbGroundedQ so an optimistic 2-ply NN spike cannot prune a rival.
+        bestIdx = 0;
+        bestQ = -std::numeric_limits<double>::infinity();
+        bestGrounded = false;
+        bestDirectTb = false;
+        for (int i = 0; i < pl.count; ++i) {
+          const auto &cm = metas[i];
+          const double rew = REWARD_NORM_TETRIS[cm.lc];
+          const double dFac = disc.f[cm.lc];
+          double q = rew;
+          bool grounded = false;
+          bool directTb = false;
+          if (cm.inTb) {
+            q += dFac * static_cast<double>(cm.tbVal);
+            grounded = true;
+            directTb = true;
+          } else {
+            const double ply2Q = rew + dFac * cm.ply2.bestIfTbGrounded;
+            if (!cm.ply2.bestGroundedFromTb
+                && cm.ply2.hasMove
+                && ply2Q + NN_3PLY_PRESCREEN_SLACK >= bestTbGroundedQ) {
+              usedPly3 = true;
+              const double est3 = detail::bestReplyNn3PlyTopK20(
+                  cm.rows, nextPiece, gravity, gamma, *nn, rngMode, outCfg.topK, discountMode);
+              double cont = std::max(0.0, est3 - clampedMargin);
+              // 3-ply NN leaves skip TB lookup, so floor against any exact ply-2 TB re-entry.
+              if (cm.ply2.anyInTb && cm.ply2.bestTbOnly >= cont - tieEps) {
+                cont = cm.ply2.bestTbOnly;
+                grounded = true;
+              }
+              q = rew + dFac * cont;
+            } else {
+              q = ply2Q;
+              grounded = cm.ply2.bestGroundedFromTb;
+            }
+          }
+          considerCandidate(i, q, grounded, directTb);
+        }
       }
     }
 
@@ -1088,6 +1240,7 @@ chooseHybridMove20(const Board20 &board, int curPiece, int nextPiece, int gravit
     out.afterFitsKey = (cm.fitsKey != 0);
     out.chosenInTb = (cm.inTb != 0);
     out.usedAllOutFallback = !anyTbGrounded;
+    out.usedPly3 = usedPly3;
     out.score = bestQ;
     return out;
   }
@@ -1114,6 +1267,7 @@ chooseHybridMove20(const Board20 &board, int curPiece, int nextPiece, int gravit
     out.afterFitsKey = (cm.fitsKey != 0);
     out.chosenInTb = false;
     out.usedAllOutFallback = true;
+    out.usedPly3 = (hasNn && outCfg.ply >= 3);
     out.score = bestSc;
     return out;
   }
@@ -1122,6 +1276,7 @@ chooseHybridMove20(const Board20 &board, int curPiece, int nextPiece, int gravit
   int bestIdx = 0;
   double bestQ = -std::numeric_limits<double>::infinity();
   bool bestInTb = false;
+  bool usedPly3 = false;
 
   for (int i = 0; i < pl.count; ++i) {
     const auto &cm = metas[i];
@@ -1140,6 +1295,7 @@ chooseHybridMove20(const Board20 &board, int curPiece, int nextPiece, int gravit
             < bestInTbQ) {
           estCont = est2;
         } else {
+          usedPly3 = true;
           estCont = detail::bestReplyNn3PlyTopK20(cm.rows, nextPiece, gravity, gamma, *nn, rngMode,
                                                   outCfg.topK, discountMode);
         }
@@ -1172,6 +1328,7 @@ chooseHybridMove20(const Board20 &board, int curPiece, int nextPiece, int gravit
   out.afterFitsKey = (cm.fitsKey != 0);
   out.chosenInTb = bestInTb;
   out.usedAllOutFallback = false;
+  out.usedPly3 = usedPly3;
   out.score = bestQ;
   return out;
 }

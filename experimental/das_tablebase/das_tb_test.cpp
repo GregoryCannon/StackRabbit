@@ -1494,3 +1494,244 @@ TEST_CASE("Soft-Boundary !fitsKey guard: >=10-hole children receive 0.0 continua
 
   fs::remove_all(tmpDir);
 }
+
+TEST_CASE("Selective runtime 3-ply: AllOut, Risk, bestTbOnly floor, and precompute parity") {
+  das::OutPly3Trigger trig = das::OutPly3Trigger::Always;
+  CHECK(das::parseOutPly3Trigger("always", trig));
+  CHECK(trig == das::OutPly3Trigger::Always);
+  CHECK(das::parseOutPly3Trigger("allout", trig));
+  CHECK(trig == das::OutPly3Trigger::AllOut);
+  CHECK(das::parseOutPly3Trigger("risk", trig));
+  CHECK(trig == das::OutPly3Trigger::Risk);
+  CHECK(!das::parseOutPly3Trigger("invalid", trig));
+  CHECK(!das::parseOutPly3Trigger("", trig));
+
+  namespace fs = std::filesystem;
+  const fs::path tmpDir = fs::temp_directory_path() / "sr_das_tb_test_selective_ply3";
+  fs::create_directories(tmpDir);
+  const std::string tbPath = (tmpDir / "tiny.tb.bin").string();
+
+  // Construct:
+  //  - emptyB (H=0, 0 holes) with one 1-ply child in TB
+  //  - tallB (H=11, 0 holes, 99 filled cells) with one 1-ply child in TB (val=0.5) AND one ply-2
+  //    grandchild in TB (val=2.0, via out-of-TB ply-1 child tallOut1) to exercise bestTbOnly floor
+  //  - holeyLowB (H=3, 6 holes) with one 1-ply child in TB to test holes-triggered Risk
+  uint16_t tallRows[das::BOARD_ROWS] = {};
+  for (int r = 9; r < das::BOARD_ROWS; ++r) {
+    tallRows[r] = 0x3FEU; // H=11, 0 holes, clean right well (99 filled cells)
+  }
+  uint16_t holeyLowRows[das::BOARD_ROWS] = {};
+  holeyLowRows[17] = 0x380U; // cols 0..2 filled above empty rows 18..19 -> H=3, 6 holes
+  const das::Board20 emptyB = das::Board20::empty();
+  const das::Board20 tallB = das::Board20::fromRows(tallRows);
+  const das::Board20 holeyLowB = das::Board20::fromRows(holeyLowRows);
+  REQUIRE(holeyLowB.numHoles >= 2);
+
+  das::PlacementList plEmpty, plTall, plHoley, plTall2;
+  das::findPlacements10Hz(emptyB, /*O=*/1, das::GRAVITY_L19, plEmpty);
+  das::findPlacements10Hz(tallB, /*O=*/1, das::GRAVITY_L19, plTall);
+  das::findPlacements10Hz(holeyLowB, /*O=*/1, das::GRAVITY_L19, plHoley);
+  REQUIRE(plEmpty.count > 0);
+  REQUIRE(plTall.count > 2);
+  REQUIRE(plHoley.count > 1);
+
+  uint16_t childRows[das::BOARD_ROWS];
+  uint16_t grandRows[das::BOARD_ROWS];
+  das::applyPlacement20(emptyB, 1, plEmpty.data[0].rot, plEmpty.data[0].x, plEmpty.data[0].y,
+                        childRows);
+  das::BoardKey emptyChildK{};
+  REQUIRE(das::encodeBoardKey(childRows, emptyChildK));
+
+  das::applyPlacement20(tallB, 1, plTall.data[0].rot, plTall.data[0].x, plTall.data[0].y,
+                        childRows);
+  das::BoardKey tallChildK{};
+  REQUIRE(das::encodeBoardKey(childRows, tallChildK));
+
+  // Take a distinct OUT ply-1 child of tallB (plTall.data[1]) and place one of its ply-2 children
+  // (nextPiece=O) into TB with high value 2.0 so bestReplyHybrid2Ply20 sets anyInTb & bestTbOnly.
+  das::applyPlacement20(tallB, 1, plTall.data[1].rot, plTall.data[1].x, plTall.data[1].y,
+                        childRows);
+  const das::Board20 tallOut1 = das::Board20::fromRows(childRows);
+  das::findPlacements10Hz(tallOut1, /*O=*/1, das::GRAVITY_L19, plTall2);
+  REQUIRE(plTall2.count > 0);
+  das::applyPlacement20(tallOut1, 1, plTall2.data[0].rot, plTall2.data[0].x, plTall2.data[0].y,
+                        grandRows);
+  das::BoardKey tallGrandK{};
+  REQUIRE(das::encodeBoardKey(grandRows, tallGrandK));
+
+  das::applyPlacement20(holeyLowB, 1, plHoley.data[0].rot, plHoley.data[0].x, plHoley.data[0].y,
+                        childRows);
+  das::BoardKey holeyChildK{};
+  REQUIRE(das::encodeBoardKey(childRows, holeyChildK));
+
+  std::vector<das::BoardKey> keys = {das::EMPTY_BOARD_KEY, emptyChildK, tallChildK, tallGrandK,
+                                     holeyChildK};
+  std::sort(keys.begin(), keys.end());
+  keys.erase(std::unique(keys.begin(), keys.end()), keys.end());
+
+  std::vector<double> vals(keys.size() * das::NUM_PIECES, 1.0);
+  for (size_t i = 0; i < keys.size(); ++i) {
+    const double v = (keys[i] == tallGrandK) ? 2.0 : ((keys[i] == tallChildK) ? 0.5 : 1.0);
+    for (int p = 0; p < das::NUM_PIECES; ++p) {
+      vals[i * das::NUM_PIECES + p] = v;
+    }
+  }
+  das::TablebaseHeaderV3 hdr{};
+  hdr.rngMode = static_cast<uint32_t>(das::RngMode::Nes);
+  hdr.rewardMode = das::REWARD_MODE_NORM_TETRIS;
+  hdr.level = 19;
+  hdr.flags = das::TB_FLAG_DISCOUNT_PER_LINE;
+  hdr.gamma = 0.975;
+  hdr.emptyBoardValue = 1.0;
+  hdr.bellmanResidual = 0.0;
+  REQUIRE(das::writeTablebaseV3(tbPath, keys, vals, hdr));
+
+  das::IndexedDasTablebase tb;
+  REQUIRE(tb.open(tbPath));
+  das::TinyDasNet net;
+  net.initRandom(16, 8, das::RngMode::Nes, 777ULL);
+
+  const auto cfgPly2 = das::NnSearchConfig20::ply2();
+  const auto cfgAlways = das::NnSearchConfig20::ply3(4, das::OutPly3Trigger::Always);
+  const auto cfgAllOut = das::NnSearchConfig20::ply3(4, das::OutPly3Trigger::AllOut);
+  const auto cfgRisk = das::NnSearchConfig20::ply3(4, das::OutPly3Trigger::Risk, 10, 2);
+
+  // 1. Grounded low clean board (H=0, holes=0): both AllOut and Risk skip 3-ply and match ply2.
+  const auto lowP2 =
+      das::chooseHybridMove20(emptyB, 1, 0, das::GRAVITY_L19, 0.975, &tb, &net, 0.15,
+                              das::RngMode::Nes, cfgPly2, das::DiscountMode::PerLine);
+  const auto lowAO =
+      das::chooseHybridMove20(emptyB, 1, 0, das::GRAVITY_L19, 0.975, &tb, &net, 0.15,
+                              das::RngMode::Nes, cfgAllOut, das::DiscountMode::PerLine);
+  const auto lowRk =
+      das::chooseHybridMove20(emptyB, 1, 0, das::GRAVITY_L19, 0.975, &tb, &net, 0.15,
+                              das::RngMode::Nes, cfgRisk, das::DiscountMode::PerLine);
+  REQUIRE(lowP2.found);
+  CHECK(!lowAO.usedPly3);
+  CHECK(!lowRk.usedPly3);
+  CHECK(lowAO.placement.rot == lowP2.placement.rot);
+  CHECK(lowAO.placement.x == lowP2.placement.x);
+  CHECK(lowAO.placement.y == lowP2.placement.y);
+  CHECK(lowRk.placement.rot == lowP2.placement.rot);
+  CHECK(lowRk.placement.x == lowP2.placement.x);
+  CHECK(lowRk.placement.y == lowP2.placement.y);
+  CHECK(std::fabs(lowAO.score - lowP2.score) <= 1e-12);
+  CHECK(std::fabs(lowRk.score - lowP2.score) <= 1e-12);
+
+  // 2. All-OUT board (no TB): usesPly2HybridPath(false) skips dead ply-2 pass; matches Always.
+  const auto aoAllOut = das::chooseHybridMove20(
+      emptyB, 1, 0, das::GRAVITY_L19, 0.975, static_cast<const das::IndexedDasTablebase *>(nullptr),
+      &net, 0.15, das::RngMode::Nes, cfgAllOut, das::DiscountMode::PerLine);
+  const auto aoAlways = das::chooseHybridMove20(
+      emptyB, 1, 0, das::GRAVITY_L19, 0.975, static_cast<const das::IndexedDasTablebase *>(nullptr),
+      &net, 0.15, das::RngMode::Nes, cfgAlways, das::DiscountMode::PerLine);
+  REQUIRE(aoAllOut.found);
+  CHECK(aoAllOut.usedAllOutFallback);
+  CHECK(aoAllOut.usedPly3);
+  CHECK(aoAlways.usedPly3);
+  CHECK(aoAllOut.placement.rot == aoAlways.placement.rot);
+  CHECK(aoAllOut.placement.x == aoAlways.placement.x);
+  CHECK(aoAllOut.placement.y == aoAlways.placement.y);
+  CHECK(std::fabs(aoAllOut.score - aoAlways.score) <= 1e-12);
+
+  // 3. Grounded tall board (H=11 >= 10, nextPiece=I so bestTbGroundedQ=0.5): AllOut skips 3-ply;
+  //    Risk triggers 3-ply on competitive OUT moves (0.0 + 1.8 >= 0.5).
+  const auto tallAO =
+      das::chooseHybridMove20(tallB, 1, 0, das::GRAVITY_L19, 0.975, &tb, &net, 0.15,
+                              das::RngMode::Nes, cfgAllOut, das::DiscountMode::PerLine);
+  const auto tallRk =
+      das::chooseHybridMove20(tallB, 1, 0, das::GRAVITY_L19, 0.975, &tb, &net, 0.15,
+                              das::RngMode::Nes, cfgRisk, das::DiscountMode::PerLine);
+  REQUIRE(tallAO.found);
+  REQUIRE(tallRk.found);
+  CHECK(!tallAO.usedAllOutFallback);
+  CHECK(!tallAO.usedPly3);
+  CHECK(!tallRk.usedAllOutFallback);
+  CHECK(tallRk.usedPly3);
+  CHECK(std::isfinite(tallRk.score));
+
+  // Verify bestTbGroundedQ prescreen prunes uncompetitive ~0.0 OUT moves when tallGrandK=2.0
+  // (nextPiece=O) puts bestTbGroundedQ > 0.0 + NN_3PLY_PRESCREEN_SLACK (1.8).
+  const auto tallPruned =
+      das::chooseHybridMove20(tallB, 1, 1, das::GRAVITY_L19, 0.975, &tb, &net, 0.15,
+                              das::RngMode::Nes, cfgRisk, das::DiscountMode::PerLine);
+  CHECK(!tallPruned.usedPly3);
+
+  // 4. Grounded low holey board (H=3 < 10, holes=6 >= 2): holes trigger Risk 3-ply, not AllOut.
+  const auto holeyAO =
+      das::chooseHybridMove20(holeyLowB, 1, 0, das::GRAVITY_L19, 0.975, &tb, &net, 0.15,
+                              das::RngMode::Nes, cfgAllOut, das::DiscountMode::PerLine);
+  const auto holeyRk =
+      das::chooseHybridMove20(holeyLowB, 1, 0, das::GRAVITY_L19, 0.975, &tb, &net, 0.15,
+                              das::RngMode::Nes, cfgRisk, das::DiscountMode::PerLine);
+  CHECK(!holeyAO.usedPly3);
+  CHECK(holeyRk.usedPly3);
+
+  // 5. safetyMargin = +inf and nn = nullptr safely skip grounded Risk 3-ply.
+  const auto tallInf = das::chooseHybridMove20(
+      tallB, 1, 1, das::GRAVITY_L19, 0.975, &tb, &net, std::numeric_limits<double>::infinity(),
+      das::RngMode::Nes, cfgRisk, das::DiscountMode::PerLine);
+  CHECK(!tallInf.usedPly3);
+  const auto tallNoNn =
+      das::chooseHybridMove20(tallB, 1, 1, das::GRAVITY_L19, 0.975, &tb, nullptr, 0.15,
+                              das::RngMode::Nes, cfgRisk, das::DiscountMode::PerLine);
+  CHECK(!tallNoNn.usedPly3);
+
+  // 6. Exercise bestTbOnly floor directly: construct a step-function NN on totalCells/200
+  //    (feature g[11] = NN_FEAT_GLOBALS_OFF + 11) that outputs 3.0 at 107 cells (ply-2 O+O on
+  //    tallB -> beats tallGrandK's 2.0 so !bestGroundedFromTb) and 0.0 at >=110 cells (ply-3 ->
+  //    drops below 2.0). Risk 3-ply MUST run and floor tallOut1 back up to bestTbOnly (~2.0),
+  //    winning over tallChildK (0.5) in both chooseHybridMove20 and chooseTbNnPrecomputeMove.
+  das::TinyDasNet floorNet;
+  floorNet.initRandom(16, 8, das::RngMode::Nes, 888ULL);
+  std::fill(floorNet.params.begin(), floorNet.params.end(), 0.0f);
+  const int cellsFeatIdx = das::NN_FEAT_GLOBALS_OFF + 11;
+  floorNet.params[floorNet.offW1() + static_cast<size_t>(cellsFeatIdx) * 16U + 0U] = -1.0f;
+  floorNet.params[floorNet.offB1() + 0U] = 0.55f;  // 0.55 - 107/200 = +0.015; 0.55 - 111/200 < 0
+  floorNet.params[floorNet.offW2() + 0U] = 200.0f; // 0.015 * 200 = 3.0 at 107 cells, 0.0 at 111
+  for (int p = 0; p < das::NUM_PIECES; ++p) {
+    floorNet.params[floorNet.offW3() + static_cast<size_t>(p) * 8U + 0U] = 1.0f;
+  }
+
+  das::PlacementList plCheck;
+  const auto p2Floor = das::detail::bestReplyHybrid2Ply20(
+      tallOut1.rows(), /*O=*/1, das::GRAVITY_L19, 0.975, &tb, &floorNet, 0.15, das::RngMode::Nes,
+      plCheck, das::DiscountMode::PerLine, /*alreadyGrounded=*/true);
+  CHECK(p2Floor.anyInTb);
+  CHECK(!p2Floor.bestGroundedFromTb);
+  CHECK(p2Floor.bestTbOnly >= 1.99);
+  CHECK(p2Floor.bestIfTbGrounded > p2Floor.bestTbOnly + 0.5);
+
+  const auto floorChoice =
+      das::chooseHybridMove20(tallB, 1, 1, das::GRAVITY_L19, 0.975, &tb, &floorNet, 0.15,
+                              das::RngMode::Nes, cfgRisk, das::DiscountMode::PerLine);
+  REQUIRE(floorChoice.found);
+  CHECK(floorChoice.usedPly3);
+  CHECK(!floorChoice.chosenInTb); // tallOut1 (floored at ~2.0) must beat tallChildK (0.5)
+  CHECK(floorChoice.score >= 1.99);
+
+  // 7. chooseTbNnPrecomputeMove selective 3-ply checks (AllOut skips low grounded, Risk triggers
+  //    and respects bestTbOnly on tallB).
+  const auto preBc = das::BackendContexts::make10Hz();
+  das::TbNnPrecomputeOptions preOpts;
+  preOpts.dasCharge = -1;
+  preOpts.reactionTime = 0;
+  preOpts.gamma = 0.975;
+  preOpts.discountMode = das::DiscountMode::PerLine;
+  preOpts.outMargin = 0.15;
+  preOpts.outCfg = cfgAllOut;
+  const GameState gsEmpty = das::board20ToGameState(emptyB, 19, 130, preBc, AGGRO);
+  const auto preLowAO = das::chooseTbNnPrecomputeMove(gsEmpty, 1, 0, &tb, &net, preOpts, preBc);
+  CHECK(preLowAO.hasMove);
+  CHECK(!preLowAO.usedPly3);
+
+  const GameState gsTall = das::board20ToGameState(tallB, 19, 130, preBc, AGGRO);
+  preOpts.outCfg = cfgRisk;
+  const auto preTallFloor =
+      das::chooseTbNnPrecomputeMove(gsTall, 1, 1, &tb, &floorNet, preOpts, preBc);
+  CHECK(preTallFloor.hasMove);
+  CHECK(preTallFloor.usedPly3);
+  CHECK(!preTallFloor.chosenInTb); // tallOut1 (floored at ~2.0) beats tallChildK (0.5)
+
+  fs::remove_all(tmpDir);
+}

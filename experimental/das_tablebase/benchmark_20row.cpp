@@ -68,6 +68,12 @@ struct BenchConfig {
   double outMargin = 0.25;
   int outPly = 2;
   int outTopK = das::NN_DEFAULT_3PLY_TOPK;
+  das::OutPly3Trigger outPly3Mode = das::OutPly3Trigger::Always;
+  int outPly3MinHeight = das::NN_DEFAULT_3PLY_MIN_HEIGHT;
+  int outPly3MinHoles = das::NN_DEFAULT_3PLY_MIN_HOLES;
+  bool hasOutTopK = false;
+  bool hasOutPly3Mode = false;
+  bool hasOutPly3RiskThresh = false;
   bool hasTbNnFlag = false;
   bool gammaSet = false;
   bool discountModeSet = false;
@@ -81,6 +87,7 @@ struct GameOutcome {
   int pieces = 0;
   uint64_t tbHits = 0;
   uint64_t allOutMoves = 0;
+  uint64_t ply3Moves = 0;
   uint64_t sumMaxHeight = 0;
   int tetrisCount = 0;
   bool reachedTransition = false;
@@ -191,7 +198,8 @@ GameOutcome runSingleGame(const BenchConfig &cfg, const das::BackendContexts &bc
   int nextP = rng.sampleNextPiece(cfg.rngMode, curP);
   int dasCharge = cfg.useDas ? 0 : -1;
 
-  const das::NnSearchConfig20 outCfg{cfg.outPly, cfg.outTopK};
+  const das::NnSearchConfig20 outCfg{cfg.outPly, cfg.outTopK, cfg.outPly3Mode, cfg.outPly3MinHeight,
+                                     cfg.outPly3MinHoles};
 
   GameOutcome out = {};
   while (out.pieces < cfg.maxPieces) {
@@ -241,6 +249,8 @@ GameOutcome runSingleGame(const BenchConfig &cfg, const das::BackendContexts &bc
         out.tbHits++;
       if (ch.usedAllOutFallback)
         out.allOutMoves++;
+      if (ch.usedPly3)
+        out.ply3Moves++;
       b20 = das::Board20::fromRows(ch.afterRows);
       if (!stationary && cleared > 0) {
         curLevel = das::getLevelAfterLineClears20(curLevel, out.lines, cleared);
@@ -268,6 +278,8 @@ GameOutcome runSingleGame(const BenchConfig &cfg, const das::BackendContexts &bc
         out.tbHits++;
       if (pr.usedAllOutFallback)
         out.allOutMoves++;
+      if (pr.usedPly3)
+        out.ply3Moves++;
       st = pr.afterState;
       curLevel = st.level;
     }
@@ -320,7 +332,9 @@ int main(int argc, char **argv) {
              "  --games=N --seed=U64 --threads=N --rng=nes|uniform --max-lines=N|uncapped\n"
              "  --rt=0..60 --das=0|1 --playouts=N --playout-len=N --breadth=-2..1156\n"
              "  --tb=PATH --nn=PATH --gamma=F --discount-mode=piece|line --out-margin=F|inf "
-             "--out-ply=1|2|3 --out-topk=N\n",
+             "--out-ply=1|2|3 --out-topk=N\n"
+             "  --out-ply3-mode=always|allout|risk --out-ply3-min-h=0..21 "
+             "--out-ply3-min-holes=0..200\n",
              argv[0]);
       return 0;
     }
@@ -530,6 +544,41 @@ int main(int argc, char **argv) {
         fprintf(stderr, "Error: invalid --out-topk (expected >= 1)\n");
         return 1;
       }
+      cfg.hasOutTopK = true;
+      cfg.hasTbNnFlag = true;
+      continue;
+    }
+    if (tryPrefix("--out-ply3-mode=", val)) {
+      if (!das::parseOutPly3Trigger(val, cfg.outPly3Mode)) {
+        fprintf(stderr, "Error: invalid --out-ply3-mode (expected always, allout, or risk)\n");
+        return 1;
+      }
+      cfg.hasOutPly3Mode = true;
+      cfg.hasTbNnFlag = true;
+      continue;
+    }
+    if (tryPrefix("--out-ply3-min-h=", val)) {
+      if (!parseStrictInt(val, cfg.outPly3MinHeight)
+          || cfg.outPly3MinHeight < 0
+          || cfg.outPly3MinHeight > das::BOARD_ROWS + 1) {
+        fprintf(stderr,
+                "Error: invalid --out-ply3-min-h (expected integer in 0..21; 21 disables)\n");
+        return 1;
+      }
+      cfg.hasOutPly3RiskThresh = true;
+      cfg.hasTbNnFlag = true;
+      continue;
+    }
+    if (tryPrefix("--out-ply3-min-holes=", val)) {
+      constexpr int MAX_HOLE_THRESHOLD = das::BOARD_ROWS * das::BOARD_WIDTH;
+      if (!parseStrictInt(val, cfg.outPly3MinHoles)
+          || cfg.outPly3MinHoles < 0
+          || cfg.outPly3MinHoles > MAX_HOLE_THRESHOLD) {
+        fprintf(stderr,
+                "Error: invalid --out-ply3-min-holes (expected integer in 0..200; 200 disables)\n");
+        return 1;
+      }
+      cfg.hasOutPly3RiskThresh = true;
       cfg.hasTbNnFlag = true;
       continue;
     }
@@ -547,8 +596,34 @@ int main(int argc, char **argv) {
     return 1;
   }
   if (!isTbNnAgent && cfg.hasTbNnFlag) {
-    fprintf(stderr, "Error: --tb/--nn/--gamma/--discount-mode/--out-margin/--out-ply/--out-topk "
-                    "require tbnn or tbnn-precompute\n");
+    fprintf(stderr, "Error: --tb/--nn/--gamma/--discount-mode/--out-margin/--out-ply/--out-topk/"
+                    "--out-ply3-* require tbnn or tbnn-precompute\n");
+    return 1;
+  }
+  if (cfg.hasOutTopK && cfg.outPly != 3) {
+    fprintf(stderr, "Error: --out-topk requires --out-ply=3\n");
+    return 1;
+  }
+  if (cfg.hasOutPly3Mode && cfg.outPly != 3) {
+    fprintf(stderr, "Error: --out-ply3-mode requires --out-ply=3\n");
+    return 1;
+  }
+  if (cfg.hasOutPly3RiskThresh
+      && (cfg.outPly != 3 || cfg.outPly3Mode != das::OutPly3Trigger::Risk)) {
+    fprintf(
+        stderr,
+        "Error: --out-ply3-min-h/--out-ply3-min-holes require --out-ply=3 --out-ply3-mode=risk\n");
+    return 1;
+  }
+  if (cfg.hasOutPly3Mode && cfg.nnPath.empty()) {
+    fprintf(stderr, "Error: --out-ply3-mode requires --nn\n");
+    return 1;
+  }
+  if (cfg.outPly == 3
+      && cfg.outPly3Mode == das::OutPly3Trigger::Risk
+      && !std::isfinite(cfg.outMargin)) {
+    fprintf(stderr, "Error: --out-ply3-mode=risk requires finite --out-margin (use allout with "
+                    "--out-margin=inf)\n");
     return 1;
   }
   if (cfg.agent == AgentKind::TbNnPrecompute && cfg.hasPlayoutFlag) {
@@ -680,7 +755,7 @@ int main(int argc, char **argv) {
       std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
 
   double sumScore = 0.0, sumScore230 = 0.0, sumNorm = 0.0, sumLines = 0.0, sumPieces = 0.0;
-  uint64_t totalPieces = 0, totalTbHits = 0, totalAllOut = 0, totalHeightSum = 0;
+  uint64_t totalPieces = 0, totalTbHits = 0, totalAllOut = 0, totalPly3 = 0, totalHeightSum = 0;
   uint64_t totalTetrisLines = 0;
   int transCount = 0, ksCount = 0, goalCount = 0, maxoutCount = 0;
   std::vector<double> scores;
@@ -697,6 +772,7 @@ int main(int argc, char **argv) {
     totalPieces += static_cast<uint64_t>(o.pieces);
     totalTbHits += o.tbHits;
     totalAllOut += o.allOutMoves;
+    totalPly3 += o.ply3Moves;
     totalHeightSum += o.sumMaxHeight;
     totalTetrisLines += static_cast<uint64_t>(o.tetrisCount) * 4ULL;
     if (o.reachedTransition)
@@ -745,19 +821,23 @@ int main(int argc, char **argv) {
            static_cast<unsigned long long>(cfg.seed), das::rngModeName(cfg.rngMode),
            aggroName(cfg.aggro), lineGoal, cfg.reactionTime, cfg.useDas, cfg.playoutCount,
            cfg.playoutLength, cfg.pruningBreadth, numThreads);
-  } else if (cfg.agent == AgentKind::TbNn) {
-    printf("BENCH mode=%s agent=%s games=%d seed=%llu rng=%s goal=%d m=%.2f ply=%d "
-           "gamma=%.4f[%s] tb=%s nn=%s threads=%d\n",
-           modeName(cfg.mode), agentName(cfg.agent), cfg.games,
-           static_cast<unsigned long long>(cfg.seed), das::rngModeName(cfg.rngMode), lineGoal,
-           cfg.outMargin, cfg.outPly, cfg.gamma, das::discountModeName(cfg.discountMode),
-           tb.isLoaded() ? "on" : "off", nn.isLoaded() ? "on" : "off", numThreads);
   } else {
-    printf("BENCH mode=%s agent=%s games=%d seed=%llu rng=%s goal=%d rt=%d das=%d m=%.2f ply=%d "
-           "gamma=%.4f[%s] tb=%s nn=%s threads=%d\n",
-           modeName(cfg.mode), agentName(cfg.agent), cfg.games,
-           static_cast<unsigned long long>(cfg.seed), das::rngModeName(cfg.rngMode), lineGoal,
-           cfg.reactionTime, cfg.useDas, cfg.outMargin, cfg.outPly, cfg.gamma,
+    printf("BENCH mode=%s agent=%s games=%d seed=%llu rng=%s goal=%d", modeName(cfg.mode),
+           agentName(cfg.agent), cfg.games, static_cast<unsigned long long>(cfg.seed),
+           das::rngModeName(cfg.rngMode), lineGoal);
+    if (cfg.agent == AgentKind::TbNnPrecompute) {
+      printf(" rt=%d das=%d", cfg.reactionTime, cfg.useDas);
+    }
+    printf(" m=%.2f ply=%d", cfg.outMargin, cfg.outPly);
+    if (cfg.outPly == 3) {
+      if (cfg.outPly3Mode == das::OutPly3Trigger::Risk) {
+        printf("[risk,h>=%d,holes>=%d,k=%d]", cfg.outPly3MinHeight, cfg.outPly3MinHoles,
+               cfg.outTopK);
+      } else {
+        printf("[%s,k=%d]", das::outPly3TriggerName(cfg.outPly3Mode), cfg.outTopK);
+      }
+    }
+    printf(" gamma=%.4f[%s] tb=%s nn=%s threads=%d\n", cfg.gamma,
            das::discountModeName(cfg.discountMode), tb.isLoaded() ? "on" : "off",
            nn.isLoaded() ? "on" : "off", numThreads);
   }
@@ -779,9 +859,14 @@ int main(int argc, char **argv) {
            100.0 * goalCount / n, 100.0 * maxoutCount / n);
   }
   if (isTbNnAgent && totalPieces > 0) {
-    printf("  TB Stats:   hit=%.2f%% | allOut=%.2f%%\n",
+    printf("  TB Stats:   hit=%.2f%% | allOut=%.2f%%",
            100.0 * static_cast<double>(totalTbHits) / static_cast<double>(totalPieces),
            100.0 * static_cast<double>(totalAllOut) / static_cast<double>(totalPieces));
+    if (cfg.outPly == 3) {
+      printf(" | ply3=%.2f%%",
+             100.0 * static_cast<double>(totalPly3) / static_cast<double>(totalPieces));
+    }
+    printf("\n");
   }
   printf("  Speed:      %.2fs total | %.1f mv/s | %.3f ms/mv (wall)\n", elapsed,
          static_cast<double>(totalPieces) / std::max(1e-6, elapsed),
