@@ -3108,8 +3108,70 @@ TEST_CASE("solve20RtMPI: brute-force oracle parity (hard & soft boundary, K = 2 
     CHECK(!st1.empty());
     CHECK(st1.size() <= gcfg.maxBoards);
     CHECK(st1 == st4);
+    CHECK(gs1.gamesPlayed == gcfg.numGames);
+    CHECK(gs4.gamesPlayed == gcfg.numGames);
     CHECK(std::is_sorted(st1.begin(), st1.end()));
     CHECK(std::binary_search(st1.begin(), st1.end(), das::EMPTY_BOARD_KEY));
+
+    // Live targetBoards early-stop: reaches target before numGames ceiling, both cold and merged.
+    das::StateGenConfig20 tcfg = gcfg;
+    tcfg.numGames = 200;
+    tcfg.minVisits = 2;
+    tcfg.siblingMinVisits = 0;
+    tcfg.targetBoards = 30;
+    tcfg.maxBoards = 500;
+    tcfg.numThreads = 2;
+    tcfg.verbose = false;
+    das::StateGenStats20 tsCold{};
+    const auto stCold = das::generateStateSetRt20(tcfg, &idx4, tables, &rtNet, {}, tsCold);
+    CHECK(stCold.size() >= tcfg.targetBoards);
+    CHECK(tsCold.gamesPlayed > 0);
+    CHECK(tsCold.gamesPlayed < tcfg.numGames);
+
+    // Merged with stCold: only newly qualified non-prior boards count toward the delta.
+    tcfg.targetBoards = stCold.size() + 20;
+    tcfg.baseSeed = 999999ULL;
+    das::StateGenStats20 tsMerge{};
+    const auto stMerge = das::generateStateSetRt20(tcfg, &idx4, tables, &rtNet, stCold, tsMerge);
+    CHECK(stMerge.size() >= tcfg.targetBoards);
+    CHECK(tsMerge.gamesPlayed > 0);
+    CHECK(tsMerge.gamesPlayed < tcfg.numGames);
+
+    // Already at target via priorBoards: stops immediately with zero games played.
+    tcfg.targetBoards = stCold.size();
+    das::StateGenStats20 tsZero{};
+    const auto stZero = das::generateStateSetRt20(tcfg, &idx4, tables, &rtNet, stCold, tsZero);
+    CHECK(stZero == stCold);
+    CHECK(tsZero.gamesPlayed == 0);
+    CHECK(tsZero.targetBoardsReached);
+
+    // priorBoards without EMPTY_BOARD_KEY + minVisits == 0/1 + 0-frame generateStateSetTbNn20.
+    std::vector<das::BoardKey> priorNoEmpty;
+    for (das::BoardKey k : stCold) {
+      if (k != das::EMPTY_BOARD_KEY)
+        priorNoEmpty.push_back(k);
+    }
+    REQUIRE(priorNoEmpty.size() + 1U == stCold.size());
+    tcfg.minVisits = 0;
+    tcfg.targetBoards = priorNoEmpty.size() + 1U + 15U;
+    tcfg.baseSeed = 555555ULL;
+    das::StateGenStats20 tsNoEmpty{};
+    const auto stNoEmpty =
+        das::generateStateSetRt20(tcfg, &idx4, tables, &rtNet, priorNoEmpty, tsNoEmpty);
+    CHECK(stNoEmpty.size() >= tcfg.targetBoards);
+    CHECK(tsNoEmpty.gamesPlayed > 0);
+    CHECK(tsNoEmpty.gamesPlayed < tcfg.numGames);
+    CHECK(tsNoEmpty.targetBoardsReached);
+
+    das::StateGenConfig20 tbCfg = tcfg;
+    tbCfg.minVisits = 1;
+    tbCfg.targetBoards = 35;
+    das::StateGenStats20 tsTb{};
+    const auto stTb = das::generateStateSetTbNn20(tbCfg, nullptr, nullptr, {}, tsTb);
+    CHECK(stTb.size() >= tbCfg.targetBoards);
+    CHECK(tsTb.gamesPlayed > 0);
+    CHECK(tsTb.gamesPlayed < tbCfg.numGames);
+    CHECK(tsTb.targetBoardsReached);
 
     init3.close();
     init4.close();

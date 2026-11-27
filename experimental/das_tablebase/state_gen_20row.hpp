@@ -58,7 +58,8 @@ public:
     size_ = 0;
   }
 
-  void increment(BoardKey key, uint32_t delta = 1U) {
+  // Increments the visit count for `key` (saturated at UINT32_MAX) and returns the previous count.
+  uint32_t increment(BoardKey key, uint32_t delta = 1U) {
     assert(key != EMPTY_KEY);
     if ((size_ + 1) * 10 > keys_.size() * 7) {
       rehash(std::max<size_t>(16, keys_.size() * 2));
@@ -70,12 +71,13 @@ public:
         keys_[slot] = key;
         counts_[slot] = delta;
         size_++;
-        return;
+        return 0U;
       }
       if (cur == key) {
-        const uint64_t sum = static_cast<uint64_t>(counts_[slot]) + delta;
+        const uint32_t prev = counts_[slot];
+        const uint64_t sum = static_cast<uint64_t>(prev) + delta;
         counts_[slot] = (sum > UINT32_MAX) ? UINT32_MAX : static_cast<uint32_t>(sum);
-        return;
+        return prev;
       }
       slot = (slot + 1) & mask_;
     }
@@ -127,26 +129,40 @@ public:
   static constexpr size_t NUM_SHARDS = 64;
   using ShardBuckets = std::array<std::vector<BoardKey>, NUM_SHARDS>;
 
-  void addBatch(const std::vector<BoardKey> &batch, ShardBuckets &byShard) {
+  // Inserts a batch of keys. When `trackMinVisits > 0` and `crossedOut != nullptr`, replaces
+  // `*crossedOut` with every key whose visit count transitions from `trackMinVisits - 1` to
+  // `trackMinVisits` (at most once per unique key across the lifetime of the counter).
+  // `shardStart` offsets shard traversal order per worker to avoid convoys during shard rehashes.
+  void addBatch(const std::vector<BoardKey> &batch, ShardBuckets &byShard,
+                uint32_t trackMinVisits = 0U, std::vector<BoardKey> *crossedOut = nullptr,
+                size_t shardStart = 0U) {
     for (auto &b : byShard)
       b.clear();
+    const bool track = (crossedOut != nullptr && trackMinVisits > 0U);
+    if (crossedOut != nullptr)
+      crossedOut->clear();
     for (BoardKey k : batch) {
       const size_t sh = static_cast<size_t>(hashBoardKeyShard(k)) & (NUM_SHARDS - 1);
       byShard[sh].push_back(k);
     }
-    for (size_t sh = 0; sh < NUM_SHARDS; ++sh) {
+    for (size_t idx = 0; idx < NUM_SHARDS; ++idx) {
+      const size_t sh = (idx + shardStart) & (NUM_SHARDS - 1);
       if (byShard[sh].empty())
         continue;
       std::lock_guard<std::mutex> lk(shards_[sh].mu);
       for (BoardKey k : byShard[sh]) {
-        shards_[sh].map.increment(k, 1U);
+        const uint32_t prev = shards_[sh].map.increment(k, 1U);
+        if (track && prev == trackMinVisits - 1U) {
+          crossedOut->push_back(k);
+        }
       }
     }
   }
 
-  void addBatch(const std::vector<BoardKey> &batch) {
+  void addBatch(const std::vector<BoardKey> &batch, uint32_t trackMinVisits = 0U,
+                std::vector<BoardKey> *crossedOut = nullptr, size_t shardStart = 0U) {
     ShardBuckets byShard;
-    addBatch(batch, byShard);
+    addBatch(batch, byShard, trackMinVisits, crossedOut, shardStart);
   }
 
   // Drains all shards into a flat vector while immediately releasing each shard's hash table.
@@ -180,10 +196,15 @@ struct StateGenConfig20 {
   int maxPiecesPerGame = 500;
   int maxLinesPerGame = 100; // 100 for L19, 130 for L18, 0 = uncapped
   uint64_t baseSeed = 10000000ULL;
-  double epsilon = 0.12;         // 50/50 exploration split rate
-  int exploreTopK = 6;           // Runner-up / frontier probe beam
-  double outMargin = 0.6;        // Partial-OUT safety margin during TB+NN rollouts
-  uint32_t minVisits = 2;        // Prune rare tail states below this count
+  double epsilon = 0.12;  // 50/50 exploration split rate
+  int exploreTopK = 6;    // Runner-up / frontier probe beam
+  double outMargin = 0.6; // Partial-OUT safety margin during TB+NN rollouts
+  uint32_t minVisits = 2; // Prune rare tail states below this count
+  // Stop rollouts early once qualified boards (prior U {empty} + unique non-prior boards with
+  // visits >= minVisits) reach N; numGames acts as the hard ceiling (0 = fixed-game deterministic
+  // 1T == MT mode). When targetBoards > 0 with numThreads > 1, early stopping is asynchronous
+  // across workers so exact games played and output set can vary slightly by thread count.
+  size_t targetBoards = 0;
   size_t maxBoards = 5000000;    // Output cap (0 = unlimited)
   uint32_t siblingMinVisits = 4; // Expand core sibling replies on >= M-visit boards (0 = off)
   BoardPriorityMode priorityMode = BoardPriorityMode::Visits;
@@ -196,6 +217,8 @@ struct StateGenConfig20 {
 };
 
 struct StateGenStats20 {
+  int gamesPlayed = 0;
+  bool targetBoardsReached = false;
   uint64_t totalMoves = 0;
   uint64_t inKeyMoves = 0;
   size_t rawUniqueBoards = 0;
@@ -205,6 +228,229 @@ struct StateGenStats20 {
 };
 
 namespace detail {
+
+// Batched prefetched binary search over a large sorted array of BoardKeys (avoids serial DRAM
+// stalls and L1/L2 pollution when probing 10M–50M priorBoards).
+inline size_t countNotInSortedPrior20(const std::vector<BoardKey> &prior,
+                                      const std::vector<BoardKey> &keys) noexcept {
+  const size_t n = prior.size();
+  const BoardKey *data = prior.data();
+  size_t added = 0;
+  constexpr size_t B = 16;
+  const size_t total = keys.size();
+  for (size_t base = 0; base < total; base += B) {
+    const size_t cnt = std::min(B, total - base);
+    size_t lo[B], hi[B];
+    BoardKey q[B];
+    size_t active = 0;
+    for (size_t j = 0; j < cnt; ++j) {
+      const BoardKey k = keys[base + j];
+      if (k == EMPTY_BOARD_KEY)
+        continue;
+      if (n == 0) {
+        added++;
+        continue;
+      }
+      q[active] = k;
+      lo[active] = 0;
+      hi[active] = n;
+      active++;
+    }
+    if (active == 0)
+      continue;
+    while (true) {
+      bool anyLeft = false;
+      for (size_t j = 0; j < active; ++j) {
+        if (lo[j] < hi[j]) {
+          const size_t mid = lo[j] + ((hi[j] - lo[j]) >> 1);
+          __builtin_prefetch(&data[mid], 0, 0);
+          anyLeft = true;
+        }
+      }
+      if (!anyLeft)
+        break;
+      for (size_t j = 0; j < active; ++j) {
+        if (lo[j] < hi[j]) {
+          const size_t mid = lo[j] + ((hi[j] - lo[j]) >> 1);
+          if (data[mid] < q[j]) {
+            lo[j] = mid + 1;
+          } else {
+            hi[j] = mid;
+          }
+        }
+      }
+    }
+    for (size_t j = 0; j < active; ++j) {
+      if (lo[j] >= n || data[lo[j]] != q[j]) {
+        added++;
+      }
+    }
+  }
+  return added;
+}
+
+// Live rollout progress tracker & exact lower-bound counter on qualified output boards:
+//   qualifiedCount = |priorBoards U {EMPTY_BOARD_KEY}| + unique non-prior keys reaching >=
+//   minVisits.
+// Because core-sibling expansion can only add boards, qualifiedCount <= exactCount before capping.
+// Precondition: `prior` is strictly ascending and unique (as enforced by
+// loadInputBoardKeysAnyFormat).
+class LiveStateGenProgress20 {
+public:
+  LiveStateGenProgress20(const std::vector<BoardKey> &prior, const StateGenConfig20 &cfg,
+                         std::chrono::steady_clock::time_point startTime)
+      : priorBoards_(&prior), trackMinVisits_(std::max<uint32_t>(1U, cfg.minVisits)),
+        targetBoards_(cfg.targetBoards), maxGames_(cfg.numGames), t0_(startTime) {
+    assert(std::adjacent_find(prior.begin(), prior.end(),
+                              [](const BoardKey &a, const BoardKey &b) { return !(a < b); })
+           == prior.end());
+    const bool hasEmpty = std::binary_search(prior.begin(), prior.end(), EMPTY_BOARD_KEY);
+    baseCount_ = prior.size() + (hasEmpty ? 0U : 1U);
+    if (targetBoards_ > 0U) {
+      const size_t rem = (targetBoards_ > baseCount_) ? (targetBoards_ - baseCount_) : 0U;
+      // Keep 16K batches at >=500K targets (negligible overshoot, minimal rehash lock frequency),
+      // 4K for medium targets, and per-game flush for tiny targets (<10K remaining).
+      flushBatchSize_ = (targetBoards_ >= 500000U) ? 16384U : 4096U;
+      flushEachGame_ = (rem > 0U && rem < 10000U);
+      if (baseCount_ >= targetBoards_) {
+        targetReached_.store(true, std::memory_order_release);
+      }
+    }
+    if (cfg.verbose && maxGames_ >= 20000) {
+      progressInterval_ = (maxGames_ >= 200000) ? 50000 : 10000;
+    }
+    // Only pay priorBoards lookup overhead when targetBoards early-stop or progress printing needs
+    // it.
+    effectiveTrackMinVisits_ = (targetBoards_ > 0U || progressInterval_ > 0) ? trackMinVisits_ : 0U;
+  }
+
+  LiveStateGenProgress20(std::vector<BoardKey> &&, const StateGenConfig20 &,
+                         std::chrono::steady_clock::time_point) = delete;
+
+  uint32_t effectiveTrackMinVisits() const noexcept { return effectiveTrackMinVisits_; }
+  size_t flushBatchSize() const noexcept { return flushBatchSize_; }
+  bool flushEachGame() const noexcept { return flushEachGame_; }
+  int gamesCompleted() const noexcept { return gamesCompleted_.load(std::memory_order_relaxed); }
+  uint64_t totalMoves() const noexcept { return liveMoves_.load(std::memory_order_relaxed); }
+  bool targetReached() const noexcept {
+    return targetBoards_ > 0U && targetReached_.load(std::memory_order_acquire);
+  }
+
+  void recordCrossed(const std::vector<BoardKey> &crossed) {
+    if (crossed.empty() || priorBoards_ == nullptr)
+      return;
+    const size_t added = countNotInSortedPrior20(*priorBoards_, crossed);
+    if (added > 0) {
+      const size_t total =
+          baseCount_ + newQualified_.fetch_add(added, std::memory_order_relaxed) + added;
+      if (targetBoards_ > 0U
+          && total >= targetBoards_
+          && !targetReached_.load(std::memory_order_relaxed)) {
+        targetReached_.store(true, std::memory_order_release);
+      }
+    }
+  }
+
+  void onGameFinished(uint64_t gameMoves) {
+    const uint64_t totMoves =
+        liveMoves_.fetch_add(gameMoves, std::memory_order_relaxed) + gameMoves;
+    const int done = gamesCompleted_.fetch_add(1, std::memory_order_relaxed) + 1;
+    if (progressInterval_ > 0 && (done % progressInterval_) == 0) {
+      const double elapsed =
+          std::chrono::duration<double>(std::chrono::steady_clock::now() - t0_).count();
+      const size_t nq = newQualified_.load(std::memory_order_relaxed);
+      const size_t qual = baseCount_ + nq;
+      if (targetBoards_ > 0U) {
+        printf("  [gen] games=%d/%d | moves=%.2fM | qualified=%zu/%zu (new=%zu) | %.1fs\n", done,
+               maxGames_, static_cast<double>(totMoves) / 1e6, qual, targetBoards_, nq, elapsed);
+      } else {
+        printf("  [gen] games=%d/%d | moves=%.2fM | qualified=%zu (new=%zu) | %.1fs\n", done,
+               maxGames_, static_cast<double>(totMoves) / 1e6, qual, nq, elapsed);
+      }
+      fflush(stdout);
+    }
+  }
+
+private:
+  // Read-only config published before worker pool start.
+  const std::vector<BoardKey> *priorBoards_ = nullptr;
+  uint32_t trackMinVisits_ = 1U;
+  uint32_t effectiveTrackMinVisits_ = 0U;
+  size_t baseCount_ = 1U;
+  size_t targetBoards_ = 0U;
+  size_t flushBatchSize_ = 16384U;
+  bool flushEachGame_ = false;
+  int maxGames_ = 0;
+  int progressInterval_ = 0;
+  std::chrono::steady_clock::time_point t0_{};
+
+  // Isolate read-mostly stop flag and write-hot counters on separate cache lines.
+  alignas(128) std::atomic<bool> targetReached_{false};
+  alignas(128) std::atomic<size_t> newQualified_{0};
+  alignas(128) std::atomic<int> gamesCompleted_{0};
+  alignas(128) std::atomic<uint64_t> liveMoves_{0};
+};
+
+// Per-worker helper encapsulating visit batching, threshold tracking, and game-completion progress.
+class VisitBatchRecorder20 {
+public:
+  VisitBatchRecorder20(ShardedVisitCounter20 &counter, LiveStateGenProgress20 &progress, int tid)
+      : counter_(counter), progress_(progress), trackMinVisits_(progress.effectiveTrackMinVisits()),
+        flushBatchSize_(progress.flushBatchSize()), flushEachGame_(progress.flushEachGame()),
+        shardStart_(static_cast<size_t>(std::max(0, tid))) {
+    batch_.reserve(flushBatchSize_);
+    if (trackMinVisits_ > 0U) {
+      crossed_.reserve(flushBatchSize_);
+    }
+  }
+
+  bool shouldStop() const noexcept { return progress_.targetReached(); }
+
+  void recordStep(bool hasKey, BoardKey key) {
+    if (hasKey) {
+      batch_.push_back(key);
+      inKeyMoves_++;
+      if (batch_.size() >= flushBatchSize_) {
+        flush();
+      }
+    }
+    gameMoves_++;
+  }
+
+  void finishGame() {
+    if (flushEachGame_) {
+      flush();
+    }
+    progress_.onGameFinished(gameMoves_);
+    gameMoves_ = 0;
+  }
+
+  void flush() {
+    if (batch_.empty())
+      return;
+    counter_.addBatch(batch_, byShard_, trackMinVisits_, trackMinVisits_ > 0U ? &crossed_ : nullptr,
+                      shardStart_);
+    batch_.clear();
+    if (trackMinVisits_ > 0U) {
+      progress_.recordCrossed(crossed_);
+    }
+  }
+
+  uint64_t inKeyMoves() const noexcept { return inKeyMoves_; }
+
+private:
+  ShardedVisitCounter20 &counter_;
+  LiveStateGenProgress20 &progress_;
+  uint32_t trackMinVisits_;
+  size_t flushBatchSize_;
+  bool flushEachGame_;
+  size_t shardStart_;
+  std::vector<BoardKey> batch_;
+  std::vector<BoardKey> crossed_;
+  ShardedVisitCounter20::ShardBuckets byShard_;
+  uint64_t gameMoves_ = 0;
+  uint64_t inKeyMoves_ = 0;
+};
 
 // Collects unique greedy TB + NN sibling children on core boards (visits >= siblingMinVisits)
 // with geometric per-worker dedup watermarks and pairwise set_union to prevent RAM spikes & O(N^2).
@@ -653,7 +899,8 @@ mergeFilterAndCap20(std::vector<std::pair<BoardKey, uint32_t>> &rawEntries,
 } // namespace detail
 
 // Runs TB+NN 50/50 exploration rollouts (half TB runner-ups, half NN frontier probes excluding
-// the greedy TB move) and merges/evicts down to cfg.maxBoards deterministically.
+// the greedy TB move) and merges/evicts down to cfg.maxBoards (deterministic 1T == MT when
+// cfg.targetBoards == 0). Precondition: priorBoards is strictly sorted and unique.
 inline std::vector<BoardKey> generateStateSetTbNn20(const StateGenConfig20 &cfg,
                                                     const IndexedDasTablebase *fastTb,
                                                     const TinyDasNet *nn,
@@ -670,17 +917,14 @@ inline std::vector<BoardKey> generateStateSetTbNn20(const StateGenConfig20 &cfg,
       cfg.gamma, tbActive ? fastTb->discountMode() : DiscountMode::PerPiece);
 
   ShardedVisitCounter20 counter;
+  detail::LiveStateGenProgress20 progress(priorBoards, cfg, t0);
   std::atomic<int> nextGame{0};
-  std::atomic<uint64_t> totalMoves{0};
   std::atomic<uint64_t> inKeyMoves{0};
 
-  detail::runWorkerPool(threads, static_cast<size_t>(cfg.numGames), 16, [&](int /*tid*/) {
+  detail::runWorkerPool(threads, static_cast<size_t>(cfg.numGames), 16, [&](int tid) {
     PlacementList pl;
     uint16_t afterRows[BOARD_ROWS];
-    std::vector<BoardKey> batch;
-    batch.reserve(16384);
-    ShardedVisitCounter20::ShardBuckets byShard;
-    uint64_t locMoves = 0, locInKey = 0;
+    detail::VisitBatchRecorder20 recorder(counter, progress, tid);
 
     struct MoveCand {
       double hybridScore;
@@ -695,6 +939,8 @@ inline std::vector<BoardKey> generateStateSetTbNn20(const StateGenConfig20 &cfg,
     order.reserve(64);
 
     while (true) {
+      if (recorder.shouldStop())
+        break;
       const int g = nextGame.fetch_add(1, std::memory_order_relaxed);
       if (g >= cfg.numGames)
         break;
@@ -709,16 +955,9 @@ inline std::vector<BoardKey> generateStateSetTbNn20(const StateGenConfig20 &cfg,
         if (cfg.maxLinesPerGame > 0 && totalLines >= cfg.maxLinesPerGame)
           break;
 
-        BoardKey curKey;
-        if (encodeBoardKey(board.rows(), curKey, board.topNonEmptyRow)) {
-          batch.push_back(curKey);
-          locInKey++;
-          if (batch.size() >= 16384) {
-            counter.addBatch(batch, byShard);
-            batch.clear();
-          }
-        }
-        locMoves++;
+        BoardKey curKey{};
+        const bool hasKey = encodeBoardKey(board.rows(), curKey, board.topNonEmptyRow);
+        recorder.recordStep(hasKey, curKey);
 
         findPlacements10Hz(board, curP, gravity, pl);
         if (pl.count == 0)
@@ -833,16 +1072,16 @@ inline std::vector<BoardKey> generateStateSetTbNn20(const StateGenConfig20 &cfg,
         curP = nextP;
         nextP = rng.sampleNextPiece(cfg.rngMode, curP);
       }
+      recorder.finishGame();
     }
-    if (!batch.empty()) {
-      counter.addBatch(batch, byShard);
-    }
-    totalMoves.fetch_add(locMoves, std::memory_order_relaxed);
-    inKeyMoves.fetch_add(locInKey, std::memory_order_relaxed);
+    recorder.flush();
+    inKeyMoves.fetch_add(recorder.inKeyMoves(), std::memory_order_relaxed);
   });
 
   std::vector<std::pair<BoardKey, uint32_t>> rawEntries = counter.drainAndRelease();
-  statsOut.totalMoves = totalMoves.load();
+  statsOut.gamesPlayed = progress.gamesCompleted();
+  statsOut.targetBoardsReached = progress.targetReached();
+  statsOut.totalMoves = progress.totalMoves();
   statsOut.inKeyMoves = inKeyMoves.load();
   statsOut.rawUniqueBoards = rawEntries.size();
 
@@ -1027,7 +1266,8 @@ expandCoreSiblingsRt20(const std::vector<std::pair<BoardKey, uint32_t>> &rawEntr
 
 // On-policy live-RT + DAS-bucket state generator (SRTBV004 + multi-bucket NNUE): runs 50/50
 // exploration rollouts under DasRtMoveTables with real DAS-bucket carryover, expands core V_RT
-// siblings, and merges/evicts down to cfg.maxBoards deterministically.
+// siblings, and merges/evicts down to cfg.maxBoards (deterministic 1T == MT when
+// cfg.targetBoards == 0). Precondition: priorBoards is strictly sorted and unique.
 inline std::vector<BoardKey>
 generateStateSetRt20(const StateGenConfig20 &cfg, const IndexedDasRtTablebase *rtTb,
                      const DasRtMoveTables &tables, const TinyDasNet *nn,
@@ -1045,11 +1285,11 @@ generateStateSetRt20(const StateGenConfig20 &cfg, const IndexedDasRtTablebase *r
   const auto transProb = detail::buildTransitionProbMatrix(cfg.rngMode);
 
   ShardedVisitCounter20 counter;
+  detail::LiveStateGenProgress20 progress(priorBoards, cfg, t0);
   std::atomic<int> nextGame{0};
-  std::atomic<uint64_t> totalMoves{0};
   std::atomic<uint64_t> inKeyMoves{0};
 
-  detail::runWorkerPool(threads, static_cast<size_t>(cfg.numGames), 16, [&](int /*tid*/) {
+  detail::runWorkerPool(threads, static_cast<size_t>(cfg.numGames), 16, [&](int tid) {
     auto ws = std::make_unique<RtDecisionWorkspace>();
     std::vector<std::array<uint16_t, BOARD_ROWS>> cellRows(DAS_MAX_LOCK_MOVES);
     std::vector<int> bestBucketForCell(DAS_MAX_LOCK_MOVES, 0);
@@ -1057,14 +1297,13 @@ generateStateSetRt20(const StateGenConfig20 &cfg, const IndexedDasRtTablebase *r
     std::vector<uint8_t> cellFitsKey(DAS_MAX_LOCK_MOVES, 0);
     std::vector<int> order;
     order.reserve(DAS_MAX_LOCK_MOVES);
-    std::vector<BoardKey> batch;
-    batch.reserve(16384);
-    ShardedVisitCounter20::ShardBuckets byShard;
+    detail::VisitBatchRecorder20 recorder(counter, progress, tid);
     float childRow[MAX_RT_VALUES_PER_BOARD];
     float nnRow[MAX_RT_VALUES_PER_BOARD];
-    uint64_t locMoves = 0, locInKey = 0;
 
     while (true) {
+      if (recorder.shouldStop())
+        break;
       const int g = nextGame.fetch_add(1, std::memory_order_relaxed);
       if (g >= cfg.numGames)
         break;
@@ -1080,16 +1319,9 @@ generateStateSetRt20(const StateGenConfig20 &cfg, const IndexedDasRtTablebase *r
         if (cfg.maxLinesPerGame > 0 && totalLines >= cfg.maxLinesPerGame)
           break;
 
-        BoardKey curKey;
-        if (encodeBoardKey(board.rows(), curKey, board.topNonEmptyRow)) {
-          batch.push_back(curKey);
-          locInKey++;
-          if (batch.size() >= 16384) {
-            counter.addBatch(batch, byShard);
-            batch.clear();
-          }
-        }
-        locMoves++;
+        BoardKey curKey{};
+        const bool hasKey = encodeBoardKey(board.rows(), curKey, board.topNonEmptyRow);
+        recorder.recordStep(hasKey, curKey);
 
         // Piece 0 has next-box visibility from frame 0 (zeroRt); later pieces respect RT.
         const int repDas = dasBucketRepresentativeCharge(bucket, K);
@@ -1275,16 +1507,16 @@ generateStateSetRt20(const StateGenConfig20 &cfg, const IndexedDasRtTablebase *r
         curP = nextP;
         nextP = rng.sampleNextPiece(cfg.rngMode, curP);
       }
+      recorder.finishGame();
     }
-    if (!batch.empty()) {
-      counter.addBatch(batch, byShard);
-    }
-    totalMoves.fetch_add(locMoves, std::memory_order_relaxed);
-    inKeyMoves.fetch_add(locInKey, std::memory_order_relaxed);
+    recorder.flush();
+    inKeyMoves.fetch_add(recorder.inKeyMoves(), std::memory_order_relaxed);
   });
 
   std::vector<std::pair<BoardKey, uint32_t>> rawEntries = counter.drainAndRelease();
-  statsOut.totalMoves = totalMoves.load();
+  statsOut.gamesPlayed = progress.gamesCompleted();
+  statsOut.targetBoardsReached = progress.targetReached();
+  statsOut.totalMoves = progress.totalMoves();
   statsOut.inKeyMoves = inKeyMoves.load();
   statsOut.rawUniqueBoards = rawEntries.size();
 

@@ -68,7 +68,7 @@ struct GenCliConfig {
   std::string nnPath;
   std::string mergePath;
   std::string outPath;
-  size_t minBoards = 0; // Fail before writing if outputBoards < minBoards (0 = disabled)
+  size_t minBoards = 0; // Exit nonzero (after saving --out) if outputBoards < minBoards (0 = off)
   AggressionLevel aggro = AGGRO;
   das::StateGenConfig20 gen{};
 };
@@ -84,7 +84,8 @@ void printUsage(FILE *stream, const char *prog) {
       "  --level=19|18             Stationary level (default 19)\n"
       "  --rng=nes|uniform         RNG mode (default nes)\n"
       "  --gamma=F                 Discount factor (default 0.995)\n"
-      "  --games=N                 Rollout games (default 30000)\n"
+      "  --games=N                 Rollout games (or max games ceiling when --target-boards>0, "
+      "default 30000)\n"
       "  --max-lines=N             Line cap per rollout game (default 100 for L19, 130 for L18, "
       "0=uncapped)\n"
       "  --max-pieces=N            Piece cap per rollout game (default 500)\n"
@@ -92,7 +93,15 @@ void printUsage(FILE *stream, const char *prog) {
       "  --top-k=N                 Exploration runner-up beam (default 6)\n"
       "  --out-margin=F            Partial-OUT margin during rollouts (default 0.6)\n"
       "  --min-visits=N            Minimum visit filter (default 2)\n"
-      "  --min-boards=N            Fail before writing if output has <N boards (default 0=off)\n"
+      "  --target-boards=N         Stop rollouts early once qualified boards (--merge prior U "
+      "{empty} +\n"
+      "                            unique rollout boards reaching --min-visits, before siblings) "
+      ">= N\n"
+      "                            (default 0=off; --games acts as ceiling; may exceed "
+      "--max-boards\n"
+      "                            to oversample before nn-error eviction)\n"
+      "  --min-boards=N            Exit nonzero (after saving --out) if output < N (default "
+      "0=off)\n"
       "  --max-boards=N            Output board cap (default 5000000, 0=unlimited)\n"
       "  --sibling-min-visits=N    Expand core siblings on >=N-visit boards (default 4, 0=off)\n"
       "  --priority-mode=visits|nn-error (default visits)\n"
@@ -119,17 +128,15 @@ std::vector<das::BoardKey> runSeedEvalGeneration(const GenCliConfig &cli,
   const int startLines = (cli.gen.level == 19) ? 130 : 0;
 
   das::ShardedVisitCounter20 counter;
+  das::detail::LiveStateGenProgress20 progress(priorBoards, cli.gen, t0);
   std::atomic<int> nextGame{0};
-  std::atomic<uint64_t> totalMoves{0};
   std::atomic<uint64_t> inKeyMoves{0};
 
-  das::detail::runWorkerPool(threads, static_cast<size_t>(cli.gen.numGames), 16, [&](int /*tid*/) {
+  das::detail::runWorkerPool(threads, static_cast<size_t>(cli.gen.numGames), 16, [&](int tid) {
     std::vector<LockPlacement> m1, m2;
     m1.reserve(64);
     m2.reserve(64);
-    std::vector<das::BoardKey> batch;
-    batch.reserve(16384);
-    uint64_t locMoves = 0, locInKey = 0;
+    das::detail::VisitBatchRecorder20 recorder(counter, progress, tid);
 
     struct EvalCand {
       float score;
@@ -140,6 +147,8 @@ std::vector<das::BoardKey> runSeedEvalGeneration(const GenCliConfig &cli,
     cands.reserve(64);
 
     while (true) {
+      if (recorder.shouldStop())
+        break;
       const int g = nextGame.fetch_add(1, std::memory_order_relaxed);
       if (g >= cli.gen.numGames)
         break;
@@ -156,16 +165,9 @@ std::vector<das::BoardKey> runSeedEvalGeneration(const GenCliConfig &cli,
           break;
 
         const das::Board20 b20 = das::gameStateToBoard20(st);
-        das::BoardKey curKey;
-        if (das::encodeBoardKey(b20.rows(), curKey, b20.topNonEmptyRow)) {
-          batch.push_back(curKey);
-          locInKey++;
-          if (batch.size() >= 16384) {
-            counter.addBatch(batch);
-            batch.clear();
-          }
-        }
-        locMoves++;
+        das::BoardKey curKey{};
+        const bool hasKey = das::encodeBoardKey(b20.rows(), curKey, b20.topNonEmptyRow);
+        recorder.recordStep(hasKey, curKey);
 
         const EvalContext ctx1 = getEvalContext(st, bc.lookup, false, cli.aggro);
         m1.clear();
@@ -216,17 +218,17 @@ std::vector<das::BoardKey> runSeedEvalGeneration(const GenCliConfig &cli,
         curP = nextP;
         nextP = rng.sampleNextPiece(cli.gen.rngMode, curP);
       }
+      recorder.finishGame();
     }
 
-    if (!batch.empty()) {
-      counter.addBatch(batch);
-    }
-    totalMoves.fetch_add(locMoves, std::memory_order_relaxed);
-    inKeyMoves.fetch_add(locInKey, std::memory_order_relaxed);
+    recorder.flush();
+    inKeyMoves.fetch_add(recorder.inKeyMoves(), std::memory_order_relaxed);
   });
 
   std::vector<std::pair<das::BoardKey, uint32_t>> rawEntries = counter.drainAndRelease();
-  statsOut.totalMoves = totalMoves.load();
+  statsOut.gamesPlayed = progress.gamesCompleted();
+  statsOut.targetBoardsReached = progress.targetReached();
+  statsOut.totalMoves = progress.totalMoves();
   statsOut.inKeyMoves = inKeyMoves.load();
   statsOut.rawUniqueBoards = rawEntries.size();
 
@@ -246,6 +248,7 @@ int main(int argc, char **argv) {
   GenCliConfig cli;
   bool maxLinesSet = false;
   bool gammaSet = false;
+  bool gamesSet = false;
   cli.gen.numThreads = 0;
 
   for (int i = 1; i < argc; ++i) {
@@ -345,6 +348,7 @@ int main(int argc, char **argv) {
         fprintf(stderr, "Error: invalid --games\n");
         return 1;
       }
+      gamesSet = true;
       continue;
     }
     if (tryPrefix("--max-lines=", val)) {
@@ -388,6 +392,13 @@ int main(int argc, char **argv) {
     if (tryPrefix("--min-visits=", val)) {
       if (!parseStrictInt(val, cli.gen.minVisits)) {
         fprintf(stderr, "Error: invalid --min-visits\n");
+        return 1;
+      }
+      continue;
+    }
+    if (tryPrefix("--target-boards=", val)) {
+      if (!parseStrictInt(val, cli.gen.targetBoards)) {
+        fprintf(stderr, "Error: invalid --target-boards\n");
         return 1;
       }
       continue;
@@ -480,6 +491,21 @@ int main(int argc, char **argv) {
             cli.gen.maxBoards);
     return 1;
   }
+  if (cli.gen.targetBoards > 0 && cli.minBoards > cli.gen.targetBoards) {
+    fprintf(stderr, "Error: --min-boards (%zu) must be <= --target-boards (%zu)\n", cli.minBoards,
+            cli.gen.targetBoards);
+    return 1;
+  }
+  if (cli.gen.targetBoards > 0 && !gamesSet) {
+    fprintf(stderr,
+            "Warning: --target-boards=%zu set without --games; using default %d-game ceiling\n",
+            cli.gen.targetBoards, cli.gen.numGames);
+  }
+  if (cli.gen.maxBoards > 0 && cli.gen.targetBoards > cli.gen.maxBoards) {
+    fprintf(stderr,
+            "Note: --target-boards (%zu) > --max-boards (%zu); oversampling before capping\n",
+            cli.gen.targetBoards, cli.gen.maxBoards);
+  }
   if (das::detail::isSameFilePath(cli.tbPath, cli.outPath)
       || das::detail::isSameFilePath(cli.nnPath, cli.outPath)
       || das::detail::isSameFilePath(cli.mergePath, cli.outPath)) {
@@ -508,9 +534,10 @@ int main(int argc, char **argv) {
   std::vector<das::BoardKey> boards;
 
   if (cli.seedEval) {
-    printf("Generating Round 0 states via eval.cpp (L%d, games=%d, eps=%.2f, maxBoards=%zu, "
-           "threads=%d)...\n",
-           cli.gen.level, cli.gen.numGames, cli.gen.epsilon, cli.gen.maxBoards, cli.gen.numThreads);
+    printf("Generating Round 0 states via eval.cpp (L%d, games=%d, targetBoards=%zu, eps=%.2f, "
+           "maxBoards=%zu, threads=%d)...\n",
+           cli.gen.level, cli.gen.numGames, cli.gen.targetBoards, cli.gen.epsilon,
+           cli.gen.maxBoards, cli.gen.numThreads);
     fflush(stdout);
     boards = runSeedEvalGeneration(cli, priorBoards, stats);
   } else {
@@ -592,18 +619,18 @@ int main(int argc, char **argv) {
           isRtTb ? das::moveConfigFromHeaderV4(rtTb.header()) : das::MoveSearchConfig{};
       mcfg.gravity = das::getGravity20(cli.gen.level);
       const das::DasRtMoveTables tables(mcfg);
-      printf("Generating live-RT states via V_RT+NN (L%d, rt=%d, games=%d, eps=%.2f, mode=%s, "
-             "core=%zu, maxBoards=%zu, threads=%d)...\n",
-             cli.gen.level, mcfg.reactionTime, cli.gen.numGames, cli.gen.epsilon,
-             das::boardPriorityModeName(cli.gen.priorityMode), cli.gen.protectedCore,
-             cli.gen.maxBoards, cli.gen.numThreads);
+      printf("Generating live-RT states via V_RT+NN (L%d, rt=%d, games=%d, targetBoards=%zu, "
+             "eps=%.2f, mode=%s, core=%zu, maxBoards=%zu, threads=%d)...\n",
+             cli.gen.level, mcfg.reactionTime, cli.gen.numGames, cli.gen.targetBoards,
+             cli.gen.epsilon, das::boardPriorityModeName(cli.gen.priorityMode),
+             cli.gen.protectedCore, cli.gen.maxBoards, cli.gen.numThreads);
       fflush(stdout);
       boards = das::generateStateSetRt20(cli.gen, rtTb.isLoaded() ? &rtTb : nullptr, tables,
                                          nn.isLoaded() ? &nn : nullptr, priorBoards, stats);
     } else {
-      printf("Generating states via TB+NN (L%d, games=%d, eps=%.2f, mode=%s, core=%zu, "
-             "maxBoards=%zu, threads=%d)...\n",
-             cli.gen.level, cli.gen.numGames, cli.gen.epsilon,
+      printf("Generating states via TB+NN (L%d, games=%d, targetBoards=%zu, eps=%.2f, mode=%s, "
+             "core=%zu, maxBoards=%zu, threads=%d)...\n",
+             cli.gen.level, cli.gen.numGames, cli.gen.targetBoards, cli.gen.epsilon,
              das::boardPriorityModeName(cli.gen.priorityMode), cli.gen.protectedCore,
              cli.gen.maxBoards, cli.gen.numThreads);
       fflush(stdout);
@@ -612,29 +639,34 @@ int main(int argc, char **argv) {
     }
   }
 
-  if (cli.minBoards > 0 && boards.size() < cli.minBoards) {
-    fprintf(stderr,
-            "Error: generated %zu boards (< --min-boards=%zu; moves=%llu, rawUnique=%zu, "
-            "siblings=%zu); increase --games or adjust filters\n",
-            boards.size(), cli.minBoards, static_cast<unsigned long long>(stats.totalMoves),
-            stats.rawUniqueBoards, stats.siblingBoardsAdded);
-    return 1;
-  }
-
   std::string writeErr;
   if (!das::writeStatesFileV2(cli.outPath, boards, &writeErr)) {
     fprintf(stderr, "Error writing %s: %s\n", cli.outPath.c_str(), writeErr.c_str());
     return 1;
   }
 
+  const bool belowMin = (cli.minBoards > 0 && boards.size() < cli.minBoards);
+  const char *stopReason = (cli.gen.targetBoards == 0) ? "fixed"
+                           : stats.targetBoardsReached ? "target-reached"
+                                                       : "max-games";
   const double inKeyPct =
       stats.totalMoves ? (100.0 * static_cast<double>(stats.inKeyMoves) / stats.totalMoves) : 0.0;
-  printf("DONE generate_20row -> %s\n"
-         "  Moves: %llu (in-K16: %.2f%%) | rawUnique: %zu | siblings: %zu | output: %zu (%.1f MB) "
-         "| %.2fs\n",
-         cli.outPath.c_str(), static_cast<unsigned long long>(stats.totalMoves), inKeyPct,
+  printf("%s generate_20row -> %s\n"
+         "  Games: %d/%d (%s) | Moves: %llu (in-K16: %.2f%%) | rawUnique: %zu | siblings: %zu | "
+         "output: %zu (%.1f MB) | %.2fs\n",
+         belowMin ? "PARTIAL" : "DONE", cli.outPath.c_str(), stats.gamesPlayed, cli.gen.numGames,
+         stopReason, static_cast<unsigned long long>(stats.totalMoves), inKeyPct,
          stats.rawUniqueBoards, stats.siblingBoardsAdded, stats.outputBoards,
          static_cast<double>(stats.outputBoards * sizeof(das::BoardKey)) / (1024.0 * 1024.0),
          stats.elapsedSeconds);
+  fflush(stdout);
+
+  if (belowMin) {
+    fprintf(stderr,
+            "Error: generated %zu boards (< --min-boards=%zu, stop=%s; partial state set SAVED to "
+            "%s for --merge resumption); increase --games or adjust filters\n",
+            boards.size(), cli.minBoards, stopReason, cli.outPath.c_str());
+    return 1;
+  }
   return 0;
 }
