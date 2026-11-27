@@ -305,9 +305,14 @@ Prove the full 4-pillar flywheel on Stationary Level 19 (`gravity = 2`, 10 Hz) a
     - **`5.0M` 2-Bucket `V_RT` Round 3 (`rt2_r3 + rt2_r3_128x64`, `343 MB` TB, `172 KB` 14-out NN, `--merge=rt2_r2.states.bin` + `250k` games `eps=0.10`):**
       - Solver: converged in `7` outer (`250` inner, `skip = 45.3%`) in `59.9m`, **`E[V(0,full)] = 6.384530`**, `maxV = 6.9791`, `residual = 1.322e-04`, **RT Soft-MC (`4,000g`): `6.37797 ± 0.01249` (`z = 0.53`, `steps = 62.5`)**.
       - 14-output NNUE (`128×64`, `600k` dec, `30` ep, `230.5s`): `valMAE = 0.0527 / top1 = 84.07% / regret = 0.0099`.
-      - **`500g` Live 18f DAS (`ply = 3[allout]`, `m = 0.25`):** **`415,366 ± 3,735`** (`+28,012` / `+5.1 SE` over `5M` Phase 2B, tied with `rt2_r2`'s `417,814 ± 3,564` at `0.47 SE`; `med = 435,600`, `p90 = 482,400`, `max = 523,200`, `91.8%` goal, `65.5%` TRT, **`90.98%` TB hit**, `allOut = 4.29%`, `ply3 = 5.96%`, `6.834 ms/mv`).
-      - **`500g` Live 18f DAS (`ply = 2`, `m = 0.25`):** `392,689 ± 5,056` (`med = 426,800`, `83.2%` goal, `65.1%` TRT, `89.69%` hit, **`1.189 ms/mv`** — `4×` faster than Phase 2B and `164×` faster than production!).
-    - **Next in 3.3:** Run independent 3-bucket live-RT Rounds 2–3 (`rt3_r2` → `rt3_r3`) to complete the leak-free 3-vs-2 ablation.
+      - **`500g` Live 18f DAS (`ply = 3[allout]`, `128×64` margin sweep):**
+        - `m = 0.10`: **`417,132 ± 3,821`** (`med = 438,800`, `p90 = 485,240`, `max = 522,000`, `91.2%` goal, `65.9%` TRT, `89.98%` hit, `allOut = 4.86%`, `ply3 = 6.62%`, `4.420 ms/mv`).
+        - `m = 0.15`: `415,311 ± 3,883` (`med = 437,200`, `p90 = 482,400`, `max = 522,800`, `91.0%` goal, `65.8%` TRT, `90.41%` hit, `allOut = 4.65%`, `ply3 = 6.35%`, `3.892 ms/mv`).
+        - `m = 0.25`: `415,366 ± 3,735` (`+28,012` / `+5.1 SE` over `5M` Phase 2B, tied with `rt2_r2`'s `417,814 ± 3,564` at `0.47 SE`; `med = 435,600`, `p90 = 482,400`, `max = 523,200`, `91.8%` goal, `65.5%` TRT, **`90.98%` TB hit**, `allOut = 4.29%`, `ply3 = 5.96%`, `6.834 ms/mv`).
+        - `m = 0.35`: `415,317 ± 3,784` (`med = 435,600`, `p90 = 481,600`, `max = 523,200`, `91.8%` goal, `65.4%` TRT, `91.09%` hit, `allOut = 4.36%`, `ply3 = 5.99%`, `3.996 ms/mv`).
+      - **`500g` Live 18f DAS (`ply = 3[allout]`, `m = 0.25`, cold-started `256×64` NNUE, `87k` params, `60` ep, `valMAE = 0.0575 / top1 = 82.88% / regret = 0.0112`):** `409,135 ± 4,234` (`med = 429,000`, `p90 = 482,400`, `max = 523,200`, `90.0%` goal, `65.5%` TRT, `90.67%` hit, `allOut = 4.61%`, `ply3 = 6.26%`, `7.619 ms/mv` — `-6,231` / `1.10 SE` worse and `~1.9×` slower than `128×64`; `128×64` locked for 2-bucket `V_RT`).
+      - **`500g` Live 18f DAS (`ply = 2`, `m = 0.25`, `128×64`):** `392,689 ± 5,056` (`med = 426,800`, `83.2%` goal, `65.1%` TRT, `89.69%` hit, **`1.189 ms/mv`** — `4×` faster than Phase 2B and `164×` faster than production!).
+    - **Decision point for 3.3 → 3.4:** 2-bucket (`{15, 5}`, `128×64`, `m ∈ [0.10, 0.25]`) leads cleanly (`415k–418k`, `+28k–30.5k` over `5M` Phase 2B, `343 MB`, `~3.9–4.4 ms/mv`); 3-bucket Round 2 paused by user. Ready to confirm closing 3.3 and scaling 2-bucket `V_RT` to `15M–20M` (with `--min-visits=2`, `--min-boards`, and pre-generation game-length probe) in Step 3.4.
 - [ ] **3.4 — Capacity Scaling (`15M` or `20M`) & Phase 3 Exit Gate**:
   - Scale winning `V_RT` config to `15M–20M` (size chosen from `5M` hit-rate data), benchmark vs. production `200 ms b = -2` (`338.3k`) and Phase 2B `20M` (`395.4k`), update retrospective, and complete final 3-reviewer sign-off.
 
