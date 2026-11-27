@@ -127,3 +127,12 @@ The target audience is humans, so comprehensibility is the #1 priority.
   C++ must reproduce JS float arithmetic bit-exactly, split the multiply and the
   add into separate statements (or control `-ffp-contract`) and verify with
   hex-float dumps.
+
+## Working Autonomously
+
+You will often to be asked to work autonomously. When doing so, you should always be following an existing plan doc, and your goal should be to make as much progress as you can through the stated plan while working autonomously. Other guidelines:
+
+- Always run code review agents after every major code change
+- Run a 15 minute timer and provide text updates on the current in-progress work, as well as an updated ETA for the current step and the overall project.
+- If a job fails or produces unexpected results, pause and brainstorm why it failed; don't simply retry it and brute force through the step. Fix any related tooling and make sure the system is resilient against the root cause of the mistake.
+- Never discard expensive computation results. Any stage that takes more than a few minutes and produces resumable/additive outputs (state sets, checkpoints, training datasets) must persist its output before exiting non-zero to halt downstream stages — never throw away completed work just to fail fast.
