@@ -68,6 +68,7 @@ struct GenCliConfig {
   std::string nnPath;
   std::string mergePath;
   std::string outPath;
+  size_t minBoards = 0; // Fail before writing if outputBoards < minBoards (0 = disabled)
   AggressionLevel aggro = AGGRO;
   das::StateGenConfig20 gen{};
 };
@@ -91,6 +92,7 @@ void printUsage(FILE *stream, const char *prog) {
       "  --top-k=N                 Exploration runner-up beam (default 6)\n"
       "  --out-margin=F            Partial-OUT margin during rollouts (default 0.6)\n"
       "  --min-visits=N            Minimum visit filter (default 2)\n"
+      "  --min-boards=N            Fail before writing if output has <N boards (default 0=off)\n"
       "  --max-boards=N            Output board cap (default 5000000, 0=unlimited)\n"
       "  --sibling-min-visits=N    Expand core siblings on >=N-visit boards (default 4, 0=off)\n"
       "  --priority-mode=visits|nn-error (default visits)\n"
@@ -390,6 +392,13 @@ int main(int argc, char **argv) {
       }
       continue;
     }
+    if (tryPrefix("--min-boards=", val)) {
+      if (!parseStrictInt(val, cli.minBoards)) {
+        fprintf(stderr, "Error: invalid --min-boards\n");
+        return 1;
+      }
+      continue;
+    }
     if (tryPrefix("--max-boards=", val)) {
       if (!parseStrictInt(val, cli.gen.maxBoards)) {
         fprintf(stderr, "Error: invalid --max-boards\n");
@@ -464,6 +473,11 @@ int main(int argc, char **argv) {
   }
   if (cli.gen.priorityMode == das::BoardPriorityMode::NnError && cli.nnPath.empty()) {
     fprintf(stderr, "Error: --priority-mode=nn-error requires --nn=PATH\n");
+    return 1;
+  }
+  if (cli.gen.maxBoards > 0 && cli.minBoards > cli.gen.maxBoards) {
+    fprintf(stderr, "Error: --min-boards (%zu) must be <= --max-boards (%zu)\n", cli.minBoards,
+            cli.gen.maxBoards);
     return 1;
   }
   if (das::detail::isSameFilePath(cli.tbPath, cli.outPath)
@@ -596,6 +610,15 @@ int main(int argc, char **argv) {
       boards = das::generateStateSetTbNn20(cli.gen, fastTb.isLoaded() ? &fastTb : nullptr,
                                            nn.isLoaded() ? &nn : nullptr, priorBoards, stats);
     }
+  }
+
+  if (cli.minBoards > 0 && boards.size() < cli.minBoards) {
+    fprintf(stderr,
+            "Error: generated %zu boards (< --min-boards=%zu; moves=%llu, rawUnique=%zu, "
+            "siblings=%zu); increase --games or adjust filters\n",
+            boards.size(), cli.minBoards, static_cast<unsigned long long>(stats.totalMoves),
+            stats.rawUniqueBoards, stats.siblingBoardsAdded);
+    return 1;
   }
 
   std::string writeErr;
