@@ -755,7 +755,7 @@ inline SolveRtResult20 solve20RtMPI(const std::vector<BoardKey> &sortedKeys,
   // Exact dependency tracking built on outer == 1 so outer >= 2 skips every (board, piece) that
   // has zero in-TB children or whose in-TB children were bit-identical since the previous backup.
   enum class BackupMode { CollectDeps, Incremental, Residual };
-  constexpr size_t MAX_IN_TB_CHILD_EDGES = 100'000'000ULL; // 400 MB cap
+  constexpr size_t MAX_IN_TB_CHILD_EDGES = 450'000'000ULL; // 1.8 GB cap (covers 15M–20M live-RT)
   static_assert(MAX_IN_TB_CHILD_EDGES <= std::numeric_limits<uint32_t>::max(),
                 "MAX_IN_TB_CHILD_EDGES must fit in uint32_t offsets");
   std::vector<uint8_t> hasInTbPieceMask(n, detail::ALL_PIECES_MASK);
