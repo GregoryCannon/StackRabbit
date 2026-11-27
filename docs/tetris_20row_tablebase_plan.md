@@ -329,12 +329,37 @@ Prove the full 4-pillar flywheel on Stationary Level 19 (`gravity = 2`, 10 Hz) a
 
 ---
 
-## Horizon 3 (Long-Term Future Roadmap — Detailed Design Deferred Until Phases 2B & 3 Complete)
+## Horizon 3 (Active Planning — Ready to Execute): Phase 4 — Stationary Level 18 2-Bucket `V_RT` (`gravity = 3`, `L = 0..129`)
 
-- [ ] **Phase 4 — Stationary Level 18 Flywheel (`gravity = 3`, `L = 0..129`) & `20M+` Scale**:
-  - Apply the proven Phase 2B + Phase 3 pipeline (winning discount/DAS representation) to Stationary Level 18 and scale both regimes to `20M+` boards.
+*Goal:* Build an elite live-18f **2-bucket `V_RT`** Level 18 tablebase + `128×64` NNUE (`data/l18/`), produce the **`15M`** pure `visits >= 2` shared Level 18 state set for Phase 5 (`L = 129 → 0`), and run our first live-18f **Full `18 → 29`** dual-TB benchmark (`l18_rt2_15m` + `rt2_15m`) against production StackRabbit `200 ms b = -2` (`1,074,642 ± 13,120`) on `seed = 30,000,000` (keeping `seed = 700,000` untouched).
+
+### Locked Phase 4 Design Decisions
+- **Direct 2-Bucket `V_RT` + `128×64` + `PerLine` (Zero Detours):** Start straight in `SRTBV004` (`K = 2`, `{15, 5}`, `rt = 18`, `quicktaps = 0`, `7.5 Hz`, `128×64` 14-output NNUE, `DiscountMode::PerLine`, `--min-visits=2`, live `--target-boards`, save-on-fail `--min-boards`, `--policy-cache=disk`, `--inner-stop-ratio=5e-4`, `caffeinate -i`). Skip 0-frame `SRTBV003`, 3-bucket, and `256×64`.
+- **Tall Round-1 State Seeding + Conservative Round-1 Boundary:**
+  - Seed Round 1 states (`5M`) with `--seed-eval --level=18 --aggro=aggro` so tall `H = 9..13` Level 18 Tetris stacks are well-populated from the start (avoiding L19's lower-stack bias).
+  - Pass `--boundary-nn=experimental/das_tablebase/data/l19/rt2_15m_128x64.nn.bin` (`m = 0.15`) **on Round 1 solve only** as a safe, strictly conservative soft boundary to skip a weak `V = 0` Round 0. Train L18's own `l18_r1_128x64.nn.bin` immediately after Round 1 and **drop L19 completely from Round 2 onward**.
+- **Level 18 `PerLine γ` Calibration (`0.975` vs. `0.985` [and `0.990` if warranted]):** Because an L18 topout forfeits the entire `~420k–515k` L19–28 half, target **`~98–100%` 130-line survival** alongside high TRT (`75%+`). Test `γ = 0.975` vs. `γ = 0.985` at `5M` (and `0.990` with a 1-time Round-1 boundary jumpstart only if `0.985` clearly dominates `0.975`).
+- **Locked Final Capacity Target (`15M`, Matching `rt2_15m`):** Scale to **`15M`** pure `visits >= 2` boards (`l18_rt2_15m.states.bin`, `1.03 GB` `.tb.bin`, inside `FlatBoardIndex`'s `2^22` / `536 MB` bucket tier and `<= 6 GB` solver RAM) for apples-to-apples consistency with Phase 3 (`rt2_15m`) and maximum coverage for Phase 5's shared Level 18 state set (`L = 129 → 0`), while retaining the `5M` model for size/speed comparison.
+
+### Staged Phase 4 Milestones
+- [ ] **4.0 — Level 18 Production Baselines & `--level=18` CLI Smoke Check**:
+  - Record live-18f production StackRabbit baselines on Stationary Level 18 (`130` lines, `seed = 30,000,000`, `rt = 18, das = 1`, `10 Hz` pure DAS): `precompute 49×2 b = 20` (`100g`) and calibrated `precompute 200 ms b = -2` (`60–80g`).
+  - Run a fast `--level=18` end-to-end smoke check (`generate_20row` → `solve_rt_20row` → `train_nn_20row` → `benchmark_20row --mode=l18`) to verify all Level 18 (`gravity = 3`) code paths before multi-hour runs.
+- [ ] **4.1 — `5M` Live-RT Level 18 Flywheel & `γ` Calibration (`data/l18/`)**:
+  - Generate `5M` Round-1 states (`--seed-eval --level=18 --min-visits=2 --target-boards=5000000`), solve Round 1 under `gravity = 3` with `rt2_15m_128x64.nn.bin` as conservative Round-1 boundary, then run 2 on-policy live-18f L18 rounds (`l18_r2`, `l18_r3`) with L18's own NNUE.
+  - Compare `PerLine γ = 0.975` vs. `0.985` (`500g` Stationary L18, `seed = 30,000,000`, `rt = 18, das = 1`) on mean score, `130`-line survival, TRT, `avgMaxH`, and TB hit rate; lock winning `γ`.
+- [ ] **4.2 — Capacity Scaling (`15M` Pure `visits >= 2` L18 2-Bucket `V_RT`)**:
+  - Scale winning L18 config to **`15M`** pure `visits >= 2` boards (`l18_rt2_15m.states.bin`, zero single-visit padding, live `--target-boards` + save-on-fail), solve to `tol = 1e-5` (`Soft-MC z <= 3.5`), train warm-started `128×64` NNUE, and benchmark `500g` Stationary L18 (`ply = 3[allout]` at `m = 0.10/0.25` and `ply = 2` at `m = 0.25`).
+- [ ] **4.3 — Dual-TB Full `18 → 29` Prototype Benchmark & Phase 4 Exit Gate**:
+  - Add clean dual-regime support (`--tb-l18` / `--nn-l18` + `--tb-l19` / `--nn-l19`, switching at `lines >= 130` with exact NTSC `19×` and `20× → 29×` scoring) and `scoreAt130` reporting alongside `scoreAt230` (to measure the exact L18 vs. L19–28 split directly) to `benchmark_20row.cpp`, with unit tests and parallel 3-reviewer sign-off (**Logic**, **Perf & Scale**, **Readability**).
+  - Benchmark dual-TB `l18_rt2_15m + rt2_15m` (and `5M` comparison if useful) on `500g` Full `18 → 29` (`seed = 30,000,000`, `rt = 18, das = 1`) vs. production `200 ms b = -2` (`1,074,642`, `100%` transition, `95%` killscreen, `82.5%` maxout), and update [docs/tetris_20row_tablebase_retrospective.md](tetris_20row_tablebase_retrospective.md).
+
+---
+
+## Horizon 4 (Future Roadmap — Detailed Design Deferred Until Phase 4 Complete)
+
 - [ ] **Phase 5 — Finite-Horizon Multi-Level Backward Induction (`L = 229 → 130` & `L = 129 → 0`)**:
-  - Shared-key exact undiscounted (`γ = 1.0`) backward induction across Levels 19–28 (`20× → 29×` multipliers, terminal `0.0` at `L >= 230`) and Level 18 → 19 transition (`L = 129 → 0`, `19×` into `V(b, c, d, L = 130)`), plus unified line-count-aware NNUE `V_nn(b, c, d, L)`.
+  - Shared-key exact undiscounted (`γ = 1.0`) backward induction across Levels 19–28 (`20× → 29×` multipliers, terminal `0.0` at `L >= 230`, sharing `rt2_15m.states.bin`) and Level 18 → 19 transition (`L = 129 → 0`, `19×` into `V(b, c, d, L = 130)`, sharing `l18_rt2_15m.states.bin`), plus unified line-count-aware NNUE `V_nn(b, c, d, L)`.
 - [ ] **Phase 6 — Untouched Held-Out Evaluation (`seed = 700,000`) & Production Integration Proposal**:
   - Head-to-head full NTSC **18 → topout** pure 10 Hz DAS evaluation vs. production StackRabbit `200 ms b=-2` (`1,074,642 ± 13,120`) on untouched `seed = 700,000` + `docs/benchmark_hard_positions.md`.
   - Production integration proposal (Path B: mmap TB + NNUE in `live_game_server`; Path A: standalone WASM NNUE) with full `AGENTS.md` verification matrix, and final retrospective update.
