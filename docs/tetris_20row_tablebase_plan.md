@@ -302,7 +302,12 @@ Prove the full 4-pillar flywheel on Stationary Level 19 (`gravity = 2`, 10 Hz) a
       - Solver: converged in `9` outer (`455` inner, `skip = 36.9%` — `63.1%` in-TB piece connectivity vs. `29.1%` on 0-frame states!), **`E[V(0,full)] = 6.378403`**, `maxV = 6.9744`, `residual = 1.109e-04`, **RT Soft-MC (`4,000g`): `6.38086 ± 0.01183` (`z = 0.21`, `steps = 57.0` — `3.3×` longer in-TB runs than `rt2_r1`!)**.
       - 14-output NNUE (`128×64`, `600k` dec, `25` ep, `203.1s`): `valMAE = 0.0516 / top1 = 83.50% / regret = 0.0100`.
       - **`500g` Live 18f DAS:** **`417,814 ± 3,564`** (**`+30,460` / `+5.7 SE` over `5M` Phase 2B, `+22,454` over `20M` Phase 2B, `+79,509` over production `200 ms b = -2`!**; **`med = 436,000`**, `p90 = 480,400`, `max = 540,400`, **`93.2%` goal**, **`65.5%` TRT**, **`90.24%` TB hit** [`+8.8%` vs. `rt2_r1`!], `allOut = 4.58%`, `ply3 = 6.49%`, `6.604 ms/mv`).
-    - **Next in 3.3:** Run `rt2_r3` (`5.0M` pure live-RT 2-bucket via `--merge=rt2_r2.states.bin`), then if time permits run `rt3_r2/r3` + `ply=2` vs `ply=3[allout]` latency check.
+    - **`5.0M` 2-Bucket `V_RT` Round 3 (`rt2_r3 + rt2_r3_128x64`, `343 MB` TB, `172 KB` 14-out NN, `--merge=rt2_r2.states.bin` + `250k` games `eps=0.10`):**
+      - Solver: converged in `7` outer (`250` inner, `skip = 45.3%`) in `59.9m`, **`E[V(0,full)] = 6.384530`**, `maxV = 6.9791`, `residual = 1.322e-04`, **RT Soft-MC (`4,000g`): `6.37797 ± 0.01249` (`z = 0.53`, `steps = 62.5`)**.
+      - 14-output NNUE (`128×64`, `600k` dec, `30` ep, `230.5s`): `valMAE = 0.0527 / top1 = 84.07% / regret = 0.0099`.
+      - **`500g` Live 18f DAS (`ply = 3[allout]`, `m = 0.25`):** **`415,366 ± 3,735`** (`+28,012` / `+5.1 SE` over `5M` Phase 2B, tied with `rt2_r2`'s `417,814 ± 3,564` at `0.47 SE`; `med = 435,600`, `p90 = 482,400`, `max = 523,200`, `91.8%` goal, `65.5%` TRT, **`90.98%` TB hit**, `allOut = 4.29%`, `ply3 = 5.96%`, `6.834 ms/mv`).
+      - **`500g` Live 18f DAS (`ply = 2`, `m = 0.25`):** `392,689 ± 5,056` (`med = 426,800`, `83.2%` goal, `65.1%` TRT, `89.69%` hit, **`1.189 ms/mv`** — `4×` faster than Phase 2B and `164×` faster than production!).
+    - **Next in 3.3:** Run independent 3-bucket live-RT Rounds 2–3 (`rt3_r2` → `rt3_r3`) to complete the leak-free 3-vs-2 ablation.
 - [ ] **3.4 — Capacity Scaling (`15M` or `20M`) & Phase 3 Exit Gate**:
   - Scale winning `V_RT` config to `15M–20M` (size chosen from `5M` hit-rate data), benchmark vs. production `200 ms b = -2` (`338.3k`) and Phase 2B `20M` (`395.4k`), update retrospective, and complete final 3-reviewer sign-off.
 
